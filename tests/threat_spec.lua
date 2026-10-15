@@ -169,7 +169,7 @@ end
 CreateFrame = function(...) local f = frame(...); events[#events + 1] = f; return f end
 ThreatClassic2BarFrame = nil
 LibStub = function() end
-assert(loadfile('EUIAddonSkins/Skins/ThreatClassic2.lua'))('EUIAddonSkins', ns)
+assert(loadfile('EUIAddonSkins_ThreatClassic2/Skin.lua'))('EUIAddonSkins', ns)
 assert(not modules.ThreatClassic2.available(), 'missing TC2 must remain optional')
 local f = frame('Frame', 'ThreatClassic2BarFrame', UIParent)
 f:SetSize(217, 161); f:SetPoint('TOPLEFT', UIParent, 'TOPLEFT', 50, -200)

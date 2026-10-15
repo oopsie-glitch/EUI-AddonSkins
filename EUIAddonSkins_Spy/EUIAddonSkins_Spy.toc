@@ -1,0 +1,10 @@
+## Interface: 16001, 120000, 120001, 120005, 120007, 120100
+## Title: EUI AddonSkins: Spy
+## Notes: Load-on-demand skin module. Managed by EUI AddonSkins.
+## Author: Smarre
+## X-License: MIT
+## Version: 1.4.0-alpha.1
+## Dependencies: EUIAddonSkins
+## LoadOnDemand: 1
+
+Skin.lua

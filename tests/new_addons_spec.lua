@@ -66,7 +66,7 @@ function S.Dropdown() end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
 for _, name in ipairs({'Auctionator', 'Spy'}) do
     _G[name] = nil
-    assert(loadfile('EUIAddonSkins/Skins/' .. name .. '.lua'))('EUIAddonSkins', ns)
+    assert(loadfile('EUIAddonSkins_' .. name .. '/Skin.lua'))('EUIAddonSkins', ns)
     assert(not modules[name].available())
 end
 Auctionator = {Tabs = {State = {knownTabs = {{name = 'Shopping', tabFrameName = 'AuctionatorShoppingFrame'}}}},

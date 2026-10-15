@@ -92,7 +92,7 @@ ForeverCompanionAPI = {
     VirtualList = function() return { Layout = function() end, Refresh = function() end } end,
 }
 local chunk = assert(loadfile("EUIAddonSkins/Core.lua"))
-local integration = assert(loadfile("EUIAddonSkins/Skins/ForeverCompanion.lua"))
+local integration = assert(loadfile("EUIAddonSkins_ForeverCompanion/Skin.lua"))
 local ns = {}
 chunk("EUIAddonSkins", ns)
 assert(loadfile("EUIAddonSkins/Accent.lua"))("EUIAddonSkins", ns)

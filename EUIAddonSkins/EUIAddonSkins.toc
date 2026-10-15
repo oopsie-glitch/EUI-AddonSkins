@@ -5,9 +5,8 @@
 ## Author: Smarre
 ## X-License: MIT
 ## X-Wago-ID: aN0a2M6j
-## Version: 1.2.0
+## Version: 1.4.0-alpha.1
 ## Dependencies: EllesmereUI, EllesmereUIBlizzardSkin
-## OptionalDeps: ForeverCompanion, ForeverDungeonJournal, RXPGuides, Auctionator, Spy, WhatsTraining, ItemRack, ItemRackOptions, KiwiFarm, Myslot, BugSack, Altoholic, Attune, TwitchEmotes, Questie, DBM-Core, DBM-GUI, AtlasLootContinued, AtlasLootContinued_Options, AtlasLootContinued_Favourites, GTFO, Gargul, Details, ThreatClassic2
 ## SavedVariables: EUIAddonSkinsDB
 
 Core.lua
@@ -18,23 +17,4 @@ Accent.lua
 Widgets.lua
 Scoped.lua
 Menus.lua
-Skins\ForeverCompanion.lua
-Skins\ForeverDungeonJournal.lua
-Skins\RXPGuides.lua
-Skins\Auctionator.lua
-Skins\Spy.lua
-Skins\WhatsTraining.lua
-Skins\ItemRack.lua
-Skins\KiwiFarm.lua
-Skins\Myslot.lua
-Skins\BugSack.lua
-Skins\Altoholic.lua
-Skins\Attune.lua
-Skins\TwitchEmotes.lua
-Skins\Questie.lua
-Skins\DBM.lua
-Skins\AtlasLootContinued.lua
-Skins\GTFO.lua
-Skins\Gargul.lua
-Skins\Details.lua
-Skins\ThreatClassic2.lua
+Loader.lua

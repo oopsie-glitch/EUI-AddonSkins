@@ -1,39 +1,40 @@
-"""Build and verify a versioned addon ZIP from the files in its TOC."""
+"""Build the experimental core + load-on-demand skin bundle."""
 from pathlib import Path
+import json
 import re
 import shutil
 import subprocess
 import sys
 from zipfile import ZipFile, ZIP_DEFLATED
-
 root = Path(__file__).resolve().parents[1]
-addon = root / 'EUIAddonSkins'
-license_bytes = (root / 'LICENSE').read_bytes()
-(addon / 'LICENSE').write_bytes(license_bytes)
-toc = (addon / 'EUIAddonSkins.toc').read_text()
-version = re.search(r'^## Version: (\S+)$', toc, re.M).group(1)
-assert f'ns.VERSION = "{version}"' in (addon / 'Core.lua').read_text(), 'Version mismatch'
-loaded = [line.strip().replace('\\', '/') for line in toc.splitlines() if line.strip() and not line.startswith('#')]
-for path in loaded:
-    assert (addon / path).is_file(), f'Missing TOC file: {path}'
-assert {f.relative_to(addon).as_posix() for f in (addon / 'Skins').glob('*.lua')} == {p for p in loaded if p.startswith('Skins/')}, 'Unloaded skin files would be bundled'
-for name in ['ForeverCompanion', 'ForeverDungeonJournal', 'RXPGuides', 'Auctionator', 'Spy', 'WhatsTraining', 'ItemRack', 'KiwiFarm', 'Myslot', 'BugSack', 'Altoholic', 'Attune', 'TwitchEmotes', 'Questie', 'DBM', 'AtlasLootContinued', 'GTFO', 'Gargul', 'Details', 'ThreatClassic2']:
-    assert f'Skins/{name}.lua' in loaded, f'Skin not loaded: {name}'
+addon = root/'EUIAddonSkins'
+catalog = json.loads((root/'scripts/skin_catalog.json').read_text())
+version = re.search(r'^## Version: (\S+)$', (addon/'EUIAddonSkins.toc').read_text(), re.M).group(1)
+assert f'ns.VERSION = "{version}"' in (addon/'Core.lua').read_text()
+folders = [addon] + [root/f'EUIAddonSkins_{skin}' for skin, _, _ in catalog]
+assert set(root.glob('EUIAddonSkins_*')) == set(folders[1:]), 'Unexpected/missing module directories'
+files = []
+for folder in folders:
+    toc = folder/f'{folder.name}.toc'
+    text = toc.read_text()
+    assert f'## Version: {version}\n' in text
+    if folder != addon:
+        assert '## LoadOnDemand: 1\n' in text and '## Dependencies: EUIAddonSkins\n' in text
+    runtime = [line.strip().replace('\\', '/') for line in text.splitlines() if line.strip() and not line.startswith('#')]
+    assert all((folder/p).is_file() for p in runtime), f'Missing runtime file: {folder}'
+    assert {p.name for p in folder.glob('*.lua')} == set(runtime), f'Unloaded Lua: {folder}'
+    files.extend([toc] + [folder/p for p in runtime])
+    if folder == addon:
+        files += [addon/'LICENSE', addon/'Media/Icon.tga']
 subprocess.run([sys.executable, 'tests/run_lua.py'], cwd=root, check=True)
-archive = root / f'EUIAddonSkins-{version}.zip'
-# Match .pkgmeta's player payload; retain these documents in the repository.
-excluded = {'README.md', 'CHANGELOG.md'}
-files = sorted(f for f in addon.rglob('*') if f.is_file()
-               and f.relative_to(addon).as_posix() not in excluded
-               and not any(part.startswith('.') for part in f.relative_to(addon).parts))
-with ZipFile(archive, 'w', compression=ZIP_DEFLATED) as z:
-    for f in files:
-        z.write(f, f.relative_to(root).as_posix())
+archive = root/f'EUIAddonSkins-{version}.zip'
+with ZipFile(archive, 'w', ZIP_DEFLATED) as z:
+    for path in sorted(files): z.write(path, path.relative_to(root).as_posix())
 with ZipFile(archive) as z:
-    assert z.testzip() is None, 'Corrupt ZIP'
-    assert z.read('EUIAddonSkins/LICENSE') == license_bytes, 'Release license differs from root LICENSE'
-    assert set(z.namelist()) == {f.relative_to(root).as_posix() for f in files}
-    for f in files:
-        assert z.read(f.relative_to(root).as_posix()) == f.read_bytes()
-shutil.copyfile(archive, root / 'EUIAddonSkins.zip')
-print(f'Verified {archive.name}: {len(files)} files, all twenty skins loaded by the TOC')
+    assert z.testzip() is None
+    assert z.read('EUIAddonSkins/LICENSE') == (root/'LICENSE').read_bytes()
+    assert len(z.namelist()) == len(files)
+    assert {p.split('/')[0] for p in z.namelist()} == {p.name for p in folders}
+    for path in files: assert z.read(path.relative_to(root).as_posix()) == path.read_bytes()
+shutil.copyfile(archive, root/'EUIAddonSkins.zip')
+print(f'Verified {archive.name}: {len(files)} files, one core + {len(catalog)} load-on-demand skins')

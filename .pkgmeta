@@ -1,5 +1,4 @@
-# The checkout is wrapped in EUIAddonSkins before move-folders runs.
-# Promote the existing addon subdirectory into that wrapper, avoiding nesting.
+# Promote the core and each load-on-demand module to sibling install folders.
 package-as: EUIAddonSkins
 
 enable-nolib-creation: no
@@ -9,6 +8,26 @@ required-dependencies:
 
 move-folders:
   EUIAddonSkins/EUIAddonSkins: EUIAddonSkins
+  EUIAddonSkins/EUIAddonSkins_Altoholic: EUIAddonSkins_Altoholic
+  EUIAddonSkins/EUIAddonSkins_AtlasLootContinued: EUIAddonSkins_AtlasLootContinued
+  EUIAddonSkins/EUIAddonSkins_Attune: EUIAddonSkins_Attune
+  EUIAddonSkins/EUIAddonSkins_Auctionator: EUIAddonSkins_Auctionator
+  EUIAddonSkins/EUIAddonSkins_BugSack: EUIAddonSkins_BugSack
+  EUIAddonSkins/EUIAddonSkins_DBM: EUIAddonSkins_DBM
+  EUIAddonSkins/EUIAddonSkins_Details: EUIAddonSkins_Details
+  EUIAddonSkins/EUIAddonSkins_ForeverCompanion: EUIAddonSkins_ForeverCompanion
+  EUIAddonSkins/EUIAddonSkins_ForeverDungeonJournal: EUIAddonSkins_ForeverDungeonJournal
+  EUIAddonSkins/EUIAddonSkins_GTFO: EUIAddonSkins_GTFO
+  EUIAddonSkins/EUIAddonSkins_Gargul: EUIAddonSkins_Gargul
+  EUIAddonSkins/EUIAddonSkins_ItemRack: EUIAddonSkins_ItemRack
+  EUIAddonSkins/EUIAddonSkins_KiwiFarm: EUIAddonSkins_KiwiFarm
+  EUIAddonSkins/EUIAddonSkins_Myslot: EUIAddonSkins_Myslot
+  EUIAddonSkins/EUIAddonSkins_Questie: EUIAddonSkins_Questie
+  EUIAddonSkins/EUIAddonSkins_RXPGuides: EUIAddonSkins_RXPGuides
+  EUIAddonSkins/EUIAddonSkins_Spy: EUIAddonSkins_Spy
+  EUIAddonSkins/EUIAddonSkins_ThreatClassic2: EUIAddonSkins_ThreatClassic2
+  EUIAddonSkins/EUIAddonSkins_TwitchEmotes: EUIAddonSkins_TwitchEmotes
+  EUIAddonSkins/EUIAddonSkins_WhatsTraining: EUIAddonSkins_WhatsTraining
 
 # Paths here are relative to the repository, before folder moves.
 ignore:

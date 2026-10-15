@@ -1,5 +1,5 @@
 local ADDON, ns = ...
-ns.VERSION = "1.2.0"
+ns.VERSION = "1.4.0-alpha.1"
 ns.modules = {}
 
 local function Print(message)
@@ -27,6 +27,20 @@ end
 local function Register()
     local EUI = _G.EllesmereUI
     if not (EUI and EUI.RegisterSkin) then return end
+    if ns.skinCatalog then
+        for _, entry in ipairs(ns.skinCatalog) do
+            if not entry.registered and ns.TargetEnabled(entry) then
+                entry.registered = true
+                EUI.RegisterSkin("EUI AddonSkins - " .. entry.label, function(S)
+                    entry.skin = S
+                    for _, module in ipairs(ns.modules) do if module.id == entry.id then module.skin = S end end
+                    ns.LoadSkin(entry)
+                    TryModules()
+                end)
+            end
+        end
+        return
+    end
     for _, module in ipairs(ns.modules) do
         if not module.registered then
             module.registered = true
@@ -39,13 +53,14 @@ local function Register()
     end
 end
 
--- All supported skins appear in EUI options, even when the target is absent.
--- An eligible callback waits for ADDON_LOADED if its target loads later.
+-- Runtime modules inherit the already registered catalog toggle when loaded.
 function ns.RegisterModule(id, label, available, install)
     for _, module in ipairs(ns.modules) do
         if module.id == id then error("Duplicate skin module: " .. id) end
     end
-    table.insert(ns.modules, { id = id, label = label, available = available, install = install })
+    local entry = ns.skinCatalogByID and ns.skinCatalogByID[id]
+    table.insert(ns.modules, { id = id, label = label, available = available, install = install,
+        registered = entry and entry.registered, skin = entry and entry.skin })
     Register()
     TryModules()
 end
@@ -53,14 +68,19 @@ end
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_LOGIN")
+events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:SetScript("OnEvent", function(_, event)
     EUIAddonSkinsDB = EUIAddonSkinsDB or {}
     Register()
+    if ns.skinCatalog then
+        for _, entry in ipairs(ns.skinCatalog) do ns.LoadSkin(entry) end
+    end
     TryModules()
     if event == "PLAYER_LOGIN" and not (_G.EllesmereUI and _G.EllesmereUI.RegisterSkin) then
         Print("Skin API unavailable. Update EllesmereUI and enable Blizzard Skins+.")
     end
 end)
+ns.RefreshRegistrations = Register
 Register()
 
 SLASH_EUIADDONSKINS1 = "/euiskins"

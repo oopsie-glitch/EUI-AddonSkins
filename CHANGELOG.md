@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0-alpha.1 — Load-on-demand experiment (untagged)
+
+- Split the twenty stable skins into optional load-on-demand addon modules.
+- Register EUI toggles only for installed, enabled targets.
+- Load skins after their target loads, with combat deferral and no polling.
+- Preserve existing EUI toggle names and saved variables.
+
 ## 1.2.0 — Details! and ThreatClassic2
 
 - Added Details! meter, options, breakdown/report window and pop-out menu skins.

@@ -75,7 +75,7 @@ assert(tab.tabSkinned and tab.selected and not tab.buttonSkinned)
 selected = false; H.Scan(root, function() end, visit); assert(not tab.selected)
 assert(input.inputOptions.padInput and progress.fillSkinned and list.headersSkinned and iconButton.icon.borderParent == iconButton)
 -- RXP background-only shells on both existing window versions.
-assert(loadfile('EUIAddonSkins/Skins/RXPGuides.lua'))('EUIAddonSkins', ns)
+assert(loadfile('EUIAddonSkins_RXPGuides/Skin.lua'))('EUIAddonSkins', ns)
 local legacy = frame(); legacy.backdrop = {edge = {}, guideName = {}, bottom = {}}
 legacy.BottomFrame = frame(); legacy.BottomFrame:SetBackdrop({bgFile = 'white', edgeFile = 'border'})
 local step = frame(); step:SetBackdrop({bgFile = 'white', edgeFile = 'border'})

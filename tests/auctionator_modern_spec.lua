@@ -5,7 +5,7 @@ for _, name in ipairs({'AuctionFrame', 'AuctionFrameTab1', 'AuctionFrameTab2', '
     'AuctionatorTabs_Shopping', 'AuctionatorConfigLazyFrame', 'AuctionatorConfigLoadedFrame', 'AuctionatorDialog1',
     'AuctionatorTabContainerMixin', 'AuctionatorExportTextFrameMixin'}) do _G[name] = nil end
 local timers, modules, events, created, looks, hookCount = {}, {}, {}, 0, {}, 0
-local enabled, combat = true, false
+local enabled, combat, fontFace = true, false, 'eui-font'
 local ns = {IsEnabled = function() return enabled end, AttachAccent = function() end}
 function ns.RegisterModule(id, _, available, install) modules[id] = {available = available, install = install} end
 C_Timer = {After = function(_, fn) timers[#timers + 1] = fn end}
@@ -109,7 +109,7 @@ local function frame(kind, parent, name)
     function f:GetNormalTexture() return self.normal end
     function f:SetJustifyH(v) self.justifyH = v end
     function f:SetJustifyV(v) self.justifyV = v end
-    function f:SetTextInsets(...) self.insets = {...} end
+    function f:SetTextInsets(...) self.insets = {...}; self.insetWrites = (self.insetWrites or 0) + 1 end
     function f:GetID() return self.id end
     function f:GetLeft() return self.l end
     function f:GetRight() return self.r end
@@ -150,7 +150,8 @@ function S.SquareIcon(icon, owner) icon.square = (icon.square or 0) + 1; icon.ow
 function S.White(fs) fs.color = {1, 1, 1} end
 function S.GetAccentColor() return 0.1, 0.8, 0.6 end
 function S.Dropdown(f) f.dropdown = true end
-for _, key in ipairs({'Font', 'FadeNineSlice', 'CloseButton', 'Checkbox', 'StateButtonLabel', 'PageButton'}) do S[key] = function() end end
+function S.Font(f) f.fontFace = fontFace end
+for _, key in ipairs({'FadeNineSlice', 'CloseButton', 'Checkbox', 'StateButtonLabel', 'PageButton'}) do S[key] = function() end end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
 assert(loadfile('EUIAddonSkins/Skins/Auctionator.lua'))('EUIAddonSkins', ns)
 
@@ -192,9 +193,22 @@ local spinner = selling.HistoricalPriceInset:CreateTexture(nil, 'OVERLAY')
 local sale = frame('Frame', selling); selling.SaleItemFrame = sale
 sale.regions = {fontString('Quantity'), fontString('24'), fontString('Deposit:', 1, 0.82, 0)}
 sale.Quantity = frame('EditBox', sale)
+sale.Quantity.insets = {0, 0, 8, 0}; sale.Quantity.fontFace = 'native-number-font'
+local durationLabels = {}
+for _, hours in ipairs({2, 8, 24}) do
+    local choice = frame('Frame', sale); choice.isAuctionatorRadio = true
+    choice.RadioButton = frame('CheckButton', choice)
+    local button = choice.RadioButton
+    button.GetChecked = function() return false end
+    button.SetChecked = function() end
+    button.Label = fontString(tostring(hours)); anchors(button.Label)
+    button.regions[#button.regions + 1] = button.Label
+    durationLabels[#durationLabels + 1] = button.Label
+end
 local price = frame('Frame', sale); price.MoneyInput = frame('Frame', price); local moneyInput = price.MoneyInput
 for _, key in ipairs({'GoldBox', 'SilverBox', 'CopperBox'}) do
     local box = frame('EditBox', moneyInput); moneyInput[key] = box
+    box.insets = {0, 0, 8, 0}; box.fontFace = 'native-number-font'
     box.regions = {texture('BACKGROUND', 8, 20), texture('ARTWORK', 13, 13)}
 end
 local post = frame('Button', sale); post.label = fontString('Post')
@@ -298,6 +312,19 @@ local gold = moneyInput.GoldBox
 assert(gold.regions[2].alpha == 1 and gold.h == 19 and moneyInput.CopperBox.w == 96, 'copper still touches Post')
 assert(moneyInput.GoldBox.w == 100, 'boxes without a flush neighbour were narrowed')
 assert(sale.Quantity.justifyH == 'CENTER' and sale.Quantity.insets[1] == 0)
+assert(sale.Quantity.justifyV == 'MIDDLE' and sale.Quantity.insets[3] == 0 and sale.Quantity.insets[4] == 0)
+assert(sale.Quantity.fontFace == fontFace, 'quantity kept the native number font')
+for _, key in ipairs({'GoldBox', 'SilverBox', 'CopperBox'}) do
+    local input = moneyInput[key]
+    assert(input.justifyH == 'RIGHT' and input.justifyV == 'MIDDLE' and input.fontFace == fontFace)
+    assert(input.insets[1] == 6 and input.insets[2] == 20 and input.insets[3] == 0 and input.insets[4] == 0,
+        'money text did not clear the native coin or vertical template padding')
+end
+for _, label in ipairs(durationLabels) do
+    assert(label.fontFace == fontFace and #label.points == 1 and label.points[1][1] == 'LEFT')
+    assert(label.points[1][3] == 'RIGHT' and label.points[1][4] == 4 and label.points[1][5] == 0,
+        'duration label not centered beside its radio button')
+end
 assert(sale.regions[1].color[2] == 0.82 and sale.regions[2].color[2] == 1)
 -- Refresh: white house glyph, original art faded.
 local cancelGlyph = cancelRefresh.regions[#cancelRefresh.regions]
@@ -331,12 +358,16 @@ local before, hooksBefore = created, hookCount
 for _ = 1, 10 do modules.Auctionator.refresh(); flush() end
 assert(created == before, 'warm refresh created UI objects')
 assert(hookCount == hooksBefore, 'warm refresh duplicated secure hooks')
+assert(sale.Quantity.insetWrites == 1 and moneyInput.GoldBox.insetWrites == 1, 'warm refresh changed numeric layout repeatedly')
 assert(gold.h == 19 and moneyInput.CopperBox.w == 96 and shoppingTab.h == 22 and shopping.ExportButton.w == 106)
 assert(prices.points[1][4] == 10 and shopping.SearchOptions.points[1][5] == -6, 'warm refresh shifted again')
 -- A theme restrip must not remove loading art from the foreground.
 selling.shown = true; spinner:SetAlpha(0)
+fontFace = 'new-eui-font'
 for _, fn in ipairs(looks) do fn() end; flush()
 assert(spinner.alpha == 1, 'theme refresh lost foreground artwork')
+assert(sale.Quantity.fontFace == fontFace and moneyInput.GoldBox.fontFace == fontFace
+    and durationLabels[1].fontFace == fontFace, 'numeric fonts did not follow theme change')
 selling.shown = false
 -- Layout work is deferred in combat; regeneration applies it once.
 local combatTab = frame('Button'); combatTab.frameRef = frame('Frame', host); combatTab.frameRef.shown = false

@@ -18,7 +18,7 @@ end, function(S, module)
     local scrollChrome, itemBorders, radioMarks, layouts = {}, {}, {}, {}
     local rows, squares, squaring, zones, money, centered, glyphs, labels, darkTabs, chained = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
     local coppers, cleared, rowWidths, aligned, widgets, refreshes, stripAt = {}, {}, {}, {}, {}, {}, {}
-    local scanned, refreshHosts = {}, {}
+    local scanned, refreshHosts, radioLabels = {}, {}, {}
     local zoneHost, zoneAlpha
     local refresh, waiting
     local discoveryDirty = true
@@ -116,6 +116,15 @@ end, function(S, module)
     local function Radio(button)
         if not H.Allowed(button) then return end
         S.Checkbox(button)
+        local label = button.Label
+        if Modern() and H.Allowed(label) then
+            H.Font(label)
+            if radioLabels[button] ~= label then
+                radioLabels[button] = label
+                label:ClearAllPoints()
+                label:SetPoint("LEFT", button, "RIGHT", 4, 0)
+            end
+        end
         if not button.CreateTexture or not button.GetChecked then return end
         if not radioMarks[button] then
             local mark = button:CreateTexture(nil, "OVERLAY", nil, 7)
@@ -249,6 +258,17 @@ end, function(S, module)
             H.Hook(box, "Update", function() box:ForEachFrame(RowIfCells) end)
         end
     end
+    -- Numeric edit boxes retain their own font and template text insets; the
+    -- generic frame walk only visits FontStrings. Align the input text itself.
+    local function Number(box, justify, rightInset)
+        if not H.Allowed(box) or box:GetObjectType() ~= "EditBox" then return end
+        if S.Font then S.Font(box) end
+        if centered[box] then return end
+        centered[box] = true
+        box:SetJustifyH(justify)
+        if box.SetJustifyV then box:SetJustifyV("MIDDLE") end
+        box:SetTextInsets(justify == "CENTER" and 0 or 6, rightInset or 0, 0, 0)
+    end
     -- Coin icons are small square textures on each box; edge art is tall and thin.
     local function Money(f)
         for _, key in ipairs({"GoldBox", "SilverBox", "CopperBox"}) do
@@ -268,7 +288,9 @@ end, function(S, module)
                 -- EUI's sell inputs run 5px shorter than Blizzard's.
                 local height = box.GetHeight and box:GetHeight()
                 if height and height > 5 then box:SetHeight(height - 5) end
+                Number(box, "RIGHT", #coins > 0 and 20 or 6)
             end
+            if H.Allowed(box) and money[box] and S.Font then S.Font(box) end
         end
         if H.Allowed(f.CopperBox) and not money[f] then money[f] = true; coppers[#coppers + 1] = f.CopperBox end
     end
@@ -302,12 +324,9 @@ end, function(S, module)
         else box:SetWidth(box:GetWidth() - shrink) end
     end
     local function Center(box)
-        if not H.Allowed(box) or box:GetObjectType() ~= "EditBox" or centered[box] then return end
-        centered[box] = true
+        if not H.Allowed(box) or box:GetObjectType() ~= "EditBox" then return end
         S.EditBox(box)
-        box:SetJustifyH("CENTER")
-        if box.SetJustifyV then box:SetJustifyV("MIDDLE") end
-        box:SetTextInsets(0, 0, 0, 0)
+        Number(box, "CENTER")
     end
     -- Option widgets (search options, config) wrap their dropdown, whose arrow is a
     -- child button of its own, and a per-field reset button showing an icon texture.

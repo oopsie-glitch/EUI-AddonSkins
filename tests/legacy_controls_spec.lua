@@ -348,6 +348,90 @@ do
 end
 end
 
+-- Altoholic's summary is a data table, not a grid of independent action boxes.
+do
+    local originalButton, originalInset, originalCreate = S.Button, S.Inset, CreateFrame
+    S.Inset = function(f)
+        f.inset = true
+        for _, region in ipairs(f.regions) do if region.kind == 'Texture' then region:SetAlpha(0) end end
+    end
+    S.Button = function(f, keys)
+        local keep = {}; for _, key in ipairs(keys or {}) do keep[#keep + 1] = key end
+        keep[#keep + 1] = 'fill'; keep[#keep + 1] = 'hover'
+        originalButton(f, keep)
+        primitive(f); f.fill.layer = 'BACKGROUND'; f.hover.layer = 'HIGHLIGHT'
+        f.fill:SetColorTexture(0.08, 0.08, 0.08, 0.92)
+    end
+    CreateFrame = function(kind, name, parent)
+        local f = originalCreate(kind, name, parent)
+        function f:SetAllPoints(other) self.allPoints = other end
+        return f
+    end
+    local root = frame('Frame'); AltoholicFrame = root; root.Tabs = {}
+    root.Inset = frame('Frame', nil, root); root.Inset.Bg = root.Inset:CreateTexture()
+    local tab = frame('Frame', nil, root)
+    tab.CategoriesList = frame('Frame', nil, tab); tab.CategoriesList.Background = tab.CategoriesList:CreateTexture()
+    tab.Background = frame('Frame', nil, tab); tab.Background.bg = tab.Background:CreateTexture()
+    tab.HeaderContainer = frame('Frame', nil, tab)
+    local category = frame('Button', nil, tab.CategoriesList)
+    category.Text = category:CreateFontString(nil, nil, 'native')
+    category.data = {isSelected = true}
+    category.SetCategory = function() return 'category' end
+    category.SetSelected = function(self, selected) self.data = {isSelected = selected}; return 'selection' end
+    local row = frame('Button', nil, tab); row.Collapse = frame('Button', nil, row)
+    row.DrawRealmLine = function() return 'realm' end
+    local function Cell()
+        local f = frame('Button', nil, row); f.Text = f:CreateFontString(nil, nil, 'native')
+        f.Text.textColor = {0.2, 0.8, 0.1}; f.geometry = 'native-column'
+        f.SetColumnData = function(self) self.Text:SetFont('native'); return 'data', nil, 4 end
+        f.SetColumnTotal = function() return 'total' end
+        f.hooks.OnClick = function() f.clicked = (f.clicked or 0) + 1 end
+        return f
+    end
+    row.Item1 = Cell()
+    local header = frame('Button', nil, tab.HeaderContainer)
+    header.Text = header:CreateFontString(nil, nil, 'native')
+    header.Arrow = header:CreateTexture(); header.normal = header.Arrow
+    header.DrawArrow = function(self, ascending) self.Arrow:SetShown(true); self.Arrow.direction = ascending; return 'sort' end
+    local action = frame('Button', nil, tab); action.label = action:CreateFontString(nil, nil, 'native')
+    root.SwitchToTab = function() row.Item2 = Cell(); return 'tab-native' end
+    modules.Altoholic.install(S, modules.Altoholic); flush()
+    assert(root.Inset.inset and not root.Inset.panel and root.Inset.Bg.alpha == 0, 'main inset became a black subpanel')
+    assert(tab.Background.bg.alpha == 0 and tab.CategoriesList.Background.alpha == 0, 'native content art survived')
+    assert(#tab.Background.children == 1 and tab.Background.children[1].allPoints == tab.Background)
+    assert(tab.Background.children[1].regions[1].color[4] == 0.02, 'results wash lost its restrained contrast')
+    assert(row.Item1.fill.color[4] == 0 and row.Item1.hover.color[4] == 0.06, 'summary cell became an opaque action button')
+    assert(row.Item1.pixelBorder.regions[1].color[4] == 0 and header.pixelBorder.regions[1].color[4] == 0)
+    assert(action.fill.color[4] == 0.92 and action.pixelBorder.regions[1].color[4] == 1, 'actual action lost its control surface')
+    assert(category.fill.color[4] == 0 and category.euiSelection.color[4] == 0.2,
+        'transparent category lost its selected fill')
+    assert(category:SetSelected(false) == 'selection' and category.euiSelection.color[4] == 0)
+    assert(header:DrawArrow(true) == 'sort' and header.Arrow.alpha == 1 and header.Arrow.shown and header.Arrow.direction)
+    local a, b, c = row.Item1:SetColumnData()
+    assert(a == 'data' and b == nil and c == 4 and row.Item1.Text.font == 'eui')
+    row.Item1.hooks.OnClick(); flush()
+    assert(row.Item1.Text.textColor[2] == 0.8 and row.Item1.geometry == 'native-column'
+        and row.Item1.clicked == 1, 'summary semantics, alignment or action changed')
+    auditScans[root] = 0
+    for _ = 1, 100 do row.Item1:SetColumnData() end
+    assert(auditScans[root] == 0, 'cell redraw traversed the entire Altoholic window')
+    assert(root:SwitchToTab() == 'tab-native' and row.Item2.fill.color[4] == 0, 'lazy tab controls were not styled synchronously')
+    local hooks, count, layers = row.Item1.SetColumnData, #row.Item1.regions, #tab.Background.children
+    for _ = 1, 10 do modules.Altoholic.refresh(); flush() end
+    assert(row.Item1.SetColumnData == hooks and #row.Item1.regions == count and #tab.Background.children == layers,
+        'warm styling duplicated objects or hooks')
+    row.Item1.fill:SetColorTexture(0.08, 0.08, 0.08, 0.92)
+    modules.Altoholic.refresh(); flush()
+    assert(row.Item1.fill.color[4] == 0 and header.Arrow.alpha == 1, 'theme repaint restored a boxed cell or lost the sort indicator')
+    combat = true; root:SwitchToTab(); assert(not row.Item2.fill, 'new combat cell was skinned')
+    combat = false
+    for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(row.Item2.fill.color[4] == 0)
+    enabled = false; root:SwitchToTab(); assert(not row.Item2.fill, 'disabled skin styled a new tab')
+    enabled = true
+    S.Button, S.Inset, CreateFrame = originalButton, originalInset, originalCreate
+end
+
 assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)
 ForeverDungeonJournal_NS = {THEMES = {}, ToggleJournal = function() end}
 ForeverDungeonJournalFrame = frame('Frame')

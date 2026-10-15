@@ -2,16 +2,75 @@ local ADDON, ns = ...
 local function DefineSkin()
 ns.RegisterScopedSkin("Altoholic", "Altoholic", {
     softBorders = true,
+    panels = false,
+    immediateShow = true,
+    borderlessButtons = function(f)
+        local parent = f.GetParent and f:GetParent()
+        return type(f.SetCategory) == "function" or type(f.SetColumnData) == "function" or type(f.SetColumnTotal) == "function"
+            or type(f.DrawArrow) == "function" or (parent and type(parent.DrawRealmLine) == "function")
+    end,
     available = function() return _G.Altoholic ~= nil end,
     roots = function() return ns.SkinRoots({"AltoholicFrame", "AltoMessageBox"}, {bottomBar = 24}) end,
     hooks = function(C, refresh)
         if not C.StyleCategory then
-            local H = C.H
+            local H, S = C.H, C.S
+            local surfaces, clear, zones = {}, {}, {}
+            C.ClearInset = function(f)
+                if not H.Allowed(f) then return end
+                if not clear[f] then
+                    clear[f] = true
+                    if S.Inset then S.Inset(f) end
+                    H.Fade(f.bg); H.Fade(f.Bg)
+                    if f.NineSlice then S.FadeNineSlice(f.NineSlice) end
+                end
+                if f.SetBackdrop then f:SetBackdrop(nil) end
+            end
+            C.Zone = function(f, wash)
+                if not H.Allowed(f) then return end
+                C.ClearInset(f)
+                if wash and not zones[f] then
+                    zones[f] = true
+                    -- A separate layer survives EUI's own inset refreshes.
+                    local layer = CreateFrame("Frame", nil, f)
+                    layer:SetAllPoints(f)
+                    if f.GetFrameLevel and layer.SetFrameLevel then layer:SetFrameLevel(f:GetFrameLevel()) end
+                    local fill = layer:CreateTexture(nil, "BACKGROUND")
+                    fill:SetAllPoints(layer); fill:SetColorTexture(1, 1, 1, 0.02)
+                end
+            end
+            C.StyleCell = function(button) C.FlatAction(button) end
+            C.StyleHeader = function(button) C.FlatAction(button, {"Arrow"}) end
+            C.FlatAction = function(button, keep, selected)
+                if not H.Allowed(button) then return end
+                if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                local surface, before = surfaces[button]
+                if not surface then
+                    before = {}
+                    for _, region in ipairs(H.Regions(button)) do before[region] = true end
+                end
+                if selected ~= nil then H.Selection(button, selected)
+                else H.Action(button, keep) end
+                if before then
+                    surface = {}; surfaces[button] = surface
+                    for _, region in ipairs(H.Regions(button)) do
+                        if not before[region] and region ~= button.euiSelection and H.Texture(region) then
+                            local layer = region:GetDrawLayer()
+                            if layer == "BACKGROUND" or layer == "HIGHLIGHT" then
+                                surface[#surface + 1] = {region, layer}
+                            end
+                        end
+                    end
+                end
+                for _, entry in ipairs(surface) do
+                    if entry[2] == "BACKGROUND" then entry[1]:SetColorTexture(0, 0, 0, 0)
+                    else entry[1]:SetColorTexture(1, 1, 1, 0.06) end
+                end
+            end
             local function Paint(button)
                 if not H.Allowed(button) then return end
                 if InCombatLockdown and InCombatLockdown() then refresh(); return end
-                H.Selection(button, button.data and button.data.isSelected == true)
-                for _, key in ipairs({"NormalTexture", "SelectedTexture", "HighlightTexture"}) do H.Fade(button[key]) end
+                C.FlatAction(button, nil, button.data and button.data.isSelected == true or false)
+                for _, key in ipairs({"NormalTexture", "SelectedTexture", "HighlightTexture", "Lines"}) do H.Fade(button[key]) end
             end
             C.StyleCategory = function(button)
                 if not H.Allowed(button) or type(button.SetCategory) ~= "function" or type(button.SetSelected) ~= "function" then return end
@@ -22,11 +81,17 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
                 for _, button in pairs(list.Buttons or {}) do C.StyleCategory(button) end
             end
         end
-        for _, method in ipairs({"SwitchToTab", "SetTabs", "ToggleUI", "SetPortraitToUnit"}) do C.H.Hook(_G.AltoholicFrame, method, refresh) end
+        for _, method in ipairs({"SwitchToTab", "SetTabs"}) do C.H.Hook(_G.AltoholicFrame, method, C.RefreshNow) end
+        for _, method in ipairs({"ToggleUI", "SetPortraitToUnit"}) do C.H.Hook(_G.AltoholicFrame, method, refresh) end
     end,
     visit = function(C, f, kind, refresh)
         local H, S, main = C.H, C.S, _G.AltoholicFrame
         if f == main then H.Portrait(f, true); ns.AttachAccent(S, f) end
+        if f.CategoriesList and f.Background then
+            C.Zone(f.CategoriesList, false)
+            C.Zone(f.Background, true)
+            C.Zone(f.HeaderContainer, true)
+        end
         if type(f.UpdateCategories) == "function" and type(f.Buttons) == "table" then
             H.Hook(f, "UpdateCategories", C.StyleCategories)
             C.StyleCategories(f)
@@ -64,6 +129,20 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
                 HideUnusedRealmCells(f)
             end
         end
+        if kind == "Button" then
+            local parent = f.GetParent and f:GetParent()
+            if type(f.SetColumnData) == "function" or type(f.SetColumnTotal) == "function"
+                or (parent and type(parent.DrawRealmLine) == "function" and f ~= parent.Collapse) then
+                H.Hook(f, "SetColumnData", C.StyleCell); H.Hook(f, "SetColumnTotal", C.StyleCell)
+                C.FlatAction(f)
+                return true
+            end
+            if type(f.DrawArrow) == "function" and f.Arrow then
+                H.Hook(f, "DrawArrow", C.StyleHeader)
+                C.StyleHeader(f)
+                return true
+            end
+        end
         if kind == "Button" and main then
             for index, tab in ipairs(main.Tabs or {}) do
                 if f == tab then
@@ -72,8 +151,8 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
                 end
             end
         end
-        if f.Background then H.Fade(f.Background) end
-        if f.Bg then H.Fade(f.Bg) end
+        if H.Texture(f.Background) then H.Fade(f.Background) end
+        if H.Texture(f.Bg) then H.Fade(f.Bg) end
         local resize = false
         if kind == "Button" and f.GetPoint and f.GetParent and f:GetParent() == main
             and f.GetWidth and f:GetWidth() <= 25 then
@@ -128,6 +207,12 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
             end
             local label = (f.GetFontString and f:GetFontString()) or f.Text or f.text
             if label and not f.Icon and not f.icon then H.Action(f); return true end
+        end
+        if H.Allowed(f.Inset) then
+            C.ClearInset(f.Inset)
+            if f.CloseButton and H.Allowed(f.CloseButton) then S.CloseButton(f.CloseButton) end
+            for _, region in ipairs(H.Regions(f)) do H.Font(region) end
+            return true -- Prevent the generic adapter adding an opaque inset panel.
         end
     end,
 })

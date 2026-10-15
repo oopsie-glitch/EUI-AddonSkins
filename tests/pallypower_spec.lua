@@ -284,7 +284,7 @@ local fills = {}; for _, t in ipairs(dividerGroup.regions) do if t ~= divider th
 assert(#fills == 1 and fills[1].color[4] == 0.65)
 local secondFill; for _, t in ipairs(secondColumn.regions) do if t ~= secondLine then secondFill = t end end
 assert(secondFill.color[1] > fills[1].color[1], 'alternating columns lack contrast')
-assert(PallyPowerAnchor.normal.path == 'solid' and PallyPowerAnchor.checkedArt.path == 'solid')
+assert(PallyPowerAnchor.normal.path == 'native' and PallyPowerAnchor.checkedArt.path == 'native', 'skin changed the original lock button artwork')
 PallyPowerAnchor.hooks.OnClick(PallyPowerAnchor, 'RightButton'); assert(PallyPowerAnchor.action == 'RightButton')
 assert(options.check == nil and not options.shell, 'embedded options received a nested shell')
 assert(grid.Icon.alpha == 1 and grid.Icon.path == 'spell-art' and grid.Icon.crop[1] == 0.08)

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0-alpha.7 — Original PallyPower anchor (untagged)
+
+- Restore PallyPower's original drag/lock button artwork.
+
 ## 1.3.0-alpha.6 — PallyPower anchor (untagged)
 
 - Flatten the drag/lock anchor artwork and use the EUI accent for its checked state.

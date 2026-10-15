@@ -1,6 +1,6 @@
 # PallyPower beta alpha
 
-Version: `1.3.0-alpha.6` on the untagged `pallypower-alpha` branch, based on `development` at `7e8eba3`. Includes the existing Altoholic alpha fixes. No CurseForge/Wago release or GitHub Release is created.
+Version: `1.3.0-alpha.7` on the untagged `pallypower-alpha` branch, based on `development` at `7e8eba3`. Includes the existing Altoholic alpha fixes. No CurseForge/Wago release or GitHub Release is created.
 
 ## Target
 

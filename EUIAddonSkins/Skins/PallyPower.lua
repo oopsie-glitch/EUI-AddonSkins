@@ -72,17 +72,6 @@ ns.RegisterScopedSkin("PallyPower", "PallyPower", {
         Add(dialog and dialog.OpenFrames and dialog.OpenFrames.PallyPower, nil, {noTopBar = true, noAccent = true})
         C.titleBar = P.titleBar or _G.PallyPowerTitleBar
         if C.H.Allowed(C.titleBar) then Add(C.titleBar, "controls") end
-        -- The native anchor inherits protection from the buff root. Replace only
-        -- its existing artwork out of combat; retain checked state and all actions.
-        local anchor = _G.PallyPowerAnchor
-        if anchor and not (anchor.IsForbidden and anchor:IsForbidden())
-            and not (InCombatLockdown and InCombatLockdown()) then
-            local normal = anchor.GetNormalTexture and anchor:GetNormalTexture()
-            local checked = anchor.GetCheckedTexture and anchor:GetCheckedTexture()
-            local r, g, b = C.S.GetAccentColor()
-            if normal then normal:SetColorTexture(0.15, 0.15, 0.17, 1) end
-            if checked then checked:SetColorTexture(r, g, b, 0.85) end
-        end
         -- Never shell/scan the secure buff hierarchy or its Forever flyout covers.
         BuffButton(C, P.autoButton or _G.PallyPowerAuto)
         BuffButton(C, P.rfButton or _G.PallyPowerRF)

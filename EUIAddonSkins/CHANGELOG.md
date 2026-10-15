@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1-alpha.1 — BugSack cleanup (untagged)
+
+- Contain the header icon and keep the session caption free of button styling.
+- Remove duplicate navigation arrows and native button artwork.
+- Compact the footer, place tabs inside the window and improve disabled-label contrast.
+
 ## 1.2.0 — Details! and ThreatClassic2
 
 - Added Details! meter, options, breakdown/report window and pop-out menu skins.

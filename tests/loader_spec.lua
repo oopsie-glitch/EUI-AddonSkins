@@ -2,6 +2,7 @@ local ns, entries, handlers, installed, loaded, disabled = {}, {}, {}, {}, {}, {
 local combat, attempts, executed, errors = false, {}, {}, {}
 EUIAddonSkinsDB = {}; SlashCmdList = {}; DEFAULT_CHAT_FRAME = {AddMessage = function() end}
 UnitName = function() return 'Tester' end
+UnitGUID = function() return 'Player-Tester' end
 InCombatLockdown = function() return combat end
 geterrorhandler = function() return function(e) errors[#errors + 1] = e end end
 CreateFrame = function()
@@ -10,7 +11,10 @@ end
 local function event(e, addon) for _, fn in ipairs(handlers) do fn(nil, e, addon) end end
 C_AddOns = {
     GetAddOnInfo = function(name) if installed[name] then return name end end,
-    GetAddOnEnableState = function(name, character) assert(character == 'Tester'); return disabled[name] and 0 or 2 end,
+    GetAddOnEnableState = function(name, character)
+        if character == 'Tester' then return 2 end -- Reproduce misleading name lookup.
+        assert(character == 'Player-Tester'); return disabled[name] and 0 or 2
+    end,
     IsAddOnLoaded = function(name) return loaded[name] end,
     LoadAddOn = function(name)
         assert(not combat); attempts[name] = (attempts[name] or 0) + 1
@@ -52,7 +56,29 @@ assert(attempts.EUIAddonSkins_BugSack == 1 and attempts.EUIAddonSkins_Questie ==
 entries['EUI AddonSkins - Details!']({IsEnabled = function() return true end}); assert(executed.Details)
 local report = ns.LoaderDiagnostics()
 assert(report:find('BugSack: true', 1, true) and report:find('Spy: nil', 1, true))
-assert(report:find('modern(current)', 1, true) and report:find(ns.VERSION, 1, true))
+assert(report:find('modern(account)', 1, true) and report:find(ns.VERSION, 1, true))
+-- The supplied diagnostic report: account state 1 must not imply enabled
+-- for this player; a name lookup misleadingly reports 2 for disabled addons.
+local account = {Altoholic=1, AtlasLootContinued=0, Attune=0, Auctionator=0,
+    BugSack=2, ["DBM-Core"]=0, ["DBM-GUI"]=0, Details=2, ForeverCompanion=0,
+    ForeverDungeonJournal=2, GTFO=0, Gargul=0, ItemRack=0, ItemRackOptions=0,
+    KiwiFarm=1, Myslot=1, Questie=1, RXPGuides=1, Spy=1, ThreatClassic2=1,
+    TwitchEmotes=0, WhatsTraining=0}
+local savedState = C_AddOns.GetAddOnEnableState
+UnitGUID = function() return 'Player-Reported' end
+C_AddOns.GetAddOnInfo = function(name) return name end
+C_AddOns.GetAddOnEnableState = function(name, character)
+    if character == nil then return account[name] or 0 end
+    if character == 'Tester' then return (name == 'ItemRack' or name == 'ItemRackOptions') and 0 or 2 end
+    assert(character == 'Player-Reported')
+    return (name == 'BugSack' or name == 'Details' or name == 'ForeverDungeonJournal') and 2 or 0
+end
+for _, entry in ipairs(ns.skinCatalog) do
+    local expected = entry.id == 'BugSack' or entry.id == 'Details' or entry.id == 'ForeverDungeonJournal'
+    assert(ns.TargetEnabled(entry) == expected, 'GUID filter ignored character overrides: ' .. entry.id)
+end
+UnitGUID = function() return 'Player-Tester' end
+C_AddOns.GetAddOnEnableState = savedState
 -- Legacy API signatures: character precedes addon name.
 local modern = C_AddOns
 C_AddOns = nil

@@ -1,6 +1,6 @@
 # Load-on-demand alpha
 
-Version `1.4.0-alpha.3`, untagged branch `loader-alpha`, based on stable `b8e0125`. This experiment does not merge PallyPower, BugSack or Altoholic development branches. No release tag or platform upload is created.
+Version `1.4.0-alpha.4`, untagged branch `loader-alpha`, based on stable `b8e0125`. This experiment does not merge PallyPower, BugSack or Altoholic development branches. No release tag or platform upload is created.
 
 ## Installation and behavior
 
@@ -27,3 +27,7 @@ The core ships matching generic, Camelot and Mainline TOCs. The official package
 ## Diagnostics
 
 `/euiskins diagnostics` opens a copyable report only on request. It records the executing code version, TOC metadata version, target and skin loaded flags, EUI registration state and raw enable-state results from modern/default-character, modern/named-character and legacy API calls. This build does not claim to resolve the reported remaining registration issue. Diagnostic collection does not change addon enable states or load targets.
+
+## Character enable-state correction
+
+Alpha.4 follows modern Blizzard AddonList.lua and passes UnitGUID("player") to C_AddOns.GetAddOnEnableState. Passing UnitName can resolve a default enabled state on clients using GUID-based overrides. The omitted-character query is account-wide and state 1 can mean enabled on some other characters. Legacy GetAddOnEnableState continues using the character name. Regression tests replay the supplied account-wide values and confirm only BugSack, Details and Forever Dungeon Journal are eligible for that fixture. Diagnostics now show all three modern queries explicitly.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0-alpha.4 — Character enable-state fix (untagged)
+
+- Use the player GUID for modern addon enable-state checks, matching Blizzard's addon list.
+- Keep character-name queries for the legacy API.
+- Add GUID results to diagnostics and regression coverage for account/character overrides.
+
 ## 1.4.0-alpha.3 — Loader diagnostics (untagged)
 
 - Add `/euiskins diagnostics` with copyable version, target enable-state, toggle and module-load information.

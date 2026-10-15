@@ -31,7 +31,12 @@ end
 
 local enabledCache, cacheCharacter = {}, nil
 function ns.TargetEnabled(entry)
-    local character = UnitName and UnitName("player")
+    local modern = C_AddOns and C_AddOns.GetAddOnEnableState
+    -- Modern AddOnList uses a player GUID, not the display name. A name can
+    -- resolve to default state 2 even for addons disabled on this character.
+    local character
+    if modern then character = UnitGUID and UnitGUID("player")
+    else character = UnitName and UnitName("player") end
     if not character then return false end -- Resolve character overrides at login.
     if character ~= cacheCharacter then enabledCache, cacheCharacter = {}, character end
     for _, target in ipairs(entry.targets) do
@@ -93,11 +98,12 @@ function ns.LoaderDiagnostics()
     local metadata = api.GetAddOnMetadata or GetAddOnMetadata
     local lines = {"EUI AddonSkins loader diagnostics", "Code: " .. ns.VERSION .. " | TOC: " .. Result(metadata, ADDON, "Version"),
         "Core loaded: " .. Result(isLoaded, ADDON),
-        "Columns: target loaded / modern(current) / modern(character) / legacy(character) / toggle registered / skin loaded"}
+        "Columns: target loaded / modern(account) / modern(name) / modern(GUID) / legacy(name) / toggle registered / skin loaded"}
     for _, entry in ipairs(ns.skinCatalog) do
         for _, target in ipairs(entry.targets) do
             lines[#lines + 1] = target .. ": " .. Result(isLoaded, target) .. " / "
                 .. Result(api.GetAddOnEnableState, target) .. " / " .. Result(api.GetAddOnEnableState, target, character)
+                .. " / " .. Result(api.GetAddOnEnableState, target, UnitGUID and UnitGUID("player"))
                 .. " / " .. Result(GetAddOnEnableState, character, target) .. " / " .. tostring(entry.registered == true)
                 .. " / " .. Result(isLoaded, entry.addon)
         end

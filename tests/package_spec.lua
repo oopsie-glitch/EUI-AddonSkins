@@ -6,13 +6,14 @@ for _, manifest in ipairs({'EUIAddonSkins.toc', 'EUIAddonSkins_Camelot.toc', 'EU
         C_AddOns = {
             GetAddOnInfo = function(name) if onlyBugSack then return name end end,
             GetAddOnEnableState = function(name, character)
-                assert(character == 'Test')
+                assert(character == 'Player-Test')
                 return name == 'BugSack' and 2 or 0
             end,
             IsAddOnLoaded = function() return false end,
             LoadAddOn = function() error('unloaded target caused skin code to load') end,
         }
         UnitName = function() return 'Test' end
+        UnitGUID = function() return 'Player-Test' end
         SlashCmdList = {}; DEFAULT_CHAT_FRAME = {AddMessage = function() end}
         CreateFrame = function() return {RegisterEvent = function() end, SetScript = function() end} end
         EllesmereUI = {RegisterSkin = function(name) assert(not entries[name]); entries[name] = true end}

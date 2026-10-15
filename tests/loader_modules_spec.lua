@@ -2,6 +2,7 @@
 local ns, entries, reads, errors = {}, {}, {}, {}
 EUIAddonSkinsDB = {}; SlashCmdList = {}; DEFAULT_CHAT_FRAME = {AddMessage = function() end}
 UnitName = function() return 'ModuleFixture' end
+UnitGUID = function() return 'Player-ModuleFixture' end
 C_Timer = {After = function() end}
 InCombatLockdown = function() return false end
 geterrorhandler = function() return function(e) errors[#errors + 1] = e end end

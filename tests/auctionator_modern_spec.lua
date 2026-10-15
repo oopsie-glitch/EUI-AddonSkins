@@ -72,6 +72,8 @@ local function fontString(text, r, g, b)
     function fs:GetText() return self.text end
     function fs:GetTextColor() return table.unpack(self.color) end
     function fs:SetTextColor(...) self.color = {...} end
+    function fs:SetJustifyH(v) self.justifyH = v end
+    function fs:SetJustifyV(v) self.justifyV = v end
     return fs
 end
 local function frame(kind, parent, name)
@@ -192,8 +194,13 @@ selling.BagInset = frame('Frame', selling); selling.HistoricalPriceInset = frame
 local spinner = selling.HistoricalPriceInset:CreateTexture(nil, 'OVERLAY')
 local sale = frame('Frame', selling); selling.SaleItemFrame = sale
 sale.regions = {fontString('Quantity'), fontString('24'), fontString('Deposit:', 1, 0.82, 0)}
-sale.Quantity = frame('EditBox', sale)
-sale.Quantity.insets = {0, 0, 8, 0}; sale.Quantity.fontFace = 'native-number-font'
+sale.Quantity = frame('Frame', sale)
+local quantity = frame('EditBox', sale.Quantity); sale.Quantity.InputBox = quantity
+quantity.insets = {0, 0, 8, 0}; quantity.fontFace = 'native-number-font'
+quantity.value = 37
+sale.Quantity.GetNumber = function() return quantity.value end
+-- Also retain support for the direct EditBox used by older layouts.
+local older = frame('Frame', sale); older.Quantity = frame('EditBox', older)
 local durationLabels = {}
 for _, hours in ipairs({2, 8, 24}) do
     local choice = frame('Frame', sale); choice.isAuctionatorRadio = true
@@ -206,10 +213,24 @@ for _, hours in ipairs({2, 8, 24}) do
     durationLabels[#durationLabels + 1] = button.Label
 end
 local price = frame('Frame', sale); price.MoneyInput = frame('Frame', price); local moneyInput = price.MoneyInput
+local function inputText(box)
+    local text = fontString('0'); anchors(text)
+    text:SetPoint('LEFT', box, 'LEFT', 6, 5) -- Independently offset template text.
+    box.regions[#box.regions + 1] = text
+    return text
+end
+local quantityText = inputText(quantity)
+quantity.Label = fontString('Quantity'); anchors(quantity.Label)
+quantity.Label:SetPoint('TOPRIGHT', quantity, 'TOPLEFT', -10, -4)
+quantity.regions[#quantity.regions + 1] = quantity.Label
 for _, key in ipairs({'GoldBox', 'SilverBox', 'CopperBox'}) do
     local box = frame('EditBox', moneyInput); moneyInput[key] = box
     box.insets = {0, 0, 8, 0}; box.fontFace = 'native-number-font'
     box.regions = {texture('BACKGROUND', 8, 20), texture('ARTWORK', 13, 13)}
+    box.numericText = inputText(box)
+    box.label = fontString('currency'); anchors(box.label)
+    box.label:SetPoint('RIGHT', box, 'RIGHT', -4, 0)
+    box.regions[#box.regions + 1] = box.label
 end
 local post = frame('Button', sale); post.label = fontString('Post')
 moneyInput.CopperBox.l, moneyInput.CopperBox.r, moneyInput.CopperBox.t, moneyInput.CopperBox.b = 490, 546, 400, 360
@@ -311,14 +332,27 @@ assert(second.HighlightTexture.color[4] == 0.1 and second.cells[1].Icon.square =
 local gold = moneyInput.GoldBox
 assert(gold.regions[2].alpha == 1 and gold.h == 19 and moneyInput.CopperBox.w == 96, 'copper still touches Post')
 assert(moneyInput.GoldBox.w == 100, 'boxes without a flush neighbour were narrowed')
-assert(sale.Quantity.justifyH == 'CENTER' and sale.Quantity.insets[1] == 0)
-assert(sale.Quantity.justifyV == 'MIDDLE' and sale.Quantity.insets[3] == 0 and sale.Quantity.insets[4] == 0)
-assert(sale.Quantity.fontFace == fontFace, 'quantity kept the native number font')
+assert(quantity.justifyH == 'CENTER' and quantity.insets[1] == 0)
+assert(quantity.justifyV == 'MIDDLE' and quantity.insets[3] == 0 and quantity.insets[4] == 0)
+assert(quantity.fontFace == fontFace, 'quantity kept the native number font')
+assert(not sale.Quantity.input and sale.Quantity.GetNumber() == 37, 'quantity wrapper/actions were changed')
+assert(older.Quantity.justifyH == 'CENTER', 'direct quantity input support was lost')
+assert(quantityText.points[1][1] == 'TOPLEFT' and quantityText.points[1][5] == 0
+    and quantityText.points[2][1] == 'BOTTOMRIGHT' and quantityText.points[2][5] == 0
+    and quantityText.justifyV == 'MIDDLE', 'quantity text retained its independent vertical offset')
+assert(quantity.Label.points[1][1] == 'TOPRIGHT' and quantity.Label.points[1][5] == -4,
+    'quantity field label was mistaken for its numeric text')
 for _, key in ipairs({'GoldBox', 'SilverBox', 'CopperBox'}) do
     local input = moneyInput[key]
     assert(input.justifyH == 'RIGHT' and input.justifyV == 'MIDDLE' and input.fontFace == fontFace)
     assert(input.insets[1] == 6 and input.insets[2] == 20 and input.insets[3] == 0 and input.insets[4] == 0,
         'money text did not clear the native coin or vertical template padding')
+    assert(input.numericText.points[1][4] == 6 and input.numericText.points[1][5] == 0
+        and input.numericText.points[2][4] == -20 and input.numericText.points[2][5] == 0
+        and input.numericText.justifyH == 'RIGHT' and input.numericText.justifyV == 'MIDDLE',
+        'money text retained its independent template anchor')
+    assert(input.label.points[1][1] == 'RIGHT' and input.label.points[1][4] == -4,
+        'native currency-symbol label was moved')
 end
 for _, label in ipairs(durationLabels) do
     assert(label.fontFace == fontFace and #label.points == 1 and label.points[1][1] == 'LEFT')
@@ -350,7 +384,7 @@ assert(searchReset.click() == 'native-reset', 'search reset action replaced')
 local popupInset = AuctionatorShoppingTabItemFrame.Inset
 assert(AuctionatorShoppingTabItemFrame.shell and popupInset.inset and not popupInset.panel, 'popup form not plain')
 -- Bordered EUI controls inside the modern auction house, not the soft variant.
-assert(not gold.soft and not sale.Quantity.soft, 'soft borderless inputs inside the modern auction house')
+assert(not gold.soft and not quantity.soft, 'soft borderless inputs inside the modern auction house')
 assert(prices.CurrentPricesTab.plate.alpha == 0 and not prices.CurrentPricesTab.darkActive)
 assert(prices.CurrentPricesTab.selected and prices.PriceHistoryTab.selected == false)
 -- Warm refreshes: no new UI objects and no repeated resizing.
@@ -358,7 +392,7 @@ local before, hooksBefore = created, hookCount
 for _ = 1, 10 do modules.Auctionator.refresh(); flush() end
 assert(created == before, 'warm refresh created UI objects')
 assert(hookCount == hooksBefore, 'warm refresh duplicated secure hooks')
-assert(sale.Quantity.insetWrites == 1 and moneyInput.GoldBox.insetWrites == 1, 'warm refresh changed numeric layout repeatedly')
+assert(quantity.insetWrites == 1 and moneyInput.GoldBox.insetWrites == 1, 'warm refresh changed numeric layout repeatedly')
 assert(gold.h == 19 and moneyInput.CopperBox.w == 96 and shoppingTab.h == 22 and shopping.ExportButton.w == 106)
 assert(prices.points[1][4] == 10 and shopping.SearchOptions.points[1][5] == -6, 'warm refresh shifted again')
 -- A theme restrip must not remove loading art from the foreground.
@@ -366,8 +400,10 @@ selling.shown = true; spinner:SetAlpha(0)
 fontFace = 'new-eui-font'
 for _, fn in ipairs(looks) do fn() end; flush()
 assert(spinner.alpha == 1, 'theme refresh lost foreground artwork')
-assert(sale.Quantity.fontFace == fontFace and moneyInput.GoldBox.fontFace == fontFace
+assert(quantity.fontFace == fontFace and moneyInput.GoldBox.fontFace == fontFace
     and durationLabels[1].fontFace == fontFace, 'numeric fonts did not follow theme change')
+assert(quantityText.fontFace == fontFace and moneyInput.GoldBox.numericText.fontFace == fontFace,
+    'numeric text regions did not follow theme change')
 selling.shown = false
 -- Layout work is deferred in combat; regeneration applies it once.
 local combatTab = frame('Button'); combatTab.frameRef = frame('Frame', host); combatTab.frameRef.shown = false

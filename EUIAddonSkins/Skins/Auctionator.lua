@@ -263,18 +263,35 @@ end, function(S, module)
     local function Number(box, justify, rightInset)
         if not H.Allowed(box) or box:GetObjectType() ~= "EditBox" then return end
         if S.Font then S.Font(box) end
-        if centered[box] then return end
-        centered[box] = true
-        box:SetJustifyH(justify)
-        if box.SetJustifyV then box:SetJustifyV("MIDDLE") end
-        box:SetTextInsets(justify == "CENTER" and 0 or 6, rightInset or 0, 0, 0)
+        local texts = centered[box]
+        if not texts then
+            texts = {}; centered[box] = texts
+            local left, right = justify == "CENTER" and 0 or 6, rightInset or 0
+            box:SetJustifyH(justify)
+            if box.SetJustifyV then box:SetJustifyV("MIDDLE") end
+            box:SetTextInsets(left, right, 0, 0)
+            -- LargeInputBox templates can anchor the internal text separately
+            -- from the edit box. Center its rectangle too; leave field labels
+            -- and the money template's currency-symbol label in native place.
+            for _, region in ipairs(H.Regions(box)) do
+                if H.Allowed(region) and region:GetObjectType() == "FontString"
+                    and region ~= box.Label and region ~= box.label then
+                    region:ClearAllPoints()
+                    region:SetPoint("TOPLEFT", box, "TOPLEFT", left, 0)
+                    region:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -right, 0)
+                    region:SetJustifyH(justify)
+                    region:SetJustifyV("MIDDLE")
+                    texts[#texts + 1] = region
+                end
+            end
+        end
+        if S.Font then for _, text in ipairs(texts) do S.Font(text) end end
     end
     -- Coin icons are small square textures on each box; edge art is tall and thin.
     local function Money(f)
         for _, key in ipairs({"GoldBox", "SilverBox", "CopperBox"}) do
             local box = f[key]
             if H.Allowed(box) and not money[box] then
-                money[box] = true
                 local coins = {}
                 for _, region in ipairs(H.Regions(box)) do
                     local w, h
@@ -288,9 +305,9 @@ end, function(S, module)
                 -- EUI's sell inputs run 5px shorter than Blizzard's.
                 local height = box.GetHeight and box:GetHeight()
                 if height and height > 5 then box:SetHeight(height - 5) end
-                Number(box, "RIGHT", #coins > 0 and 20 or 6)
+                money[box] = #coins > 0 and 20 or 6
             end
-            if H.Allowed(box) and money[box] and S.Font then S.Font(box) end
+            if H.Allowed(box) and money[box] then Number(box, "RIGHT", money[box]) end
         end
         if H.Allowed(f.CopperBox) and not money[f] then money[f] = true; coppers[#coppers + 1] = f.CopperBox end
     end
@@ -324,6 +341,9 @@ end, function(S, module)
         else box:SetWidth(box:GetWidth() - shrink) end
     end
     local function Center(box)
+        -- Auctionator 341 uses a Quantity wrapper; older layouts expose the
+        -- EditBox directly. Resolve the child without changing the wrapper.
+        if H.Allowed(box) and box:GetObjectType() ~= "EditBox" then box = box.InputBox end
         if not H.Allowed(box) or box:GetObjectType() ~= "EditBox" then return end
         S.EditBox(box)
         Number(box, "CENTER")

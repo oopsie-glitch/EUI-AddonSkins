@@ -14,6 +14,7 @@ The modern auction-house changes build on [AngelosNaoumis's contribution, PR #1]
 - Keep pooled bag icons square, preserve quality colors and native row actions, and restyle newly pooled result rows.
 - Preserve money-input coins, improve quantity/price spacing, and align shopping-list buttons and inner tabs.
 - Center numeric input text vertically, use EUI's font, right-align prices with room for coin icons, and center duration labels beside their radio buttons.
+- Resolve Auctionator 341's `Quantity.InputBox` wrapper and align independently anchored numeric FontStrings; preserve field labels, currency-symbol labels and direct EditBox layouts.
 - Reuse frames and hooks; rescan hidden roots when shown rather than on every refresh.
 
 Legacy AuctionFrame styling retains its existing behavior. Shared Lua files, saved variables, version metadata and published tags are unchanged.

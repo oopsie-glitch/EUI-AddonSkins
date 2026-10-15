@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1-alpha.2 — BugSack header (untagged)
+
+- Remove the window's top accent bar while retaining tab selection accents.
+
 ## 1.2.1-alpha.1 — BugSack cleanup (untagged)
 
 - Contain the header icon and keep the session caption free of button styling.

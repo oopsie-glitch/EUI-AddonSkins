@@ -1,6 +1,6 @@
 # BugSack alpha
 
-Version: `1.2.1-alpha.1`, untagged `bugsack-alpha`, based on stable `b8e0125`. PallyPower development stays on its separate branch.
+Version: `1.2.1-alpha.2`, untagged `bugsack-alpha`, based on stable `b8e0125`. PallyPower development stays on its separate branch.
 
 - Use the existing EUI skin, public portrait/button/tab primitives and soft styling.
 - Replace the protruding native portrait with a contained square icon.

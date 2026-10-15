@@ -104,7 +104,7 @@ function ns.CreateSkinHelper(S, module)
                 end
             end
             S.Shell(f, options)
-            ns.AttachAccent(S, f)
+            if not (options and options.noAccent) then ns.AttachAccent(S, f) end
             for region, alpha in pairs(icons) do region:SetAlpha(alpha) end
             -- BackdropTemplate backgrounds are separate from the engine's new shell.
             if f.SetBackdrop then f:SetBackdrop(nil) end
@@ -282,7 +282,7 @@ function ns.CreateSkinHelper(S, module)
         if up and S.PageButton then S.PageButton(up, "^") end
         if down and S.PageButton then S.PageButton(down, "v") end
     end
-    function H.Portrait(f, player)
+    function H.Portrait(f, player, noAccent)
         if not H.Allowed(f) or InCombatLockdown and InCombatLockdown() then return end
         local pc = f.PortraitContainer
         local original = pc and pc.portrait or f.Portrait or f.portrait
@@ -304,7 +304,7 @@ function ns.CreateSkinHelper(S, module)
         end
         H.Fade(original)
         -- Our unmasked texture never inherits PortraitFrameTemplate's round mask.
-        ns.AttachAccent(S, f)
+        if not noAccent then ns.AttachAccent(S, f) end
     end
     function H.Resize(f, force)
         if not H.Allowed(f) then return end

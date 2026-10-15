@@ -5,7 +5,7 @@
 ## Author: Smarre
 ## X-License: MIT
 ## X-Wago-ID: aN0a2M6j
-## Version: 1.2.1-alpha.1
+## Version: 1.2.1-alpha.2
 ## Dependencies: EllesmereUI, EllesmereUIBlizzardSkin
 ## OptionalDeps: ForeverCompanion, ForeverDungeonJournal, RXPGuides, Auctionator, Spy, WhatsTraining, ItemRack, ItemRackOptions, KiwiFarm, Myslot, BugSack, Altoholic, Attune, TwitchEmotes, Questie, DBM-Core, DBM-GUI, AtlasLootContinued, AtlasLootContinued_Options, AtlasLootContinued_Favourites, GTFO, Gargul, Details, ThreatClassic2
 ## SavedVariables: EUIAddonSkinsDB

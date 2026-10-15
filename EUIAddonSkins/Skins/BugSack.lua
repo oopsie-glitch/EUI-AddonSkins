@@ -15,7 +15,7 @@ end
 ns.RegisterScopedSkin("BugSack", "BugSack", {
     softBorders = true, immediateShow = true,
     available = function() return _G.BugSack ~= nil end,
-    roots = function() return ns.SkinRoots({"BugSackFrame"}, {bottomBar = 76}) end,
+    roots = function() return ns.SkinRoots({"BugSackFrame"}, {bottomBar = 76, noAccent = true}) end,
     hooks = function(C, refresh)
         C.H.Hook(_G, "PanelTemplates_SelectTab", function(tab)
             if not Owned(tab) then return end
@@ -33,7 +33,7 @@ ns.RegisterScopedSkin("BugSack", "BugSack", {
         local H, S = C.H, C.S
         local name = f.GetName and f:GetName() or ""
         if name == "BugSackFrame" then
-            H.Portrait(f)
+            H.Portrait(f, false, true)
             local previous
             for _, tabName in ipairs(tabNames) do
                 local tab = _G[tabName]

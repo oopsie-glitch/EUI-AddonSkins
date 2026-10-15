@@ -170,7 +170,7 @@ assert(check.obj.check.color[1] == accent)
 accent = 0.8; for _, fn in ipairs(looks) do fn() end; flush(); assert(check.obj.check.color[1] == 0.8)
 check.obj:SetDisabled(true); flush(); assert(check.obj.check.color[1] == 0.5)
 check.obj:SetDisabled(false); flush(); assert(check.obj.check.color[1] == 0.8)
-assert(BugSack:OpenSack() == 99); flush(); assert(BugSackFrame.shell and BugSackFrame.accent)
+assert(BugSack:OpenSack() == 99); flush(); assert(BugSackFrame.shell and not BugSackFrame.accent and BugSackFrame.shellOptions.noAccent)
 assert(BugSackTabSession.selected and BatchNumericClose.close and BatchNumericClose.scripts.OnClick() == 'close-original')
 assert(BugSackFrame.shellOptions.noBorder, 'BugSack must use the scoped soft window style')
 assert(not BugSackFrame.caption.button and BugSackFrame.caption.scripts.OnDoubleClick() == 'native-search')
@@ -192,6 +192,7 @@ bugNext:Disable(); assert(bugNext.Text.fontColor[1] == 0.65)
 bugNext:Enable(); assert(bugNext.Text.fontColor[1] == 1)
 local nativeEnable = bugNext.Enable; local regionCount = #BugSackFrame.regions
 for _ = 1, 20 do modules.BugSack.refresh(); flush() end
+assert(not BugSackFrame.accent)
 assert(bugNext.Enable == nativeEnable and #BugSackFrame.regions == regionCount, 'repeated BugSack refresh duplicated hooks or portraits')
 local pooled = frame('EditBox', nil, BugSackFrame); BugSackFrame.hooks.OnShow(); flush(); assert(pooled.padded)
 combat = true

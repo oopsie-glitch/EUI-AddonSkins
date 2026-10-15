@@ -103,10 +103,17 @@ function S.FadeNineSlice() end
 SetPortraitTexture = function(t) t:SetTexture('player-face') end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
 local auditScans = setmetatable({}, {__mode = 'k'})
+local auditVisits = setmetatable({}, {__mode = 'k'})
 local auditHelper = ns.CreateSkinHelper
 ns.CreateSkinHelper = function(...)
     local H = auditHelper(...); local scan = H.Scan
-    H.Scan = function(root, ...) auditScans[root] = (auditScans[root] or 0) + 1; return scan(root, ...) end
+    H.Scan = function(root, refresh, visit, exclude)
+        auditScans[root] = (auditScans[root] or 0) + 1
+        return scan(root, refresh, function(f, kind)
+            auditVisits[f] = (auditVisits[f] or 0) + 1
+            if visit then return visit(f, kind) end
+        end, exclude)
+    end
     return H
 end
 local auditBaseline = os.getenv('EUI_AUDIT_BASELINE') == '1'
@@ -394,7 +401,22 @@ do
     header.Arrow = header:CreateTexture(); header.normal = header.Arrow
     header.DrawArrow = function(self, ascending) self.Arrow:SetShown(true); self.Arrow.direction = ascending; return 'sort' end
     local action = frame('Button', nil, tab); action.label = action:CreateFontString(nil, nil, 'native')
-    root.SwitchToTab = function() row.Item2 = Cell(); return 'tab-native' end
+    local function ShowTree(f)
+        if f.hooks.OnShow then f.hooks.OnShow(f) end
+        for _, child in ipairs(f.children) do if child:IsShown() then ShowTree(child) end end
+    end
+    root.SwitchToTab = function(self, id)
+        if self.TabFrames then
+            self.selectedTab = id
+            local selected
+            for _, page in pairs(self.TabFrames) do
+                if page:GetID() == id then page:Show(); selected = page; ShowTree(page)
+                else page:Hide() end
+            end
+            return selected
+        end
+        row.Item2 = Cell(); return 'tab-native'
+    end
     modules.Altoholic.install(S, modules.Altoholic); flush()
     assert(root.Inset.inset and not root.Inset.panel and root.Inset.Bg.alpha == 0, 'main inset became a black subpanel')
     assert(tab.Background.bg.alpha == 0 and tab.CategoriesList.Background.alpha == 0, 'native content art survived')
@@ -428,6 +450,54 @@ do
     for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
     flush(); assert(row.Item2.fill.color[4] == 0)
     enabled = false; root:SwitchToTab(); assert(not row.Item2.fill, 'disabled skin styled a new tab')
+    enabled = true
+    -- Source-shaped AddonFactory tabs, pooled controls and options panels.
+    -- Native show/click bursts queue refreshes as well as the completed switch.
+    root.TabFrames = {tab}; tab.id = 1; root.selectedTab = 1
+    for i = 1, 8 do root.Tabs[i] = frame('Button', nil, root) end
+    local hiddenCells = {}
+    for i = 2, 8 do
+        local page = frame('Frame', nil, root); page.id = i; page:Hide()
+        root.TabFrames[i] = page
+        for _ = 1, 30 do
+            local cell = frame('Button', nil, page)
+            cell.Text = cell:CreateFontString(nil, nil, 'native')
+            cell.SetColumnData = function() return 'cell' end
+            hiddenCells[#hiddenCells + 1] = cell
+        end
+    end
+    local activePanel, hiddenPanel = frame('Frame', nil, tab), frame('Frame', nil, tab)
+    hiddenPanel:Hide(); tab.Panels = {activePanel, hiddenPanel}; tab.currentPanelKey = 1
+    tab.GetCurrentPanel = function(self) return self.Panels[self.currentPanelKey] end
+    tab.ShowPanel = function(self, key)
+        self.currentPanelKey = key
+        for i, panel in ipairs(self.Panels) do if i == key then panel:Show(); ShowTree(panel) else panel:Hide() end end
+        return 'panel-native'
+    end
+    local option = frame('Button', nil, hiddenPanel); option.label = option:CreateFontString(nil, nil, 'native')
+    modules.Altoholic.refresh(); flush()
+    auditScans[root] = 0; for _, cell in ipairs(hiddenCells) do auditVisits[cell] = 0 end
+    for _ = 1, 10 do root:SwitchToTab(1); row.Item1.hooks.OnClick(); flush() end
+    local hiddenVisits = 0; for _, cell in ipairs(hiddenCells) do hiddenVisits = hiddenVisits + (auditVisits[cell] or 0) end
+    print(('BENCH altoholic_tabs full=%d hidden_cells=%d switches=10'):format(auditScans[root] or 0, hiddenVisits))
+    if os.getenv('EUI_ALTO_BASELINE') ~= '1' then
+        assert((auditScans[root] or 0) == 10 and hiddenVisits == 0, 'tab switch repeated full scans or visited hidden tabs')
+        assert(not option.fill, 'hidden options panel initialized before selection')
+    end
+    assert(tab:ShowPanel(2) == 'panel-native' and option.fill.color[4] == 0.92, 'newly selected options panel missed synchronous styling')
+    flush()
+    assert(root:SwitchToTab(2) == root.TabFrames[2] and hiddenCells[1].fill.color[4] == 0, 'previously hidden tab was not styled before paint')
+    flush()
+    combat = true; root:SwitchToTab(3)
+    if os.getenv('EUI_ALTO_BASELINE') ~= '1' then
+        assert(not hiddenCells[31].fill and root.Tabs[2].selected and not root.Tabs[3].selected,
+            'selected combat tab or tab strip was styled')
+    end
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(hiddenCells[31].fill.color[4] == 0)
+    enabled = false; root:SwitchToTab(4); flush()
+    if os.getenv('EUI_ALTO_BASELINE') ~= '1' then assert(not hiddenCells[61].fill, 'disabled skin processed a hidden tab') end
     enabled = true
     S.Button, S.Inset, CreateFrame = originalButton, originalInset, originalCreate
 end

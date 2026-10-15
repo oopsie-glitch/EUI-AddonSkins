@@ -15,6 +15,21 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
         if not C.StyleCategory then
             local H, S = C.H, C.S
             local surfaces, clear, zones = {}, {}, {}
+            -- This helper instance belongs only to Altoholic. Both full and
+            -- local/scroll scans exclude its explicitly registered hidden
+            -- tabs/panels; arbitrary hidden children can still initialize.
+            local scan = H.Scan
+            H.Scan = function(root, onRefresh, visit)
+                local exclude = {}
+                local main = _G.AltoholicFrame
+                for _, tab in pairs(main and main.TabFrames or {}) do
+                    if tab.IsShown and not tab:IsShown() then exclude[tab] = true end
+                    for _, panel in pairs(tab.Panels or {}) do
+                        if panel.IsShown and not panel:IsShown() then exclude[panel] = true end
+                    end
+                end
+                return scan(root, onRefresh, visit, exclude)
+            end
             C.ClearInset = function(f)
                 if not H.Allowed(f) then return end
                 if not clear[f] then
@@ -80,13 +95,34 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
             C.StyleCategories = function(list)
                 for _, button in pairs(list.Buttons or {}) do C.StyleCategory(button) end
             end
+            C.StyleSelectedTab = function(main)
+                if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                for _, tab in pairs(main.TabFrames or {}) do
+                    if H.Allowed(tab) and tab.GetID and tab:GetID() == main.selectedTab then
+                        C.RefreshControlsNow(tab)
+                        for index, button in ipairs(main.Tabs or {}) do H.Tab(button, main.selectedTab == index) end
+                        return
+                    end
+                end
+                -- Older layouts may not expose AddonFactory's tab registry.
+                C.RefreshNow()
+            end
+            C.StyleCurrentPanel = function(tab)
+                if type(tab.GetCurrentPanel) ~= "function" then return end
+                local panel = tab:GetCurrentPanel()
+                C.RefreshControlsNow(panel)
+            end
         end
-        for _, method in ipairs({"SwitchToTab", "SetTabs"}) do C.H.Hook(_G.AltoholicFrame, method, C.RefreshNow) end
+        C.H.Hook(_G.AltoholicFrame, "SwitchToTab", C.StyleSelectedTab)
+        C.H.Hook(_G.AltoholicFrame, "SetTabs", C.RefreshNow)
         for _, method in ipairs({"ToggleUI", "SetPortraitToUnit"}) do C.H.Hook(_G.AltoholicFrame, method, refresh) end
     end,
     visit = function(C, f, kind, refresh)
         local H, S, main = C.H, C.S, _G.AltoholicFrame
         if f == main then H.Portrait(f, true); ns.AttachAccent(S, f) end
+        if type(f.ShowPanel) == "function" and type(f.GetCurrentPanel) == "function" then
+            H.Hook(f, "ShowPanel", C.StyleCurrentPanel)
+        end
         if f.CategoriesList and f.Background then
             C.Zone(f.CategoriesList, false)
             C.Zone(f.Background, true)

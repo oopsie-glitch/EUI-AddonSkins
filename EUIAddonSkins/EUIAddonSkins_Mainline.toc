@@ -1,4 +1,4 @@
-## Interface: 16001, 120000, 120001, 120005, 120007, 120100
+## Interface: 16001, 120000, 120001, 120005, 120007, 120100, 120105
 ## Title: EUI AddonSkins
 ## IconTexture: Interface\AddOns\EUIAddonSkins\Media\Icon.tga
 ## Notes: EllesmereUI skins for World of Warcraft addons.

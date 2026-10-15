@@ -4,6 +4,8 @@ Branch: `skin/btwquests`, based on current main. Untagged; no CurseForge or Wago
 
 Targets the supplied Retail BtWQuests v2.65.0 UI. BtWQuests and its expansion databases must be installed separately; none of their code, data or assets are bundled.
 
+Client manifests include Retail interface 120105 alongside existing client entries. `/euiskins diagnostics` reports the client/EUI version, API registration availability, EUI's client-block flag, receipt of the skin callback and actual integration activation. An older EUI installation without the public API, or a client blocked by EUI itself, cannot activate this skin; this addon does not bypass that restriction.
+
 ## Appearance and scope
 
 - One EUI journal shell, following the user's textured or Modern theme. The content inset blends into that shell without an additional black panel or accent bar.

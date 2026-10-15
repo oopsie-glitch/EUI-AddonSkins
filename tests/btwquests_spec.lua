@@ -222,4 +222,61 @@ assert(pending.button, 'combat-deferred skin was lost')
 enabled = false; root:DisplayItemList(); local off = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
 modules.BtWQuests.refresh(); flush(); assert(not off.button, 'disabled skin processed new content')
 assert(#errors == 0, table.concat(errors, '\n'))
-print('PASS: BtWQuests deferred target, coherent shell, native expansion art/graph/status/actions, pooled categories/nodes, synchronous lazy menus/search, thin scrollbars, accent/theme/combat/toggle guards and warm reuse')
+-- Retail activation through the actual Core + Loader, not a direct installer.
+-- Model the EUI callback, core completion and BtWQuests load boundaries.
+for _, scenario in ipairs({'early', 'late', 'undispatched'}) do
+    local live, callbacks, start = {}, {}, #events + 1
+    local ownLoaded, targetLoaded = false, scenario ~= 'late'
+    EUIAddonSkinsDB = {}; SlashCmdList = {}; DEFAULT_CHAT_FRAME = {AddMessage = function() end}
+    UnitName = function() return 'RetailTester' end
+    UnitGUID = function() return 'Player-Retail-Tester' end
+    local clientInterface = scenario == 'undispatched' and 120007 or 120105
+    GetBuildInfo = function() return 'test-retail', '12345', 'test', clientInterface end
+    EUI_CLIENT_BLOCKED = scenario == 'undispatched' or nil
+    C_AddOns = {
+        GetAddOnInfo = function(name) if name == 'BtWQuests' then return name, 'BtWQuests', '', true end end,
+        GetAddOnEnableState = function(name, character)
+            assert(name == 'BtWQuests' and character == 'Player-Retail-Tester')
+            return 2
+        end,
+        IsAddOnLoaded = function(name)
+            return name == 'EUIAddonSkins' and ownLoaded or name == 'BtWQuests' and targetLoaded or false
+        end,
+        GetAddOnMetadata = function(name) return name == 'EllesmereUI' and '9.5.5' or '1.3.0' end,
+        LoadAddOn = function() error('skin forced target to load') end,
+    }
+    EllesmereUI = {RegisterSkin = function(name, fn) assert(not callbacks[name]); callbacks[name] = fn end}
+    BtWQuestsOptionsMenu = nil
+    BtWQuestsFrame = targetLoaded and frame() or nil
+    assert(loadfile('EUIAddonSkins/Core.lua'))('EUIAddonSkins', live)
+    assert(loadfile('EUIAddonSkins/Loader.lua'))('EUIAddonSkins', live)
+    assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', live)
+    assert(loadfile('EUIAddonSkins/Skins/BtWQuests.lua'))('EUIAddonSkins', live)
+    local entry = live.skinCatalogByID.BtWQuests
+    assert(callbacks['EUI AddonSkins - BtWQuests'] and not entry.loaded)
+    if scenario ~= 'undispatched' then callbacks['EUI AddonSkins - BtWQuests'](S) end
+    assert(not entry.loaded, 'activated before the core finished loading')
+    local function fire(name, addon)
+        for i = start, #events do
+            local f = events[i]
+            if f.events and f.events[name] then f.hooks.OnEvent(f, name, addon) end
+        end
+    end
+    ownLoaded = true; fire('ADDON_LOADED', 'EUIAddonSkins'); fire('PLAYER_LOGIN')
+    if scenario == 'late' then
+        assert(not entry.loaded, 'unloaded BtWQuests activated')
+        BtWQuestsFrame = frame(); targetLoaded = true; fire('ADDON_LOADED', 'BtWQuests')
+    end
+    local report = live.LoaderDiagnostics()
+    assert(report:find('Client interface: ' .. clientInterface, 1, true) and report:find('EUI callback received', 1, true))
+    if scenario == 'undispatched' then
+        assert(not entry.loaded and not BtWQuestsFrame.shell and #live.modules == 0)
+        assert(report:find('EUI client blocked: true', 1, true), 'upstream client gate was hidden')
+    else
+        assert(entry.loaded and entry.skin == S and live.modules[1].active and BtWQuestsFrame.shell,
+            'Retail loader did not install the BtWQuests skin: ' .. scenario .. ' | ' .. report .. ' | ' .. table.concat(errors, '; '))
+    end
+end
+EUI_CLIENT_BLOCKED = nil
+assert(#errors == 0, table.concat(errors, '\n'))
+print('PASS: BtWQuests UI/semantics/pooling/menu guards plus actual Retail core/loader activation in both load orders and unavailable EUI callback diagnostics')

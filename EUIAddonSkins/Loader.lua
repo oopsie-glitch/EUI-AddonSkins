@@ -94,9 +94,15 @@ function ns.LoaderDiagnostics()
     local api, character = C_AddOns or {}, UnitName and UnitName("player")
     local isLoaded = api.IsAddOnLoaded or IsAddOnLoaded
     local metadata = api.GetAddOnMetadata or GetAddOnMetadata
+    local function Interface() return GetBuildInfo and select(4, GetBuildInfo()) or "unavailable" end
+    local integrations = {}
+    for _, module in ipairs(ns.modules or {}) do integrations[module.id] = module end
     local lines = {"EUI AddonSkins loader diagnostics", "Code: " .. ns.VERSION .. " | TOC: " .. Result(metadata, ADDON, "Version"),
+        "Client interface: " .. Result(Interface) .. " | EllesmereUI: " .. Result(metadata, "EllesmereUI", "Version"),
+        "Skin API registration: " .. tostring(_G.EllesmereUI and type(_G.EllesmereUI.RegisterSkin) == "function" or false)
+            .. " | EUI client blocked: " .. tostring(_G.EUI_CLIENT_BLOCKED == true),
         "Core loaded: " .. Result(isLoaded, ADDON), "Packaging: single addon folder; definitions loaded at startup, activation deferred",
-        "Columns: target loaded / modern(account) / modern(name) / modern(GUID) / legacy(name) / toggle registered / skin activated"}
+        "Columns: target loaded / modern(account) / modern(name) / modern(GUID) / legacy(name) / toggle registered / skin activated / EUI callback received / integration active"}
     for _, entry in ipairs(ns.skinCatalog) do
         for _, target in ipairs(entry.targets) do
             lines[#lines + 1] = target .. ": " .. Result(isLoaded, target) .. " / "
@@ -104,6 +110,8 @@ function ns.LoaderDiagnostics()
                 .. " / " .. Result(api.GetAddOnEnableState, target, UnitGUID and UnitGUID("player"))
                 .. " / " .. Result(GetAddOnEnableState, character, target) .. " / " .. tostring(entry.registered == true)
                 .. " / " .. tostring(entry.loaded == true)
+                .. " / " .. tostring(entry.skin ~= nil)
+                .. " / " .. tostring(integrations[entry.id] and integrations[entry.id].active == true or false)
         end
     end
     return table.concat(lines, "\n")

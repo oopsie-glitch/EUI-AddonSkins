@@ -1,13 +1,25 @@
 local ADDON, ns = ...
+-- Modern auction-house styling adapted from AngelosNaoumis's contribution (PR #1).
 local function DefineSkin()
 ns.RegisterModule("Auctionator", "Auctionator", function()
     return _G.Auctionator and _G.Auctionator.Tabs and _G.Auctionator.Tabs.State
 end, function(S, module)
-    S = ns.CreateSoftSkin(S, module)
+    -- Inside the modern auction house the controls keep EUI's bordered look, as
+    -- the pack's own buttons and inputs do; AuctionFrame keeps the softer one.
+    local raw, soft = S, ns.CreateSoftSkin(S, module)
+    -- Auctionator's header rows are shorter than EUI's fixed sort strip, which
+    -- would hang into the first result row; the strip follows the row instead.
+    local headers, Headers = {}, nil
+    S = setmetatable({SortHeaderBar = function(list) Headers(list) end, RefreshSoftBorders = soft.RefreshSoftBorders},
+        {__index = function(_, key) if _G.AuctionHouseFrame then return raw[key] end return soft[key] end})
     local A = _G.Auctionator
     local H = ns.CreateSkinHelper(S, module)
     local roots, shells, panels = {}, {}, {}
     local scrollChrome, itemBorders, radioMarks, layouts = {}, {}, {}, {}
+    local rows, squares, squaring, zones, money, centered, glyphs, labels, darkTabs, chained = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
+    local coppers, cleared, rowWidths, aligned, widgets, refreshes, stripAt = {}, {}, {}, {}, {}, {}, {}
+    local scanned, refreshHosts = {}, {}
+    local zoneHost, zoneAlpha
     local refresh, waiting
     local discoveryDirty = true
     local events = CreateFrame("Frame")
@@ -15,20 +27,41 @@ end, function(S, module)
     events:RegisterEvent("ADDON_LOADED")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
 
+    -- The modern auction house follows EUI's own auction house pack: flat tab
+    -- row, washed results zones, gold form labels. AuctionFrame keeps 1.2.0 styling.
+    local function Modern() return H.Allowed(_G.AuctionHouseFrame) end
+    -- Auctionator lives inside the auction house window, so it follows that
+    -- window's EUI style: when EUI leaves it on Blizzard art ("off", or the
+    -- Blizzard / Classic UI look), Auctionator stays stock as well.
+    local function Stock()
+        local EUI = _G.EllesmereUI
+        if not (_G.AuctionHouseFrame and EUI and EUI.GetBlizzWindowStyle) then return false end
+        local style = EUI.GetBlizzWindowStyle("auctionhouse")
+        return style == "off" or style == "blizzard"
+    end
+    local function Pixel(f)
+        if PixelUtil and f.GetEffectiveScale then return PixelUtil.GetNearestPixelSize(1, f:GetEffectiveScale(), 1) end
+        return 1
+    end
     local function Remember(f, shell)
         if not f or not f.GetObjectType then return end
         roots[f] = shell or roots[f] or "controls"
         refresh()
     end
+    -- Foreground art (spinners, icons) survives the panel fade.
+    local function Artwork(f)
+        local artwork = {}
+        for _, region in ipairs(H.Regions(f)) do
+            if region.GetTexture and region.GetDrawLayer then
+                local layer = region:GetDrawLayer()
+                if layer == "ARTWORK" or layer == "OVERLAY" then artwork[region] = region:GetAlpha() end
+            end
+        end
+        return artwork
+    end
     local function Panel(f)
         if H.Allowed(f) and not panels[f] then
-            local artwork = {}
-            for _, region in ipairs(H.Regions(f)) do
-                if region.GetTexture and region.GetDrawLayer then
-                    local layer = region:GetDrawLayer()
-                    if layer == "ARTWORK" or layer == "OVERLAY" then artwork[region] = region:GetAlpha() end
-                end
-            end
+            local artwork = Artwork(f)
             S.Panel(f)
             panels[f] = artwork
             if f.SetBackdrop then f:SetBackdrop(nil) end
@@ -37,13 +70,46 @@ end, function(S, module)
             for region, alpha in pairs(panels[f]) do region:SetAlpha(alpha) end
         end
     end
+    -- EUI's pack leaves its lists unfilled and washes only the results region,
+    -- edged on the top and left by 1px seams. Side lists stay clear.
+    local function Zone(f, wash)
+        if not H.Allowed(f) then return end
+        if zones[f] then
+            -- EUI restrips registered insets on a theme change. Keep native
+            -- foreground art (including the loading spinner) at its own alpha.
+            for region, alpha in pairs(zones[f]) do region:SetAlpha(alpha) end
+            return
+        end
+        local artwork = Artwork(f)
+        zones[f] = artwork
+        S.Inset(f)
+        for region, alpha in pairs(artwork) do region:SetAlpha(alpha) end
+        if f.SetBackdrop then f:SetBackdrop(nil) end
+        if not wash then return end
+        -- A child layer: EUI restrips the inset's own textures on theme passes.
+        local layer = CreateFrame("Frame", nil, f)
+        layer:SetAllPoints(f); layer:SetFrameLevel(f:GetFrameLevel())
+        local fill = layer:CreateTexture(nil, "BACKGROUND")
+        fill:SetColorTexture(1, 1, 1, 0.02); fill:SetAllPoints(layer)
+        local px = Pixel(f)
+        local top = layer:CreateTexture(nil, "ARTWORK")
+        top:SetColorTexture(0.15, 0.15, 0.15, 1); top:SetHeight(px)
+        top:SetPoint("TOPLEFT", f, "TOPLEFT", -px, 0); top:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
+        local side = layer:CreateTexture(nil, "ARTWORK")
+        side:SetColorTexture(0.15, 0.15, 0.15, 1); side:SetWidth(px)
+        side:SetPoint("TOPRIGHT", f, "TOPLEFT", 0, 0); side:SetPoint("BOTTOMRIGHT", f, "BOTTOMLEFT", 0, 0)
+    end
     local function Scroll(bar)
         if not H.Allowed(bar) then return end
         if bar.GetThumbTexture then H.LegacySlider(bar); return end
-        -- WowTrimScrollBar's end caps live directly on the bar, outside Track.
+        -- WowTrimScrollBar's end caps live directly on the bar, outside Track,
+        -- and its track art on a Background child.
         if not scrollChrome[bar] then
             scrollChrome[bar] = true
             for _, region in ipairs(H.Regions(bar)) do if region.GetTexture then H.Fade(region) end end
+            if H.Allowed(bar.Background) then
+                for _, region in ipairs(H.Regions(bar.Background)) do if region.GetTexture then H.Fade(region) end end
+            end
         end
         S.ScrollBar(bar)
     end
@@ -63,14 +129,35 @@ end, function(S, module)
         radioMarks[button]:SetColorTexture(r, g, b, 1)
         radioMarks[button]:SetShown(button:GetChecked() and true or false)
     end
+    -- Pooled bag buttons re-mask and re-crop their icon on every fill, so the
+    -- square inset icon is restored from the icon's own setters.
+    local function Square(f, icon)
+        if squaring[f] then return end
+        squaring[f] = true
+        if icon.GetNumMaskTextures then
+            for index = icon:GetNumMaskTextures(), 1, -1 do icon:RemoveMaskTexture(icon:GetMaskTexture(index)) end
+        end
+        if f.IconMask and f.IconMask.Hide then f.IconMask:Hide() end
+        icon:ClearAllPoints(); icon:SetPoint("TOPLEFT", 2, -2); icon:SetPoint("BOTTOMRIGHT", -2, 2)
+        S.SquareIcon(icon, f)
+        squaring[f] = nil
+    end
     local function Item(f, icon)
+        local modern = Modern()
         local border = H.Texture(f.IconBorder)
         if border and not itemBorders[f] and f.CreateTexture then
             local lines = {}
             for _, side in ipairs({"Top", "Bottom", "Left", "Right"}) do
                 local line = f:CreateTexture(nil, "OVERLAY", nil, 6)
                 f["euiQuality" .. side] = line; lines[#lines + 1] = line
-                if side == "Top" or side == "Bottom" then
+                if modern then
+                    -- Ring the inset icon one pixel out, over its square border.
+                    if side == "Top" then line:SetPoint("BOTTOMLEFT", icon, "TOPLEFT", -1, 0); line:SetPoint("BOTTOMRIGHT", icon, "TOPRIGHT", 1, 0)
+                    elseif side == "Bottom" then line:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", -1, 0); line:SetPoint("TOPRIGHT", icon, "BOTTOMRIGHT", 1, 0)
+                    elseif side == "Left" then line:SetPoint("TOPRIGHT", icon, "TOPLEFT", 0, 1); line:SetPoint("BOTTOMRIGHT", icon, "BOTTOMLEFT", 0, -1)
+                    else line:SetPoint("TOPLEFT", icon, "TOPRIGHT", 0, 1); line:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 0, -1) end
+                    if side == "Top" or side == "Bottom" then line:SetHeight(1) else line:SetWidth(1) end
+                elseif side == "Top" or side == "Bottom" then
                     local edge = side:upper(); line:SetPoint(edge .. "LEFT"); line:SetPoint(edge .. "RIGHT"); line:SetHeight(1)
                 else
                     local edge = side:upper(); line:SetPoint("TOP" .. edge); line:SetPoint("BOTTOM" .. edge); line:SetWidth(1)
@@ -82,13 +169,334 @@ end, function(S, module)
         -- Register keep regions after creation so EUI's theme restrip retains them.
         H.Action(f, {"Icon", "icon", "IconSelectedHighlight", "Highlight",
             "euiQualityTop", "euiQualityBottom", "euiQualityLeft", "euiQualityRight"})
-        icon:SetAlpha(1); S.SquareIcon(icon, f)
+        icon:SetAlpha(1)
+        if modern and not squares[f] then
+            squares[f] = true
+            if f.GetNormalTexture and f:GetNormalTexture() then H.Fade(f:GetNormalTexture()) end
+            for _, method in ipairs({"SetTexture", "SetAtlas", "AddMaskTexture", "SetTexCoord", "SetAllPoints"}) do
+                H.Hook(icon, method, function() Square(f, icon) end)
+            end
+        end
+        if modern then Square(f, icon) else S.SquareIcon(icon, f) end
         if H.Texture(f.EmptySlot) then H.Fade(f.EmptySlot) end
         H.Fade(border)
         if itemBorders[f] and border.GetVertexColor then
             local r, g, b, a = border:GetVertexColor()
-            for _, line in ipairs(itemBorders[f]) do line:SetColorTexture(r, g, b, a or 1); line:SetAlpha(1) end
+            -- Poor and common rings are gray or white; the square black edge stands in, as in EUI's pack.
+            local plain = modern and math.max(r, g, b) - math.min(r, g, b) < 0.1
+            for _, line in ipairs(itemBorders[f]) do line:SetColorTexture(r, g, b, a or 1); line:SetAlpha(plain and 0 or 1) end
         end
+    end
+    local function Row(row)
+        if not rows[row] then
+            rows[row] = true
+            if row.NormalTexture then H.Fade(row.NormalTexture) end
+            if H.Texture(row.HighlightTexture) then row.HighlightTexture:SetColorTexture(1, 1, 1, 0.1) end
+            if H.Texture(row.SelectedHighlight) then row.SelectedHighlight:SetColorTexture(1, 1, 1, 0.15) end
+        end
+        for _, cell in pairs(row.cells) do
+            local icon = type(cell) == "table" and H.Texture(cell.Icon)
+            if icon and not squares[cell] then
+                squares[cell] = true
+                S.SquareIcon(icon)
+                if cell.IconBorder then H.Fade(cell.IconBorder) end
+            end
+        end
+    end
+    local function RowIfCells(row) if row.cells then Row(row) end end
+    Headers = function(list)
+        local container = list.HeaderContainer
+        if not H.Allowed(container) or not container.CreateTexture then return end
+        if not headers[container] then
+            local strip = container:CreateTexture(nil, "BACKGROUND", nil, 1)
+            strip:SetColorTexture(0.02, 0.02, 0.02, 0.5); strip:SetAllPoints(container)
+            headers[container] = strip
+        end
+        -- The strip spans the listing's row area (washed below), so header and
+        -- table share their corners; the header row itself can start outside the
+        -- list and the window.
+        local area = H.Allowed(list.ScrollArea) and list.ScrollArea or list
+        local left, right, rowLeft, rowRight
+        if area.GetLeft and container.GetLeft then
+            left, right, rowLeft, rowRight = area:GetLeft(), area:GetRight(), container:GetLeft(), container:GetRight()
+        end
+        local at = stripAt[container]
+        if left and right and rowLeft and rowRight
+            and not (at and at[1] == left - rowLeft and at[2] == right - rowRight) then
+            if not at then at = {}; stripAt[container] = at end
+            at[1], at[2] = left - rowLeft, right - rowRight
+            local strip = headers[container]
+            strip:ClearAllPoints()
+            strip:SetPoint("TOPLEFT", container, "TOPLEFT", at[1], 0)
+            strip:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", at[2], 0)
+        end
+        for _, column in ipairs(H.Children(container)) do
+            if H.Allowed(column) and column:GetObjectType() == "Button" then
+                if not headers[column] and column.CreateTexture then
+                    for _, key in ipairs({"Left", "Middle", "Right"}) do H.Fade(column[key]) end
+                    for _, region in ipairs(H.Regions(column)) do if H.Texture(region) then H.Fade(region) end end
+                    local hover = column:CreateTexture(nil, "HIGHLIGHT")
+                    hover:SetColorTexture(1, 1, 1, 0.1); hover:SetAllPoints(column)
+                    headers[column] = hover
+                end
+                local label = column.GetFontString and column:GetFontString()
+                if label and S.White then S.White(label) end
+            end
+        end
+        local box = list.ScrollArea and list.ScrollArea.ScrollBox
+        if H.Allowed(box) and box.ForEachFrame then
+            -- Rows pool on data changes; restyle just this box, not a full refresh.
+            H.Hook(box, "Update", function() box:ForEachFrame(RowIfCells) end)
+        end
+    end
+    -- Coin icons are small square textures on each box; edge art is tall and thin.
+    local function Money(f)
+        for _, key in ipairs({"GoldBox", "SilverBox", "CopperBox"}) do
+            local box = f[key]
+            if H.Allowed(box) and not money[box] then
+                money[box] = true
+                local coins = {}
+                for _, region in ipairs(H.Regions(box)) do
+                    local w, h
+                    if region.GetSize then w, h = region:GetSize() end
+                    if H.Texture(region) and w and h and w > 0 and w <= 18 and math.abs(w - h) < 2 then coins[#coins + 1] = region end
+                end
+                S.EditBox(box)
+                local name = box.GetName and box:GetName()
+                if name then for _, suffix in ipairs({"Left", "Middle", "Right"}) do H.Fade(_G[name .. suffix]) end end
+                for _, coin in ipairs(coins) do coin:SetAlpha(1) end
+                -- EUI's sell inputs run 5px shorter than Blizzard's.
+                local height = box.GetHeight and box:GetHeight()
+                if height and height > 5 then box:SetHeight(height - 5) end
+            end
+        end
+        if H.Allowed(f.CopperBox) and not money[f] then money[f] = true; coppers[#coppers + 1] = f.CopperBox end
+    end
+    -- Keep 4px between a box and the button seated right of it (copper and Post),
+    -- measured once the layout exists: the anchoring differs between Auctionator builds.
+    local function Clear(box, scope)
+        if not H.Allowed(box) or cleared[box] or not box.GetRight then return end
+        local left, right, top, bottom = box:GetLeft(), box:GetRight(), box:GetTop(), box:GetBottom()
+        if not (left and right and top and bottom) then return end
+        cleared[box] = true
+        local gap
+        local function find(f, depth)
+            for _, child in ipairs(H.Children(f)) do
+                if H.Allowed(child) and child ~= box and child:GetObjectType() == "Button" and child.GetLeft then
+                    local l, t, b = child:GetLeft(), child:GetTop(), child:GetBottom()
+                    if l and t and b and l > left and l < right + 4 and t > bottom and b < top and (not gap or l - right < gap) then gap = l - right end
+                end
+                if depth < 3 and H.Allowed(child) then find(child, depth + 1) end
+            end
+        end
+        find(scope, 0)
+        if not gap or gap >= 4 then return end
+        local shrink, points, moved = 4 - gap, {}, false
+        for index = 1, box:GetNumPoints() do points[index] = {box:GetPoint(index)} end
+        for _, p in ipairs(points) do
+            if p[1]:find("RIGHT") then p[4] = (p[4] or 0) - shrink; moved = true end
+        end
+        if moved then
+            box:ClearAllPoints()
+            for _, p in ipairs(points) do box:SetPoint(p[1], p[2], p[3], p[4] or 0, p[5] or 0) end
+        else box:SetWidth(box:GetWidth() - shrink) end
+    end
+    local function Center(box)
+        if not H.Allowed(box) or box:GetObjectType() ~= "EditBox" or centered[box] then return end
+        centered[box] = true
+        S.EditBox(box)
+        box:SetJustifyH("CENTER")
+        if box.SetJustifyV then box:SetJustifyV("MIDDLE") end
+        box:SetTextInsets(0, 0, 0, 0)
+    end
+    -- Option widgets (search options, config) wrap their dropdown, whose arrow is a
+    -- child button of its own, and a per-field reset button showing an icon texture.
+    local function Dropdown(dropdown)
+        if widgets[dropdown] then return end
+        widgets[dropdown] = true
+        S.Dropdown(dropdown)
+        for _, child in ipairs(H.Children(dropdown)) do
+            if H.Allowed(child) and child:GetObjectType() == "Button" then
+                for _, region in ipairs(H.Regions(child)) do if H.Texture(region) then H.Fade(region) end end
+            end
+        end
+    end
+    -- Reset buttons stay a bare icon with a hover wash: a block around each one read
+    -- as stray empty boxes wherever Auctionator hides the icon.
+    local function Reset(button)
+        if widgets[button] or not button.CreateTexture then return end
+        widgets[button] = true
+        local icon = H.Texture(button.texture) or H.Texture(button.Icon)
+            or H.Texture(button.GetNormalTexture and button:GetNormalTexture())
+        for _, region in ipairs(H.Regions(button)) do
+            if H.Texture(region) and region ~= icon then H.Fade(region) end
+        end
+        if icon then icon:SetDrawLayer("OVERLAY") end
+        local hover = button:CreateTexture(nil, "HIGHLIGHT")
+        hover:SetColorTexture(1, 1, 1, 0.1); hover:SetAllPoints(button)
+    end
+    local function Shift(f, dx, dy)
+        local points = {}
+        for index = 1, f:GetNumPoints() do points[index] = {f:GetPoint(index)} end
+        f:ClearAllPoints()
+        for _, p in ipairs(points) do f:SetPoint(p[1], p[2], p[3], (p[4] or 0) + dx, (p[5] or 0) + dy) end
+    end
+    -- Selling's price tabs start a few pixels in from the results zone; line the row up with it.
+    local function AlignTabs(row, first, zone)
+        if not (H.Allowed(row) and H.Allowed(first) and H.Allowed(zone)) or aligned[row] or not first.GetLeft then return end
+        local from, to = first:GetLeft(), zone:GetLeft()
+        if not (from and to) then return end
+        aligned[row] = true
+        if math.abs(to - from) > 0.5 then Shift(row, to - from, 0) end
+    end
+    -- Shopping's search row sits on the list tabs; lift it until 6px clear.
+    local function SearchGap(f)
+        local options, tabs = f.SearchOptions, f.ContainerTabs
+        if not (H.Allowed(options) and H.Allowed(options.SearchString) and tabs and H.Allowed(tabs.ListsTab))
+            or aligned[options] or not options.SearchString.GetBottom then return end
+        local bottom, top = options.SearchString:GetBottom(), tabs.ListsTab:GetTop()
+        if not (bottom and top) then return end
+        aligned[options] = true
+        if bottom - top < 6 then Shift(options, 0, 6 - (bottom - top)) end
+    end
+    -- New List / Import / Export: equal widths and 4px gaps, kept inside the lists
+    -- column so none of them sits over the results wash.
+    local function ListButtons(f)
+        local lists, buttons = f.ListsContainer, {f.NewListButton, f.ImportButton, f.ExportButton}
+        if not (H.Allowed(lists) and lists.GetWidth) then return end
+        for index = 1, 3 do if not H.Allowed(buttons[index]) then return end end
+        local width = lists:GetWidth()
+        if not width or width <= 8 or rowWidths[lists] == width then return end
+        rowWidths[lists] = width
+        local previous
+        for _, button in ipairs(buttons) do
+            button:ClearAllPoints(); button:SetWidth((width - 8) / 3)
+            if previous then button:SetPoint("LEFT", previous, "RIGHT", 4, 0)
+            else button:SetPoint("TOPLEFT", lists, "BOTTOMLEFT", 0, -6) end
+            previous = button
+        end
+    end
+    -- Refresh buttons sit directly on Auctionator's panels as icon-only buttons; their
+    -- icon can be set by file ID, which carries no name to match, so the panel says it.
+    local function PanelRefresh(button)
+        if not (H.Allowed(button) and button:GetObjectType() == "Button" and H.Texture(button.Icon)) then return false end
+        return not button.IconBorder and not button.EmptySlot and not (button.GetFontString and button:GetFontString())
+    end
+    -- Checked once per button: Visit reaches every button on every pass.
+    local function Named(texture)
+        if not H.Texture(texture) then return false end
+        local atlas = texture.GetAtlas and texture:GetAtlas()
+        local path = texture.GetTexture and texture:GetTexture()
+        return type(atlas) == "string" and atlas:find("[Rr]efresh") ~= nil
+            or type(path) == "string" and path:find("[Rr]efresh") ~= nil
+    end
+    local function IsRefresh(button)
+        local known = refreshes[button]
+        if known == nil then
+            local parent = button.GetParent and button:GetParent()
+            known = Named(button.Icon) or (button.GetNormalTexture and Named(button:GetNormalTexture()))
+                or (parent and refreshHosts[parent] and PanelRefresh(button)) or false
+            refreshes[button] = known
+        end
+        return known
+    end
+    -- EUI's pack draws refresh as its white house glyph, without a button block.
+    local function Glyph(button)
+        if glyphs[button] or not button.CreateTexture then return end
+        -- As the pack does: without the atlas the native button stays rather than going blank.
+        if not (C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("UI-RefreshButton")) then return end
+        for _, region in ipairs(H.Regions(button)) do if H.Texture(region) then H.Fade(region) end end
+        local glyph = button:CreateTexture(nil, "OVERLAY")
+        glyph:SetAtlas("UI-RefreshButton", false); glyph:SetSize(16, 16); glyph:SetPoint("CENTER")
+        glyph:SetDesaturated(true); glyph:SetVertexColor(1, 1, 1, 0.9)
+        glyphs[button] = glyph
+        H.Script(button, "OnEnter", function() glyph:SetVertexColor(1, 1, 1, 1) end)
+        H.Script(button, "OnLeave", function() glyph:SetVertexColor(1, 1, 1, 0.9) end)
+    end
+    -- Blizzard's sell form labels are gold; Auctionator draws its own white. Labels
+    -- carry letters and no digits; values (deposit, coins, hours) keep their color.
+    local function Gold(f, depth)
+        if not H.Allowed(f) or depth > 6 then return end
+        local kind = f:GetObjectType()
+        if kind == "Button" or kind == "EditBox" or kind == "CheckButton" then return end
+        local r, g, b = NORMAL_FONT_COLOR:GetRGB()
+        for _, region in ipairs(H.Regions(f)) do
+            if region:GetObjectType() == "FontString" then
+                local text = region:GetText()
+                local cr, cg, cb = region:GetTextColor()
+                if type(text) == "string" and text:find("%a") and not text:find("%d") and cr > 0.95 and cg > 0.95 and cb > 0.95 then
+                    region:SetTextColor(r, g, b)
+                end
+            end
+        end
+        for _, child in ipairs(H.Children(f)) do Gold(child, depth + 1) end
+    end
+    -- Flat inner tabs (Selling's price views sit right above the main tab row):
+    -- no plate, so only the label and the accent underline mark the active view.
+    local function InnerTab(tab, selected, flat)
+        if Modern() and S.Tab and not darkTabs[tab] and H.Allowed(tab) then
+            darkTabs[tab] = true
+            if flat then
+                S.Tab(tab)
+                for _, region in ipairs(H.Regions(tab)) do
+                    if H.Texture(region) and region:GetDrawLayer() == "BACKGROUND" then H.Fade(region) end
+                end
+            else S.Tab(tab, {darkActive = true}) end
+        end
+        H.Tab(tab, selected or false)
+        if tab.ActiveMarker then H.Fade(tab.ActiveMarker) end
+        H.Script(tab, "OnClick", refresh)
+    end
+    -- EUI's pack draws its zone seams on an unnamed full-window child (two 1px
+    -- lines, rail and sell sub-hosts) placed for Blizzard's views. The pack only
+    -- toggles its sub-hosts, so its alpha is ours to lower over Auctionator.
+    local function Zones(host, hidden)
+        if not zoneHost then
+            for _, child in ipairs(H.Children(host)) do
+                if H.Allowed(child) and child.GetName and not child:GetName() and child.GetNumRegions and child:GetNumRegions() == 2
+                    and child.GetNumChildren and child:GetNumChildren() == 2 then
+                    local seams = true
+                    for _, region in ipairs(H.Regions(child)) do
+                        local height = region.GetHeight and region:GetHeight()
+                        if not H.Texture(region) or not height or height <= 0 or height > 2
+                            or not region.GetDrawLayer or region:GetDrawLayer() ~= "ARTWORK" then seams = false end
+                    end
+                    if seams then zoneHost, zoneAlpha = child, child:GetAlpha(); break end
+                end
+            end
+        end
+        local alpha = hidden and 0 or zoneAlpha
+        if zoneHost and zoneHost:GetAlpha() ~= alpha then zoneHost:SetAlpha(alpha) end
+    end
+    local function ModernTabs()
+        local host, container = _G.AuctionHouseFrame, _G.AuctionatorAHTabsContainer
+        if not (Modern() and container and type(container.Tabs) == "table") then return end
+        H.Hook(host, "SetDisplayMode", refresh)
+        local previous = host.Tabs and host.Tabs[#host.Tabs]
+        local active = false
+        for _, tab in ipairs(container.Tabs) do
+            if H.Allowed(tab) then
+                local view = tab.frameRef
+                local visible = view and view.IsShown and view:IsShown() or false
+                active = active or visible
+                H.Tab(tab, visible)
+                if not chained[tab] and previous then
+                    chained[tab] = true
+                    -- One physical pixel apart and 2px shorter, as EUI's own tab rows.
+                    if tab.SetHitRectInsets then tab:SetHitRectInsets(0, 0, 0, 0) end
+                    local height = tab:GetHeight(); if height and height > 2 then tab:SetHeight(height - 2) end
+                    tab:ClearAllPoints(); tab:SetPoint("LEFT", previous, "RIGHT", Pixel(tab), 0)
+                end
+                previous = tab
+                H.Script(tab, "OnClick", refresh)
+                if view then H.Script(view, "OnShow", refresh); H.Script(view, "OnHide", refresh) end
+            end
+        end
+        -- Auctionator clears the display mode, which the pack's own sync skips.
+        if active and S.SetTabSelection then
+            for _, tab in ipairs(host.Tabs or {}) do if H.Allowed(tab) then S.SetTabSelection(tab, false) end end
+        end
+        Zones(host, active)
     end
     local function SearchLayout(f)
         local options = f.SearchOptions
@@ -115,26 +523,55 @@ end, function(S, module)
             f.ContainerTabs:ClearAllPoints(); f.ContainerTabs:SetPoint("BOTTOMLEFT", f.ListsContainer, "TOPLEFT", 0, 4)
         end
     end
+    -- Visit runs for every frame on every pass: its key lists are built once.
+    local PRICE_TABS = {"CurrentPricesTab", "PriceHistoryTab", "YourHistoryTab"}
+    local LEGACY_TABS = {"HistoryButton", "CurrentPricesButton", "YourHistoryButton"}
+    local ICON_BUTTONS = {"RefreshButton", "ResetSearchStringButton"}
+    local CLEAR_INSETS = {"ShoppingResultsInset", "HistoricalPriceInset", "BagInset", "ListsContainer", "RecentsContainer"}
+    local LEGACY_PANELS = {"ShoppingResultsInset", "BagInset", "HistoricalPriceInset", "ListsContainer", "RecentsContainer", "ScrollArea"}
+    local MODERN_FONTS = {"Title", "NoResultsText", "ResultsText"}
+    local LEGACY_FONTS = {"Title", "SearchLabel", "Deposit", "Total", "NoResultsText", "ResultsText"}
     local function Visit(f, kind)
+        local modern = Modern()
         if kind == "Slider" then Scroll(f); return true end
+        if headers[f] then return true end
+        if modern and f.cells then Row(f); return true end
         if f.isAuctionatorRadio and H.Allowed(f.RadioButton) then Radio(f.RadioButton) end
+        local dropdown = H.Allowed(f.DropDown) and f.DropDown:GetObjectType()
+        if dropdown == "Button" or dropdown == "DropdownButton" then Dropdown(f.DropDown) end
+        if H.Allowed(f.ResetButton) and f.ResetButton:GetObjectType() == "Button" then Reset(f.ResetButton) end
         if kind == "CheckButton" and f.GetParent then
             local parent = f:GetParent()
             if parent and parent.isAuctionatorRadio then Radio(f); return true end
         end
         if kind == "Button" then
+            if modern and widgets[f] then return true end
+            if modern and IsRefresh(f) then Glyph(f); return true end
             local icon = H.Icon(f)
             if icon and (f.IconBorder or f.EmptySlot or f.IconSelectedHighlight) then Item(f, icon); return true end
         end
+        if modern then
+            if f.GoldBox and f.SilverBox then Money(f) end
+            Center(f.Quantity)
+            ListButtons(f)
+            SearchGap(f)
+        end
         if f.ListsTab and f.RecentsTab then
             for _, tab in ipairs({f.ListsTab, f.RecentsTab}) do
-                local selected = f.selectedTab and tab.GetID and f.selectedTab == tab:GetID()
-                H.Tab(tab, selected or false)
-                if tab.ActiveMarker then H.Fade(tab.ActiveMarker) end
+                InnerTab(tab, f.selectedTab and tab.GetID and f.selectedTab == tab:GetID())
             end
             H.Hook(f, "SetView", refresh)
         end
-        for _, key in ipairs({"HistoryButton", "CurrentPricesButton", "YourHistoryButton"}) do
+        if f.CurrentPricesTab and f.PriceHistoryTab then
+            for _, key in ipairs(PRICE_TABS) do
+                local tab = f[key]
+                if H.Allowed(tab) then InnerTab(tab, f.selectedTab and tab.GetID and f.selectedTab == tab:GetID(), true) end
+            end
+            local panel = f.GetParent and f:GetParent()
+            local listing = panel and panel.CurrentPricesListing
+            if modern and listing then AlignTabs(f, f.CurrentPricesTab, listing.ScrollArea) end
+        end
+        for _, key in ipairs(LEGACY_TABS) do
             local button = f[key]
             if H.Allowed(button) then
                 local view = key == "HistoryButton" and f.HistoryPrices or key == "CurrentPricesButton" and f.CurrentPrices or f.YourHistory
@@ -142,20 +579,34 @@ end, function(S, module)
                 if view then H.Script(view, "OnShow", refresh); H.Script(view, "OnHide", refresh) end
             end
         end
-        for _, key in ipairs({"RefreshButton", "ResetSearchStringButton"}) do
+        for _, key in ipairs(ICON_BUTTONS) do
             local button = f[key]
             if H.Allowed(button) and button:GetObjectType() == "Button" then
-                local icon = H.Texture(button.GetNormalTexture and button:GetNormalTexture())
-                if icon then
-                    button.euiRefreshIcon = icon
-                    H.Action(button, {"euiRefreshIcon"}); icon:SetAlpha(1); S.SquareIcon(icon)
-                    local r, g, b = S.GetAccentColor(); if icon.SetVertexColor then icon:SetVertexColor(r, g, b) end
+                if modern and key == "RefreshButton" then Glyph(button)
+                elseif modern and key == "ResetSearchStringButton" then Reset(button)
+                else
+                    local icon = H.Texture(button.GetNormalTexture and button:GetNormalTexture())
+                    if icon then
+                        button.euiRefreshIcon = icon
+                        H.Action(button, {"euiRefreshIcon"}); icon:SetAlpha(1); S.SquareIcon(icon)
+                        local r, g, b = S.GetAccentColor(); if icon.SetVertexColor then icon:SetVertexColor(r, g, b) end
+                    end
                 end
             end
         end
         SearchLayout(f)
-        for _, key in ipairs({"ShoppingResultsInset", "BagInset", "HistoricalPriceInset", "ListsContainer", "RecentsContainer", "ScrollArea"}) do Panel(f[key]) end
-        for _, key in ipairs({"Title", "SearchLabel", "Deposit", "Total", "NoResultsText", "ResultsText"}) do H.Font(f[key], 0.9, 0.9, 0.92) end
+        if modern then
+            -- Insets stay clear; each results table washes its own row area, so the
+            -- wash, its seams and the header strip share one rect.
+            for _, key in ipairs(CLEAR_INSETS) do Zone(f[key]) end
+            Zone(f.ScrollArea, f.HeaderContainer ~= nil)
+        else
+            for _, key in ipairs(LEGACY_PANELS) do Panel(f[key]) end
+        end
+        -- Search, deposit and total labels stay Blizzard gold beside the native sell form.
+        for _, key in ipairs(modern and MODERN_FONTS or LEGACY_FONTS) do
+            H.Font(f[key], 0.9, 0.9, 0.92)
+        end
         if H.Allowed(f.NineSlice) then S.FadeNineSlice(f.NineSlice) end
         -- Auctionator's simple panels expose their decorative rock background.
         if f.Bg then H.Fade(f.Bg) end
@@ -165,7 +616,10 @@ end, function(S, module)
                 if region.GetTexture then H.Fade(region) end
             end
         end
-        if f.Inset and H.Allowed(f.Inset) and not panels[f.Inset] then
+        -- Insets stay clear on the modern auction house, popups included: their form
+        -- sits plainly on the window, like Auctionator's own Info tab.
+        if modern and H.Allowed(f.Inset) then Zone(f.Inset)
+        elseif f.Inset and H.Allowed(f.Inset) and not panels[f.Inset] then
             panels[f.Inset] = true
             S.Panel(f.Inset)
             if f.Inset.SetBackdrop then f.Inset:SetBackdrop(nil) end
@@ -174,9 +628,22 @@ end, function(S, module)
         -- WowTrimScrollBar is an EventFrame rather than a Slider.
         if H.Allowed(f.ScrollBar) then Scroll(f.ScrollBar) end
     end
+    local REFRESH_HOSTS = {"AuctionatorCancellingFrame", "AuctionatorBuyItemFrame", "AuctionatorBuyCommodityFrame"}
+    local function RefreshHost(host)
+        if not H.Allowed(host) or refreshHosts[host] then return end
+        refreshHosts[host] = true
+        -- Forget answers given before this panel was known.
+        for _, child in ipairs(H.Children(host)) do refreshes[child] = nil end
+    end
+    local TAB_METHODS = {"Selected", "DeselectTab"}
+    local DIALOGS = {"AuctionatorShoppingTabItemFrame", "AuctionatorExportListFrame", "AuctionatorImportListFrame", "AuctionatorItemHistoryFrame"}
     local function Apply()
         if InCombatLockdown() then waiting = true; return end
         waiting = false
+        if Stock() then
+            if zoneHost then zoneHost:SetAlpha(zoneAlpha) end
+            return
+        end
         local active = false
         for _, details in ipairs(A.Tabs.State.knownTabs or {}) do
             local f = _G[details.tabFrameName]
@@ -187,7 +654,7 @@ end, function(S, module)
                     and (not tab.wrapperFrame or not tab.wrapperFrame.IsShown or tab.wrapperFrame:IsShown()) or false
                 active = active or visible
                 H.Tab(tab, visible)
-                for _, method in ipairs({"Selected", "DeselectTab"}) do H.Hook(tab, method, refresh) end
+                for _, method in ipairs(TAB_METHODS) do H.Hook(tab, method, refresh) end
                 H.Script(tab, "OnClick", refresh)
                 if tab.wrapperFrame then roots[tab.wrapperFrame] = "content" end
                 if f then H.Script(f, "OnHide", refresh); H.Script(f, "OnShow", refresh) end
@@ -203,6 +670,11 @@ end, function(S, module)
                 end
             end
         end
+        ModernTabs()
+        -- Panels whose icon-only buttons are refresh buttons (as Luckyone's Auctionator skin finds them).
+        local selling = _G.AuctionatorSellingFrame
+        for _, name in ipairs(REFRESH_HOSTS) do RefreshHost(_G[name]) end
+        RefreshHost(selling and selling.SaleItemFrame)
         -- Only addon-owned globals, never a scan of the Blizzard auction house.
         if discoveryDirty then
             discoveryDirty = false
@@ -212,19 +684,29 @@ end, function(S, module)
                 end
             end
         end
-        for _, name in ipairs({"AuctionatorShoppingTabItemFrame", "AuctionatorExportListFrame",
-            "AuctionatorImportListFrame", "AuctionatorItemHistoryFrame"}) do
+        for _, name in ipairs(DIALOGS) do
             if _G[name] then roots[_G[name]] = "dialog" end
         end
+        -- Modern tab panels sit inside the already skinned auction house window;
+        -- a shell of their own would darken them against Blizzard's panels.
+        local modern = Modern()
         for f, mode in pairs(roots) do
             if H.Allowed(f) then
-                if mode ~= "controls" and not shells[f] then
+                if mode ~= "controls" and not (modern and mode == "content") and not shells[f] then
                     shells[f] = true
                     H.Shell(f, refresh, {noTopBar = mode == "content", bottomBar = mode == "dialog" and 32 or nil})
                 end
-                H.Scan(f, refresh, Visit)
+                -- A hidden root is scanned once, which hooks its OnShow; after that
+                -- only visible roots are walked, as hidden ones cannot change the look.
+                if not scanned[f] or not f.IsVisible or f:IsVisible() then
+                    scanned[f] = true
+                    H.Scan(f, refresh, Visit)
+                end
             end
         end
+        local sale = selling and selling.SaleItemFrame
+        if modern and H.Allowed(sale) and not labels[sale] then labels[sale] = true; Gold(sale, 0) end
+        for _, box in ipairs(coppers) do Clear(box, H.Allowed(sale) and sale or box:GetParent()) end
         -- Standard confirmation dialogs are private, but have numbered owned globals.
         local index = 1
         while _G["AuctionatorDialog" .. index] do
@@ -251,6 +733,8 @@ end, function(S, module)
             H.Hook(A.Dialogs, method, refresh)
         end
     end
+    -- Auctionator's modern tabs can be built after the auction house opens.
+    H.Hook(LibStub and LibStub("LibAHTab-1-0", true), "CreateTab", refresh)
     local function Discover() discoveryDirty = true; refresh() end
     H.Hook(A.Config, "InternalInitializeFrames", Discover)
     -- OnLoad already ran for frames created before this skin was enabled.

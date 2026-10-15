@@ -75,3 +75,7 @@ EUI AddonSkins integrates with EllesmereUI's public skinning API. EllesmereUI an
 This experimental branch installs as one `EUIAddonSkins` folder. Skin definitions load at startup; implementation factories wait for an enabled, loaded target and its EUI toggle. Missing/disabled targets have no toggle or active integration. Existing settings are preserved.
 
 When upgrading from the earlier multi-folder alpha, remove its old `EUIAddonSkins_*` module folders, then overwrite `EUIAddonSkins` with this ZIP. Those obsolete folders are no longer used. See [loader documentation](https://github.com/oopsie-glitch/EUI-AddonSkins/blob/loader-alpha/docs/LOADER_ALPHA.md).
+
+## Callback audit alpha
+
+The `acegui-audit-alpha` branch builds on the single-folder loader alpha and reduces repeated refresh work in DBM, Details, Gargul and ThreatClassic2. See [audit and mock measurements](https://github.com/oopsie-glitch/EUI-AddonSkins/blob/acegui-audit-alpha/docs/ACEGUI_AUDIT.md). No platform release has been published.

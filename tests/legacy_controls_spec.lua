@@ -100,6 +100,15 @@ function S.Dropdown(f) f.dropdown = true end
 function S.FadeNineSlice() end
 SetPortraitTexture = function(t) t:SetTexture('player-face') end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
+local auditScans = setmetatable({}, {__mode = 'k'})
+local auditHelper = ns.CreateSkinHelper
+ns.CreateSkinHelper = function(...)
+    local H = auditHelper(...); local scan = H.Scan
+    H.Scan = function(root, ...) auditScans[root] = (auditScans[root] or 0) + 1; return scan(root, ...) end
+    return H
+end
+local auditBaseline = os.getenv('EUI_AUDIT_BASELINE') == '1'
+
 local H = ns.CreateSkinHelper(S, {})
 -- Scoped soft borders preserve EUI fill, hover, icons, scrollbars and other skins.
 local softAPI = setmetatable({}, {__index = S})
@@ -481,6 +490,12 @@ assert(dropdown.dropdown and check.checkbox and check.checked and slider.value =
 dbm:ShowTab(2); assert(not dbmTab1.selected and dbmTab2.selected, 'DBM tabs must style before the callback returns'); flush()
 local dynamic = frame('CheckButton', nil, page)
 assert(DBM_GUI:CreateNewPanel() == 'panel-native'); flush(); assert(dynamic.checkbox)
+auditScans[dbm] = 0
+for _ = 1,100 do assert(DBM_GUI:CreateNewPanel() == 'panel-native') end
+flush()
+print(('BENCH dbm_construct full=%d callbacks=100'):format(auditScans[dbm] or 0))
+if not auditBaseline then assert(auditScans[dbm] == 1, 'DBM construction burst repeated full scans') end
+
 local dbmHook, objects = dbm.ShowTab, #row.regions + #row.toggle.regions + #slider.regions
 for _ = 1, 5 do modules.DBM.refresh(); flush() end
 assert(dbm.ShowTab == dbmHook and objects == #row.regions + #row.toggle.regions + #slider.regions)
@@ -638,7 +653,8 @@ Gargul = {Interface = iface, UI = {components = {}}}
 local navigation = frame('Frame', nil, gargulRoot)
 local navRow = frame('Button', nil, navigation)
 local navLabel = navRow:CreateFontString(nil, 'ARTWORK', 'GameFontNormal'); navLabel:SetTextColor(0.1, 0.1, 0.1, 1)
-local overview = {InterfaceItems = {Frame = {Window = {frame = gargulRoot, type = 'Frame'}}, Table = {Sections = {frame = navigation}}}}
+local sections = {frame = navigation, Refresh = function() return 'refresh-native' end, SetData = function() return 'data-native' end}
+local overview = {InterfaceItems = {Frame = {Window = {frame = gargulRoot, type = 'Frame'}}, Table = {Sections = sections}}}
 local drawn
 overview.showSection = function() drawn = frame('CheckButton', nil, gargulRoot); return 'section-native' end
 iface.Settings = {Overview = overview}
@@ -650,6 +666,17 @@ assert(gear.Texture.crop and countdown.value == 17 and fills == 0 and not protec
 assert(navLabel.textColor[1] == 0.9 and not navRow.button, 'Gargul sidebar must be readable without boxed rows')
 navLabel:SetTextColor(0.1, 0.1, 0.1, 1); assert(navLabel.textColor[1] == 0.9)
 assert(overview:showSection() == 'section-native' and drawn.checkbox, 'Gargul section must be styled before returning')
+do
+local newNav = frame('Button', nil, navigation)
+local newNavLabel = newNav:CreateFontString(nil, 'ARTWORK', 'GameFontNormal'); newNavLabel:SetTextColor(0.1, 0.1, 0.1, 1)
+flush(); auditScans[gargulRoot], auditScans[navigation] = 0, 0
+for _ = 1,100 do assert(sections:Refresh() == 'refresh-native') end
+flush()
+assert(newNavLabel.font == 'eui' and newNavLabel.textColor[1] == 0.9 and not newNav.button)
+print(('BENCH gargul_navigation full=%d local=%d callbacks=100'):format(auditScans[gargulRoot] or 0, auditScans[navigation] or 0))
+if not auditBaseline then assert(auditScans[gargulRoot] == 0 and auditScans[navigation] == 100, 'navigation updates scanned unrelated Gargul windows') end
+end
+
 overloaded:SetFont(2); flush(); assert(overloaded.font == 'eui', 'Gargul relative-size updates must retain the EUI font')
 local dynamicRoot = iface:createWindow({name = 'GargulDynamic'}); local late = frame('CheckButton', nil, dynamicRoot)
 flush(); assert(dynamicRoot.shell and late.checkbox)

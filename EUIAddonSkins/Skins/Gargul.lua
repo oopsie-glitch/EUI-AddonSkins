@@ -45,7 +45,9 @@ ns.RegisterScopedSkin("Gargul", "Gargul", {
         local sectionFrame = Frame(sections)
         if C.H.Allowed(sectionFrame) and items.Frame and items.Frame.Window then
             C.navigation[sectionFrame] = true
-            for _, name in ipairs({"Refresh", "SetSelection", "SetData"}) do C.H.Hook(sections, name, C.RefreshNow) end
+            for _, name in ipairs({"Refresh", "SetSelection", "SetData"}) do
+                C.H.Hook(sections, name, function() C.RefreshControlsNow(sectionFrame) end)
+            end
         end
         local roots, added = {}, {}
         local function Add(item)

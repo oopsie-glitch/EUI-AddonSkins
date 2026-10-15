@@ -114,6 +114,15 @@ function S.Dropdown(f) f.dropdown = true end
 function S.FadeNineSlice() end
 SetPortraitTexture = function(t) t:SetTexture('player-face') end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
+local auditScans = setmetatable({}, {__mode = 'k'})
+local auditHelper = ns.CreateSkinHelper
+ns.CreateSkinHelper = function(...)
+    local H = auditHelper(...); local scan = H.Scan
+    H.Scan = function(root, ...) auditScans[root] = (auditScans[root] or 0) + 1; return scan(root, ...) end
+    return H
+end
+local auditBaseline = os.getenv('EUI_AUDIT_BASELINE') == '1'
+
 local originalFrame = frame
 frame = function(...)
     local f = originalFrame(...)
@@ -215,6 +224,23 @@ assert(gear and gear:GetWidth() == 22 and gear.icon.path:find('dm_settings.png',
 gear.hooks.OnClick(); assert(nativeMenu == 1 and popupOwner == f.header and popupList == list, 'native context menu action lost')
 assert(dialog:Open('ThreatClassic2') == 'open-native')
 assert(dialog:FeedGroup('ThreatClassic2') == 'feed-native'); flush()
+local localGroup = frame('Frame', nil, open)
+local groupCheck = frame('CheckButton', nil, localGroup); groupCheck.checked = true; groupCheck.action = function() return 'native-check' end
+auditScans[f], auditScans[open], auditScans[localGroup] = 0, 0, 0
+for _ = 1,100 do assert(dialog:FeedGroup('ThreatClassic2', {}, {frame = localGroup}) == 'feed-native') end
+flush()
+print(('BENCH threat_feed full=%d local=%d callbacks=100'):format(auditScans[open] or 0, auditScans[localGroup] or 0))
+assert(groupCheck.checkbox and groupCheck.checked and groupCheck.action() == 'native-check')
+if not auditBaseline then assert(auditScans[f] == 0 and auditScans[open] == 0 and auditScans[localGroup] == 1, 'Ace group feeds caused full meter/options scans') end
+auditScans[f], auditScans[open] = 0, 0
+local meterUpdates, auditLook = 0, ns.GetMeterStyle
+ns.GetMeterStyle = function(...) meterUpdates = meterUpdates + 1; return auditLook(...) end
+for i = 1,100 do f:SetSize(217 + i, 100 + i) end
+flush()
+print(('BENCH threat_resize full=%d options=%d meter=%d callbacks=100'):format(auditScans[f] or 0, auditScans[open] or 0, meterUpdates))
+ns.GetMeterStyle = auditLook
+if not auditBaseline then assert(auditScans[f] == 0 and auditScans[open] == 0 and meterUpdates == 1, 'meter resizing scanned options or repeated meter painting') end
+
 local children = #f.header.children
 for _ = 1, 10 do modules.ThreatClassic2.refresh(); flush() end
 assert(#f.header.children == children, 'warm refresh created duplicate controls')
@@ -229,11 +255,16 @@ assert(b.fill == 'eui-bar' and b.backdrop == nil and b.edgeBackdrop.backdrop == 
 assert(f.header:GetHeight() == 22 and f.header.text.textColor[1] == accent, 'native header redraw overwrote the skin')
 accent = 0.7; S.looks(); flush(); assert(f.header.text.textColor[1] == 0.7)
 local late = bar(); modules.ThreatClassic2.refresh(); flush(); assert(late.fill == 'eui-bar')
-combat = true; b:SetStatusBarTexture('combat-native'); flush(); assert(b.fill == 'combat-native', 'combat mutation was not deferred')
+combat = true; local combatControl = frame('CheckButton', nil, localGroup)
+dialog:FeedGroup('ThreatClassic2', {}, {frame = localGroup})
+b:SetStatusBarTexture('combat-native'); flush(); assert(not combatControl.checkbox)
+assert(b.fill == 'combat-native', 'combat mutation was not deferred')
 combat = false
 for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
-flush(); assert(b.fill == 'eui-bar', 'deferred meter update was lost')
-enabled = false; b:SetStatusBarTexture('disabled-native'); b.name:SetFont('disabled-font', 16)
-modules.ThreatClassic2.refresh(); flush(); assert(b.fill == 'disabled-native' and b.name.font == 'disabled-font')
+flush(); assert(b.fill == 'eui-bar' and combatControl.checkbox, 'deferred meter/control update was lost')
+enabled = false; local disabledControl = frame('CheckButton', nil, localGroup)
+dialog:FeedGroup('ThreatClassic2', {}, {frame = localGroup})
+b:SetStatusBarTexture('disabled-native'); b.name:SetFont('disabled-font', 16)
+modules.ThreatClassic2.refresh(); flush(); assert(b.fill == 'disabled-native' and b.name.font == 'disabled-font' and not disabledControl.checkbox)
 assert(not f.hooks.OnUpdate and not b.hooks.OnUpdate, 'skin added threat polling')
 print('PASS: ThreatClassic2 optional loading, shared EUI meter look, native threat/colours/columns/geometry/menu actions, lazy Ace options, redraws, combat/toggle guards and warm reuse')

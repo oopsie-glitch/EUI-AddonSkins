@@ -1,0 +1,57 @@
+{
+  "environment": "Mock WoW frames; H.Scan invocations by root, not FPS/CPU or recursive frame counts.",
+  "before": {
+    "dbm_construct": {
+      "full": 100,
+      "callbacks": 100
+    },
+    "gargul_navigation": {
+      "full": 100,
+      "local": 0,
+      "callbacks": 100
+    },
+    "details_disabled": {
+      "full": 100,
+      "local": 0,
+      "callbacks": 100
+    },
+    "threat_feed": {
+      "full": 100,
+      "local": 0,
+      "callbacks": 100
+    },
+    "threat_resize": {
+      "full": 0,
+      "options": 100,
+      "meter": 100,
+      "callbacks": 100
+    }
+  },
+  "after": {
+    "dbm_construct": {
+      "full": 1,
+      "callbacks": 100
+    },
+    "gargul_navigation": {
+      "full": 0,
+      "local": 100,
+      "callbacks": 100
+    },
+    "details_disabled": {
+      "full": 0,
+      "local": 1,
+      "callbacks": 100
+    },
+    "threat_feed": {
+      "full": 0,
+      "local": 1,
+      "callbacks": 100
+    },
+    "threat_resize": {
+      "full": 0,
+      "options": 0,
+      "meter": 1,
+      "callbacks": 100
+    }
+  }
+}

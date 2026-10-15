@@ -128,6 +128,15 @@ function S.Dropdown(f) f.dropdown = true end
 function S.FadeNineSlice() end
 SetPortraitTexture = function(t) t:SetTexture('player-face') end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
+local auditScans = setmetatable({}, {__mode = 'k'})
+local auditHelper = ns.CreateSkinHelper
+ns.CreateSkinHelper = function(...)
+    local H = auditHelper(...); local scan = H.Scan
+    H.Scan = function(root, ...) auditScans[root] = (auditScans[root] or 0) + 1; return scan(root, ...) end
+    return H
+end
+local auditBaseline = os.getenv('EUI_AUDIT_BASELINE') == '1'
+
 local originalFrame = frame
 frame = function(...)
     local f = originalFrame(...)
@@ -404,6 +413,7 @@ function selector:Refresh()
 end
 function selector:RefreshMe() self.initialRefreshes = (self.initialRefreshes or 0) + 1; self:Refresh() end
 function editor:GetObjectSelector() return selector end
+function editor:RefreshDisabledOptions() return "disabled-native" end
 function editor:EditObject()
     self.lazyControl = frame('Button', nil, self)
     self.lazyControl.MyObject = {type = 'switch', checked_texture = self.lazyControl:CreateTexture()}
@@ -416,6 +426,12 @@ assert(editor:EditObject() == 'edit-native' and editor.lazyControl.button, 'lazy
 assert(selector:Refresh() == 'selector-native' and selector.lines[1].Label.font == 'eui', 'selector row waited for queued font styling')
 for _ = 1, 3 do modules.Details.refresh(); flush() end
 assert(selector.initialRefreshes == 1 and not selector.lines[1].button, 'designer refresh was repeated or pooled row became an action button')
+auditScans[DetailsOptionsWindow], auditScans[editor] = 0, 0
+for _ = 1,100 do assert(editor:RefreshDisabledOptions() == 'disabled-native') end
+flush()
+print(('BENCH details_disabled full=%d local=%d callbacks=100'):format(auditScans[DetailsOptionsWindow] or 0, auditScans[editor] or 0))
+if not auditBaseline then assert(auditScans[DetailsOptionsWindow] == 0 and auditScans[editor] == 1, 'designer setter burst rescanned unrelated windows') end
+
 -- Shared menu/submenu ownership must not leak to another addon.
 GameCooltip:SetHost(meter.baseframe.cabecalho.fechar); assert(GameCooltip:ShowCooltip() == 'menu-native')
 assert(tip1.backdrop.bgFile ~= 'native-tooltip' and tip2.border[1] == 0.055 and tip1.Lines[1].leftText.font == 'eui')
@@ -429,7 +445,10 @@ GameCooltip:BuildTooltipSecondFrame()
 assert(pooled.leftText.font == 'eui' and pooled.background.color[4] == 0.14, 'new submenu row was not styled synchronously')
 accent = 0.8; modules.Details.refresh(); flush()
 assert(tip1.Lines[1].background.color[1] == 0.8, 'open popup ignored the accent refresh')
-ns.SetDetailsSetting('menus', false); flush()
+editor:RefreshDisabledOptions()
+ns.SetDetailsSetting('menus', false)
+auditScans[editor] = 0; flush()
+assert(auditScans[editor] == 0, 'queued designer refresh ignored disabled menu styling')
 assert(not tip1.disabled and tip1.frameBackgroundTexture.alpha == 1 and pooled.background.path == 'native', 'menu toggle did not restore the shared popup')
 ns.SetDetailsSetting('menus', true); flush()
 assert(tip1.disabled and tip1.frameBackgroundTexture.alpha == 0, 'menu toggle did not restyle the open popup')

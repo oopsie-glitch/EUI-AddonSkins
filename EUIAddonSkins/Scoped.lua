@@ -161,6 +161,27 @@ function ns.RegisterScopedSkin(id, label, config)
             end
             if S.RefreshSoftBorders then S.RefreshSoftBorders() end
         end
+        -- Setter/data callbacks can repaint only their owned subtree instead
+        -- of rediscovering and scanning every integration window.
+        function C.RefreshControlsNow(root)
+            if applying or not ns.IsEnabled(module) or not H.Allowed(root) then return end
+            if InCombatLockdown and InCombatLockdown() then waiting = true; return end
+            applying = true
+            H.Safe(H.Scan, root, refresh, Visit)
+            applying = false
+        end
+        local controlsPending = {}
+        local function PaintControls()
+            for root in pairs(controlsPending) do
+                controlsPending[root] = nil
+                C.RefreshControlsNow(root)
+            end
+        end
+        function C.RefreshControls(root)
+            if not ns.IsEnabled(module) or not H.Allowed(root) then return end
+            controlsPending[root] = true
+            H.Queue(controlsPending, PaintControls)
+        end
         function C.RefreshNow()
             if applying or not ns.IsEnabled(module) then return end
             applying = true

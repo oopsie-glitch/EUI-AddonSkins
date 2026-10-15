@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0-alpha.6 — Callback refresh audit (untagged)
+
+- Combine DBM panel-construction refreshes.
+- Limit Details designer disabled-state refreshes to the editor.
+- Limit Gargul navigation refreshes to its navigation subtree.
+- Combine ThreatClassic2 group feeds and resize updates without scanning unrelated options.
+- Preserve immediate completed-window/tab styling and combat/toggle guards.
+
 ## 1.4.0-alpha.5 — Single-folder activation (untagged)
 
 - Restore one installation folder and one WoW addon-list entry.

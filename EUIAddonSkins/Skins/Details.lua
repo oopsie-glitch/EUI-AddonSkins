@@ -148,7 +148,10 @@ local function Setup(C, refresh)
     state.BindDesigner = function(editor)
         if not H.Allowed(editor) or not Owned(editor) or ns.DetailsSettings().menus == false then return end
         H.Hook(editor, "EditObject", C.RefreshNow)
-        H.Hook(editor, "RefreshDisabledOptions", C.RefreshNow)
+        local function DisabledOptions()
+            if ns.DetailsSettings().menus ~= false then C.RefreshControlsNow(editor) end
+        end
+        H.Hook(editor, "RefreshDisabledOptions", function() H.Queue(editor, DisabledOptions) end)
         local selector = editor.GetObjectSelector and editor:GetObjectSelector()
         if not H.Allowed(selector) then return end
         local function Rows()

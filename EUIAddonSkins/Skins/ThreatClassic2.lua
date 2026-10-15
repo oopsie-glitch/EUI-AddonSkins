@@ -110,6 +110,10 @@ local function Setup(C, refresh)
             end
         end
     end
+    state.Resize = function()
+        if InCombatLockdown and InCombatLockdown() then refresh(); return end
+        state.Meter()
+    end
     return state
 end
 
@@ -120,9 +124,13 @@ ns.RegisterScopedSkin("ThreatClassic2", "ThreatClassic2", {
         Setup(C, refresh)
         local dialog = LibStub and LibStub("AceConfigDialog-3.0", true)
         C.H.Hook(dialog, "Open", function(_, name) if name == "ThreatClassic2" then C.RefreshNow() end end)
-        C.H.Hook(dialog, "FeedGroup", function(_, name) if name == "ThreatClassic2" then C.RefreshNow() end end)
+        C.H.Hook(dialog, "FeedGroup", function(_, name, _, container)
+            if name ~= "ThreatClassic2" then return end
+            local root = container and (container.frame or container)
+            if C.H.Allowed(root) then C.RefreshControls(root) else refresh() end
+        end)
         C.H.Script(Window(), "OnShow", C.RefreshNow)
-        C.H.Script(Window(), "OnSizeChanged", C.RefreshNow)
+        C.H.Script(Window(), "OnSizeChanged", function() C.H.Queue(C.threat, C.threat.Resize) end)
     end,
     roots = function(C)
         C.threat.Meter()

@@ -85,7 +85,7 @@ ns.RegisterScopedSkin("DBM", "Deadly Boss Mods", {
     end,
     hooks = function(C, refresh)
         for _, name in ipairs({"CreateNewPanel", "CreateBossModPanel", "CreateDropdown"}) do
-            C.H.Hook(_G.DBM_GUI, name, C.RefreshNow)
+            C.H.Hook(_G.DBM_GUI, name, refresh)
         end
         for _, name in ipairs({"ShowTab", "DisplayFrame", "UpdateMenuFrame", "ClearSelection"}) do
             C.H.Hook(Window(), name, C.RefreshNow)

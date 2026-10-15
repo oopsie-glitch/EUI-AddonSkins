@@ -6,6 +6,7 @@ ns.skinCatalog = {
     {id = "AtlasLootContinued", label = "AtlasLootClassic Continued", targets = {"AtlasLootContinued"}},
     {id = "Attune", label = "Attune", targets = {"Attune"}},
     {id = "Auctionator", label = "Auctionator", targets = {"Auctionator"}},
+    {id = "BtWQuests", label = "BtWQuests", targets = {"BtWQuests"}},
     {id = "BugSack", label = "BugSack", targets = {"BugSack"}},
     {id = "DBM", label = "Deadly Boss Mods", targets = {"DBM-Core", "DBM-GUI"}},
     {id = "Details", label = "Details!", targets = {"Details"}},

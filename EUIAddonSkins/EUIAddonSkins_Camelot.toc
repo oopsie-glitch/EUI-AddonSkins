@@ -22,6 +22,7 @@ Skins\Altoholic.lua
 Skins\AtlasLootContinued.lua
 Skins\Attune.lua
 Skins\Auctionator.lua
+Skins\BtWQuests.lua
 Skins\BugSack.lua
 Skins\DBM.lua
 Skins\Details.lua

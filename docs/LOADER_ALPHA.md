@@ -1,33 +1,23 @@
-# Load-on-demand alpha
+# Deferred activation alpha
 
-Version `1.4.0-alpha.4`, untagged branch `loader-alpha`, based on stable `b8e0125`. This experiment does not merge PallyPower, BugSack or Altoholic development branches. No release tag or platform upload is created.
+Version `1.4.0-alpha.5`, untagged `loader-alpha`, based on stable skins. Other skin-development branches remain separate. No release tag or CurseForge/Wago publication is created.
 
-## Installation and behavior
+## Installation
 
-Extract every `EUIAddonSkins*` folder from the single ZIP into `Interface/AddOns/`. There are 21 sibling addon folders: the core and 20 load-on-demand skin modules. Keep the child modules enabled in WoW's addon list; they do not load automatically. Existing skin Lua files left by an older install are no longer in the core TOC and do not execute. Saved variables and existing EUI registration names stay unchanged.
+Extract the single `EUIAddonSkins` folder into `Interface/AddOns/`. If upgrading from alpha.1–alpha.4, remove the old sibling `EUIAddonSkins_*` module folders. They are not used by alpha.5, but WoW will still list them if left installed. Keep your saved variables. Generic, Camelot and Mainline TOCs have identical runtime lists, preventing older client-specific manifests from selecting the previous setup.
 
-The small catalog checks target installation and character enable state. Missing/disabled targets get no toggle and execute no skin implementation. Enabled load-on-demand targets keep a toggle, but their skin code loads only once the target is loaded and EUI enables the skin. Loading is deferred during combat. The loader never loads the target addon itself and never changes addon enable state. Changing enabled addons normally takes effect after a reload.
+## Activation
 
-The core's existing ADDON_LOADED / PLAYER_LOGIN listener also handles activation; PLAYER_REGEN_ENABLED handles combat recovery. There is no OnUpdate loop or recurring timer. Target metadata is cached per character. A failed child load is reported once and isolated, without repeated retries on unrelated events.
+Every skin Lua file loads at startup and registers a small factory. The factory body does not run until its target is installed, enabled for the current character, loaded, and permitted by EUI. Missing/disabled targets have no EUI toggle. Enabled load-on-demand targets keep their toggle and activate when loaded; the collection never force-loads a target. Activation waits out combat. Failed factories are isolated and not repeatedly retried. Successful factories are released after use.
 
-Each child TOC declares LoadOnDemand and a dependency on the core. The controlled GetSkinNamespace entry point returns the original shared namespace only during an authorized child load, preserving shared callbacks used by Details. Existing skin bodies are unchanged; the production namespace bootstrap is the only change to the moved implementation files. Shared helpers and existing Details settings/layout utilities remain in the core.
+Modern enable-state checks use UnitGUID, matching Blizzard's addon-list implementation; legacy checks use UnitName. Metadata is cached per character. Existing EUI registration names, saved preferences, shared namespaces and skin bodies are preserved. There is no extra per-frame polling and no child-addon loading API. The core's event listener handles late targets and combat recovery.
 
-## Automated checks
+This uses the single-addon deferred-function pattern also seen in AddOnSkins, implemented independently with EllesmereUI's API. No AddOnSkins code/assets are bundled. It is deferred activation, not deferred loading of Lua files. Unused definitions still cost parsing and retained code memory. Startup, memory and FPS gains have not been measured in WoW.
 
-Run `python3 scripts/package.py`. It validates every core/child TOC, version, runtime path, dependency, Lua file and ZIP entry, then runs 15 suites. New tests cover absent/disabled targets, late target loads, EUI toggle restoration, combat deferral, modern/legacy metadata signatures, failure isolation, single loading, and all 20 actual relocated skin files with separate WoW namespaces. Existing skin regression tests still run against the moved files.
+## Checks
 
-With all targets absent, the actual core TOC test executes zero skin implementation files and registers zero irrelevant toggles. The core still loads shared utilities and a roughly 4 KB loader/catalog. This is not an in-game memory, CPU or FPS measurement. Actual WoW behavior, taint and perceived startup gains have not been measured.
+`python3 scripts/package.py` validates versions, every TOC/runtime path, all 20 skin definitions and the single-root ZIP with MIT LICENSE. It runs 15 suites covering the actual TOCs, only-BugSack filtering, the reported GUID/name/account mismatch, deferred factories, late EUI/targets, disabled toggles, combat, failure isolation, reuse, shared callbacks and all existing skin regressions. No in-game verification of this version is claimed.
 
-The local archive contains 21 sibling directories and 54 runtime files; MIT LICENSE is in the core. Development files are excluded. `.pkgmeta` moves each existing module directory out of the checkout wrapper, following the official packager's move-folders behavior. Local validation checks the expected contents; an official CurseForge packaging job has not been triggered on this untagged branch.
+The ZIP contains 34 runtime files under one addon folder. Development tools and documentation remain in GitHub and outside the player ZIP. `.pkgmeta` again promotes only the core addon directory.
 
-## Upgrading an existing install
-
-The core ships matching generic, Camelot and Mainline TOCs. The official packager generates client-specific manifests; WoW can prefer those over the generic TOC. The alpha.1 local ZIP omitted client-specific files, so extracting over a CurseForge install could leave an older manifest active. Alpha.2 overwrites both supported manifests with the loader file list. Tests execute all three core manifests with only BugSack installed and enabled and require exactly one EUI toggle. No EUI saved preferences are deleted.
-
-## Diagnostics
-
-`/euiskins diagnostics` opens a copyable report only on request. It records the executing code version, TOC metadata version, target and skin loaded flags, EUI registration state and raw enable-state results from modern/default-character, modern/named-character and legacy API calls. This build does not claim to resolve the reported remaining registration issue. Diagnostic collection does not change addon enable states or load targets.
-
-## Character enable-state correction
-
-Alpha.4 follows modern Blizzard AddonList.lua and passes UnitGUID("player") to C_AddOns.GetAddOnEnableState. Passing UnitName can resolve a default enabled state on clients using GUID-based overrides. The omitted-character query is account-wide and state 1 can mean enabled on some other characters. Legacy GetAddOnEnableState continues using the character name. Regression tests replay the supplied account-wide values and confirm only BugSack, Details and Forever Dungeon Journal are eligible for that fixture. Diagnostics now show all three modern queries explicitly.
+`/euiskins diagnostics` opens a copyable report on request. Its final column now says "skin activated": all definitions are read at startup, so it no longer claims that inactive skin files were left unloaded.

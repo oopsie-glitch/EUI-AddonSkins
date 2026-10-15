@@ -189,7 +189,7 @@ H.Portrait(chrome, true); assert(square.path == 'player-face' and square.crop[1]
 local modules = {}
 function ns.RegisterModule(id, _, available, install) modules[id] = {available = available, install = install} end
 assert(loadfile('EUIAddonSkins/Scoped.lua'))('EUIAddonSkins', ns)
-assert(loadfile('EUIAddonSkins_Attune/Skin.lua'))('EUIAddonSkins', ns)
+assert(loadfile('EUIAddonSkins/Skins/Attune.lua'))('EUIAddonSkins', ns)
 Attune_MainFrame = frame('Frame', 'Attune_MainFrame'); Attune_GraphRoot = frame('Frame', 'Attune_GraphRoot', Attune_MainFrame)
 local card = frame('Button', 'Attune_Node_42', Attune_GraphRoot)
 card:SetBackdrop({edgeFile = 'native', bgFile = 'fill'}); card:SetBackdropColor(0.8, 0.6, 0, 0.3)
@@ -211,7 +211,7 @@ tree.toggle.normal = texture(); tree.toggle.normal.path = 130821
 modules.Attune.refresh(); flush()
 assert(tree.icon.path == 'dungeon-status-art' and tree.icon.alpha == 1 and tree.euiSelection.color[4] == 0.2)
 assert(tree.toggle.regions[1].text == '-')
-assert(loadfile('EUIAddonSkins_Altoholic/Skin.lua'))('EUIAddonSkins', ns)
+assert(loadfile('EUIAddonSkins/Skins/Altoholic.lua'))('EUIAddonSkins', ns)
 AltoholicFrame = frame('Frame', 'AltoholicFrame'); AltoholicFrame.Tabs = {}
 local mixedRow = frame('Button', nil, AltoholicFrame); mixedRow.icon = 134400; mixedRow.Icon = texture()
 local assetRow = frame('Button', nil, AltoholicFrame); assetRow.icon = 134400
@@ -229,7 +229,7 @@ modules.Altoholic.install(S, modules.Altoholic); flush()
 assert(mixedRow.Icon.crop and mixedRow.button)
 assert(AltoholicFrame.shellOptions.noBorder, 'Altoholic soft chrome must stay scoped to its window')
 assert(owner:Initialize() == 'init-original' and owner:Toggle() == 'toggle-original' and bindings >= 3)
-assert(loadfile('EUIAddonSkins_ForeverDungeonJournal/Skin.lua'))('EUIAddonSkins', ns)
+assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)
 ForeverDungeonJournal_NS = {THEMES = {}, ToggleJournal = function() end}
 ForeverDungeonJournalFrame = frame('Frame')
 local journal = ForeverDungeonJournalFrame
@@ -268,7 +268,7 @@ for _, key in ipairs({'mapTab', 'bossesTab', 'questsTab'}) do
     tab:Disable(); assert(tab.selected and tab.normal.alpha == 0)
 end
 -- Auctionator legacy templates: wrappers, controls and pooled inventory rows.
-assert(loadfile('EUIAddonSkins_Auctionator/Skin.lua'))('EUIAddonSkins', ns)
+assert(loadfile('EUIAddonSkins/Skins/Auctionator.lua'))('EUIAddonSkins', ns)
 AuctionFrame = frame(); AuctionFrame.selectedTab = 1
 AuctionFrameTab1 = frame('Button'); AuctionFrameTab2 = frame('Button'); AuctionFrameTab3 = frame('Button')
 Auctionator = {Tabs = {State = {knownTabs = {{name = 'Shopping', tabFrameName = 'AuctionatorShoppingFrame'}}}}}
@@ -322,7 +322,7 @@ assert(count == #item.regions + #radio.RadioButton.regions, 'warm refresh create
 S.GetFont = function() return 'eui', '' end
 -- Questie: actual adapter with AceGUI wrapper roots and independent tracker updates.
 Questie, QuestieLoader = nil, nil
-assert(loadfile('EUIAddonSkins_Questie/Skin.lua'))('EUIAddonSkins', ns)
+assert(loadfile('EUIAddonSkins/Skins/Questie.lua'))('EUIAddonSkins', ns)
 assert(not modules.Questie.available())
 Questie = {db = {profile = {trackerBackground = {r = 0.2, g = 0.3, b = 0.4, a = 0.25}}}}
 local journey = {BuildMainFrame = function() return 'journey-native' end, ToggleJourneyWindow = function() end, private = {}}
@@ -426,7 +426,7 @@ enabled = true
 print('PASS: Questie owned windows/tabs, tracker colours/opacity, secure items, dynamic rows, combat/toggles and hook idempotence')
 -- DBM-GUI loads on demand; its colour selectors and previews are not ordinary buttons.
 DBM_GUI, DBM_GUI_OptionsFrame = nil, nil
-assert(loadfile('EUIAddonSkins_DBM/Skin.lua'))('EUIAddonSkins', ns)
+assert(loadfile('EUIAddonSkins/Skins/DBM.lua'))('EUIAddonSkins', ns)
 assert(not modules.DBM.available(), 'DBM skin forced missing GUI initialization')
 DBM_GUI = {CreateNewPanel = function() return 'panel-native' end}
 local dbm = frame('Frame', 'DBM_GUI_OptionsFrame')
@@ -498,7 +498,7 @@ enabled = true
 print('PASS: DBM lazy GUI, dynamic controls, selection, swatches/previews, theme refresh, combat/toggles and idempotence')
 -- AtlasLoot Continued: owned custom widgets and foreground/status art.
 AtlasLoot = nil
-assert(loadfile('EUIAddonSkins_AtlasLootContinued/Skin.lua'))('EUIAddonSkins', ns)
+assert(loadfile('EUIAddonSkins/Skins/AtlasLootContinued.lua'))('EUIAddonSkins', ns)
 assert(not modules.AtlasLootContinued.available())
 local atlasRoot = frame('Frame', 'AtlasLoot_GUI-Frame')
 atlasRoot:SetBackdrop({bgFile = 'native-fill', edgeFile = 'native-bevel', edgeSize = 16})
@@ -562,7 +562,7 @@ enabled = true
 print('PASS: AtlasLoot windows, synchronous pooled menus, selectors, colours/overlays/maps/models, dynamic controls and idempotence')
 -- GTFO: skin only its settings canvases; sound/gameplay methods stay untouched.
 GTFO = nil
-assert(loadfile('EUIAddonSkins_GTFO/Skin.lua'))('EUIAddonSkins', ns)
+assert(loadfile('EUIAddonSkins/Skins/GTFO.lua'))('EUIAddonSkins', ns)
 assert(not modules.GTFO.available())
 GTFO = {Settings = {Volume = 3, Enabled = true}, PlaySound = function() return 'alert-native' end}
 GTFO_MainFrame, GTFO_IgnoreOptionsFrame = nil, nil
@@ -613,7 +613,7 @@ print('PASS: GTFO late options, settings-only roots, preserved sound/actions/val
 local fills = 0; S.ApplyBarFill = function() fills = fills + 1 end
 -- Gargul's SetFont(rem, flags) overload must never receive a font path.
 Gargul = nil
-assert(loadfile('EUIAddonSkins_Gargul/Skin.lua'))('EUIAddonSkins', ns)
+assert(loadfile('EUIAddonSkins/Skins/Gargul.lua'))('EUIAddonSkins', ns)
 assert(not modules.Gargul.available())
 UIParent = frame()
 S.GetFont = function() return 'eui', 'OUTLINE' end

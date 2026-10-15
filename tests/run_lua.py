@@ -13,7 +13,7 @@ lua.lua_close.argtypes = [ctypes.c_void_p]
 state = lua.luaL_newstate()
 lua.luaL_openlibs(state)
 try:
-    for path in Path('.').glob('EUIAddonSkins*/*.lua'):
+    for path in Path('EUIAddonSkins').rglob('*.lua'):
         rc = lua.luaL_loadfilex(state, str(path).encode(), None)
         if rc:
             raise RuntimeError(lua.lua_tolstring(state, -1, None).decode())

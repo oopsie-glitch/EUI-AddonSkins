@@ -1,6 +1,6 @@
 local ADDON, ns = ...
--- Catalog metadata is intentionally small; skin implementation files live in
--- separate LoadOnDemand addons and are never in the core TOC.
+-- One-folder activation catalog. Skin files define factories at startup;
+-- their implementation bodies run only for eligible, loaded targets.
 ns.skinCatalog = {
     {id = "Altoholic", label = "Altoholic", targets = {"Altoholic"}},
     {id = "AtlasLootContinued", label = "AtlasLootClassic Continued", targets = {"AtlasLootContinued"}},
@@ -25,7 +25,6 @@ ns.skinCatalog = {
 }
 ns.skinCatalogByID = {}
 for _, entry in ipairs(ns.skinCatalog) do
-    entry.addon = ADDON .. "_" .. entry.id
     ns.skinCatalogByID[entry.id] = entry
 end
 
@@ -61,31 +60,28 @@ local function TargetLoaded(entry)
     return false
 end
 function ns.LoadSkin(entry)
-    -- Child dependencies cannot resolve while their core is still loading.
     local loaded = C_AddOns and C_AddOns.IsAddOnLoaded or IsAddOnLoaded
     if not loaded or not loaded(ADDON) then return end
-    if entry.loading or entry.loaded or entry.failed or not entry.skin or not ns.IsEnabled()
+    if entry.loading or entry.loaded or entry.failed or not entry.factory or not entry.skin or not ns.IsEnabled()
         or entry.skin.IsEnabled and not entry.skin.IsEnabled() or not ns.TargetEnabled(entry)
         or not TargetLoaded(entry) then return end
     if InCombatLockdown and InCombatLockdown() then return end
-    local load = C_AddOns and C_AddOns.LoadAddOn or LoadAddOn
-    if not load then return end
     entry.loading = true
-    local ok, loaded, reason = pcall(load, entry.addon)
+    local ok, reason = pcall(entry.factory)
     entry.loading = false
-    entry.loaded = ok and loaded and true or false
-    if not entry.loaded then
+    entry.loaded = ok
+    if ok then entry.factory = nil
+    else
         entry.failed = true
-        geterrorhandler()(ADDON .. " / " .. entry.label .. ": " .. tostring(ok and reason or loaded))
+        geterrorhandler()(ADDON .. " / " .. entry.label .. ": " .. tostring(reason))
     end
 end
--- Return the shared namespace only while the loader is loading a known module.
--- Details and other integrations write callbacks into this shared namespace.
-EUIAddonSkins = {GetSkinNamespace = function(addon)
-    for _, entry in ipairs(ns.skinCatalog) do
-        if entry.addon == addon and entry.loading then return ns end
-    end
-end}
+function ns.RegisterSkinDefinition(id, factory)
+    local entry = ns.skinCatalogByID[id]
+    if not entry or entry.defined then error("Unknown or duplicate skin definition: " .. tostring(id)) end
+    entry.defined, entry.factory = true, factory
+    ns.LoadSkin(entry)
+end
 -- On-demand diagnostics only: no extra polling or startup UI allocations.
 local function Result(fn, ...)
     if type(fn) ~= "function" then return "unavailable" end
@@ -97,15 +93,15 @@ function ns.LoaderDiagnostics()
     local isLoaded = api.IsAddOnLoaded or IsAddOnLoaded
     local metadata = api.GetAddOnMetadata or GetAddOnMetadata
     local lines = {"EUI AddonSkins loader diagnostics", "Code: " .. ns.VERSION .. " | TOC: " .. Result(metadata, ADDON, "Version"),
-        "Core loaded: " .. Result(isLoaded, ADDON),
-        "Columns: target loaded / modern(account) / modern(name) / modern(GUID) / legacy(name) / toggle registered / skin loaded"}
+        "Core loaded: " .. Result(isLoaded, ADDON), "Packaging: single addon folder; definitions loaded at startup, activation deferred",
+        "Columns: target loaded / modern(account) / modern(name) / modern(GUID) / legacy(name) / toggle registered / skin activated"}
     for _, entry in ipairs(ns.skinCatalog) do
         for _, target in ipairs(entry.targets) do
             lines[#lines + 1] = target .. ": " .. Result(isLoaded, target) .. " / "
                 .. Result(api.GetAddOnEnableState, target) .. " / " .. Result(api.GetAddOnEnableState, target, character)
                 .. " / " .. Result(api.GetAddOnEnableState, target, UnitGUID and UnitGUID("player"))
                 .. " / " .. Result(GetAddOnEnableState, character, target) .. " / " .. tostring(entry.registered == true)
-                .. " / " .. Result(isLoaded, entry.addon)
+                .. " / " .. tostring(entry.loaded == true)
         end
     end
     return table.concat(lines, "\n")

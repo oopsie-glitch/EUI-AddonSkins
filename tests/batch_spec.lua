@@ -88,7 +88,7 @@ WhatsTrainingFrame = nil
 local lib = nil
 LibStub = function(name) if name == 'Myslot-5.0' then return lib end end
 for _, id in ipairs(ids) do
-    assert(loadfile('EUIAddonSkins_' .. id .. '/Skin.lua'))('EUIAddonSkins', ns)
+    assert(loadfile('EUIAddonSkins/Skins/' .. id .. '.lua'))('EUIAddonSkins', ns)
     assert(not modules[id].available(), 'target must be optional: ' .. id)
 end
 ItemRack = {ToggleOptions = function() return 'options' end}

@@ -70,6 +70,8 @@ All trademarks and addon names belong to their respective owners.
 
 EUI AddonSkins integrates with EllesmereUI's public skinning API. EllesmereUI and the supported addons are developed and distributed separately and are not included in this project.
 
-## Load-on-demand alpha
+## Deferred activation alpha
 
-This experimental branch installs one core folder and twenty optional skin-module folders from the same ZIP. Extract **all** `EUIAddonSkins*` folders into `Interface/AddOns/`. Missing or disabled targets have no EUI toggle and their skin code remains unloaded. Enabled targets that load later keep a toggle. Keep the module folders enabled; the core loads them only when needed. See [loader documentation](https://github.com/oopsie-glitch/EUI-AddonSkins/blob/loader-alpha/docs/LOADER_ALPHA.md) for implementation and validation details.
+This experimental branch installs as one `EUIAddonSkins` folder. Skin definitions load at startup; implementation factories wait for an enabled, loaded target and its EUI toggle. Missing/disabled targets have no toggle or active integration. Existing settings are preserved.
+
+When upgrading from the earlier multi-folder alpha, remove its old `EUIAddonSkins_*` module folders, then overwrite `EUIAddonSkins` with this ZIP. Those obsolete folders are no longer used. See [loader documentation](https://github.com/oopsie-glitch/EUI-AddonSkins/blob/loader-alpha/docs/LOADER_ALPHA.md).

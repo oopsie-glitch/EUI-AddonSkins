@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0-alpha.5 — Single-folder activation (untagged)
+
+- Restore one installation folder and one WoW addon-list entry.
+- Read skin definitions at startup but defer their implementation factories until needed.
+- Keep GUID-based target filtering, EUI toggles, late activation and combat deferral.
+
 ## 1.4.0-alpha.4 — Character enable-state fix (untagged)
 
 - Use the player GUID for modern addon enable-state checks, matching Blizzard's addon list.

@@ -65,7 +65,7 @@ function S.Shell(f, options) f.shellOptions = options; shells = shells + 1; for 
 function S.Panel(f) for _, r in ipairs(f.regions) do r:SetAlpha(0) end end
 function S.EditBox(f) edits = edits + 1; assert(not f.protected) end
 for _, key in ipairs({'Font', 'Button', 'StateButtonLabel', 'Checkbox', 'Dropdown', 'ScrollBar', 'CloseButton', 'FadeNineSlice', 'PageButton'}) do S[key] = function(f) if key == 'CloseButton' then f.euiClose = true end end end
-for _, file in ipairs({'EUIAddonSkins/Accent.lua', 'EUIAddonSkins/Widgets.lua', 'EUIAddonSkins_ForeverDungeonJournal/Skin.lua', 'EUIAddonSkins_RXPGuides/Skin.lua'}) do
+for _, file in ipairs({'EUIAddonSkins/Accent.lua', 'EUIAddonSkins/Widgets.lua', 'EUIAddonSkins/Skins/ForeverDungeonJournal.lua', 'EUIAddonSkins/Skins/RXPGuides.lua'}) do
     assert(loadfile(file))('EUIAddonSkins', ns)
 end
 RXP = nil; ForeverDungeonJournal_NS = nil

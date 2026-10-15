@@ -20,13 +20,14 @@ for _, manifest in ipairs({'EUIAddonSkins.toc', 'EUIAddonSkins_Camelot.toc', 'EU
         for line in io.lines('EUIAddonSkins/' .. manifest) do
             if line:match('%.lua$') then
                 assert(not line:match('Skin.lua$'))
-                assert(loadfile('EUIAddonSkins/' .. line))('EUIAddonSkins', ns)
+                assert(loadfile('EUIAddonSkins/' .. line:gsub('\\','/')))('EUIAddonSkins', ns)
             end
         end
         assert(#ns.modules == 0 and #ns.skinCatalog == 20)
+        for _, entry in ipairs(ns.skinCatalog) do assert(entry.defined and not entry.loaded) end
         local count = 0; for _ in pairs(entries) do count = count + 1 end
         assert(count == (onlyBugSack and 1 or 0), manifest .. ': unexpected toggles')
         if onlyBugSack then assert(entries['EUI AddonSkins - BugSack']) end
     end
 end
-print('PASS: generic, Forever/Camelot and Mainline manifests register only BugSack when all other installed targets are disabled; absent skins execute zero code')
+print('PASS: generic, Forever/Camelot and Mainline manifests register only BugSack when all other installed targets are disabled; absent skin factories never activate')

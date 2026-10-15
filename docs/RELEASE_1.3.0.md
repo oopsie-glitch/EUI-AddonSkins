@@ -23,6 +23,6 @@ This untagged preparation branch combines:
 
 `python3 scripts/benchmark_callbacks.py --baseline /path/to/loader-alpha.5` reruns the source-shaped callback comparison. Results remain in acegui-callback-results.json. These are mock scan counts, not CPU/FPS measurements. No actual WoW client verification is claimed.
 
-## Publication status
+## Preparation status (before publication)
 
-Version metadata and release notes are prepared for 1.3.0. No tag or platform release is created by this preparation commit. The existing alpha branches and main remain unchanged. The release notes are in releases/v1.3.0.md; follow RELEASING.md for final publication. Ordinary branch pushes do not run the stable Wago uploader, and CurseForge is configured for tagged commits only.
+This section records the original preparation checkpoint. Version metadata and release notes were prepared for 1.3.0. No tag or platform release is created by this preparation commit. The existing alpha branches and main remain unchanged. The release notes are in releases/v1.3.0.md; follow RELEASING.md for final publication. Ordinary branch pushes do not run the stable Wago uploader, and CurseForge is configured for tagged commits only.

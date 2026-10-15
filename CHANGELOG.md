@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.0 — PallyPower and skin improvements
+## 1.3.0 — PallyPower and Skin Loader Optimization
 
 - Added PallyPower styling for Blessing Assignments, options, menus and buff controls, with clearer columns and softer controls. Kept the original lock button.
 - Fixed Altoholic scrollbar styling and thumb size, hidden unused realm-row cells, and preserved category styling after tab changes.

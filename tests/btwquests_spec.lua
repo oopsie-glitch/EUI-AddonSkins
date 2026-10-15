@@ -231,7 +231,7 @@ assert(root.SearchBox.edit and root.SearchPreview.panel.noBorder and root.Search
 assert(expansion.Base.alpha == 0 and expansion.Background.alpha == 1 and expansion.AutoLoad.checkbox)
 assert(expansionButton.Active.alpha == 1 and expansionButton.Active.color[4] == 0.12
     and expansionButton.Active.points[1][4] == 2, 'expansion activity state was removed')
-assert(expansionButton.apiFill.points[1][4] == 2 and expansionButton.apiFill.color[4] == 0.65)
+assert(expansionButton.apiFill.points[1][4] == 2 and expansionButton.apiFill.color[4] == 0.80)
 assert(root.ExpansionList.Left.height == 22, 'full-height page button became an opaque bar')
 assert(bar.thumb.width == 4 and bar.thumb.height == 80 and bar.trackBG.alpha == 0)
 assert(first.Icon.alpha == 0 and first.Cover.alpha == 0 and first.Tick.alpha == 1 and first.ActiveTexture.alpha == 1)
@@ -240,7 +240,9 @@ assert(line.Background.thickness == 2 and line.Active.thickness == 2 and line.Co
 assert(line.Active.alpha == 0 and line.Complete.color[2] == 1, 'connector state/colour changed')
 assert(card.Background.alpha == 0 and card.Tick.alpha == 1 and card.Name.color[1] == 0.92)
 assert(card.Name.fontSize == 14 and card.Major.alpha == 1 and card.Acive.alpha == 1)
-assert(card.apiFill.points[1][4] == 3 and card.apiFill.color[4] == 0.55 and card.width == 100)
+assert(card.apiFill.points[1][4] == 3 and card.apiFill.color[4] == 0.80 and card.width == 100)
+assert(card.apiFill.color[1] > panel and first.apiFill.color[4] == 0.88
+    and card.apiHover.color[4] == 0.10, 'button surfaces lack quest-log-style separation')
 assert(card:Set() == 'category-set' and card.Name.fontSize == 14 and card.Acive.alpha == 0
     and card.Acive.color[4] == 0.10, 'pooled card lost styling or native active visibility')
 assert(not denied.button and not denied.Name.font, 'protected control was changed')
@@ -260,7 +262,10 @@ for _ = 1, 20 do modules.BtWQuests.refresh(); flush() end
 assert(created == before and hookCount == hooksBefore, 'warm refresh allocated objects/hooks')
 accent = 0.7; panel = 0.12; for _, fn in ipairs(looks) do fn() end; flush()
 assert(row.Check.color[1] == accent, 'popup check did not track the accent')
-assert(card.Acive.color[1] == accent and card.apiFill.color[1] == panel, 'custom surfaces did not track theme/accent')
+assert(card.Acive.color[1] == accent and math.abs(card.apiFill.color[1] - (panel + 0.11)) < 0.00001,
+    'custom surfaces did not track theme/accent')
+panel = 0.95; for _, fn in ipairs(looks) do fn() end; flush()
+assert(card.apiFill.color[1] == 1, 'light panel colours exceeded the colour range')
 combat = true; root:DisplayItemList()
 local pending = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
 assert(not pending.button, 'new combat control was modified')

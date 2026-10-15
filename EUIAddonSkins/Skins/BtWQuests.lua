@@ -83,13 +83,16 @@ end, function(S, module)
             end
         end
         local r, g, b = S.GetPanelColor()
+        -- Quest-log headers sit above the dark shell in value. Keep the EUI
+        -- panel hue, but lift the button fill so its shape is readable at rest.
+        r, g, b = math.min(r + 0.11, 1), math.min(g + 0.11, 1), math.min(b + 0.11, 1)
         for _, entry in ipairs(surface) do
             local region = entry[1]
             region:ClearAllPoints()
             region:SetPoint("TOPLEFT", f, "TOPLEFT", inset, -inset)
             region:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -inset, inset)
             if entry[2] == "BACKGROUND" then region:SetColorTexture(r, g, b, opacity)
-            else region:SetColorTexture(1, 1, 1, 0.07) end
+            else region:SetColorTexture(1, 1, 1, 0.10) end
         end
     end
     local function Title(text, limit)
@@ -123,11 +126,11 @@ end, function(S, module)
     local function Row(f)
         if not H.Allowed(f) then return end
         if f.Cover and f.Name then
-            FlatButton(f, NODE_KEEP, 1, 0.78)
+            FlatButton(f, NODE_KEEP, 1, 0.88)
             H.Fade(f.Icon); H.Fade(f.Cover)
             Fonts(f) -- Preserve status colours, spoiler visibility and fade animations.
         elseif f.Name and f.Tick then
-            FlatButton(f, CARD_KEEP, 3, 0.55)
+            FlatButton(f, CARD_KEEP, 3, 0.80)
             H.Fade(f.Background)
             H.Font(f.Name, 0.92, 0.92, 0.94)
             H.Font(f.Subtext, 0.7, 0.7, 0.72)
@@ -240,7 +243,7 @@ end, function(S, module)
             end
             if H.Allowed(f.MenuArrowButton) then S.PageButton(f.MenuArrowButton, "v") end
         elseif kind == "Button" and f.Active and f.Subtext then
-            FlatButton(f, {"Active"}, 2, 0.65)
+            FlatButton(f, {"Active"}, 2, 0.80)
             Fonts(f)
             if S.StateButtonLabel then S.StateButtonLabel(f) end
             if f.GetFontString then Title(f:GetFontString(), 13) end

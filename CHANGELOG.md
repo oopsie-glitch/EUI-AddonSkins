@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0-alpha.2 — Loader upgrade manifests (untagged)
+
+- Replace Forever/Camelot and Mainline client manifests when updating an existing install.
+- Prevent an old CurseForge manifest from loading the previous all-skins file list.
+
 ## 1.4.0-alpha.1 — Load-on-demand experiment (untagged)
 
 - Split the twenty stable skins into optional load-on-demand addon modules.

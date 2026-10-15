@@ -1,15 +1,31 @@
--- The real core TOC must not execute any implementation for absent targets.
-local ns, entries, events = {}, {}, {}
-EUIAddonSkinsDB = nil
-C_AddOns = {GetAddOnInfo = function() return nil end, IsAddOnLoaded = function() return false end}
-UnitName = function() return 'Test' end
-SlashCmdList = {}; DEFAULT_CHAT_FRAME = {AddMessage = function() end}
-CreateFrame = function()
-    local f = {RegisterEvent = function() end}; function f:SetScript(_, fn) events[#events + 1] = fn end; return f
+-- Exercise each client-selected TOC, including manifests left by CurseForge.
+for _, manifest in ipairs({'EUIAddonSkins.toc', 'EUIAddonSkins_Camelot.toc', 'EUIAddonSkins_Mainline.toc'}) do
+    for _, onlyBugSack in ipairs({false, true}) do
+        local ns, entries = {}, {}
+        EUIAddonSkinsDB = nil
+        C_AddOns = {
+            GetAddOnInfo = function(name) if onlyBugSack then return name end end,
+            GetAddOnEnableState = function(name, character)
+                assert(character == 'Test')
+                return name == 'BugSack' and 2 or 0
+            end,
+            IsAddOnLoaded = function() return false end,
+            LoadAddOn = function() error('unloaded target caused skin code to load') end,
+        }
+        UnitName = function() return 'Test' end
+        SlashCmdList = {}; DEFAULT_CHAT_FRAME = {AddMessage = function() end}
+        CreateFrame = function() return {RegisterEvent = function() end, SetScript = function() end} end
+        EllesmereUI = {RegisterSkin = function(name) assert(not entries[name]); entries[name] = true end}
+        for line in io.lines('EUIAddonSkins/' .. manifest) do
+            if line:match('%.lua$') then
+                assert(not line:match('Skin.lua$'))
+                assert(loadfile('EUIAddonSkins/' .. line))('EUIAddonSkins', ns)
+            end
+        end
+        assert(#ns.modules == 0 and #ns.skinCatalog == 20)
+        local count = 0; for _ in pairs(entries) do count = count + 1 end
+        assert(count == (onlyBugSack and 1 or 0), manifest .. ': unexpected toggles')
+        if onlyBugSack then assert(entries['EUI AddonSkins - BugSack']) end
+    end
 end
-EllesmereUI = {RegisterSkin = function(name) assert(not entries[name]); entries[name] = true end}
-for line in io.lines('EUIAddonSkins/EUIAddonSkins.toc') do
-    if line:match('%.lua$') then assert(not line:match('Skin.lua$')); assert(loadfile('EUIAddonSkins/' .. line))('EUIAddonSkins', ns) end
-end
-assert(#ns.modules == 0 and next(entries) == nil and #ns.skinCatalog == 20)
-print('PASS: actual core TOC executes zero skins and registers zero irrelevant toggles with all targets absent')
+print('PASS: generic, Forever/Camelot and Mainline manifests register only BugSack when all other installed targets are disabled; absent skins execute zero code')

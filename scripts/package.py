@@ -25,6 +25,11 @@ for folder in folders:
     assert {p.name for p in folder.glob('*.lua')} == set(runtime), f'Unloaded Lua: {folder}'
     files.extend([toc] + [folder/p for p in runtime])
     if folder == addon:
+        for flavor in ['Camelot', 'Mainline']:
+            alias = folder/f'EUIAddonSkins_{flavor}.toc'
+            assert alias.read_bytes() == toc.read_bytes(), f'Stale client manifest: {alias}'
+            files.append(alias)
+    if folder == addon:
         files += [addon/'LICENSE', addon/'Media/Icon.tga']
 subprocess.run([sys.executable, 'tests/run_lua.py'], cwd=root, check=True)
 archive = root/f'EUIAddonSkins-{version}.zip'

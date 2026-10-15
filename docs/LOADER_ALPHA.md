@@ -1,6 +1,6 @@
 # Load-on-demand alpha
 
-Version `1.4.0-alpha.1`, untagged branch `loader-alpha`, based on stable `b8e0125`. This experiment does not merge PallyPower, BugSack or Altoholic development branches. No release tag or platform upload is created.
+Version `1.4.0-alpha.2`, untagged branch `loader-alpha`, based on stable `b8e0125`. This experiment does not merge PallyPower, BugSack or Altoholic development branches. No release tag or platform upload is created.
 
 ## Installation and behavior
 
@@ -18,4 +18,8 @@ Run `python3 scripts/package.py`. It validates every core/child TOC, version, ru
 
 With all targets absent, the actual core TOC test executes zero skin implementation files and registers zero irrelevant toggles. The core still loads shared utilities and a roughly 4 KB loader/catalog. This is not an in-game memory, CPU or FPS measurement. Actual WoW behavior, taint and perceived startup gains have not been measured.
 
-The local archive contains 21 sibling directories and 52 runtime files; MIT LICENSE is in the core. Development files are excluded. `.pkgmeta` moves each existing module directory out of the checkout wrapper, following the official packager's move-folders behavior. Local validation checks the expected contents; an official CurseForge packaging job has not been triggered on this untagged branch.
+The local archive contains 21 sibling directories and 54 runtime files; MIT LICENSE is in the core. Development files are excluded. `.pkgmeta` moves each existing module directory out of the checkout wrapper, following the official packager's move-folders behavior. Local validation checks the expected contents; an official CurseForge packaging job has not been triggered on this untagged branch.
+
+## Upgrading an existing install
+
+The core ships matching generic, Camelot and Mainline TOCs. The official packager generates client-specific manifests; WoW can prefer those over the generic TOC. The alpha.1 local ZIP omitted client-specific files, so extracting over a CurseForge install could leave an older manifest active. Alpha.2 overwrites both supported manifests with the loader file list. Tests execute all three core manifests with only BugSack installed and enabled and require exactly one EUI toggle. No EUI saved preferences are deleted.

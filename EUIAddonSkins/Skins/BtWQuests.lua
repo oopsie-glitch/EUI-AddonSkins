@@ -4,10 +4,13 @@ ns.RegisterModule("BtWQuests", "BtWQuests", function()
     return _G.BtWQuests ~= nil and _G.BtWQuestsFrame ~= nil
 end, function(S, module)
     local H = ns.CreateSkinHelper(S, module)
-    local soft = ns.CreateSoftSkin(S, module)
+    local soft = ns.CreateSoftSkin(S, module, function(f)
+        return f.Cover ~= nil or f.Tick ~= nil or (f.Active ~= nil and f.Subtext ~= nil)
+    end)
     local root = _G.BtWQuestsFrame
     local styled, menus, panels, scrolls = {}, {}, {}, {}
     local painting, waiting = false, false
+    local surfaces = {}
     local Paint, Walk, Menu, BindMenu
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -57,19 +60,85 @@ end, function(S, module)
         Fonts(f)
         if S.StateButtonLabel then S.StateButtonLabel(f) end
     end
+    -- Customize only textures created by the public Button primitive. Keep
+    -- native hit rectangles, pooled item geometry and semantic regions intact.
+    local function FlatButton(f, keep, inset, opacity)
+        local surface = surfaces[f]
+        local before
+        if not surface then
+            before = {}
+            for _, region in ipairs(H.Regions(f)) do before[region] = true end
+        end
+        soft.Button(f, keep)
+        if before then
+            surface = {}
+            surfaces[f] = surface
+            for _, region in ipairs(H.Regions(f)) do
+                if not before[region] and H.Texture(region) then
+                    local layer = region:GetDrawLayer()
+                    if layer == "BACKGROUND" or layer == "HIGHLIGHT" then
+                        surface[#surface + 1] = {region, layer}
+                    end
+                end
+            end
+        end
+        local r, g, b = S.GetPanelColor()
+        for _, entry in ipairs(surface) do
+            local region = entry[1]
+            region:ClearAllPoints()
+            region:SetPoint("TOPLEFT", f, "TOPLEFT", inset, -inset)
+            region:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -inset, inset)
+            if entry[2] == "BACKGROUND" then region:SetColorTexture(r, g, b, opacity)
+            else region:SetColorTexture(1, 1, 1, 0.07) end
+        end
+    end
+    local function Title(text, limit)
+        H.Font(text)
+        if not H.Allowed(text) or not text.GetFont then return end
+        local path, size, flags = text:GetFont()
+        if path and size and size > limit then text:SetFont(path, limit, flags) end
+    end
+    local function IconButton(button, path, atlas)
+        if not button.euiJournalIcon then
+            local icon = button:CreateTexture(nil, "OVERLAY")
+            button.euiJournalIcon = icon
+            icon:SetSize(14, 14)
+            icon:SetPoint("CENTER", button, "CENTER")
+            if atlas and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas) then
+                icon:SetAtlas(atlas)
+            else icon:SetTexture(path) end
+            icon:SetDesaturated(true)
+            icon:SetVertexColor(0.92, 0.92, 0.94)
+        end
+        Button(button, {"euiJournalIcon"})
+        local function EnabledIcon()
+            if button.IsEnabled then button.euiJournalIcon:SetAlpha(button:IsEnabled() and 1 or 0.4) end
+        end
+        H.Script(button, "OnEnable", EnabledIcon)
+        H.Script(button, "OnDisable", EnabledIcon)
+        EnabledIcon()
+    end
     local NODE_KEEP = {"Tick", "TagTexture", "HeroicTexture", "MythicTexture", "ActiveTexture", "IsNext"}
     local CARD_KEEP = {"Tick", "Major", "Acive"} -- Acive is the target addon's field spelling.
     local function Row(f)
         if not H.Allowed(f) then return end
         if f.Cover and f.Name then
-            soft.Button(f, NODE_KEEP)
+            FlatButton(f, NODE_KEEP, 1, 0.78)
             H.Fade(f.Icon); H.Fade(f.Cover)
             Fonts(f) -- Preserve status colours, spoiler visibility and fade animations.
         elseif f.Name and f.Tick then
-            soft.Button(f, CARD_KEEP)
+            FlatButton(f, CARD_KEEP, 3, 0.55)
             H.Fade(f.Background)
             H.Font(f.Name, 0.92, 0.92, 0.94)
             H.Font(f.Subtext, 0.7, 0.7, 0.72)
+            Title(f.Name, 14)
+            if H.Texture(f.Acive) then
+                local r, g, b = S.GetAccentColor()
+                f.Acive:SetColorTexture(r, g, b, 0.10)
+                f.Acive:ClearAllPoints()
+                f.Acive:SetPoint("TOPLEFT", f, "TOPLEFT", 3, -3)
+                f.Acive:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -3, 3)
+            end
         elseif f.Name then
             local r, g, b = S.GetAccentColor()
             H.Font(f.Name, r, g, b)
@@ -87,10 +156,22 @@ end, function(S, module)
         local child = chain and chain.Child
         if not H.Allowed(child) then return end
         Scroll(chain.ScrollBar)
-        -- Lines live on sibling frames, sometimes with frame-pool children.
-        -- Never recurse into them or change graph geometry, zoom or connectors.
+        -- Inspect direct connector regions only, never their pooled children.
+        -- Leave endpoints, state visibility, colours and animations native.
         for _, node in ipairs(H.Children(child)) do
-            if H.Allowed(node) and node:GetObjectType() == "Button" and node.Cover then Row(node) end
+            if H.Allowed(node) then
+                if node:GetObjectType() == "Button" and node.Cover then Row(node)
+                elseif node.Background and node.Active and node.Complete then
+                    for _, key in ipairs({"Background", "Active", "Complete"}) do
+                        local line = node[key]
+                        if H.Allowed(line) and line:GetObjectType() == "Line" and line.SetThickness then
+                            line:SetTexture("Interface\\Buttons\\WHITE8X8")
+                            line:SetThickness(2)
+                            if key == "Background" then line:SetVertexColor(0.25, 0.25, 0.27) end
+                        end
+                    end
+                end
+            end
         end
     end
     Menu = function(list)
@@ -159,9 +240,17 @@ end, function(S, module)
             end
             if H.Allowed(f.MenuArrowButton) then S.PageButton(f.MenuArrowButton, "v") end
         elseif kind == "Button" and f.Active and f.Subtext then
-            Button(f, {"Active"})
+            FlatButton(f, {"Active"}, 2, 0.65)
+            Fonts(f)
+            if S.StateButtonLabel then S.StateButtonLabel(f) end
+            if f.GetFontString then Title(f:GetFontString(), 13) end
             if H.Texture(f.Active) then
-                if not styled[f] then f.Active:SetAllPoints(f); styled[f] = true end
+                if not styled[f] then
+                    f.Active:ClearAllPoints()
+                    f.Active:SetPoint("TOPLEFT", f, "TOPLEFT", 2, -2)
+                    f.Active:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 2)
+                    styled[f] = true
+                end
                 local r, g, b = S.GetAccentColor()
                 f.Active:SetColorTexture(r, g, b, 0.12)
             end
@@ -201,10 +290,11 @@ end, function(S, module)
         H.Fade(root.portrait)
         if root.CloseButton then S.CloseButton(root.CloseButton) end
         local previous
-        for _, entry in ipairs({{"NavBack", "<"}, {"NavForward", ">"}, {"NavHere", "^"}}) do
+        for _, entry in ipairs({{"NavBack", "<"}, {"NavForward", ">"}, {"NavHere"}}) do
             local button = root[entry[1]]
             if H.Allowed(button) then
-                S.PageButton(button, entry[2])
+                if entry[2] then S.PageButton(button, entry[2])
+                else IconButton(button, "Interface\\WorldMap\\WorldMapArrow", "Waypoint-MapPin-ChatIcon") end
                 button:SetSize(22, 22); button:ClearAllPoints()
                 if previous then button:SetPoint("LEFT", previous, "RIGHT", 3, 0)
                 else button:SetPoint("TOPLEFT", root, "TOPLEFT", 8, -2) end
@@ -213,8 +303,7 @@ end, function(S, module)
         end
         if H.Allowed(root.OptionsButton) then
             local button = root.OptionsButton
-            local icon = button.GetNormalTexture and H.Texture(button:GetNormalTexture())
-            if icon then button.euiOptionsIcon = icon; Button(button, {"euiOptionsIcon"}); icon:SetAlpha(1); S.SquareIcon(icon) end
+            IconButton(button, "Interface\\AddOns\\EllesmereUI\\media\\icons\\sidebar\\settings-ig-2.png")
             button:SetSize(22, 22); button:ClearAllPoints()
             button:SetPoint("TOPRIGHT", root, "TOPRIGHT", -30, -2)
         end
@@ -225,6 +314,9 @@ end, function(S, module)
         end
         if H.Allowed(root.navBar) then
             Strip(root.navBar)
+            for _, region in ipairs(H.Regions(root.navBar)) do
+                if H.Texture(region) then H.Fade(region) end
+            end
             H.Hook(root.navBar, "AddButtons", function() Run(Walk, root.navBar, 0) end)
         end
         if root.ExpansionList then

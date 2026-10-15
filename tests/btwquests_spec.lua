@@ -33,7 +33,15 @@ local function texture(kind)
     function t:SetAlpha(v) self.alpha = v end
     function t:GetTexture() return self.path end
     function t:SetTexture(v) self.path = v end
-    function t:GetDrawLayer() return 'ARTWORK' end
+    function t:GetDrawLayer() return self.layer or 'ARTWORK' end
+    function t:ClearAllPoints() self.points = {} end
+    function t:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end
+    function t:SetSize(w, h) self.width, self.height = w, h end
+    function t:SetDesaturated(v) self.desaturated = v end
+    function t:SetAtlas(v) self.atlas = v end
+    function t:SetThickness(v) self.thickness = v end
+    function t:GetFont() return self.fontPath or 'native', self.fontSize or 18, '' end
+    function t:SetFont(path, size, flags) self.fontPath, self.fontSize, self.fontFlags = path, size, flags end
     function t:SetColorTexture(...) self.color = {...} end
     function t:SetVertexColor(...) self.color = {...} end
     function t:SetWidth(v) self.width = v end
@@ -64,7 +72,8 @@ local function frame(kind, parent)
     function f:GetNormalTexture() return self.normal end
     function f:GetFontString() return self.text end
     function f:IsShown() return self.shown end
-    function f:CreateTexture() local t = texture(); self.regions[#self.regions + 1] = t; return t end
+    function f:IsEnabled() return self.enabled ~= false end
+    function f:CreateTexture(_, layer) local t = texture(); t.layer = layer; self.regions[#self.regions + 1] = t; return t end
     function f:GetThumbTexture() return self.thumb end
     if kind ~= 'Slider' then f.GetThumbTexture = nil end
     if parent then parent.children[#parent.children + 1] = f end
@@ -78,12 +87,24 @@ local function fade(f, keys)
     local keep = {}; for _, key in ipairs(keys or {}) do if f[key] then keep[f[key]] = true end end
     for _, r in ipairs(f.regions) do if r.kind == 'Texture' and not keep[r] then r:SetAlpha(0) end end
 end
-local S = {GetAccentColor = function() return accent, 0.5, 0.6 end, OnLooksChanged = function(fn) looks[#looks + 1] = fn end}
+local panel = 0.08
+local S = {GetAccentColor = function() return accent, 0.5, 0.6 end, GetPanelColor = function() return panel, panel, panel, 0.92 end, OnLooksChanged = function(fn) looks[#looks + 1] = fn end}
 function S.Shell(f, opts) f.shell = opts; fade(f) end
 function S.Panel(f, opts) f.panel = opts; fade(f) end
 function S.Inset(f) f.inset = true; fade(f) end
 function S.FadeNineSlice(f) f.faded = true end
-function S.Button(f, keep) f.button = true; fade(f, keep) end
+function S.Button(f, keep)
+    f.button = true
+    local keys = {}; for _, key in ipairs(keep or {}) do keys[#keys + 1] = key end
+    keys[#keys + 1] = 'apiFill'; keys[#keys + 1] = 'apiHover'
+    fade(f, keys)
+    if not f.apiFill then
+        f.apiFill = f:CreateTexture(nil, 'BACKGROUND')
+        f.apiHover = f:CreateTexture(nil, 'HIGHLIGHT')
+    end
+    f.apiFill:SetAllPoints(f)
+    f.apiFill:SetColorTexture(panel, panel, panel, 0.92)
+end
 function S.Font(f, r, g, b) f.font = 'eui'; if r then f.color = {r, g, b} end end
 function S.StateButtonLabel(f) f.stateLabel = true end
 function S.Checkbox(f) f.checkbox = true end
@@ -94,6 +115,7 @@ function S.CloseButton(f) f.close = true end
 function S.PageButton(f, glyph) f.glyph = glyph end
 function S.SquareIcon(f) f.square = true end
 function S.ApplyBarFill(f) f.fill = true end
+C_Texture = {GetAtlasInfo = function(atlas) return atlas == 'Waypoint-MapPin-ChatIcon' and {} end}
 BtWQuests, BtWQuestsFrame = nil, nil
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
 assert(loadfile('EUIAddonSkins/Skins/BtWQuests.lua'))('EUIAddonSkins', ns)
@@ -104,6 +126,9 @@ BtWQuestsFrame = frame(); local root = BtWQuestsFrame
 root.CloseButton = frame('Button', root)
 for _, key in ipairs({'NavBack', 'NavForward', 'NavHere', 'OptionsButton'}) do root[key] = frame('Button', root) end
 root.OptionsButton.normal = region(root.OptionsButton, 'nativeIcon')
+root.navBar = frame('Frame', root)
+region(root.navBar, 'InsetBorderBottom'); region(root.navBar, 'InsetBorderLeft')
+root.navBar.AddButtons = function() root.navBar.InsetBorderBottom:SetAlpha(1); return 'nav-native' end
 root.Inset = frame('Frame', root); region(root.Inset, 'Bg')
 root.SearchBox = frame('EditBox', root)
 root.ExpansionList = frame('Frame', root)
@@ -123,6 +148,8 @@ root.Chain = frame('Frame', root); root.Chain.Scroll = frame('ScrollFrame', root
 root.Chain.Scroll.Child = frame('Frame', root.Chain.Scroll)
 local canvas = root.Chain.Scroll.Child
 local line = frame('Frame', canvas); local connector = region(line, 'line')
+for _, key in ipairs({'Background', 'Active', 'Complete'}) do region(line, key, 'Line') end
+line.Active.alpha = 0; line.Complete.color = {0, 1, 0}
 line.GetChildren = function() error('walked graph connector hierarchy') end
 local function node()
     local f = frame('Button', canvas)
@@ -141,7 +168,12 @@ local function category()
     local f = frame('Button', root.Category.Scroll.Child)
     for _, key in ipairs({'Background', 'Tick', 'Major', 'Acive'}) do region(f, key) end
     region(f, 'Name', 'FontString'); region(f, 'Subtext', 'FontString')
-    f.Set = function() return 'category-set' end
+    f.Set = function(self)
+        self.Name:SetFont('native', 18, '')
+        self.Acive:SetColorTexture(1, 0.8, 0, 1)
+        self.Acive:SetAlpha(0)
+        return 'category-set'
+    end
     f.action = function() return 'category-native' end
     return f
 end
@@ -185,18 +217,32 @@ BtWQuestsOptionsMenu = dropdown(); BtWQuestsOptionsMenu.displayMode = 'MENU'
 local denied = frame('Button', root); denied.protected = true; region(denied, 'Name', 'FontString')
 modules.BtWQuests.install(S, modules.BtWQuests); flush()
 assert(root.shell.noBorder and root.Inset.inset and root.Inset.Bg.alpha == 0)
-assert(root.NavBack.glyph == '<' and root.NavHere.glyph == '^' and root.NavBack.width == 22)
+assert(root.NavBack.glyph == '<' and root.NavHere.euiJournalIcon.atlas == 'Waypoint-MapPin-ChatIcon' and root.NavBack.width == 22)
+assert(root.OptionsButton.nativeIcon.alpha == 0 and root.OptionsButton.euiJournalIcon.path:find('EllesmereUI', 1, true))
+root.NavHere.enabled = false; root.NavHere.hooks.OnDisable()
+assert(root.NavHere.euiJournalIcon.alpha == 0.4, 'disabled location icon lost its visual state')
+root.NavHere.enabled = true; root.NavHere.hooks.OnEnable()
+assert(root.NavHere.euiJournalIcon.alpha == 1)
+assert(root.navBar.InsetBorderBottom.alpha == 0 and root.navBar.InsetBorderLeft.alpha == 0)
+assert(root.navBar:AddButtons() == 'nav-native' and root.navBar.InsetBorderBottom.alpha == 0)
 assert(root.CharacterDropDown.dropdown and root.CharacterDropDown.height == 22 and root.CharacterDropDown.Icon.alpha == 1)
 assert(menuCalls == 0 and not BtWQuestsOptionsMenu.list, 'skin forced lazy menus to load')
 assert(root.SearchBox.edit and root.SearchPreview.panel.noBorder and root.SearchResults.CloseButton.close)
 assert(expansion.Base.alpha == 0 and expansion.Background.alpha == 1 and expansion.AutoLoad.checkbox)
 assert(expansionButton.Active.alpha == 1 and expansionButton.Active.color[4] == 0.12
-    and expansionButton.Active.anchor == expansionButton, 'expansion activity state was removed')
+    and expansionButton.Active.points[1][4] == 2, 'expansion activity state was removed')
+assert(expansionButton.apiFill.points[1][4] == 2 and expansionButton.apiFill.color[4] == 0.65)
 assert(root.ExpansionList.Left.height == 22, 'full-height page button became an opaque bar')
 assert(bar.thumb.width == 4 and bar.thumb.height == 80 and bar.trackBG.alpha == 0)
 assert(first.Icon.alpha == 0 and first.Cover.alpha == 0 and first.Tick.alpha == 1 and first.ActiveTexture.alpha == 1)
 assert(first.Name.alpha == 0.5 and first.geometry == 'native-chain-position' and connector.alpha == 1)
+assert(line.Background.thickness == 2 and line.Active.thickness == 2 and line.Complete.thickness == 2)
+assert(line.Active.alpha == 0 and line.Complete.color[2] == 1, 'connector state/colour changed')
 assert(card.Background.alpha == 0 and card.Tick.alpha == 1 and card.Name.color[1] == 0.92)
+assert(card.Name.fontSize == 14 and card.Major.alpha == 1 and card.Acive.alpha == 1)
+assert(card.apiFill.points[1][4] == 3 and card.apiFill.color[4] == 0.55 and card.width == 100)
+assert(card:Set() == 'category-set' and card.Name.fontSize == 14 and card.Acive.alpha == 0
+    and card.Acive.color[4] == 0.10, 'pooled card lost styling or native active visibility')
 assert(not denied.button and not denied.Name.font, 'protected control was changed')
 local a, b, c = first:Set(); assert(a == 'set-result' and b == nil and c == 3 and first.Icon.alpha == 0)
 assert(first:Update() == 'update-result' and first.Name.alpha == 0.5 and first.action() == 'quest-native')
@@ -212,8 +258,9 @@ assert(row.Check.color[1] == accent and row.NormalText.color[3] == 1 and row.act
 local before, hooksBefore = created, hookCount
 for _ = 1, 20 do modules.BtWQuests.refresh(); flush() end
 assert(created == before and hookCount == hooksBefore, 'warm refresh allocated objects/hooks')
-accent = 0.7; for _, fn in ipairs(looks) do fn() end; flush()
+accent = 0.7; panel = 0.12; for _, fn in ipairs(looks) do fn() end; flush()
 assert(row.Check.color[1] == accent, 'popup check did not track the accent')
+assert(card.Acive.color[1] == accent and card.apiFill.color[1] == panel, 'custom surfaces did not track theme/accent')
 combat = true; root:DisplayItemList()
 local pending = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
 assert(not pending.button, 'new combat control was modified')

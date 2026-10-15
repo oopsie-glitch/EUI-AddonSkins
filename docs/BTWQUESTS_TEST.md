@@ -9,17 +9,18 @@ Client manifests include Retail interface 120105 alongside existing client entri
 ## Appearance and scope
 
 - One EUI journal shell, following the user's textured or Modern theme. The content inset blends into that shell without an additional black panel or accent bar.
-- Contained navigation controls, a close button, character/expansion dropdowns, search fields, thin scrollbar thumbs, expansion buttons and auto-load checkboxes.
-- Flat category cards, readable headings and a consistent quest-node surface. Completion, active/next, difficulty and quest-tag indicators keep their native visibility and behavior.
+- Contained navigation controls, a location pin (arrow fallback), EUI settings icon, flat breadcrumbs without the native metallic rails, a close button, character/expansion dropdowns, search fields, thin scrollbar thumbs and auto-load checkboxes.
+- Category cards use inset translucent fills with visual gutters and headings capped at 14 UI units. Expansion story buttons use lighter inset fills and labels capped at 13. Hit rectangles, card dimensions and native layout remain unchanged.
+- Quest nodes have subdued borderless surfaces. Dependency lines use flat two-unit strokes; native endpoints, zoom, state colours, visibility and completion animations remain intact. Completion, active/next, difficulty and quest-tag indicators keep their native visibility and behavior.
 - Search previews/results and the addon's private options, character and breadcrumb popup lists use matching surfaces and controls.
-- Expansion identity artwork remains visible. Quest dependency lines, graph positioning/zoom/drag, spoiler rules, completion animations, quest actions and data are untouched.
+- Expansion identity artwork remains visible. Graph positioning/zoom/drag, spoiler rules, completion animations, quest actions and data are untouched. The settings icon references EllesmereUI's installed artwork; no external assets are copied into the package.
 - Existing EUI per-addon toggle and deferred target loading. No target is loaded by the skin.
 
-Dynamic category/search/graph UI is styled synchronously after its own completed navigation/update methods. Individual pooled quest nodes reapply their local styling after Set/Update. No global frame walks, polling or new OnUpdate handlers are added. Graph connector hierarchies are excluded entirely. Styling is deferred during combat and stops while disabled.
+Dynamic category/search/graph UI is styled synchronously after its own completed navigation/update methods. Individual pooled quest nodes reapply their local styling after Set/Update. No global frame walks, polling or new OnUpdate handlers are added. Only direct graph nodes and known connector regions are inspected; connector child hierarchies remain excluded. Styling is deferred during combat and stops while disabled.
 
 ## Verification
 
-Run `python3 scripts/package.py`. It validates Lua, all 17 suites, the Lua/Python skin catalogs, three client manifests and the one-folder archive. New fixtures cover deferred definition/activation, missing targets, native returns/actions, semantic indicators and connector exclusions, pooled categories/nodes, private lazy menus, search results, native colour retention, accent refresh, protected controls, combat deferral, disable and warm object/hook reuse. Manifest fixtures include a BtWQuests-only enabled configuration.
+Run `python3 scripts/package.py`. It validates Lua, all 17 suites, the Lua/Python skin catalogs, three client manifests and the one-folder archive. Fixtures cover deferred definition/activation, missing targets, native returns/actions, semantic indicators, flat connector strokes without child traversal or state changes, gutter fills without resized controls, native trim suppression, header icons, capped headings, pooled categories/nodes, private lazy menus, search results, native colour retention, theme/accent refresh, protected controls, combat deferral, disable and warm object/hook reuse. Manifest fixtures include a BtWQuests-only enabled configuration.
 
 The ZIP contains 36 files under one `EUIAddonSkins/` folder, including all 22 skin definitions and the MIT LICENSE. Tests, docs and the original addon/database files remain excluded. Versions and release changelog remain unchanged until release preparation; identify this build by its branch and commit.
 

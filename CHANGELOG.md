@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0-alpha.3 — Loader diagnostics (untagged)
+
+- Add `/euiskins diagnostics` with copyable version, target enable-state, toggle and module-load information.
+- Leave loader behavior unchanged while investigating client-specific results.
+
 ## 1.4.0-alpha.2 — Loader upgrade manifests (untagged)
 
 - Replace Forever/Camelot and Mainline client manifests when updating an existing install.

@@ -3,7 +3,7 @@
 ## Notes: Load-on-demand skin module. Managed by EUI AddonSkins.
 ## Author: Smarre
 ## X-License: MIT
-## Version: 1.4.0-alpha.2
+## Version: 1.4.0-alpha.3
 ## Dependencies: EUIAddonSkins
 ## LoadOnDemand: 1
 

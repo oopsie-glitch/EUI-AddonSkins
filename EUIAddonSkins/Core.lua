@@ -1,5 +1,5 @@
 local ADDON, ns = ...
-ns.VERSION = "1.4.0-alpha.2"
+ns.VERSION = "1.4.0-alpha.3"
 ns.modules = {}
 
 local function Print(message)
@@ -91,6 +91,8 @@ SlashCmdList.EUIADDONSKINS = function(message)
     if command == "off" or command == "on" then
         EUIAddonSkinsDB.disabled = command == "off"
         Print((command == "off" and "Disabled." or "Enabled.") .. " Run /reload to apply.")
+    elseif command == "diagnostics" and ns.ShowLoaderDiagnostics then
+        ns.ShowLoaderDiagnostics()
     elseif command == "refresh" then
         if ns.IsEnabled() then
             TryModules()

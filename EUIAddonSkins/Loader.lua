@@ -81,4 +81,44 @@ EUIAddonSkins = {GetSkinNamespace = function(addon)
         if entry.addon == addon and entry.loading then return ns end
     end
 end}
+-- On-demand diagnostics only: no extra polling or startup UI allocations.
+local function Result(fn, ...)
+    if type(fn) ~= "function" then return "unavailable" end
+    local ok, value = pcall(fn, ...)
+    return ok and tostring(value) or "error"
+end
+function ns.LoaderDiagnostics()
+    local api, character = C_AddOns or {}, UnitName and UnitName("player")
+    local isLoaded = api.IsAddOnLoaded or IsAddOnLoaded
+    local metadata = api.GetAddOnMetadata or GetAddOnMetadata
+    local lines = {"EUI AddonSkins loader diagnostics", "Code: " .. ns.VERSION .. " | TOC: " .. Result(metadata, ADDON, "Version"),
+        "Core loaded: " .. Result(isLoaded, ADDON),
+        "Columns: target loaded / modern(current) / modern(character) / legacy(character) / toggle registered / skin loaded"}
+    for _, entry in ipairs(ns.skinCatalog) do
+        for _, target in ipairs(entry.targets) do
+            lines[#lines + 1] = target .. ": " .. Result(isLoaded, target) .. " / "
+                .. Result(api.GetAddOnEnableState, target) .. " / " .. Result(api.GetAddOnEnableState, target, character)
+                .. " / " .. Result(GetAddOnEnableState, character, target) .. " / " .. tostring(entry.registered == true)
+                .. " / " .. Result(isLoaded, entry.addon)
+        end
+    end
+    return table.concat(lines, "\n")
+end
+local diagnosticWindow, diagnosticText
+function ns.ShowLoaderDiagnostics()
+    if InCombatLockdown and InCombatLockdown() then return end
+    if not diagnosticWindow then
+        diagnosticWindow = CreateFrame("Frame", "EUIAddonSkinsLoaderDiagnostics", UIParent, "BasicFrameTemplateWithInset")
+        diagnosticWindow:SetSize(760, 500); diagnosticWindow:SetPoint("CENTER"); diagnosticWindow:SetFrameStrata("DIALOG")
+        diagnosticWindow.TitleText:SetText("EUI AddonSkins — Loader diagnostics")
+        local scroll = CreateFrame("ScrollFrame", nil, diagnosticWindow, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", 12, -34); scroll:SetPoint("BOTTOMRIGHT", -32, 12)
+        diagnosticText = CreateFrame("EditBox", nil, scroll)
+        diagnosticText:SetMultiLine(true); diagnosticText:SetAutoFocus(false); diagnosticText:SetFontObject("ChatFontNormal")
+        diagnosticText:SetWidth(700); diagnosticText:SetMaxLetters(0)
+        diagnosticText:SetScript("OnEscapePressed", function() diagnosticWindow:Hide() end)
+        scroll:SetScrollChild(diagnosticText)
+    end
+    diagnosticWindow:Show(); diagnosticText:SetText(ns.LoaderDiagnostics()); diagnosticText:HighlightText(); diagnosticText:SetFocus()
+end
 ns.RefreshRegistrations()

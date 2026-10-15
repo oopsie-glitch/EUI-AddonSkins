@@ -1,6 +1,6 @@
 # Load-on-demand alpha
 
-Version `1.4.0-alpha.2`, untagged branch `loader-alpha`, based on stable `b8e0125`. This experiment does not merge PallyPower, BugSack or Altoholic development branches. No release tag or platform upload is created.
+Version `1.4.0-alpha.3`, untagged branch `loader-alpha`, based on stable `b8e0125`. This experiment does not merge PallyPower, BugSack or Altoholic development branches. No release tag or platform upload is created.
 
 ## Installation and behavior
 
@@ -23,3 +23,7 @@ The local archive contains 21 sibling directories and 54 runtime files; MIT LICE
 ## Upgrading an existing install
 
 The core ships matching generic, Camelot and Mainline TOCs. The official packager generates client-specific manifests; WoW can prefer those over the generic TOC. The alpha.1 local ZIP omitted client-specific files, so extracting over a CurseForge install could leave an older manifest active. Alpha.2 overwrites both supported manifests with the loader file list. Tests execute all three core manifests with only BugSack installed and enabled and require exactly one EUI toggle. No EUI saved preferences are deleted.
+
+## Diagnostics
+
+`/euiskins diagnostics` opens a copyable report only on request. It records the executing code version, TOC metadata version, target and skin loaded flags, EUI registration state and raw enable-state results from modern/default-character, modern/named-character and legacy API calls. This build does not claim to resolve the reported remaining registration issue. Diagnostic collection does not change addon enable states or load targets.

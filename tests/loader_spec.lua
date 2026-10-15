@@ -50,6 +50,9 @@ for _ = 1, 25 do event('ADDON_LOADED', 'Unrelated') end
 assert(attempts.EUIAddonSkins_BugSack == 1 and attempts.EUIAddonSkins_Questie == 1 and attempts.EUIAddonSkins_GTFO == 1)
 -- Re-enabling a saved EUI toggle loads the skin once.
 entries['EUI AddonSkins - Details!']({IsEnabled = function() return true end}); assert(executed.Details)
+local report = ns.LoaderDiagnostics()
+assert(report:find('BugSack: true', 1, true) and report:find('Spy: nil', 1, true))
+assert(report:find('modern(current)', 1, true) and report:find(ns.VERSION, 1, true))
 -- Legacy API signatures: character precedes addon name.
 local modern = C_AddOns
 C_AddOns = nil

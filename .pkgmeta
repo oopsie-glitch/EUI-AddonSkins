@@ -19,6 +19,8 @@ ignore:
   - README.md
   - CHANGELOG.md
   - CURSEFORGE.md
+  - AGENTS.md
+  - CONTRIBUTING.md
   - LICENSE
   - EUIAddonSkins/README.md
   - EUIAddonSkins/CHANGELOG.md

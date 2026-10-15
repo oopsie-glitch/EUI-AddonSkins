@@ -21,12 +21,12 @@ Update `EUIAddonSkins/EUIAddonSkins.toc` and its `_Camelot.toc` / `_Mainline.toc
 | Alpha tag, e.g. `v1.2.0-alpha.1` | Alpha | Skipped |
 | Untagged development branch | No package | No package |
 
-The Wago job skips prerelease tags and validates exact `vMAJOR.MINOR.PATCH` syntax, matching TOC/Core versions, the release changelog and project ID before uploading. Testing in the public `development` branch stays untagged. Keep `main` for stable releases; commit each validated change to development and merge it into main when preparing a release. A public alpha/beta release requires an explicit tag and currently publishes only to CurseForge.
+The Wago job skips prerelease tags and validates exact `vMAJOR.MINOR.PATCH` syntax, matching TOC/Core versions, the release changelog and project ID before uploading. Keep task branches untagged. Combine selected changes on `release/<version>`, run the full checks, then promote the validated build to `main`. See [CONTRIBUTING.md](../CONTRIBUTING.md) for branch and shared-code rules. A public alpha/beta release requires an explicit tag and currently publishes only to CurseForge.
 
 ## Release procedure
 
-1. Prepare the intended stable code, version and concise changelog on `main`. Review the diff; do not promote experimental integrations accidentally.
-2. Run `python3 scripts/package.py`. This validates Lua syntax, runs the regression suites, checks TOC paths/version consistency and builds an install-ready local ZIP without uploading.
+1. Prepare the intended stable code, version and concise changelog on `release/<version>` from current `main`. Review overlapping shared-file changes and the complete diff. After the combined checks pass, promote the validated build to `main`; do not include unselected experiments.
+2. Run `python3 scripts/package.py` and require a successful **Validate addon** CI run on the final integration. This validates Lua syntax, runs the regression suites, checks TOC paths/version consistency and builds an install-ready local ZIP without uploading.
 3. Confirm the CurseForge webhook remains enabled in tag-only mode and the Wago secret is configured. Do not tag while preparation or authorization is incomplete.
 4. Create an annotated tag on the validated commit and push it. For example, after preparing version `1.2.0`:
 
@@ -40,7 +40,7 @@ The Wago job skips prerelease tags and validates exact `vMAJOR.MINOR.PATCH` synt
 7. Inspect the downloaded packages: exactly one `EUIAddonSkins/` folder, its TOC, every referenced runtime file, all supported skins/assets and the exact MIT LICENSE. Exclude tests, scripts, benchmarks, docs, `.github`, reference sources and nested installation folders.
 8. Publish the corresponding GitHub Release from the existing tag with concise release notes and a validated install ZIP. Automatic GitHub source archives include development files and are not installation packages.
 
-Published tags are immutable. Do not recreate a tag or rerun a successful Wago upload blindly: inspect the existing platform version before retrying. A failed Wago run can be rerun through Actions after fixing credentials, without pushing the tag again or retriggering CurseForge. Code or package fixes need a new version.
+Published tags are immutable. Do not recreate a tag or rerun a successful Wago upload blindly: inspect the existing platform version before retrying. A failed Wago run can be rerun through Actions after fixing credentials, without pushing the tag again or retriggering CurseForge. Code or package fixes need a new version. For an existing tag whose Wago upload failed before publication, see [Wago recovery](WAGO_RECOVERY.md); never retry an upload that already succeeded.
 
 ## Packaging
 

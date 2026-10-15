@@ -1,13 +1,13 @@
 -- Exercise each client-selected TOC, including manifests left by CurseForge.
 for _, manifest in ipairs({'EUIAddonSkins.toc', 'EUIAddonSkins_Camelot.toc', 'EUIAddonSkins_Mainline.toc'}) do
-    for _, onlyBugSack in ipairs({false, true}) do
+    for _, onlyTarget in ipairs({false, 'BugSack', 'PallyPower'}) do
         local ns, entries = {}, {}
         EUIAddonSkinsDB = nil
         C_AddOns = {
-            GetAddOnInfo = function(name) if onlyBugSack then return name end end,
+            GetAddOnInfo = function(name) if onlyTarget then return name end end,
             GetAddOnEnableState = function(name, character)
                 assert(character == 'Player-Test')
-                return name == 'BugSack' and 2 or 0
+                return name == onlyTarget and 2 or 0
             end,
             IsAddOnLoaded = function() return false end,
             LoadAddOn = function() error('unloaded target caused skin code to load') end,
@@ -23,11 +23,11 @@ for _, manifest in ipairs({'EUIAddonSkins.toc', 'EUIAddonSkins_Camelot.toc', 'EU
                 assert(loadfile('EUIAddonSkins/' .. line:gsub('\\','/')))('EUIAddonSkins', ns)
             end
         end
-        assert(#ns.modules == 0 and #ns.skinCatalog == 20)
+        assert(#ns.modules == 0 and #ns.skinCatalog == 21)
         for _, entry in ipairs(ns.skinCatalog) do assert(entry.defined and not entry.loaded) end
         local count = 0; for _ in pairs(entries) do count = count + 1 end
-        assert(count == (onlyBugSack and 1 or 0), manifest .. ': unexpected toggles')
-        if onlyBugSack then assert(entries['EUI AddonSkins - BugSack']) end
+        assert(count == (onlyTarget and 1 or 0), manifest .. ': unexpected toggles')
+        if onlyTarget then assert(entries['EUI AddonSkins - ' .. onlyTarget]) end
     end
 end
-print('PASS: generic, Forever/Camelot and Mainline manifests register only BugSack when all other installed targets are disabled; absent skin factories never activate')
+print('PASS: generic, Forever/Camelot and Mainline manifests register only the enabled BugSack or PallyPower target; absent skin factories never activate')

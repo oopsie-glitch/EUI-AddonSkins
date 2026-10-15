@@ -5,12 +5,65 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
     available = function() return _G.Altoholic ~= nil end,
     roots = function() return ns.SkinRoots({"AltoholicFrame", "AltoMessageBox"}, {bottomBar = 24}) end,
     hooks = function(C, refresh)
+        if not C.StyleCategory then
+            local H = C.H
+            local function Paint(button)
+                if not H.Allowed(button) then return end
+                if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                H.Selection(button, button.data and button.data.isSelected == true)
+                for _, key in ipairs({"NormalTexture", "SelectedTexture", "HighlightTexture"}) do H.Fade(button[key]) end
+            end
+            C.StyleCategory = function(button)
+                if not H.Allowed(button) or type(button.SetCategory) ~= "function" or type(button.SetSelected) ~= "function" then return end
+                for _, method in ipairs({"SetCategory", "SetSubCategory", "SetSubSubCategory", "SetSelected"}) do H.Hook(button, method, Paint) end
+                Paint(button)
+            end
+            C.StyleCategories = function(list)
+                for _, button in pairs(list.Buttons or {}) do C.StyleCategory(button) end
+            end
+        end
         for _, method in ipairs({"SwitchToTab", "SetTabs", "ToggleUI", "SetPortraitToUnit"}) do C.H.Hook(_G.AltoholicFrame, method, refresh) end
     end,
     visit = function(C, f, kind, refresh)
         local H, S, main = C.H, C.S, _G.AltoholicFrame
         if f == main then H.Portrait(f, true); ns.AttachAccent(S, f) end
-        if kind == "Slider" then H.LegacySlider(f); return true end
+        if type(f.UpdateCategories) == "function" and type(f.Buttons) == "table" then
+            H.Hook(f, "UpdateCategories", C.StyleCategories)
+            C.StyleCategories(f)
+        end
+        if type(f.SetCategory) == "function" and type(f.SetSelected) == "function" then
+            C.StyleCategory(f)
+            return true
+        end
+        if kind == "ScrollFrame" then
+            -- AddonFactory keeps the Blizzard scrollbar border on its parent,
+            -- outside the slider's own regions.
+            for _, key in ipairs({"scrollBorderTop", "scrollBorderMiddle", "scrollBorderBottom", "scrollFrameScrollBarBackground"}) do
+                H.Fade(f[key])
+            end
+        end
+        if kind == "Slider" then
+            H.LegacySlider(f)
+            if f.GetOrientation and f:GetOrientation() == "VERTICAL" then
+                local thumb = f.GetThumbTexture and H.Texture(f:GetThumbTexture())
+                if thumb then thumb:SetTexCoord(0, 1, 0, 1); thumb:SetSize(8, 18) end
+            end
+            return true
+        end
+        if type(f.DrawRealmLine) == "function" and f.Collapse and f.Item1 then
+            local function HideUnusedRealmCells(row)
+                -- Summary rows define twelve cells, but DrawRealmLine only
+                -- hides 2..10. The remaining empty buttons extend off-window.
+                for index = 11, 12 do
+                    local cell = row["Item" .. index]
+                    if H.Allowed(cell) and cell.Hide then cell:Hide() end
+                end
+            end
+            H.Hook(f, "DrawRealmLine", HideUnusedRealmCells)
+            if H.Allowed(f.Collapse) and f.Collapse.IsShown and f.Collapse:IsShown() and not f.character then
+                HideUnusedRealmCells(f)
+            end
+        end
         if kind == "Button" and main then
             for index, tab in ipairs(main.Tabs or {}) do
                 if f == tab then

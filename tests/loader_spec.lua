@@ -20,6 +20,7 @@ C_AddOns = {
 }
 installed.BugSack, loaded.BugSack = true, true
 installed.Questie = true
+installed.PallyPower = true
 installed.Spy, disabled.Spy = true, true
 installed.GTFO, loaded.GTFO = true, true
 installed.Details, loaded.Details = true, true
@@ -40,14 +41,15 @@ end
 assert(next(attempts) == nil)
 EllesmereUI = euiAPI; event('PLAYER_LOGIN'); assert(next(attempts) == nil, 'activated before core finished loading')
 loaded.EUIAddonSkins = true; event('ADDON_LOADED','EUIAddonSkins')
-assert(attempts.BugSack == 1 and not attempts.Questie and not attempts.Spy and not attempts.Details)
+assert(attempts.BugSack == 1 and not attempts.Questie and not attempts.Spy and not attempts.Details and not attempts.PallyPower)
 assert(entries['EUI AddonSkins - Questie'] and not entries['EUI AddonSkins - Spy'] and not entries['EUI AddonSkins - Auctionator'])
 assert(attempts.GTFO == 1 and #errors == 1)
 combat = true; loaded.Questie = true; event('ADDON_LOADED','Questie'); assert(not attempts.Questie)
+loaded.PallyPower = true; event('ADDON_LOADED','PallyPower'); assert(not attempts.PallyPower)
 combat = false; EUIAddonSkinsDB.disabled = true; event('PLAYER_REGEN_ENABLED'); assert(not attempts.Questie)
-EUIAddonSkinsDB.disabled = nil; event('PLAYER_REGEN_ENABLED'); assert(attempts.Questie == 1)
+EUIAddonSkinsDB.disabled = nil; event('PLAYER_REGEN_ENABLED'); assert(attempts.Questie == 1 and attempts.PallyPower == 1)
 for _ = 1,25 do event('ADDON_LOADED','Unrelated') end
-assert(attempts.BugSack == 1 and attempts.Questie == 1 and attempts.GTFO == 1)
+assert(attempts.BugSack == 1 and attempts.Questie == 1 and attempts.GTFO == 1 and attempts.PallyPower == 1)
 entries['EUI AddonSkins - Details!']({IsEnabled = function() return true end}); assert(attempts.Details == 1)
 assert(not ns.skinCatalogByID.BugSack.factory and ns.skinCatalogByID.Spy.factory, 'factory lifecycle incorrect')
 local report=ns.LoaderDiagnostics(); assert(report:find('single addon folder',1,true) and report:find('skin activated',1,true))

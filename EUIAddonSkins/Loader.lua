@@ -16,6 +16,7 @@ ns.skinCatalog = {
     {id = "ItemRack", label = "ItemRack", targets = {"ItemRack", "ItemRackOptions"}},
     {id = "KiwiFarm", label = "KiwiFarm", targets = {"KiwiFarm"}},
     {id = "Myslot", label = "Myslot", targets = {"Myslot"}},
+    {id = "PallyPower", label = "PallyPower", targets = {"PallyPower"}},
     {id = "Questie", label = "Questie", targets = {"Questie"}},
     {id = "RXPGuides", label = "RestedXP Guides", targets = {"RXPGuides"}},
     {id = "Spy", label = "Spy", targets = {"Spy"}},

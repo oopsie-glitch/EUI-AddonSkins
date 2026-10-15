@@ -1,5 +1,5 @@
 local ADDON, ns = ...
-ns.VERSION = "1.4.0-alpha.6"
+ns.VERSION = "1.3.0"
 ns.modules = {}
 
 local function Print(message)

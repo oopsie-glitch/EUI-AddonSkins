@@ -24,8 +24,9 @@ EllesmereUI skins for World of Warcraft addons.
 - Gargul (windows, dialogs and menus)
 - Details! (meter windows, options, breakdown/report windows and menus)
 - ThreatClassic2 (meter, context menu and options)
+- PallyPower (Blessing Assignments, options, menus and buff controls)
 
-Each skin is optional and only activates when its addon is loaded.
+Each skin is optional. Only installed, enabled targets appear in EUI settings; their skins activate when the target loads. Everything installs in one addon folder.
 
 ## Installation
 
@@ -47,6 +48,7 @@ Skins follow EUI's theme and accent settings. Run `/reload` after disabling a sk
 - `/euiskins` — show version and skin status.
 - `/euiskins on` or `/euiskins off` — enable or disable the collection; then `/reload`.
 - `/euiskins refresh` — refresh loaded skins.
+- `/euiskins diagnostics` — show copyable target and activation status.
 
 ## Issues
 
@@ -55,6 +57,8 @@ Include the affected addon's version, any Lua error and a screenshot.
 See [CHANGELOG.md](CHANGELOG.md) for changes.
 
 ItemRack’s secure equipment buttons and Attune’s quest graph/map retain their artwork and status colors. Myslot’s private import-progress dialog and shared Blizzard tooltips keep their existing styling. Altoholic, KiwiFarm, RestedXP and TwitchEmotes popup menus use temporary EUI styling while open.
+
+PallyPower support targets the Forever beta layout. Its original lock button, secure actions, status colours and native layout are preserved.
 
 DBM combat alerts, timer bars and preview content retain DBM’s styling. Its newer Blizzard Menu popups are not included in this skin.
 
@@ -69,13 +73,3 @@ EUI AddonSkins is an independent third-party addon and is not affiliated with, s
 All trademarks and addon names belong to their respective owners.
 
 EUI AddonSkins integrates with EllesmereUI's public skinning API. EllesmereUI and the supported addons are developed and distributed separately and are not included in this project.
-
-## Deferred activation alpha
-
-This experimental branch installs as one `EUIAddonSkins` folder. Skin definitions load at startup; implementation factories wait for an enabled, loaded target and its EUI toggle. Missing/disabled targets have no toggle or active integration. Existing settings are preserved.
-
-When upgrading from the earlier multi-folder alpha, remove its old `EUIAddonSkins_*` module folders, then overwrite `EUIAddonSkins` with this ZIP. Those obsolete folders are no longer used. See [loader documentation](https://github.com/oopsie-glitch/EUI-AddonSkins/blob/loader-alpha/docs/LOADER_ALPHA.md).
-
-## Callback audit alpha
-
-The `acegui-audit-alpha` branch builds on the single-folder loader alpha and reduces repeated refresh work in DBM, Details, Gargul and ThreatClassic2. See [audit and mock measurements](https://github.com/oopsie-glitch/EUI-AddonSkins/blob/acegui-audit-alpha/docs/ACEGUI_AUDIT.md). No platform release has been published.

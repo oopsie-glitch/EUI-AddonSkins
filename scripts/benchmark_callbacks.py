@@ -29,7 +29,14 @@ with tempfile.TemporaryDirectory(prefix='callback-baseline-',dir=root.parent) as
     folder=Path(temporary)
     for name in ['EUIAddonSkins','tests']:
         shutil.copytree(root/name,folder/name)
-    for rel in runtime:shutil.copyfile(args.baseline/rel,folder/rel)
+    for rel in runtime:
+        source=(args.baseline/rel).read_text()
+        if rel.endswith('/Scoped.lua'):
+            # Keep the independent PallyPower borderless-button integration in
+            # both runs; only callback/scanning behaviour is being compared.
+            source=source.replace('ns.CreateSoftSkin(S, module)',
+                                  'ns.CreateSoftSkin(S, module, config.borderlessButtons)')
+        (folder/rel).write_text(source)
     results={'environment':'Mock WoW frames; H.Scan invocations by root, not FPS/CPU or recursive frame counts.',
              'before':run(folder,True),'after':run(root)}
 (root/'docs/acegui-callback-results.json').write_text(json.dumps(results,indent=2)+'\n')

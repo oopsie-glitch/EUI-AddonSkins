@@ -13,11 +13,11 @@ end}
 for line in io.lines('EUIAddonSkins/EUIAddonSkins.toc') do
     if line:match('%.lua$') then assert(loadfile('EUIAddonSkins/'..line:gsub('\\','/')))('EUIAddonSkins',ns) end
 end
-assert(#ns.modules==20 and #errors==0,table.concat(errors,'; '))
+assert(#ns.modules==21 and #errors==0,table.concat(errors,'; '))
 for _,entry in ipairs(ns.skinCatalog) do
     assert(entry.defined and entry.loaded and not entry.factory and entries['EUI AddonSkins - '..entry.label])
     local found; for _,module in ipairs(ns.modules) do if module.id==entry.id then found=module end end
     assert(found and found.skin==entry.skin and found.registered)
 end
 UnitName,UnitGUID=nil,nil
-print('PASS: actual one-folder TOC defines and activates all twenty stable skins once while preserving shared callbacks and EUI toggle facades')
+print('PASS: actual one-folder TOC defines and activates all twenty-one skins once while preserving shared callbacks and EUI toggle facades')

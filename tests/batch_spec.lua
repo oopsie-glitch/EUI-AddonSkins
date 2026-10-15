@@ -29,7 +29,10 @@ local function texture(kind)
     function t:SetDrawLayer(layer) self.layer = layer end
     function t:SetColorTexture(...) self.color = {...} end
     function t:SetVertexColor(...) self.color = {...} end
-    function t:SetPoint() end
+    function t:SetPoint(...) self.points = {...} end
+    function t:SetSize(w, h) self.width, self.height = w, h end
+    function t:SetTexture(path) self.path = path end
+    function t:SetAllPoints() end
     function t:SetHeight() end
     function t:SetWidth() end
     return t
@@ -39,6 +42,14 @@ local function frame(kind, name, parent)
     function f:GetObjectType() return self.kind end
     function f:GetName() return self.name end
     function f:GetParent() return self.parent end
+    function f:ClearAllPoints() self.layoutPoint = nil end
+    function f:SetPoint(...) self.layoutPoint = {...} end
+    function f:SetSize(w, h) self.width, self.height = w, h end
+    function f:GetFontString() return self.Text end
+    function f:GetScript(key) return self.scripts[key] end
+    function f:Enable() self.enabled = true end
+    function f:Disable() self.enabled = false end
+    function f:GetNormalTexture() return self.normal end
     function f:GetPoint() return self.point, self.parent, self.point, self.x, self.y end
     function f:IsProtected() return self.protected end
     function f:IsForbidden() return self.forbidden end
@@ -76,9 +87,9 @@ function S.ScrollBar(f) f.scroll = true end
 function S.CloseButton(f) f.close = true end
 function S.PageButton(f, g) f.glyph = g end
 function S.ApplyBarFill(f) f.fill = true end
-function S.Font() end
+function S.Font(t, r, g, b) t.fontColor = {r, g, b} end
 function S.StateButtonLabel() end
-function S.FadeNineSlice() end
+function S.FadeNineSlice(f) f.faded = true end
 function S.Dropdown(f) f.drop = true end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
 assert(loadfile('EUIAddonSkins/Scoped.lua'))('EUIAddonSkins', ns)
@@ -98,6 +109,11 @@ PanelTemplates_SelectTab = function() end
 PanelTemplates_DeselectTab = function() end
 BugSack = {OpenSack = function()
     BugSackFrame = frame('Frame', 'BugSackFrame')
+    BugSackFrame.Portrait = BugSackFrame:CreateTexture(); BugSackFrame.Portrait.path = 133642
+    BugSackFrame.TitleContainer = frame('Frame', nil, BugSackFrame)
+    BugSackFrame.caption = frame('Button', nil, BugSackFrame.TitleContainer)
+    BugSackFrame.caption.Text = texture('FontString'); BugSackFrame.caption.regions = {BugSackFrame.caption.Text}
+    BugSackFrame.caption.scripts.OnDoubleClick = function() return 'native-search' end
     local tab = frame('Button', 'BugSackTabSession', BugSackFrame)
     PanelTemplates_SelectTab(tab)
     local close = frame('Button', 'BatchNumericClose', BugSackFrame)
@@ -154,11 +170,30 @@ assert(check.obj.check.color[1] == accent)
 accent = 0.8; for _, fn in ipairs(looks) do fn() end; flush(); assert(check.obj.check.color[1] == 0.8)
 check.obj:SetDisabled(true); flush(); assert(check.obj.check.color[1] == 0.5)
 check.obj:SetDisabled(false); flush(); assert(check.obj.check.color[1] == 0.8)
-assert(BugSack:OpenSack() == 99); flush(); assert(BugSackFrame.shell and BugSackFrame.accent)
+assert(BugSack:OpenSack() == 99); flush(); assert(BugSackFrame.shell and not BugSackFrame.accent and BugSackFrame.shellOptions.noAccent)
 assert(BugSackTabSession.selected and BatchNumericClose.close and BatchNumericClose.scripts.OnClick() == 'close-original')
 assert(BugSackFrame.shellOptions.noBorder, 'BugSack must use the scoped soft window style')
+assert(not BugSackFrame.caption.button and BugSackFrame.caption.scripts.OnDoubleClick() == 'native-search')
+assert(BugSackFrame.Portrait.alpha == 0, 'native protruding portrait remained visible')
+local contained
+for _, region in ipairs(BugSackFrame.regions) do if region ~= BugSackFrame.Portrait and region.path == 133642 then contained = region end end
+assert(contained and contained.width == 28 and contained.height == 28 and contained.square)
+assert(BugSackTabSession.layoutPoint[1] == 'BOTTOMLEFT' and BugSackTabSession.layoutPoint[5] == 8)
 local bugNext = frame('Button', 'BugSackNextButton', BugSackFrame)
-modules.BugSack.refresh(); flush(); assert(bugNext.glyph == '>')
+bugNext.Text = texture('FontString'); bugNext.Text.text = 'Next >'; bugNext.regions = {bugNext.Text}
+bugNext.normal = bugNext:CreateTexture(); bugNext.normal.path = 'native-button-art'
+bugNext.NineSlice = frame('Frame', nil, bugNext)
+bugNext.scripts.OnClick = function() return 'native-next-shift-aware' end
+modules.BugSack.refresh(); flush(); assert(not bugNext.glyph, 'navigation must keep its translated label without an extra arrow')
+assert(bugNext.normal.alpha == 0 and bugNext.NineSlice.faded)
+assert(bugNext.width == 110 and bugNext.height == 28 and bugNext.layoutPoint[5] == 44)
+assert(bugNext.Text.text == 'Next >' and bugNext.scripts.OnClick() == 'native-next-shift-aware')
+bugNext:Disable(); assert(bugNext.Text.fontColor[1] == 0.65)
+bugNext:Enable(); assert(bugNext.Text.fontColor[1] == 1)
+local nativeEnable = bugNext.Enable; local regionCount = #BugSackFrame.regions
+for _ = 1, 20 do modules.BugSack.refresh(); flush() end
+assert(not BugSackFrame.accent)
+assert(bugNext.Enable == nativeEnable and #BugSackFrame.regions == regionCount, 'repeated BugSack refresh duplicated hooks or portraits')
 local pooled = frame('EditBox', nil, BugSackFrame); BugSackFrame.hooks.OnShow(); flush(); assert(pooled.padded)
 combat = true
 ItemRackLogFrame = frame('Frame', 'ItemRackLogFrame'); modules.ItemRack.refresh(); flush(); assert(not ItemRackLogFrame.shell)

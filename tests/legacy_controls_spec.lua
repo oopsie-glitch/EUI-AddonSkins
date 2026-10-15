@@ -48,6 +48,8 @@ local function frame(kind, name, parent)
     function f:SetWidth(w) self.width = w end
     function f:GetID() return self.id end
     function f:IsShown() return not self.hidden end
+    function f:Show() self.hidden = false end
+    function f:Hide() self.hidden = true end
     function f:IsEnabled() return not self.disabled end
     function f:Enable() self.disabled = false end
     function f:Disable() self.disabled = true end
@@ -59,7 +61,7 @@ local function frame(kind, name, parent)
     function f:IsProtected() return self.protected end
     function f:GetChildren() return table.unpack(self.children) end
     function f:GetRegions() return table.unpack(self.regions) end
-    function f:HookScript(event, fn) self.hooks[event] = fn end
+    function f:HookScript(event, fn) local old = self.hooks[event]; self.hooks[event] = function(...) if old then old(...) end; fn(...) end end
     function f:RegisterEvent(e) self.events = self.events or {}; self.events[e] = true end
     function f:SetScript(e, fn) self.hooks[e] = fn end
     function f:GetBackdrop() return self.backdrop end
@@ -238,6 +240,114 @@ modules.Altoholic.install(S, modules.Altoholic); flush()
 assert(mixedRow.Icon.crop and mixedRow.button)
 assert(AltoholicFrame.shellOptions.noBorder, 'Altoholic soft chrome must stay scoped to its window')
 assert(owner:Initialize() == 'init-original' and owner:Toggle() == 'toggle-original' and bindings >= 3)
+do
+-- AddonFactory scroll borders live on the scrollframe, not the slider.
+local altoScroll = frame('ScrollFrame', nil, AltoholicFrame)
+for _, key in ipairs({'scrollBorderTop', 'scrollBorderMiddle', 'scrollBorderBottom', 'scrollFrameScrollBarBackground'}) do
+    altoScroll[key] = altoScroll:CreateTexture()
+end
+local altoBar = frame('Slider', nil, altoScroll); altoScroll.ScrollBar = altoBar
+local altoThumb = altoBar:CreateTexture(); altoThumb:SetSize(18, 24); altoThumb:SetTexCoord(0.2, 0.8, 0.125, 0.875)
+altoBar.GetThumbTexture = function() return altoThumb end
+altoBar.GetOrientation = function() return 'VERTICAL' end
+altoBar.ScrollUpButton, altoBar.ScrollDownButton = frame('Button', nil, altoBar), frame('Button', nil, altoBar)
+altoBar.value, altoBar.minimum, altoBar.maximum = 12, 0, 300
+altoBar:SetPoint('TOPRIGHT', altoScroll, 'TOPRIGHT', -20, -18)
+altoBar.ScrollUpButton.hooks.OnClick = function() altoBar.value = altoBar.value - 12; return 'scroll-up-native' end
+altoBar.ScrollDownButton.hooks.OnClick = function() altoBar.value = altoBar.value + 12; return 'scroll-down-native' end
+-- Realm rows leave their final two pooled cells visible; character rows need them.
+local realmRow = frame('Button', nil, AltoholicFrame); realmRow.Collapse = frame('Button', nil, realmRow)
+for i = 1, 12 do realmRow['Item' .. i] = frame('Button', nil, realmRow) end
+realmRow.DrawRealmLine = function(self)
+    self.character = nil; self.Collapse:Show()
+    for i = 2, 10 do self['Item' .. i]:Hide() end
+    return 'realm-native'
+end
+realmRow.DrawCharacterLine = function(self)
+    self.character = 'character'; self.Collapse:Hide()
+    for i = 1, 12 do self['Item' .. i]:Show() end
+    return 'character-native'
+end
+modules.Altoholic.refresh(); flush()
+for _, key in ipairs({'scrollBorderTop', 'scrollBorderMiddle', 'scrollBorderBottom', 'scrollFrameScrollBarBackground'}) do assert(altoScroll[key].alpha == 0, 'Altoholic retained native scroll border') end
+assert(altoThumb.width == 8 and altoThumb.height == 18 and altoThumb.crop[1] == 0 and altoThumb.crop[2] == 1 and altoThumb.path == 'solid')
+assert(altoBar.ScrollUpButton.glyph == '^' and altoBar.ScrollDownButton.glyph == 'v')
+altoBar.ScrollUpButton.hooks.OnClick(); assert(altoBar.value == 0, 'native scroll-up action changed')
+altoBar.ScrollDownButton.hooks.OnClick(); assert(altoBar.value == 12 and altoBar.maximum == 300 and altoBar.points[1][4] == -20, 'native scrolling range or anchors changed')
+assert(not realmRow.Item11:IsShown() and not realmRow.Item12:IsShown() and realmRow.Item1:IsShown())
+local realmHook, objectCount = realmRow.DrawRealmLine, #altoBar.regions
+for _ = 1, 3 do modules.Altoholic.refresh(); flush() end
+assert(realmRow.DrawRealmLine == realmHook and #altoBar.regions == objectCount, 'Altoholic hooks/textures duplicated')
+assert(realmRow:DrawCharacterLine() == 'character-native'); modules.Altoholic.refresh(); flush()
+assert(realmRow.Item11:IsShown() and realmRow.Item12:IsShown(), 'valid character cells were hidden')
+assert(realmRow:DrawRealmLine() == 'realm-native' and not realmRow.Item11:IsShown() and not realmRow.Item12:IsShown(), 'reused realm row exposed empty cells')
+combat = true; altoThumb:SetSize(18, 24); modules.Altoholic.refresh(); flush(); assert(altoThumb.width == 18)
+combat = false
+for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
+flush(); assert(altoThumb.width == 8)
+enabled = false; realmRow.Item11:Show(); realmRow.Item12:Show(); realmRow:DrawRealmLine()
+assert(realmRow.Item11:IsShown() and realmRow.Item12:IsShown(), 'disabled Altoholic skin processed realm rows')
+enabled = true
+-- Native category rebuilds reset atlas textures and font objects every click.
+do
+    local categories = frame('Frame', nil, AltoholicFrame); categories.Buttons = {}
+    local function Category()
+        local b = frame('Button', nil, categories)
+        b.Text = b:CreateFontString(nil, nil, 'native-font')
+        for _, key in ipairs({'NormalTexture', 'SelectedTexture', 'HighlightTexture'}) do
+            b[key] = b:CreateTexture()
+            b[key].SetAtlas = function(self, atlas) self.path = atlas end
+        end
+        b.SetData = function(self, data) self.data = data end
+        b.SetSelected = function(self, data) self.SelectedTexture:SetShown(data.isSelected == true); return 'selected-native' end
+        b.SetCategory = function(self, text)
+            self.Text:SetText(text); self.Text:SetPoint('LEFT', self, 'LEFT', 8, 0)
+            self.Text:SetFont('native-font'); self.NormalTexture:SetAtlas('auctionhouse-nav-button'); self.NormalTexture:SetAlpha(1)
+            return 'category-native'
+        end
+        b.SetSubCategory = function(self, text)
+            self.Text:SetText(text); self.Text:SetPoint('LEFT', self, 'LEFT', 18, 0)
+            self.Text:SetFont('native-font'); self.NormalTexture:SetAtlas('auctionhouse-nav-button-secondary'); self.NormalTexture:SetAlpha(1)
+            return 'subcategory-native'
+        end
+        b.SetSubSubCategory = function(self, text)
+            self.Text:SetText(text); self.Text:SetPoint('LEFT', self, 'LEFT', 26, 0)
+            self.Text:SetFont('native-font'); self.NormalTexture:SetAlpha(0)
+            return 'nested-native'
+        end
+        return b
+    end
+    categories.Buttons = {Category(), Category()}
+    categories.UpdateCategories = function(self)
+        for i, b in ipairs(self.Buttons) do
+            b:SetCategory('Category ' .. i); b:SetData({isSelected = i == self.selected}); b:SetSelected(b.data)
+        end
+        return 'rebuild-native'
+    end
+    categories.selected = 1
+    modules.Altoholic.refresh(); flush()
+    assert(categories:UpdateCategories() == 'rebuild-native')
+    for i, b in ipairs(categories.Buttons) do
+        assert(b.NormalTexture.alpha == 0 and b.SelectedTexture.alpha == 0 and b.HighlightTexture.alpha == 0 and b.Text.font == 'eui', 'native category redraw escaped EUI styling')
+        assert(b.euiSelection.color[4] == (i == 1 and 0.2 or 0), 'category selection was lost')
+    end
+    local category = categories.Buttons[2]
+    assert(category:SetSubCategory('Experience') == 'subcategory-native' and category.NormalTexture.alpha == 0 and category.Text.font == 'eui')
+    assert(category.Text.points[#category.Text.points][4] == 18, 'subcategory indentation changed')
+    assert(category:SetSubSubCategory('Nested') == 'nested-native' and category.Text.points[#category.Text.points][4] == 26)
+    categories.selected = 2; categories:UpdateCategories()
+    assert(categories.Buttons[1].euiSelection.color[4] == 0 and category.euiSelection.color[4] == 0.2, 'selection did not move synchronously')
+    local hooks, regions = category.SetCategory, #category.regions
+    for _ = 1, 10 do categories:UpdateCategories(); modules.Altoholic.refresh(); flush() end
+    assert(category.SetCategory == hooks and #category.regions == regions, 'category hooks or selection textures duplicated')
+    categories.Buttons[3] = Category(); categories:UpdateCategories()
+    assert(categories.Buttons[3].Text.font == 'eui' and categories.Buttons[3].NormalTexture.alpha == 0, 'late category button was not skinned synchronously')
+    accent = 0.9; modules.Altoholic.refresh(); flush(); assert(category.euiSelection.color[1] == 0.9)
+    enabled = false; category:SetCategory('Disabled'); assert(category.NormalTexture.alpha == 1 and category.Text.font == 'native-font', 'disabled skin processed a category redraw')
+    enabled = true
+end
+end
+
 assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)
 ForeverDungeonJournal_NS = {THEMES = {}, ToggleJournal = function() end}
 ForeverDungeonJournalFrame = frame('Frame')

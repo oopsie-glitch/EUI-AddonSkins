@@ -1,41 +1,13 @@
 # Changelog
 
-## 1.4.0-alpha.6 — Callback refresh audit (untagged)
+## 1.3.0 — PallyPower and skin improvements
 
-- Combine DBM panel-construction refreshes.
-- Limit Details designer disabled-state refreshes to the editor.
-- Limit Gargul navigation refreshes to its navigation subtree.
-- Combine ThreatClassic2 group feeds and resize updates without scanning unrelated options.
-- Preserve immediate completed-window/tab styling and combat/toggle guards.
-
-## 1.4.0-alpha.5 — Single-folder activation (untagged)
-
-- Restore one installation folder and one WoW addon-list entry.
-- Read skin definitions at startup but defer their implementation factories until needed.
-- Keep GUID-based target filtering, EUI toggles, late activation and combat deferral.
-
-## 1.4.0-alpha.4 — Character enable-state fix (untagged)
-
-- Use the player GUID for modern addon enable-state checks, matching Blizzard's addon list.
-- Keep character-name queries for the legacy API.
-- Add GUID results to diagnostics and regression coverage for account/character overrides.
-
-## 1.4.0-alpha.3 — Loader diagnostics (untagged)
-
-- Add `/euiskins diagnostics` with copyable version, target enable-state, toggle and module-load information.
-- Leave loader behavior unchanged while investigating client-specific results.
-
-## 1.4.0-alpha.2 — Loader upgrade manifests (untagged)
-
-- Replace Forever/Camelot and Mainline client manifests when updating an existing install.
-- Prevent an old CurseForge manifest from loading the previous all-skins file list.
-
-## 1.4.0-alpha.1 — Load-on-demand experiment (untagged)
-
-- Split the twenty stable skins into optional load-on-demand addon modules.
-- Register EUI toggles only for installed, enabled targets.
-- Load skins after their target loads, with combat deferral and no polling.
-- Preserve existing EUI toggle names and saved variables.
+- Added PallyPower styling for Blessing Assignments, options, menus and buff controls, with clearer columns and softer controls. Kept the original lock button.
+- Fixed Altoholic scrollbar styling and thumb size, hidden unused realm-row cells, and preserved category styling after tab changes.
+- Cleaned up BugSack's header, portrait, navigation and footer. Removed its top accent bar.
+- Show EUI skin toggles only for installed, enabled targets. Defer skin activation until the target loads while keeping one addon folder and existing settings.
+- Reduced repeated refresh work in DBM, Details, Gargul and ThreatClassic2. Kept PallyPower checkbox updates local to avoid full-window scans.
+- Added `/euiskins diagnostics` for copyable loader status.
 
 ## 1.2.0 — Details! and ThreatClassic2
 

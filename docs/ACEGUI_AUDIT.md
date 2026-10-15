@@ -65,3 +65,7 @@ Shared H.Queue combines requests, H.Scan guards styling/hook installation and sc
 The archive contains one `EUIAddonSkins` folder, 34 runtime files and the MIT license; benchmark tools, tests and reports remain outside the player ZIP. No in-game verification is claimed and no manual profiling is required to use the automated findings.
 
 Sources reviewed include the supplied AceConfigDialog FeedGroup implementation and Forever Dungeon Journal renderer, plus [Details Framework editor.lua](https://github.com/Tercioo/Details-Damage-Meter/blob/master/Libs/DF/editor.lua). Integration-specific findings otherwise describe our own hooks and fixtures.
+
+## Combined 1.3.0 build
+
+These audit changes are also included in the untagged 1.3.0 preparation branch alongside PallyPower, Altoholic and BugSack updates. The combined build runs 16 suites. For repeatable baseline comparisons, the benchmark retains the independent PallyPower borderless-button parameter in both runs; callback/scanning paths use the original baseline implementation. See [integration notes](RELEASE_1.3.0.md).

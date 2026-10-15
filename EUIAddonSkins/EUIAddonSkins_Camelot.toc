@@ -5,7 +5,7 @@
 ## Author: Smarre
 ## X-License: MIT
 ## X-Wago-ID: aN0a2M6j
-## Version: 1.4.0-alpha.6
+## Version: 1.3.0
 ## Dependencies: EllesmereUI, EllesmereUIBlizzardSkin
 ## SavedVariables: EUIAddonSkinsDB
 
@@ -32,6 +32,7 @@ Skins\Gargul.lua
 Skins\ItemRack.lua
 Skins\KiwiFarm.lua
 Skins\Myslot.lua
+Skins\PallyPower.lua
 Skins\Questie.lua
 Skins\RXPGuides.lua
 Skins\Spy.lua

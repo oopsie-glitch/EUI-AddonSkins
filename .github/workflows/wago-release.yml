@@ -4,28 +4,35 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing stable tag to publish to Wago only (verify it is not already uploaded)'
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: wago-${{ github.ref }}
+  group: wago-${{ inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   publish:
-    if: ${{ !github.event.deleted && !contains(github.ref_name, '-') && !contains(github.ref_name, '+') }}
+    if: ${{ !github.event.deleted && (github.event_name == 'workflow_dispatch' || (!contains(github.ref_name, '-') && !contains(github.ref_name, '+'))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Validate stable release metadata and credentials
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
           WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
         run: |
           python3 - <<'PY'
@@ -50,6 +57,26 @@ jobs:
 
       - name: Validate Lua, regression tests and installation package
         run: python3 scripts/package.py
+
+      - name: Normalize client-specific interface metadata for BigWigs Packager
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          import re
+          addon = Path('EUIAddonSkins')
+          generic = (addon / 'EUIAddonSkins.toc').read_text()
+          pattern = r'^## Interface: (.+)$'
+          versions = [int(v.strip()) for v in re.search(pattern, generic, re.M).group(1).split(',')]
+          for flavor, selected in [('Mainline', [v for v in versions if v >= 100000]),
+                                   ('Camelot', [v for v in versions if 16000 <= v < 17000])]:
+              assert selected, 'Missing interface values for ' + flavor
+              path = addon / ('EUIAddonSkins_' + flavor + '.toc')
+              original = path.read_text()
+              normalized, count = re.subn(pattern, '## Interface: ' + ', '.join(map(str, selected)), original, count=1, flags=re.M)
+              assert count == 1
+              assert re.sub(pattern, '', normalized, flags=re.M) == re.sub(pattern, '', original, flags=re.M)
+              path.write_text(normalized)
+          PYTHON
 
       - name: Package and upload to Wago only
         uses: BigWigsMods/packager@e50a250f8705041e40f2fa1ddcb280a686d65aa0 # v2.6.1

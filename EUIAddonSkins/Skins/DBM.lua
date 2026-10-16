@@ -113,7 +113,10 @@ local function HUD(C)
         end
         local stacked = options.JournalIcons == 4
         local symbolSize = math.min(16, rowHeight * (stacked and 0.36 or 0.62), obj.frame:GetWidth() / 12)
-        local mechanicSpace = count > 0 and ((stacked and math.min(count, 2) or count) * (symbolSize + 2) + 4) or 0
+        -- Reserve the configured symbol capacity, even when a timer has fewer
+        -- populated icons. Labels, strips and countdowns then align per size.
+        local capacity = type(options.JournalIcons) == "number" and math.max(0, math.min(4, options.JournalIcons)) or count
+        local mechanicSpace = capacity > 0 and ((stacked and math.min(capacity, 2) or capacity) * (symbolSize + 2) + 4) or 0
         local slot = 0
         for i = 1, 4 do
             local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
@@ -167,9 +170,10 @@ local function HUD(C)
         -- the native hit frame can retain a different height from the bar.
         d.panel:SetPoint("TOPLEFT", obj.frame, "LEFT", -leftSpace, rowHeight / 2)
         d.panel:SetPoint("BOTTOMRIGHT", obj.frame, "RIGHT", rightSpace, -rowHeight / 2)
-        d.panel:SetColorTexture(0.035, 0.04, 0.045, 0.94)
+        d.panel:SetColorTexture(0.035, 0.035, 0.038, 0.94)
         local r, g, b = S.GetAccentColor()
-        for _, edge in ipairs(d.edges) do edge:SetColorTexture(r, g, b, 0.3) end
+        d.edges[1]:SetColorTexture(r, g, b, 0.2)
+        for i = 2, 4 do d.edges[i]:SetColorTexture(0.07, 0.075, 0.08, 0.75) end
         local x, y = options[prefix .. "TextXOffset"] or 0, options[prefix .. "TextYOffset"] or 0
         local path, flags = S.GetFont()
         if Allowed(timer) then

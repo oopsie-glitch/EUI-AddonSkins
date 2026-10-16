@@ -159,6 +159,8 @@ DBT = {Options = {Height = 20, HugeHeight = 28, IconLocked = true, IconLeft = tr
     CreateBar = function(_, _, id) return pool[id] or bar(id), 'native-create' end}
 event('ADDON_LOADED')
 local f, b = first.frame, _G[first.frame.name .. 'Bar']
+local nativeAnchor = {}
+f:SetPoint('TOP', nativeAnchor, 'TOP', 27, -60)
 assert(b.fill.path == 'Interface\\Buttons\\WHITE8X8' and b.fill.color[1] == 0.9 and b.fill.color[4] == 0.75)
 assert(_G[f.name .. 'BarName'].font == 'eui' and math.abs(_G[f.name .. 'BarName'].size - 10.08) < 0.001)
 assert(_G[f.name .. 'BarSpark'].alpha == 0 and _G[f.name .. 'BarBorderTop'].alpha == 0)
@@ -175,6 +177,15 @@ assert(b:GetWidth() < f:GetWidth() and b:GetWidth() > 30, 'strip did not reserve
 local panel = f.regions[1]
 assert(panel.layer == 'BACKGROUND' and panel.fillColor[4] == 0.94 and panel.points[1][4] == -24, 'panel does not contain spell icon')
 assert(#f.regions == 5, 'panel background and four accent edges missing')
+assert(f.regions[2].fillColor[1] == accent and f.regions[2].fillColor[4] == 0.2, 'top accent should be restrained')
+for i = 3, 5 do assert(f.regions[i].fillColor[1] == 0.07, 'side/bottom edge should be neutral') end
+local stripWidth, labelRight, timerRight = b:GetWidth(), _G[f.name .. 'BarName'].points[2][4], _G[f.name .. 'BarTimer'].points[1][4]
+_G[f.name .. 'BarIJIcons2']:Hide(); first:SetIcon(136116)
+assert(b:GetWidth() == stripWidth and _G[f.name .. 'BarName'].points[2][4] == labelRight and _G[f.name .. 'BarTimer'].points[1][4] == timerRight, 'missing mechanic icon shifted the strip/text')
+_G[f.name .. 'BarIJIcons']:Hide(); first:SetIcon(136116)
+assert(b:GetWidth() == stripWidth, 'empty mechanic group changed reserved width')
+assert(f.points[1][2] == nativeAnchor and f.points[1][4] == 27 and f.points[1][5] == -60, 'skin moved native stack row')
+_G[f.name .. 'BarIJIcons']:SetShown(true); _G[f.name .. 'BarIJIcons2']:SetShown(true)
 local tint
 for _, t in ipairs(b.regions) do if t.sublevel == 2 then tint = t end end
 assert(tint and tint.layer == 'ARTWORK' and tint.all == b.fill and tint.fillColor[4] == 0.28, 'fill tint missing or above text')
@@ -316,7 +327,8 @@ DBM.Auras.AuraTrackingState = {player = {buttonRegions = {[liveButton] = {icon =
 secret = true; DBM.Auras:OnSettingsChange(); assert(not liveIcon.crop, 'restricted live aura touched')
 secret = false; DBM.Auras:OnSettingsChange(); assert(liveIcon.crop)
 accent = 0.8; for _, fn in ipairs(looks) do fn() end; flush()
-assert(f.regions[#f.regions].fillColor[1] == accent and preview.Border.borderColor[1] == accent)
+assert(f.regions[2].fillColor[1] == accent and preview.Border.borderColor[1] == accent)
+assert(f.regions[3].fillColor[1] == 0.07, 'theme refresh recolored neutral panel edges')
 combat = true
 warning:SetText('Combat |T789:12:12|t'); assert(warning.text == 'Combat |T789:12:12:0:0:64:64:5:59:5:59|t')
 local duringCombat = DBT:CreateBar(20, 'combat')

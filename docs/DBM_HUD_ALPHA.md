@@ -38,4 +38,6 @@ Alpha.5 adopts the panel concept: a dark row with subtle accent edges, a spell i
 
 Alpha.5 tests additionally cover panel bounds, normal/enlarged typography, opposing width anchors during simulated enlargement, left/right icon visibility, compact fallback, semantic symbol groups, variance proportions and object reuse. Actual client rendering, drag behavior and animation remain unverified by the mocked environment.
 
+Alpha.6 is appearance-only: the top edge retains a faint live accent, while side/bottom edges use a subdued neutral color. Panel backgrounds are neutral charcoal. Each timer size reserves the configured mechanic-symbol capacity, keeping progress strips, labels and countdowns aligned even when individual timers have fewer icons. No changes to native row positioning, spacing, sizes or movement settings are introduced in this pass. Regression checks cover icon-count-independent alignment, preserved native stack anchors and neutral edges across accent changes.
+
 Install the test ZIP's `EUIAddonSkins` folder in `Interface/AddOns`, replacing the existing folder. DBM and EllesmereUI remain separate requirements. Do not install this alongside another copy of EUI AddonSkins.

@@ -2,6 +2,20 @@
 
 Reviewed on 2026-10-17 while HUD alpha.7 was being evaluated. No reference implementation or assets were copied into the addon.
 
+## Pinned: review before release packaging
+
+The user requested a reminder before this DBM alpha is prepared for release if useful follow-ups remain unfinished. Check implementation and tests, update this list, and bring up outstanding items before release packaging/publication. Iterative alpha test ZIPs do not consume this reminder.
+
+- [ ] Theme current DBM range/radar windows through EllesmereUI, after verifying current frame/API behavior.
+- [ ] Theme the current DBM information window, using targeted lifecycle hooks and reusable styling.
+- [ ] Separate GUI refreshes from HUD repaints, retaining theme/accent updates, late loading, manual refreshes and enable transitions; add regressions before changing that behavior.
+- [x] Reuse timer skin objects and install per-object lifecycle hooks once.
+- [x] Discover new timers directly instead of scanning the whole active pool on creation; protect with a creation-burst regression.
+- [x] Keep countdowns free of added Update/OnUpdate hooks and polling; retain the simulated countdown regression.
+- [x] Keep warning icon changes scoped to DBM-owned text and guard secret text.
+
+Preserve these boundaries: use EllesmereUI APIs, keep native DBM positioning/row spacing/configured sizes under user control, and implement independently rather than copying protected reference code. The old boss-health implementation requires a current supported target before it can become an actionable item.
+
 ## Sources
 
 - [Azilroka AddOnSkins DBM integration](https://github.com/Azilroka/AddOnSkins/blob/main/AddOnSkins/Skins/AddOns/DBM.lua), reviewed blob `148022bbe6d7baa2fac6574a6fb7092e998371db`.

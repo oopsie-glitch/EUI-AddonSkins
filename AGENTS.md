@@ -2,6 +2,10 @@
 
 Read CONTRIBUTING.md and docs/RELEASING.md before changing code or preparing a release.
 
+## Pinned DBM release reminder
+
+Before preparing the current DBM alpha for a release package or merging it into a release branch, review the pinned checklist in docs/DBM_REFERENCE_REVIEW.md. Tell the user which useful follow-ups remain unfinished before packaging or publication; do not silently omit them. Keep the checklist current as work lands. This reminder applies to release preparation, not each iterative alpha test ZIP. DBM positioning, row spacing and configured sizes remain user-controlled.
+
 ## Branches and scope
 
 - Start each task from current main: skin/<addon>-<change> for an integration, fix/<shared-change> for shared code, chore/<maintenance> for tooling/docs.

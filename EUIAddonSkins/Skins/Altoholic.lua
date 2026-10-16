@@ -3,6 +3,7 @@ local function DefineSkin()
 ns.RegisterScopedSkin("Altoholic", "Altoholic", {
     softBorders = true,
     panels = false,
+    preserveTextColors = true,
     immediateShow = true,
     borderlessButtons = function(f)
         local parent = f.GetParent and f:GetParent()
@@ -10,11 +11,123 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
             or type(f.DrawArrow) == "function" or (parent and type(parent.DrawRealmLine) == "function")
     end,
     available = function() return _G.Altoholic ~= nil end,
-    roots = function() return ns.SkinRoots({"AltoholicFrame", "AltoMessageBox"}, {bottomBar = 24}) end,
+    roots = function() return ns.SkinRoots({"AltoholicFrame", "AltoMessageBox"}, {noTopBar = true, noAccent = true}) end,
     hooks = function(C, refresh)
         if not C.StyleCategory then
             local H, S = C.H, C.S
             local surfaces, clear, zones = {}, {}, {}
+            local primitives, edges, tabLabels, dropdowns, tabPaints = {}, {}, {}, {}, {}
+            local atlasIcons, square = {}, S.SquareIcon
+            S.SquareIcon = function(icon, parent)
+                if not atlasIcons[icon] then return square(icon, parent) end
+            end
+            C.Primitive = function(f, key, method, ...)
+                local entry = primitives[f]
+                if not entry then entry = {}; primitives[f] = entry end
+                if not entry[key] then
+                    local before = {}; for _, region in ipairs(H.Regions(f)) do before[region] = true end
+                    method(f, ...)
+                    local added = {}
+                    for _, region in ipairs(H.Regions(f)) do if not before[region] then added[#added + 1] = region end end
+                    entry[key] = added
+                else method(f, ...) end
+                return entry[key]
+            end
+            C.Font = function(text, size, r, g, b)
+                H.Font(text, r, g, b)
+                if H.Allowed(text) and text.GetFont and size then
+                    local path, _, flags = text:GetFont()
+                    if path then text:SetFont(path, size, flags or "") end
+                end
+            end
+            C.Tab = function(f, selected)
+                if not H.Allowed(f) then return end
+                local added = C.Primitive(f, "tab", H.Tab, selected)
+                local native = (f.GetFontString and f:GetFontString()) or f.Text
+                local label = tabLabels[f]
+                if not label then
+                    for _, region in ipairs(added) do
+                        if region:GetObjectType() == "FontString" then label = region
+                        elseif H.Texture(region) and region:GetDrawLayer() == "BACKGROUND" then H.Fade(region) end
+                    end
+                    label = label or native; tabLabels[f] = label
+                end
+                if label and native and label ~= native then H.Fade(native) end
+                if label then
+                    local entry = tabPaints[f]
+                    if not entry then
+                        entry = {}; tabPaints[f] = entry
+                        local painting = false
+                        entry.paint = function()
+                            if painting then return end
+                            if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                            local r, g, b = S.GetAccentColor(); local shade = entry.selected and 1 or 0.65
+                            painting = true; label:SetTextColor(r * shade, g * shade, b * shade, 1); painting = false
+                        end
+                        H.Hook(label, "SetTextColor", entry.paint)
+                    end
+                    entry.selected = selected; entry.paint(); H.Font(label)
+                end
+            end
+            C.Item = function(f, icon, atlas)
+                if not H.Allowed(f) or not H.Texture(icon) then return end
+                if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                if atlas then atlasIcons[icon] = true else S.SquareIcon(icon) end
+                if f.SetBackdrop then f:SetBackdrop(nil) end
+                H.Fade(f.NormalTexture)
+                local border = H.Texture(f.IconBorder)
+                if not border then return end
+                H.Fade(border)
+                local strips = edges[f]
+                if not strips then
+                    strips = {}; edges[f] = strips
+                    for _, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+                        local strip = f:CreateTexture(nil, "OVERLAY", nil, 5)
+                        if side == "TOP" or side == "BOTTOM" then
+                            strip:SetPoint(side .. "LEFT", icon, side .. "LEFT"); strip:SetPoint(side .. "RIGHT", icon, side .. "RIGHT"); strip:SetHeight(1)
+                        else
+                            strip:SetPoint("TOP" .. side, icon, "TOP" .. side); strip:SetPoint("BOTTOM" .. side, icon, "BOTTOM" .. side); strip:SetWidth(1)
+                        end
+                        strips[#strips + 1] = strip
+                    end
+                end
+                local r, g, b = 0.15, 0.15, 0.15
+                if border.IsShown and border:IsShown() then r, g, b = border:GetVertexColor() end
+                for _, strip in ipairs(strips) do strip:SetColorTexture(r, g, b, 1) end
+                H.Font(f.Name); H.Font(f.Count)
+            end
+            C.GridRow = function(row)
+                if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                if row.Name then C.FlatAction(row.Name) end
+                for index = 1, 13 do
+                    local cell = row["Item" .. index]
+                    if cell then C.Item(cell, cell.Background) end
+                end
+            end
+            C.Local = function(f) C.RefreshControlsNow(f) end
+            C.Dropdown = function(f)
+                dropdowns[f] = true
+                local icon = H.Texture(f.Icon); local alpha = icon and icon:GetAlpha()
+                local added = C.Primitive(f, "dropdown", S.Dropdown)
+                if icon then icon:SetAlpha(alpha) end
+                for _, key in ipairs({"Left", "Middle", "Right"}) do H.Fade(f[key]) end
+                for _, region in ipairs(H.Regions(f.Button)) do if H.Texture(region) then H.Fade(region) end end
+                f.Button:ClearAllPoints(); f.Button:SetPoint("RIGHT", f, "RIGHT", -3, 0); f.Button:SetSize(20, 20)
+                f:SetSize(f:GetWidth(), 24)
+                local showIcon = icon and (not icon.IsShown or icon:IsShown()) and alpha > 0
+                f.Text:ClearAllPoints(); f.Text:SetPoint("LEFT", f, "LEFT", showIcon and 26 or 6, 0)
+                f.Text:SetPoint("RIGHT", f, "RIGHT", -26, 0)
+                H.Font(f.Text, f.isDisabled and 0.5 or 0.9, f.isDisabled and 0.5 or 0.9, f.isDisabled and 0.5 or 0.92)
+                for _, arrow in ipairs(added) do
+                    if H.Texture(arrow) and arrow:GetDrawLayer() == "OVERLAY" then
+                        arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-left.png"); arrow:SetTexCoord(0, 1, 0, 1)
+                        if arrow.SetRotation then arrow:SetRotation(math.pi / 2) end
+                        arrow:SetSize(9, 9); arrow:SetVertexColor(0.75, 0.75, 0.77, 1)
+                    end
+                end
+                for _, method in ipairs({"SetMenuWidth", "SetText", "JustifyText", "EnableDropDown", "DisableDropDown"}) do H.Hook(f, method, C.Local) end
+            end
+            C.DropChild = function(f) return dropdowns[f:GetParent()] end
             -- This helper instance belongs only to Altoholic. Both full and
             -- local/scroll scans exclude its explicitly registered hidden
             -- tabs/panels; arbitrary hidden children can still initialize.
@@ -100,7 +213,7 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
                 for _, tab in pairs(main.TabFrames or {}) do
                     if H.Allowed(tab) and tab.GetID and tab:GetID() == main.selectedTab then
                         C.RefreshControlsNow(tab)
-                        for index, button in ipairs(main.Tabs or {}) do H.Tab(button, main.selectedTab == index) end
+                        for index, button in ipairs(main.Tabs or {}) do C.Tab(button, main.selectedTab == index) end
                         return
                     end
                 end
@@ -119,7 +232,13 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
     end,
     visit = function(C, f, kind, refresh)
         local H, S, main = C.H, C.S, _G.AltoholicFrame
-        if f == main then H.Portrait(f, true); ns.AttachAccent(S, f) end
+        if f == main then H.Portrait(f, true, true) end
+        if kind == "Button" and H.Texture(f.Background) and H.Texture(f.IconBorder) and f.Name then
+            C.Item(f, f.Background); return true
+        end
+        if kind == "Button" and f.Item1 and H.Texture(f.Item1.Background) and H.Texture(f.Item1.IconBorder) then
+            H.Hook(f, "Update", C.GridRow); C.GridRow(f)
+        end
         if type(f.ShowPanel) == "function" and type(f.GetCurrentPanel) == "function" then
             H.Hook(f, "ShowPanel", C.StyleCurrentPanel)
         end
@@ -144,10 +263,18 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
             end
         end
         if kind == "Slider" then
+            if H.Allowed(f.Backdrop) then C.ClearInset(f.Backdrop) end
             H.LegacySlider(f)
             if f.GetOrientation and f:GetOrientation() == "VERTICAL" then
                 local thumb = f.GetThumbTexture and H.Texture(f:GetThumbTexture())
-                if thumb then thumb:SetTexCoord(0, 1, 0, 1); thumb:SetSize(8, 18) end
+                if thumb then thumb:SetTexCoord(0, 1, 0, 1); thumb:SetSize(4, 18); thumb:SetColorTexture(1, 1, 1, 0.3) end
+            elseif f.GetOrientation and f:GetOrientation() == "HORIZONTAL" then
+                local thumb = f.GetThumbTexture and H.Texture(f:GetThumbTexture())
+                if thumb then thumb:SetTexCoord(0, 1, 0, 1); thumb:SetSize(8, 12) end
+                C.Font(f.Text, 10, 0.88, 0.88, 0.9); C.Font(f.Low, 9, 0.6, 0.6, 0.62); C.Font(f.High, 9, 0.6, 0.6, 0.62)
+                if H.Allowed(f.Text) then f.Text:ClearAllPoints(); f.Text:SetPoint("BOTTOM", f, "TOP", 0, 5) end
+                if H.Allowed(f.Low) then f.Low:ClearAllPoints(); f.Low:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 0, -4) end
+                if H.Allowed(f.High) then f.High:ClearAllPoints(); f.High:SetPoint("TOPRIGHT", f, "BOTTOMRIGHT", 0, -4) end
             end
             return true
         end
@@ -183,7 +310,7 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
             for index, tab in ipairs(main.Tabs or {}) do
                 if f == tab then
                     -- Keep native external bottom-tab anchors; moving them would overlap data.
-                    return H.Tab(f, main.selectedTab == index)
+                    C.Tab(f, main.selectedTab == index); return true
                 end
             end
         end
@@ -196,6 +323,30 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
             resize = point == "BOTTOMRIGHT"
         end
         H.Resize(f, resize)
+        if kind == "CheckButton" and (f.locLabel or f.module and f.option) then
+            S.Checkbox(f, {borderInset = 4, hover = 0.06})
+            local check = f.GetCheckedTexture and H.Texture(f:GetCheckedTexture())
+            if check then
+                if check.SetDesaturated then check:SetDesaturated(true) end
+                check:ClearAllPoints(); check:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4); check:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -4, 4)
+                local r, g, b = S.GetAccentColor(); check:SetVertexColor(r, g, b, 1)
+            end
+            local shade = f.IsEnabled and not f:IsEnabled() and 0.5 or 0.88
+            H.Font(f.Text, shade, shade, shade); return true
+        end
+        if kind == "EditBox" and main and f == main.SearchBox then
+            local icon = H.Texture(f.searchIcon) or H.Texture(f.SearchIcon)
+            local alpha = icon and icon:GetAlpha()
+            for _, region in ipairs(C.Primitive(f, "input", S.EditBox)) do
+                if H.Texture(region) and region:GetDrawLayer() == "BACKGROUND" then region:SetColorTexture(0.055, 0.055, 0.055, 0.9) end
+            end
+            if icon then icon:SetAlpha(alpha) end
+            if f.SetFont and S.GetFont then
+                local path, flags = S.GetFont(); local _, size = f:GetFont()
+                if path then f:SetFont(path, size or 11, flags or "") end
+            end
+            return true
+        end
         if kind == "Frame" and f.Initialize and (type(f.initialize) == "function" or f.AddButtonInfo) then
             C.MenuOwner(f)
             local function BindLists()
@@ -219,10 +370,22 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
             H.Hook(f, "Initialize", BindLists)
             H.Hook(f, "Toggle", BindLists)
             BindLists()
+            if H.Allowed(f.Button) and H.Allowed(f.Text) and f.Left and f.Middle and f.Right then C.Dropdown(f); return true end
         end
         if kind == "Button" then
+            if C.DropChild(f) then return true end
+            local parent = f:GetParent()
+            if parent and (parent.NextPage == f or parent.PrevPage == f) then
+                S.SoftPageButton(f, parent.NextPage == f and ">" or "<", 12); return true
+            end
+            if parent and parent.Item1 and H.Texture(parent.Item1.Background) and parent.Name == f then C.FlatAction(f); return true end
             local icon = H.Icon(f)
             if icon then
+                if H.Texture(f.IconBorder) then
+                    C.Item(f, icon, type(f.SetClass) == "function")
+                    for _, method in ipairs({"SetItem", "SetRarity", "SetClass"}) do H.Hook(f, method, C.Local) end
+                    return true
+                end
                 if f.GetWidth and f.GetHeight and f:GetWidth() == f:GetHeight() then
                     H.Action(f, {"Icon", "icon"}); S.SquareIcon(icon, f)
                     return true
@@ -242,7 +405,11 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
                 return true
             end
             local label = (f.GetFontString and f:GetFontString()) or f.Text or f.text
-            if label and not f.Icon and not f.icon then H.Action(f); return true end
+            if label and not f.Icon and not f.icon then
+                H.Action(f)
+                local shade = f.IsEnabled and not f:IsEnabled() and 0.5 or 0.9
+                H.Font(label, shade, shade, shade); return true
+            end
         end
         if H.Allowed(f.Inset) then
             C.ClearInset(f.Inset)

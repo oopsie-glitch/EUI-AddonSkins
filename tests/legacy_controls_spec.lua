@@ -24,6 +24,9 @@ local function texture(kind, parent)
     function t:SetAllPoints() end
     function t:ClearAllPoints() self.points = {} end
     function t:SetShown(v) self.shown = v end
+    function t:IsShown() return self.shown ~= false end
+    function t:SetDesaturated(v) self.desaturated = v end
+    function t:SetRotation(v) self.rotation = v end
     function t:GetVertexColor() return table.unpack(self.color or {1, 1, 1, 1}) end
     function t:SetSize(w, h) self.width, self.height = w, h end
     function t:SetHeight(h) self.height = h end
@@ -31,8 +34,8 @@ local function texture(kind, parent)
     function t:SetTexCoord(...) self.crop = {...} end
     function t:GetNumMaskTextures() return self.masked and 1 or 0 end
     function t:SetText(s) assert(self.font, "FontString:SetText(): Font not set"); self.text = s end
-    function t:GetFont() return self.font, self.font and 12, '' end
-    function t:SetFont(v) self.font = v; self.fontWrites = (self.fontWrites or 0) + 1 end
+    function t:GetFont() return self.font, self.font and (self.fontSize or 12), '' end
+    function t:SetFont(v, size) self.font, self.fontSize = v, size; self.fontWrites = (self.fontWrites or 0) + 1 end
     function t:SetFontObject(v) self.font = v end
     function t:SetTextColor(...) self.textColor = {...} end
     function t:GetTextColor() return table.unpack(self.textColor or {1, 1, 1, 1}) end
@@ -82,7 +85,7 @@ local function frame(kind, name, parent)
 end
 CreateFrame = function(kind, name, parent) local f = frame(kind, name, parent); events[#events + 1] = f; return f end
 local S = {GetAccentColor = function() return accent, 0.6, 0.7 end}
-function S.Font(t, r, g, b) t:SetFont('eui'); if r then t:SetTextColor(r, g, b) end end
+function S.Font(t, r, g, b) local _, size = t:GetFont(); t:SetFont('eui', size or 12); if r then t:SetTextColor(r, g, b) end end
 function S.Button(f, keys)
     local keep = {}; for _, key in ipairs(keys or {}) do keep[f[key] or false] = true end
     for _, t in ipairs(f.regions) do if t.kind == 'Texture' and not keep[t] then t:SetAlpha(0) end end
@@ -277,7 +280,7 @@ realmRow.DrawCharacterLine = function(self)
 end
 modules.Altoholic.refresh(); flush()
 for _, key in ipairs({'scrollBorderTop', 'scrollBorderMiddle', 'scrollBorderBottom', 'scrollFrameScrollBarBackground'}) do assert(altoScroll[key].alpha == 0, 'Altoholic retained native scroll border') end
-assert(altoThumb.width == 8 and altoThumb.height == 18 and altoThumb.crop[1] == 0 and altoThumb.crop[2] == 1 and altoThumb.path == 'solid')
+assert(altoThumb.width == 4 and altoThumb.height == 18 and altoThumb.crop[1] == 0 and altoThumb.crop[2] == 1 and altoThumb.path == 'solid')
 assert(altoBar.ScrollUpButton.glyph == '^' and altoBar.ScrollDownButton.glyph == 'v')
 altoBar.ScrollUpButton.hooks.OnClick(); assert(altoBar.value == 0, 'native scroll-up action changed')
 altoBar.ScrollDownButton.hooks.OnClick(); assert(altoBar.value == 12 and altoBar.maximum == 300 and altoBar.points[1][4] == -20, 'native scrolling range or anchors changed')
@@ -291,7 +294,7 @@ assert(realmRow:DrawRealmLine() == 'realm-native' and not realmRow.Item11:IsShow
 combat = true; altoThumb:SetSize(18, 24); modules.Altoholic.refresh(); flush(); assert(altoThumb.width == 18)
 combat = false
 for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
-flush(); assert(altoThumb.width == 8)
+flush(); assert(altoThumb.width == 4)
 enabled = false; realmRow.Item11:Show(); realmRow.Item12:Show(); realmRow:DrawRealmLine()
 assert(realmRow.Item11:IsShown() and realmRow.Item12:IsShown(), 'disabled Altoholic skin processed realm rows')
 enabled = true
@@ -500,6 +503,124 @@ do
     if os.getenv('EUI_ALTO_BASELINE') ~= '1' then assert(not hiddenCells[61].fill, 'disabled skin processed a hidden tab') end
     enabled = true
     S.Button, S.Inset, CreateFrame = originalButton, originalInset, originalCreate
+end
+
+-- Forever templates: artwork stored in Background, grid row reuse and options.
+do
+    local oldDropdown, oldTab, oldBind = S.Dropdown, S.Tab, ns.BindPopupList
+    local oldInput, oldFont = S.EditBox, S.GetFont
+    local root = frame('Frame'); AltoholicFrame = root; root.Tabs = {}; root.selectedTab = 1
+    local search = frame('EditBox', nil, root); root.SearchBox = search
+    search.GetFont = function(self) return self.font or 'native', 11, '' end
+    search.SetFont = function(self, path) self.font = path end
+    search.searchIcon = search:CreateTexture(); search.searchIcon.path = 'native-search-icon'
+    search.hooks.OnEnterPressed = function() return 'search-native' end
+    S.GetFont = function() return 'eui-user-font', '' end
+    S.EditBox = function(f, options)
+        oldInput(f, options)
+        if not f.fixtureFill then
+            for _, region in ipairs(f.regions) do if region.kind == 'Texture' then region:SetAlpha(0) end end
+            f.fixtureFill = f:CreateTexture(); f.fixtureFill.layer = 'BACKGROUND'
+        end
+    end
+    local page = frame('Frame', nil, root); page.id = 1; root.TabFrames = {page}
+    local tab = frame('Button', nil, root); tab.label = tab:CreateFontString(nil, nil, 'native'); root.Tabs[1] = tab
+    local euiLabel
+    S.Tab = function(f)
+        oldTab(f)
+        if f == tab and not euiLabel then
+            f.label:SetTextColor(0, 0, 0, 0)
+            euiLabel = f:CreateFontString(nil, nil, 'eui')
+        end
+    end
+    S.Dropdown = function(f)
+        oldDropdown(f)
+        if not f.fixtureArrow then f.fixtureArrow = f:CreateTexture(); f.fixtureArrow.layer = 'OVERLAY' end
+    end
+    local row = frame('Button', nil, page); row.Name = frame('Button', nil, row)
+    row.Name.Text = row.Name:CreateFontString(nil, nil, 'native')
+    local function GridCell(index)
+        local cell = frame('Button', nil, row); row['Item' .. index] = cell
+        cell.Background = cell:CreateTexture(); cell.Background.layer = 'BACKGROUND'; cell.Background.path = 'equipment-art'
+        cell.IconBorder = cell:CreateTexture(); cell.IconBorder:SetVertexColor(0, 0.44, 0.87, 0.5)
+        cell.Name = cell:CreateFontString(nil, nil, 'native'); cell.Name.text = '37'
+        cell:SetBackdrop({edgeFile = 'native-rounded-border'})
+        cell.action = function() return 'equip-tooltip-native' end
+        return cell
+    end
+    local cell = GridCell(1)
+    row.Update = function(self, empty)
+        self.Item1.Background:SetTexture(empty and 'empty-slot-art' or 'equipment-art')
+        self.Item1.IconBorder:SetShown(not empty)
+        self.Item1.IconBorder:SetVertexColor(0.12, 1, 0, 0.5)
+        if not self.Item2 then GridCell(2) end
+        return 'grid-native', nil, 13
+    end
+    local class = frame('Button', nil, page)
+    class.Icon = class:CreateTexture(); class.Icon.path = 'class-atlas'; class.Icon:SetTexCoord(0.25, 0.5, 0, 0.25)
+    class.IconBorder = class:CreateTexture(); class.IconBorder:SetVertexColor(0.1, 0.25, 1, 0.5)
+    class.SetClass = function(self) self.Icon:SetTexCoord(0.5, 0.75, 0, 0.25); return 'class-native' end
+    local drop = frame('Frame', nil, page)
+    drop.Text = drop:CreateFontString(nil, nil, 'native'); drop.Text.text = 'Profession Cooldowns'
+    for _, key in ipairs({'Left', 'Middle', 'Right'}) do drop[key] = drop:CreateTexture() end
+    drop.Button = frame('Button', nil, drop); drop.Button.normal = drop.Button:CreateTexture()
+    drop.Button.action = function() return 'dropdown-native' end
+    drop.Initialize = function(self) self.initialize = function() end; return 'init-native' end
+    drop.AddButtonInfo = function() end
+    drop.Toggle = function() return 'toggle-native' end
+    drop.SetMenuWidth = function(self, width) self:SetWidth(width); return 'width-native' end
+    drop.SetText = function(self, text) self.Text:SetText(text); return 'text-native' end
+    ns.BindPopupList = function(_, _, bound) assert(bound == drop) end
+    local options = frame('Frame', nil, page)
+    local slider = frame('Slider', nil, options)
+    slider.Text = slider:CreateFontString(nil, nil, 'native'); slider.Low = slider:CreateFontString(nil, nil, 'native'); slider.High = slider:CreateFontString(nil, nil, 'native')
+    slider.Backdrop = frame('Frame', nil, slider); slider.Backdrop:SetBackdrop({bgFile = 'native-track', edgeFile = 'native-edge'})
+    local thumb = slider:CreateTexture(); thumb:SetSize(32, 32)
+    slider.GetThumbTexture = function() return thumb end; slider.GetOrientation = function() return 'HORIZONTAL' end
+    slider.value, slider.minimum, slider.maximum = 180, 1, 360
+    slider.hooks.OnValueChanged = function() return 'value-native' end
+    local check = frame('CheckButton', nil, options); check.locLabel = 'SHOW_ICON_TEXT'; check.checked = true
+    check.Text = check:CreateFontString(nil, nil, 'native'); check.Text.textColor = {1, 0.82, 0, 1}
+    local tick = check:CreateTexture(); check.GetCheckedTexture = function() return tick end
+    check.action = function() return 'check-native' end
+    page.NextPage = frame('Button', nil, page); page.PrevPage = frame('Button', nil, page)
+    page.NextPage.action = function() return 'next-native' end
+    local startEvents = #events
+    modules.Altoholic.install(S, modules.Altoholic); flush()
+    local function Edges(f)
+        local result = {}; for _, t in ipairs(f.regions) do if t.width == 1 or t.height == 1 then result[#result + 1] = t end end
+        return result
+    end
+    assert(root.shellOptions.noTopBar and root.shellOptions.noAccent and not root.shellOptions.bottomBar and not root.accent)
+    assert(search.font == 'eui-user-font' and search.searchIcon.alpha == 1 and search.fixtureFill.color[1] == 0.055
+        and search.hooks.OnEnterPressed() == 'search-native', 'search input lost its icon/action or missed theme styling')
+    assert(cell.Background.alpha == 1 and cell.Background.path == 'equipment-art' and cell.Background.crop and cell.backdrop == nil
+        and cell.IconBorder.alpha == 0 and #Edges(cell) == 4 and Edges(cell)[1].color[3] == 0.87, 'grid artwork was hidden or quality border lost')
+    assert(cell.Name.text == '37' and cell.action() == 'equip-tooltip-native' and row.Name.button)
+    assert(class.Icon.crop[1] == 0.25 and class.Icon.crop[2] == 0.5 and class.Icon.alpha == 1, 'class atlas coordinates were cropped as an item icon')
+    assert(class:SetClass() == 'class-native' and class.Icon.crop[1] == 0.5)
+    assert(drop.dropdown and drop.Left.alpha == 0 and drop.Right.alpha == 0 and drop.Button.normal.alpha == 0
+        and drop.Button.action() == 'dropdown-native' and drop.fixtureArrow.path:find('eui%-arrow%-left'))
+    assert(drop:SetText('Dungeon Resets') == 'text-native' and drop.Text.text == 'Dungeon Resets' and drop:SetMenuWidth(140) == 'width-native')
+    assert(slider.Backdrop.backdrop == nil and thumb.width == 8 and thumb.height == 12
+        and slider.Text.fontSize == 10 and slider.Low.fontSize == 9 and slider.Text.points[1][5] == 5
+        and slider.Low.points[1][5] == -4 and slider.maximum == 360 and slider.value == 180 and slider.hooks.OnValueChanged() == 'value-native')
+    assert(check.checked and tick.desaturated and tick.color[1] == accent and check.Text.textColor[1] == 0.88 and check.action() == 'check-native')
+    assert(tab.label.alpha == 0 and euiLabel.textColor[1] == accent and page.NextPage.glyph == '>' and page.PrevPage.glyph == '<' and page.NextPage.action() == 'next-native')
+    euiLabel:SetTextColor(1, 1, 1, 1); assert(euiLabel.textColor[1] == accent, 'EUI tab repaint reset the accent tint')
+    local a, b, c = row:Update(true); assert(a == 'grid-native' and b == nil and c == 13)
+    assert(cell.Background.path == 'empty-slot-art' and cell.Background.alpha == 1 and Edges(cell)[1].color[1] == 0.15 and #Edges(row.Item2) == 4)
+    local count, hook = #cell.regions, row.Update; auditScans[root] = 0
+    for _ = 1, 50 do row:Update(false) end
+    assert(auditScans[root] == 0 and #cell.regions == count and row.Update == hook and Edges(cell)[1].color[2] == 1, 'grid reuse triggered full scans or allocated repeated regions/hooks')
+    combat = true; row:Update(true); assert(Edges(cell)[1].color[2] == 1)
+    combat = false
+    for index = startEvents + 1, #events do local f = events[index]; if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(Edges(cell)[1].color[1] == 0.15)
+    enabled = false; row:Update(false); assert(Edges(cell)[1].color[1] == 0.15)
+    enabled = true; modules.Altoholic.refresh(); flush(); assert(Edges(cell)[1].color[2] == 1)
+    S.Dropdown, S.Tab, ns.BindPopupList = oldDropdown, oldTab, oldBind
+    S.EditBox, S.GetFont = oldInput, oldFont
 end
 
 assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)

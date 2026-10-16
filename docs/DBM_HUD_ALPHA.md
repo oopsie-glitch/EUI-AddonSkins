@@ -6,7 +6,7 @@ Branch: `skin/dbm-refinement`. This untagged test build does not publish to Curs
 
 - Flat timer fills and dark backgrounds, retaining DBM's mechanic colors and urgency updates.
 - A thin EUI accent line below each timer, square icons and EUI fonts.
-- Native timer sizes, positions, icon visibility and countdown behavior.
+- Native stack anchors, configured sizes, icon visibility and countdown behavior; rendered rows have a small visual inset.
 - Move-mode aura previews with thin dispel-colored edges, EUI text and an accent selection outline.
 - Retail AuraUtil color support removes the remaining ornate preview borders. Standalone native dispel glyphs sit inside the top-right corner; colorblind abbreviations remain intact.
 - Smaller inset stack counts, subtle text shadows, a tighter one-pixel selection outline and dark neutral timer icon edges.
@@ -31,5 +31,7 @@ These are mocked checks, not in-game profiling or visual verification. No FPS or
 Alpha.2 extends the fixture with Retail-only colors (legacy global absent), contained dispel glyphs, preview object reuse, hidden dispel glyphs, text padding and selection geometry. Timer backgrounds are slightly more opaque for contrast against the world.
 
 Alpha.3 replaces the additive variance gradient with a subtle flat charcoal band. DBM still controls its timing range, width, direction and visibility. Normal and special warnings use the EUI font while retaining native size, colors, positions and animation. Plain DBM inline spell icons are cropped; raid markers, custom crops and secret text are left intact. Tests cover variance geometry/visibility, warning settings refreshes, preserved text and native returns, combat, disabled skins and hook reuse.
+
+Alpha.4 softens fill colors with one cached neutral tint anchored to each native fill texture, below text and mechanic overlays. It follows native color/value changes without a countdown callback. Rendered bars are inset by one pixel at top/bottom while native stack frames and saved size/spacing values remain unchanged. Locked icons follow the inset height; insecure mechanic symbols are smaller, with consistent spacing outside the four-symbol stacked mode. Labels/countdowns have consistent padding that retains DBM's text offsets. Warning text gains a subtle shadow. Regression checks cover normal/large sizes, repeated paint without cumulative shrinking, text offsets, stacked symbols, native color changes and reuse of the tint.
 
 Install the test ZIP's `EUIAddonSkins` folder in `Interface/AddOns`, replacing the existing folder. DBM and EllesmereUI remain separate requirements. Do not install this alongside another copy of EUI AddonSkins.

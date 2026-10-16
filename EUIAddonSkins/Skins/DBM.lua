@@ -16,6 +16,10 @@ local function HUD(C)
     local function Font(text)
         if Allowed(text) and text.GetFont then S.Font(text) end
     end
+    local function Shadow(text)
+        if text.SetShadowColor then text:SetShadowColor(0, 0, 0, 0.9) end
+        if text.SetShadowOffset then text:SetShadowOffset(1, -1) end
+    end
     local function Edges(parent, icon)
         local d = icons[icon]
         if d then return d end
@@ -77,6 +81,50 @@ local function HUD(C)
         end
         if H.Texture(boundary) then boundary:SetVertexColor(0.25, 0.25, 0.27, 0.65) end
     end
+    local function BarLayout(obj, bar, d, name)
+        local options = _G.DBT and _G.DBT.Options or {}
+        local prefix = obj.enlarged and "Huge" or ""
+        local height = options[prefix .. "Height"]
+        if type(height) ~= "number" then
+            local current = bar:GetHeight()
+            if current ~= d.paintedHeight then d.nativeHeight = current end
+            height = d.nativeHeight or current
+        end
+        -- Leave the frame/stack anchors and DBT's option values intact. A small
+        -- inset in the rendered bar gives adjacent native rows a visual gap.
+        if height >= 10 then
+            d.paintedHeight = height - 2
+            bar:SetHeight(d.paintedHeight)
+            if options.IconLocked then
+                for i = 1, 2 do
+                    local icon = _G[name .. "BarIcon" .. i]
+                    if H.Texture(icon) then icon:SetSize(d.paintedHeight, d.paintedHeight) end
+                end
+            end
+            local previous = options.IconLeft and _G[name .. "BarIcon1"] or bar
+            for i = 1, 4 do
+                local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
+                if H.Texture(icon) then
+                    local size = d.paintedHeight * (options.JournalIcons == 4 and 0.4 or 0.8)
+                    icon:SetSize(size, size)
+                    -- Keep DBM's stacked four-symbol layout, when selected.
+                    if options.JournalIcons ~= 4 then
+                        icon:ClearAllPoints(); icon:SetPoint("RIGHT", previous, "LEFT", i == 1 and -4 or -2, 0)
+                    end
+                    previous = icon
+                end
+            end
+        end
+        local label, timer = _G[name .. "BarName"], _G[name .. "BarTimer"]
+        local x, y = options[prefix .. "TextXOffset"] or 0, options[prefix .. "TextYOffset"] or 0
+        if Allowed(timer) then
+            timer:ClearAllPoints(); timer:SetPoint("RIGHT", bar, "RIGHT", -5 + x, 0.5 + y)
+        end
+        if Allowed(label) and Allowed(timer) then
+            label:ClearAllPoints(); label:SetPoint("LEFT", bar, "LEFT", 6 + x, y)
+            label:SetPoint("RIGHT", timer, "LEFT", -7, 0)
+        end
+    end
     local function PaintBar(obj)
         if not ns.IsEnabled(C.module) or active then return end
         -- Ordinary DBT timer frames are insecure and need styling when created
@@ -108,11 +156,21 @@ local function HUD(C)
                 if H.Texture(border) then H.Fade(border) end
             end
             Font(_G[name .. "BarName"]); Font(_G[name .. "BarTimer"])
+            local d = bars[obj]
+            BarLayout(obj, bar, d, name)
             for i = 1, 2 do
                 local icon = _G[name .. "BarIcon" .. i]
                 if H.Texture(icon) then Icon(obj.frame, icon, nil, nil, nil, nil, true) end
             end
-            local d = bars[obj]
+            -- A cached neutral tint follows the native fill region itself.
+            -- DBT can change its color/value every tick without a skin callback;
+            -- text and semantic overlays draw above this ARTWORK sublevel.
+            fill = bar:GetStatusBarTexture()
+            if H.Texture(fill) then
+                if not d.tint then d.tint = bar:CreateTexture(nil, "ARTWORK", nil, 2) end
+                d.tint:SetAllPoints(fill)
+                d.tint:SetColorTexture(0.045, 0.045, 0.05, 0.28)
+            end
             if not d.line then
                 d.line = bar:CreateTexture(nil, "OVERLAY")
                 d.line:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT")
@@ -135,10 +193,6 @@ local function HUD(C)
     end
     local TYPES = {"Magic", "Curse", "Disease", "Poison", "Bleed"}
     local selectionBackdrop = {edgeFile = WHITE, edgeSize = 1}
-    local function Shadow(text)
-        if text.SetShadowColor then text:SetShadowColor(0, 0, 0, 0.9) end
-        if text.SetShadowOffset then text:SetShadowOffset(1, -1) end
-    end
     local function Preview(f)
         if not Allowed(f) then return end
         for i, icon in ipairs(f.Textures or {}) do
@@ -227,7 +281,7 @@ local function HUD(C)
                 H.Safe(function()
                     local _, size = text:GetFont()
                     local path, flags = S.GetFont()
-                    if path and size then text:SetFont(path, size, flags or "") end
+                    if path and size then text:SetFont(path, size, flags or ""); Shadow(text) end
                 end)
                 state.painting = false
             end

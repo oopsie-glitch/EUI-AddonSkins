@@ -72,8 +72,8 @@ local function object(kind, name, parent)
     function o:HookScript(k, fn) local old = self.scripts[k]; self.scripts[k] = function(...) if old then old(...) end; fn(...) end end
     function o:GetChildren() childReads = childReads + 1; return table.unpack(self.children) end
     function o:GetRegions() return table.unpack(self.regions) end
-    function o:CreateTexture(name, layer)
-        local t = object('Texture', name, self); t.layer = layer; self.regions[#self.regions + 1] = t; return t
+    function o:CreateTexture(name, layer, _, sublevel)
+        local t = object('Texture', name, self); t.layer, t.sublevel = layer, sublevel; self.regions[#self.regions + 1] = t; return t
     end
     function o:GetStatusBarTexture() return self.fill end
     function o:SetStatusBarTexture(v) self.fill.path = v end
@@ -104,6 +104,8 @@ local pool, nextID = {}, 0
 local prototype = {}
 function prototype:ApplyStyle()
     local prefix = self.frame.name .. 'Bar'
+    local options = DBT.Options
+    _G[prefix]:SetHeight(self.enlarged and options.HugeHeight or options.Height)
     _G[prefix]:SetStatusBarTexture('dbm-gloss'); _G[prefix .. 'Spark']:SetAlpha(1)
     _G[prefix .. 'Name']:SetFont('native', 14)
     return 'native-style'
@@ -130,6 +132,10 @@ local function bar(id)
     b:CreateTexture(prefix .. 'Variance'); b:CreateTexture(prefix .. 'VarianceBorder')
     for _, side in ipairs({'Top', 'Bottom', 'Left', 'Right'}) do b:CreateTexture(prefix .. 'Border' .. side) end
     for i = 1, 2 do local t = b:CreateTexture(prefix .. 'Icon' .. i); t.path = 136116; t.shown = i == 1 end
+    for i = 1, 4 do
+        local t = b:CreateTexture(prefix .. 'IJIcons' .. (i == 1 and '' or i)); t.path = 'role-' .. i
+        t.shown = i <= 2
+    end
     object('FontString', prefix .. 'Name', b); object('FontString', prefix .. 'Timer', b)
     local obj = setmetatable({frame = f, id = id, duration = 20}, {__index = prototype})
     obj:SetVariance()
@@ -138,7 +144,8 @@ local function bar(id)
     return obj
 end
 local first = bar('existing')
-DBT = {GetBar = function(_, id) return pool[id] end,
+DBT = {Options = {Height = 20, HugeHeight = 28, IconLocked = true, IconLeft = true, JournalIcons = 2},
+    GetBar = function(_, id) return pool[id] end,
     GetBarIterator = function() local key; return function() key = next(pool, key); return key and pool[key] end end,
     CreateBar = function(_, _, id) return pool[id] or bar(id), 'native-create' end}
 event('ADDON_LOADED')
@@ -149,6 +156,14 @@ assert(_G[f.name .. 'BarSpark'].alpha == 0 and _G[f.name .. 'BarBorderTop'].alph
 assert(_G[f.name .. 'BarIcon1'].crop and _G[f.name .. 'BarIcon1'].path == 136116)
 assert(f.children[#f.children - 1].regions[1].fillColor[1] == 0.16, 'timer icon edge should be neutral')
 assert(_G[f.name .. 'BarBackground'].fillColor[4] == 0.95)
+assert(b.h == 18 and f.h == 20 and DBT.Options.Height == 20, 'rendered gap changed native frame/settings')
+assert(_G[f.name .. 'BarIcon1'].w == 18 and _G[f.name .. 'BarIcon1'].h == 18)
+assert(_G[f.name .. 'BarIJIcons'].w == 14.4 and _G[f.name .. 'BarIJIcons'].path == 'role-1')
+assert(_G[f.name .. 'BarIJIcons2'].points[1][4] == -2)
+assert(_G[f.name .. 'BarName'].points[1][4] == 6 and _G[f.name .. 'BarTimer'].points[1][4] == -5)
+local tint
+for _, t in ipairs(b.regions) do if t.sublevel == 2 then tint = t end end
+assert(tint and tint.layer == 'ARTWORK' and tint.all == b.fill and tint.fillColor[4] == 0.28, 'fill tint missing or above text')
 assert(not _G[f.name .. 'BarVariance'].shown, 'disabled variance indicator became visible')
 first.hasVariance, first.varianceWidth = true, 73
 assert(first:SetVariance() == 'native-variance')
@@ -165,6 +180,19 @@ assert(first.duration < 20, 'native timer stopped')
 assert(first:ApplyStyle() == 'native-style' and b.fill.path == 'Interface\\Buttons\\WHITE8X8')
 assert(_G[f.name .. 'BarName'].font == 'eui' and _G[f.name .. 'BarName'].size == 14)
 assert(first:SetIcon(999) == 'native-icon' and _G[f.name .. 'BarIcon1'].path == 999)
+assert(b.h == 18, 'repeated paint cumulatively shrank bar')
+first.enlarged = true; first:ApplyStyle()
+assert(b.h == 26 and _G[f.name .. 'BarIcon1'].h == 26, 'large bar gap did not follow native size')
+DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 2, 3
+first:ApplyStyle()
+assert(_G[f.name .. 'BarName'].points[1][4] == 8 and _G[f.name .. 'BarTimer'].points[1][5] == 3.5)
+DBT.Options.JournalIcons = 4
+local stacked = _G[f.name .. 'BarIJIcons']; stacked:ClearAllPoints(); stacked:SetPoint('BOTTOMRIGHT', _G[f.name .. 'BarIcon1'], 'BOTTOMLEFT', 0, 0)
+first:ApplyStyle(); assert(stacked.points[1][1] == 'BOTTOMRIGHT' and stacked.w == 10.4, 'stacked mechanic layout changed')
+DBT.Options.JournalIcons = 2; first.enlarged = false; first:ApplyStyle()
+-- Native color updates remain authoritative; the same tint tracks the fill.
+b.fill:SetVertexColor(0.1, 0.3, 0.9, 0.75)
+assert(b.fill.color[3] == 0.9 and tint.all == b.fill)
 local new, result = DBT:CreateBar(20, 'new')
 assert(result == 'native-create' and _G[new.frame.name .. 'Bar'].fill.path == 'Interface\\Buttons\\WHITE8X8')
 oldCreated, oldHooks = created, hooks
@@ -238,6 +266,7 @@ assert(warning.font == 'eui' and warning.size == 22 and specialWarning.font == '
 assert(warning.text == '|cffff4400Danger|r |T136116:12:12:0:0:64:64:5:59:5:59|t |TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:0|t')
 assert(specialWarning.text == 'Move |T123:12:12:0:0:64:64:5:59:5:59|t |T456:20:20|t')
 assert(warning.color[2] == 0.4 and warning.points[1][1] == 'TOP')
+assert(warning.shadow[4] == 0.9 and specialWarning.shadowOffset[1] == 1)
 assert(DBM:UpdateWarningOptions() == 'native-options' and warning.font == 'eui' and warning.size == 24)
 assert(DBM:UpdateSpecialWarningOptions() == 'native-special-options' and specialWarning.font == 'eui' and specialWarning.size == 48)
 warning:SetFontObject('native'); assert(warning.font == 'eui')

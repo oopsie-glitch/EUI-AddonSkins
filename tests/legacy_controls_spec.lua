@@ -421,7 +421,66 @@ do
     for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
     flush(); assert(ItemRackOptSortList1Highlight.color[4] == 0.13)
     enabled = false; ItemRackOpt.SortListScrollFrameUpdate(); assert(ItemRackOptSortList1Highlight.color[4] == 1)
-    enabled = true; S.Checkbox, S.Inset = checkbox, inset
+    enabled = true
+    -- Detached secure equipment buttons get cosmetics only, outside combat.
+    local oldQuality, oldInventoryQuality = GetItemQualityColor, GetInventoryItemQuality
+    GetItemQualityColor = function(q) if q == 3 then return 0, 0.44, 0.87 else return 0.12, 1, 0 end end
+    local equippedQuality = 3
+    GetInventoryItemQuality = function(_, id) if id == 7 then return equippedQuality end end
+    ItemRackUser = {Locked = 'ON', Sets = {}}
+    ItemRack.Menu = {101, 0}
+    ItemRack.GetInfoByID = function(id) return 'item', 'item-art', 'INVTYPE_LEGS', id == 101 and 3 or 2 end
+    ItemRackOpt.Inv = {[7] = {id = 101, selected = 1}}
+    local detached = frame('CheckButton', 'ItemRackButton7'); detached.protected = true
+    ItemRackButton7Icon = detached:CreateTexture(); detached.normal = detached:CreateTexture()
+    detached.attributes = {type = 'item', slot = 7}; detached.checked = true
+    detached.hooks.PostClick = function() return 'secure-action' end
+    detached.SetAttribute = function() error('skin changed secure attributes') end
+    local empty = frame('CheckButton', 'ItemRackButton8'); empty.protected = true
+    ItemRackButton8Icon = empty:CreateTexture(); ItemRackButton8Icon.path = 'empty-slot-art'; empty.normal = empty:CreateTexture()
+    for _, key in ipairs({'Lock', 'Queue', 'Options', 'Close'}) do
+        local control = frame('Button', 'ItemRackButtonMenu' .. key, menu)
+        control.action = function() return 'control-native' end
+    end
+    ItemRack.UpdateButtons = function() return 'buttons-native' end
+    ItemRack.ReflectLock = function() return 'lock-native' end
+    modules.ItemRack.refresh(); flush()
+    local function Edges(button)
+        local edges = {}
+        for _, r in ipairs(button.regions) do if r.width == 1 or r.height == 1 then edges[#edges + 1] = r end end
+        return edges
+    end
+    local edges = Edges(detached)
+    assert(#edges == 4 and edges[1].color[3] == 0.87 and detached.normal.alpha == 0)
+    assert(ItemRackButton7Icon.crop and detached.attributes.type == 'item' and detached.attributes.slot == 7
+        and detached.checked and detached.hooks.PostClick() == 'secure-action', 'detached skin changed an equipment action/state')
+    assert(Edges(empty)[1].color[1] == 0.35 and ItemRackButton8Icon.path == 'empty-slot-art', 'empty slot lost its native artwork/neutral border')
+    assert(Edges(slot)[1].color[3] == 0.87 and Edges(item)[1].color[3] == 0.87, 'rarity styling differs between options and menus')
+    local marker
+    for _, r in ipairs(slot.regions) do if r.width == 4 and r.height == 4 then marker = r end end
+    assert(marker and marker.color[4] == 0.9, 'editing selection was not separate from rarity')
+    ItemRackOpt.Inv[7].selected = false; modules.ItemRack.refresh(); flush(); assert(marker.color[4] == 0)
+    local lockIcon = ItemRackButtonMenuLock.regions[#ItemRackButtonMenuLock.regions]
+    assert(lockIcon.path:find('eui%-lock%-locked') and ItemRackButtonMenuClose.glyph == 'X'
+        and ItemRackButtonMenuQueue.action() == 'control-native')
+    ItemRackUser.Locked = 'OFF'; assert(ItemRack.ReflectLock() == 'lock-native' and lockIcon.path:find('eui%-lock%-unlocked'))
+    menu.protected = true; modules.ItemRack.refresh(); flush()
+    assert(Edges(secure)[1].color[1] == 0.35 and secure.attributes.macro == 'equip', 'secure-parent hover menu lost cosmetics or its action')
+    local total = #detached.regions; local lockedHook = ItemRack.ReflectLock
+    auditScans[root] = 0
+    for _ = 1, 20 do ItemRack.UpdateButtons() end
+    assert(#detached.regions == total and ItemRack.ReflectLock == lockedHook and auditScans[root] == 0,
+        'detached styling duplicated regions/hooks or scanned options')
+    combat = true; equippedQuality = 2; detached.normal:SetAlpha(1)
+    assert(ItemRack.UpdateButtons() == 'buttons-native' and detached.normal.alpha == 1 and edges[1].color[3] == 0.87,
+        'protected cosmetics changed during combat')
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(detached.normal.alpha == 0 and edges[1].color[2] == 1)
+    enabled = false; detached.normal:SetAlpha(1); ItemRack.UpdateButtons(); assert(detached.normal.alpha == 1)
+    enabled = true
+    GetItemQualityColor, GetInventoryItemQuality = oldQuality, oldInventoryQuality
+    S.Checkbox, S.Inset = checkbox, inset
 end
 
 assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)

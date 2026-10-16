@@ -20,7 +20,95 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
     hooks = function(C, refresh)
         if not C.Clear then
             local H, S = C.H, C.S
-            local cleared, icons = {}, {}
+            local cleared, icons, borders, controls = {}, {}, {}, {}
+            C.ItemQuality = function(id)
+                local rack = _G.ItemRack
+                if not id or id == 0 or id == "MENU" or (_G.ItemRackUser and ItemRackUser.Sets and ItemRackUser.Sets[id]) then return end
+                if rack and type(rack.GetInfoByID) == "function" then
+                    local _, _, _, quality = rack.GetInfoByID(id)
+                    return quality
+                end
+            end
+            C.QualityBorder = function(f, icon, quality, selected)
+                if icon.GetNumMaskTextures and icon:GetNumMaskTextures() > 0 then return end
+                local entry = borders[f]
+                if not entry then
+                    entry = {}; borders[f] = entry
+                    for _, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+                        local edge = f:CreateTexture(nil, "OVERLAY", nil, 5)
+                        if side == "TOP" or side == "BOTTOM" then
+                            edge:SetPoint(side .. "LEFT", icon, side .. "LEFT")
+                            edge:SetPoint(side .. "RIGHT", icon, side .. "RIGHT"); edge:SetHeight(1)
+                        else
+                            edge:SetPoint("TOP" .. side, icon, "TOP" .. side)
+                            edge:SetPoint("BOTTOM" .. side, icon, "BOTTOM" .. side); edge:SetWidth(1)
+                        end
+                        entry[#entry + 1] = edge
+                    end
+                end
+                local r, g, b = 0.35, 0.35, 0.35
+                if quality and GetItemQualityColor then r, g, b = GetItemQualityColor(quality) end
+                for _, edge in ipairs(entry) do edge:SetColorTexture(r, g, b, 1) end
+                if selected ~= nil then
+                    if not entry.marker then
+                        local marker = f:CreateTexture(nil, "OVERLAY", nil, 6)
+                        marker:SetSize(4, 4); marker:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -2, 2)
+                        entry.marker = marker
+                    end
+                    local ar, ag, ab = S.GetAccentColor()
+                    entry.marker:SetColorTexture(ar, ag, ab, selected and 0.9 or 0)
+                end
+            end
+            C.Detached = function()
+                if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                -- Exact addon-owned secure buttons only. No attributes, native
+                -- scripts, frame anchors, state drivers or visibility changes.
+                for slot = 0, 20 do
+                    local f, icon = _G["ItemRackButton" .. slot], _G["ItemRackButton" .. slot .. "Icon"]
+                    if f and icon and not (f.IsForbidden and f:IsForbidden())
+                        and not (icon.IsForbidden and icon:IsForbidden()) and type(icon.SetTexCoord) == "function" then
+                        S.SquareIcon(icon)
+                        local normal = f.GetNormalTexture and f:GetNormalTexture()
+                        if normal and normal ~= icon then normal:SetAlpha(0) end
+                        local quality = slot < 20 and GetInventoryItemQuality and GetInventoryItemQuality("player", slot)
+                        C.QualityBorder(f, icon, quality)
+                    end
+                end
+                local menu = _G.ItemRackMenuFrame
+                if menu and not (menu.IsForbidden and menu:IsForbidden()) and not H.Allowed(menu) then
+                    S.Panel(menu, {noBorder = true})
+                    if menu.SetBackdrop then menu:SetBackdrop(nil) end
+                end
+                for index, id in ipairs(_G.ItemRack and ItemRack.Menu or {}) do
+                    local f, icon = _G["ItemRackMenu" .. index], _G["ItemRackMenu" .. index .. "Icon"]
+                    if f and icon and not (f.IsForbidden and f:IsForbidden())
+                        and not (icon.IsForbidden and icon:IsForbidden()) then
+                        S.SquareIcon(icon)
+                        local normal = f.GetNormalTexture and f:GetNormalTexture()
+                        if normal and normal ~= icon then normal:SetAlpha(0) end
+                        C.QualityBorder(f, icon, C.ItemQuality(id))
+                    end
+                end
+                for _, key in ipairs({"Lock", "Queue", "Options", "Close"}) do
+                    local f = _G["ItemRackButtonMenu" .. key]
+                    if f and not (f.IsForbidden and f:IsForbidden()) then
+                        local path
+                        if key == "Lock" then
+                            local locked = _G.ItemRackUser and ItemRackUser.Locked == "ON"
+                            path = "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-lock-" .. (locked and "locked" or "unlocked") .. ".png"
+                        elseif key == "Options" then path = "Interface\\AddOns\\EllesmereUI\\media\\icons\\sidebar\\settings-ig-2.png" end
+                        if not controls[f] then
+                            S.PageButton(f, path and "" or (key == "Queue" and "Q" or "X"), 10)
+                            if path then
+                                local icon = f:CreateTexture(nil, "OVERLAY")
+                                icon:SetSize(11, 11); icon:SetPoint("CENTER", f, "CENTER")
+                                controls[f] = icon
+                            else controls[f] = true end
+                        end
+                        if path and controls[f] ~= true then controls[f]:SetTexture(path) end
+                    end
+                end
+            end
             C.Clear = function(f)
                 if not H.Allowed(f) then return end
                 if not cleared[f] then
@@ -52,6 +140,17 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                     if normal and normal ~= icon then H.Fade(normal) end
                 end
                 S.SquareIcon(icon)
+                local name = f.GetName and f:GetName() or ""
+                local slot = tonumber(name:match("^ItemRackOptInv(%d+)$"))
+                local menuIndex = tonumber(name:match("^ItemRackMenu(%d+)$"))
+                if slot then
+                    local data = _G.ItemRackOpt and ItemRackOpt.Inv and ItemRackOpt.Inv[slot]
+                    local quality = data and C.ItemQuality(data.id)
+                    if not data and GetInventoryItemQuality then quality = GetInventoryItemQuality("player", slot) end
+                    C.QualityBorder(f, icon, quality, data and data.selected and true or false)
+                elseif menuIndex then
+                    C.QualityBorder(f, icon, C.ItemQuality(_G.ItemRack and ItemRack.Menu and ItemRack.Menu[menuIndex]))
+                end
             end
             C.Row = function(row)
                 if not H.Allowed(row) then return end
@@ -76,6 +175,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
             C.Menu = function()
                 local menu = _G.ItemRackMenuFrame
                 if H.Allowed(menu) then C.RefreshControlsNow(menu) end
+                C.Detached()
             end
             C.UpdateRows = function()
                 if InCombatLockdown and InCombatLockdown() then refresh(); return end
@@ -90,6 +190,10 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         C.H.Hook(_G.ItemRack, "ToggleOptions", refresh)
         C.H.Hook(_G.ItemRack, "SlashHandler", refresh)
         C.H.Hook(_G.ItemRack, "BuildMenu", C.Menu)
+        for _, method in ipairs({"InitButtons", "UpdateButtons", "ConstructLayout", "ReflectLock", "AddButton", "ReflectMainScale"}) do
+            C.H.Hook(_G.ItemRack, method, C.Detached)
+        end
+        C.Detached()
         for _, method in ipairs({"TabOnClick", "ShowPrevSubFrame", "ToggleEventEditor", "OpenQueueIconPicker"}) do C.H.Hook(_G.ItemRackOpt, method, C.RefreshNow) end
         for _, method in ipairs({
             "QueueIconPickerUpdate", "RefreshQueueIconPage", "LayoutQueueControls", "UpdateInv"}) do C.H.Hook(_G.ItemRackOpt, method, refresh) end

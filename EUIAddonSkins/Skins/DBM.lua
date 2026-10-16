@@ -78,51 +78,116 @@ local function HUD(C)
             variance:SetTexture(WHITE)
             variance:SetBlendMode("BLEND")
             variance:SetVertexColor(0.14, 0.14, 0.16, 0.65)
+            -- DBT calculates this width from the full row. The concept layout
+            -- uses a narrower progress strip; retain the same time proportion.
+            local bar = _G[name .. "Bar"]
+            if Allowed(bar) and type(obj.varianceDuration) == "number" and type(obj.totalTime) == "number" and obj.totalTime > 0 then
+                variance:SetWidth(bar:GetWidth() * obj.varianceDuration / obj.totalTime)
+            end
         end
         if H.Texture(boundary) then boundary:SetVertexColor(0.25, 0.25, 0.27, 0.65) end
     end
     local function BarLayout(obj, bar, d, name)
         local options = _G.DBT and _G.DBT.Options or {}
         local prefix = obj.enlarged and "Huge" or ""
-        local height = options[prefix .. "Height"]
-        if type(height) ~= "number" then
-            local current = bar:GetHeight()
-            if current ~= d.paintedHeight then d.nativeHeight = current end
-            height = d.nativeHeight or current
-        end
-        -- Leave the frame/stack anchors and DBT's option values intact. A small
-        -- inset in the rendered bar gives adjacent native rows a visual gap.
-        if height >= 10 then
-            d.paintedHeight = height - 2
-            bar:SetHeight(d.paintedHeight)
-            if options.IconLocked then
-                for i = 1, 2 do
-                    local icon = _G[name .. "BarIcon" .. i]
-                    if H.Texture(icon) then icon:SetSize(d.paintedHeight, d.paintedHeight) end
-                end
+        local height = options[prefix .. "Height"] or obj.frame:GetHeight()
+        local rowHeight = math.max(8, height - 2)
+        local compact = rowHeight < 16 or obj.frame:GetWidth() < 150
+        local iconSize = math.max(6, rowHeight - 2)
+        local left, right = _G[name .. "BarIcon1"], _G[name .. "BarIcon2"]
+        local leftSpace = H.Texture(left) and left:IsShown() and iconSize + 8 or 0
+        local rightSpace = H.Texture(right) and right:IsShown() and iconSize + 8 or 0
+        for i = 1, 2 do
+            local icon = i == 1 and left or right
+            if H.Texture(icon) then
+                icon:SetSize(iconSize, iconSize); icon:ClearAllPoints()
+                icon:SetPoint(i == 1 and "RIGHT" or "LEFT", obj.frame, i == 1 and "LEFT" or "RIGHT", i == 1 and -4 or 4, 0)
             end
-            local previous = options.IconLeft and _G[name .. "BarIcon1"] or bar
-            for i = 1, 4 do
-                local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
-                if H.Texture(icon) then
-                    local size = d.paintedHeight * (options.JournalIcons == 4 and 0.4 or 0.8)
-                    icon:SetSize(size, size)
-                    -- Keep DBM's stacked four-symbol layout, when selected.
-                    if options.JournalIcons ~= 4 then
-                        icon:ClearAllPoints(); icon:SetPoint("RIGHT", previous, "LEFT", i == 1 and -4 or -2, 0)
-                    end
-                    previous = icon
+        end
+        -- Keep each native mechanic texture and visibility state. Four-symbol
+        -- mode remains a compact two-by-two group; other modes use one row.
+        local count = 0
+        for i = 1, 4 do
+            local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
+            if H.Texture(icon) and icon:IsShown() then count = count + 1 end
+        end
+        local stacked = options.JournalIcons == 4
+        local symbolSize = math.min(16, rowHeight * (stacked and 0.36 or 0.62), obj.frame:GetWidth() / 12)
+        local mechanicSpace = count > 0 and ((stacked and math.min(count, 2) or count) * (symbolSize + 2) + 4) or 0
+        local slot = 0
+        for i = 1, 4 do
+            local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
+            if H.Texture(icon) and icon:IsShown() then
+                local column = stacked and slot % 2 or slot
+                icon:SetSize(symbolSize, symbolSize); icon:ClearAllPoints()
+                if stacked then
+                    icon:SetPoint("TOPRIGHT", obj.frame, "RIGHT", -3 - column * (symbolSize + 2), rowHeight / 2 - 1 - math.floor(slot / 2) * (symbolSize + 2))
+                else
+                    icon:SetPoint("RIGHT", obj.frame, "RIGHT", -3 - column * (symbolSize + 2), 0)
                 end
+                slot = slot + 1
             end
         end
         local label, timer = _G[name .. "BarName"], _G[name .. "BarTimer"]
+        local nativeSize
+        if Allowed(label) then local _, size = label:GetFont(); nativeSize = size end
+        if nativeSize and nativeSize ~= d.labelSize then d.nativeTextSize = nativeSize end
+        nativeSize = options.FontSize or d.nativeTextSize or 10
+        d.labelSize = math.max(8, math.min(nativeSize, rowHeight * 0.56))
+        local timerSize = math.min(rowHeight * 0.82, math.max(12, nativeSize * 1.25))
+        local timerSpace = math.max(40, timerSize * 4)
+        -- DBT permits rows as small as 100x10. Keep a readable single-line
+        -- fallback at those sizes rather than overlap a two-line panel.
+        if compact then
+            d.labelSize = math.max(6, math.min(nativeSize, rowHeight * 0.7, obj.frame:GetWidth() * 0.07))
+            timerSize = d.labelSize
+            timerSpace = math.max(24, timerSize * 3.5)
+        end
+        -- Both horizontal anchors constrain the native StatusBar during DBT's
+        -- AnimateEnlarge SetWidth calls; its parent remains the native stack row.
+        bar:ClearAllPoints()
+        bar:SetPoint("BOTTOMLEFT", obj.frame, "LEFT", 6, -height / 2 + 3)
+        bar:SetPoint("BOTTOMRIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 6, -height / 2 + 3)
+        bar:SetHeight(compact and rowHeight - 2 or math.max(2, math.min(6, rowHeight * 0.22)))
+        if not d.panel then
+            d.panel = obj.frame:CreateTexture(nil, "BACKGROUND")
+            d.edges = {}
+            for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+                local edge = obj.frame:CreateTexture(nil, "BORDER")
+                if i <= 2 then
+                    edge:SetPoint(side .. "LEFT", d.panel, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", d.panel, side .. "RIGHT"); edge:SetHeight(1)
+                else
+                    edge:SetPoint("TOP" .. side, d.panel, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, d.panel, "BOTTOM" .. side); edge:SetWidth(1)
+                end
+                d.edges[i] = edge
+            end
+        end
+        d.panel:ClearAllPoints()
+        -- Center-relative offsets also support DBT's unlocked-icon mode, where
+        -- the native hit frame can retain a different height from the bar.
+        d.panel:SetPoint("TOPLEFT", obj.frame, "LEFT", -leftSpace, rowHeight / 2)
+        d.panel:SetPoint("BOTTOMRIGHT", obj.frame, "RIGHT", rightSpace, -rowHeight / 2)
+        d.panel:SetColorTexture(0.035, 0.04, 0.045, 0.94)
+        local r, g, b = S.GetAccentColor()
+        for _, edge in ipairs(d.edges) do edge:SetColorTexture(r, g, b, 0.3) end
         local x, y = options[prefix .. "TextXOffset"] or 0, options[prefix .. "TextYOffset"] or 0
+        local path, flags = S.GetFont()
         if Allowed(timer) then
-            timer:ClearAllPoints(); timer:SetPoint("RIGHT", bar, "RIGHT", -5 + x, 0.5 + y)
+            timer:SetFont(path, timerSize, flags or "")
+            timer:ClearAllPoints(); timer:SetPoint("RIGHT", obj.frame, "RIGHT", -mechanicSpace - 5 + x, y)
+            Shadow(timer)
         end
         if Allowed(label) and Allowed(timer) then
-            label:ClearAllPoints(); label:SetPoint("LEFT", bar, "LEFT", 6 + x, y)
-            label:SetPoint("RIGHT", timer, "LEFT", -7, 0)
+            label:SetFont(path, d.labelSize, flags or "")
+            label:ClearAllPoints()
+            if compact then
+                label:SetPoint("LEFT", obj.frame, "LEFT", 6 + x, y)
+                label:SetPoint("RIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 6 + x, y)
+            else
+                label:SetPoint("TOPLEFT", obj.frame, "LEFT", 6 + x, rowHeight / 2 - 1 + y)
+                label:SetPoint("TOPRIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 6 + x, rowHeight / 2 - 1 + y)
+            end
+            Shadow(label)
         end
     end
     local function PaintBar(obj)
@@ -148,7 +213,6 @@ local function HUD(C)
             end
             local bg = _G[name .. "BarBackground"]
             if H.Texture(bg) then bg:SetColorTexture(0.045, 0.045, 0.05, 0.95) end
-            PaintVariance(obj)
             local spark = _G[name .. "BarSpark"]
             if H.Texture(spark) then H.Fade(spark) end
             for _, side in ipairs({"Top", "Bottom", "Left", "Right"}) do
@@ -158,6 +222,7 @@ local function HUD(C)
             Font(_G[name .. "BarName"]); Font(_G[name .. "BarTimer"])
             local d = bars[obj]
             BarLayout(obj, bar, d, name)
+            PaintVariance(obj)
             for i = 1, 2 do
                 local icon = _G[name .. "BarIcon" .. i]
                 if H.Texture(icon) then Icon(obj.frame, icon, nil, nil, nil, nil, true) end
@@ -171,13 +236,6 @@ local function HUD(C)
                 d.tint:SetAllPoints(fill)
                 d.tint:SetColorTexture(0.045, 0.045, 0.05, 0.28)
             end
-            if not d.line then
-                d.line = bar:CreateTexture(nil, "OVERLAY")
-                d.line:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT")
-                d.line:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT"); d.line:SetHeight(1)
-            end
-            local r, g, b = S.GetAccentColor()
-            d.line:SetColorTexture(r, g, b, 0.8)
         end)
         active = false
     end

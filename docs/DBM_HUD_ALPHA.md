@@ -4,8 +4,8 @@ Branch: `skin/dbm-refinement`. This untagged test build does not publish to Curs
 
 ## Included
 
-- Flat timer fills and dark backgrounds, retaining DBM's mechanic colors and urgency updates.
-- A thin EUI accent line below each timer, square icons and EUI fonts.
+- Dark timer panels with restrained EUI accent edges and square spell icons.
+- Names above thin colored progress strips, separate countdowns and mechanic symbols on the right. Native mechanic colors and urgency updates remain intact.
 - Native stack anchors, configured sizes, icon visibility and countdown behavior; rendered rows have a small visual inset.
 - Move-mode aura previews with thin dispel-colored edges, EUI text and an accent selection outline.
 - Retail AuraUtil color support removes the remaining ornate preview borders. Standalone native dispel glyphs sit inside the top-right corner; colorblind abbreviations remain intact.
@@ -33,5 +33,9 @@ Alpha.2 extends the fixture with Retail-only colors (legacy global absent), cont
 Alpha.3 replaces the additive variance gradient with a subtle flat charcoal band. DBM still controls its timing range, width, direction and visibility. Normal and special warnings use the EUI font while retaining native size, colors, positions and animation. Plain DBM inline spell icons are cropped; raid markers, custom crops and secret text are left intact. Tests cover variance geometry/visibility, warning settings refreshes, preserved text and native returns, combat, disabled skins and hook reuse.
 
 Alpha.4 softens fill colors with one cached neutral tint anchored to each native fill texture, below text and mechanic overlays. It follows native color/value changes without a countdown callback. Rendered bars are inset by one pixel at top/bottom while native stack frames and saved size/spacing values remain unchanged. Locked icons follow the inset height; insecure mechanic symbols are smaller, with consistent spacing outside the four-symbol stacked mode. Labels/countdowns have consistent padding that retains DBM's text offsets. Warning text gains a subtle shadow. Regression checks cover normal/large sizes, repeated paint without cumulative shrinking, text offsets, stacked symbols, native color changes and reuse of the tint.
+
+Alpha.5 adopts the panel concept: a dark row with subtle accent edges, a spell icon on the left, a label above a thin native progress strip, a separate larger countdown and native mechanic textures on the right. Four-symbol mode uses a compact two-by-two group. Native row frames, stack anchors, event handlers and saved settings are preserved. Panels adapt to normal/enlarged row sizes; unusually narrow or short rows use a single-line fallback. Opposing progress-strip anchors follow native frame resizing during enlargement without an animation hook. Variance width is scaled to the strip so it retains the same time proportion. Only lifecycle/theme refreshes update the layout; no countdown hook or new polling is added.
+
+Alpha.5 tests additionally cover panel bounds, normal/enlarged typography, opposing width anchors during simulated enlargement, left/right icon visibility, compact fallback, semantic symbol groups, variance proportions and object reuse. Actual client rendering, drag behavior and animation remain unverified by the mocked environment.
 
 Install the test ZIP's `EUIAddonSkins` folder in `Interface/AddOns`, replacing the existing folder. DBM and EllesmereUI remain separate requirements. Do not install this alongside another copy of EUI AddonSkins.

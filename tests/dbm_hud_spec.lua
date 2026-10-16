@@ -42,7 +42,13 @@ local function object(kind, name, parent)
     function o:SetShadowColor(...) self.shadow = {...} end
     function o:SetShadowOffset(...) self.shadowOffset = {...} end
     function o:SetWidth(v) self.w = v end
-    function o:GetWidth() return self.w end
+    function o:GetWidth()
+        local a, b = self.points[1], self.points[2]
+        if self.kind == 'StatusBar' and a and b and a[1] == 'BOTTOMLEFT' and b[1] == 'BOTTOMRIGHT' and a[2] == b[2] then
+            return a[2]:GetWidth() + b[4] - a[4]
+        end
+        return self.w
+    end
     function o:GetHeight() return self.h end
     function o:GetTexture() return self.path end
     function o:SetTexture(v) self.path = v end
@@ -106,6 +112,9 @@ function prototype:ApplyStyle()
     local prefix = self.frame.name .. 'Bar'
     local options = DBT.Options
     _G[prefix]:SetHeight(self.enlarged and options.HugeHeight or options.Height)
+    _G[prefix .. 'Icon1']:SetShown(options.IconLeft)
+    _G[prefix .. 'Icon2']:SetShown(options.IconRight == true)
+    for i = 1, 4 do _G[prefix .. 'IJIcons' .. (i == 1 and '' or i)]:SetShown(i <= options.JournalIcons) end
     _G[prefix]:SetStatusBarTexture('dbm-gloss'); _G[prefix .. 'Spark']:SetAlpha(1)
     _G[prefix .. 'Name']:SetFont('native', 14)
     return 'native-style'
@@ -151,25 +160,30 @@ DBT = {Options = {Height = 20, HugeHeight = 28, IconLocked = true, IconLeft = tr
 event('ADDON_LOADED')
 local f, b = first.frame, _G[first.frame.name .. 'Bar']
 assert(b.fill.path == 'Interface\\Buttons\\WHITE8X8' and b.fill.color[1] == 0.9 and b.fill.color[4] == 0.75)
-assert(_G[f.name .. 'BarName'].font == 'eui' and _G[f.name .. 'BarName'].size == 16)
+assert(_G[f.name .. 'BarName'].font == 'eui' and math.abs(_G[f.name .. 'BarName'].size - 10.08) < 0.001)
 assert(_G[f.name .. 'BarSpark'].alpha == 0 and _G[f.name .. 'BarBorderTop'].alpha == 0)
 assert(_G[f.name .. 'BarIcon1'].crop and _G[f.name .. 'BarIcon1'].path == 136116)
 assert(f.children[#f.children - 1].regions[1].fillColor[1] == 0.16, 'timer icon edge should be neutral')
 assert(_G[f.name .. 'BarBackground'].fillColor[4] == 0.95)
-assert(b.h == 18 and f.h == 20 and DBT.Options.Height == 20, 'rendered gap changed native frame/settings')
-assert(_G[f.name .. 'BarIcon1'].w == 18 and _G[f.name .. 'BarIcon1'].h == 18)
-assert(_G[f.name .. 'BarIJIcons'].w == 14.4 and _G[f.name .. 'BarIJIcons'].path == 'role-1')
-assert(_G[f.name .. 'BarIJIcons2'].points[1][4] == -2)
-assert(_G[f.name .. 'BarName'].points[1][4] == 6 and _G[f.name .. 'BarTimer'].points[1][4] == -5)
+assert(math.abs(b.h - 3.96) < 0.001 and f.h == 20 and DBT.Options.Height == 20, 'thin strip changed native frame/settings')
+assert(_G[f.name .. 'BarIcon1'].w == 16 and _G[f.name .. 'BarIcon1'].h == 16)
+assert(math.abs(_G[f.name .. 'BarIJIcons'].w - 11.16) < 0.001 and _G[f.name .. 'BarIJIcons'].path == 'role-1')
+assert(_G[f.name .. 'BarIJIcons2'].points[1][1] == 'RIGHT' and _G[f.name .. 'BarIJIcons2'].points[1][2] == f)
+assert(_G[f.name .. 'BarName'].points[1][1] == 'TOPLEFT' and _G[f.name .. 'BarName'].points[1][4] == 6)
+assert(_G[f.name .. 'BarTimer'].points[1][2] == f and _G[f.name .. 'BarTimer'].size > _G[f.name .. 'BarName'].size)
+assert(b:GetWidth() < f:GetWidth() and b:GetWidth() > 30, 'strip did not reserve space for timer/mechanics')
+local panel = f.regions[1]
+assert(panel.layer == 'BACKGROUND' and panel.fillColor[4] == 0.94 and panel.points[1][4] == -24, 'panel does not contain spell icon')
+assert(#f.regions == 5, 'panel background and four accent edges missing')
 local tint
 for _, t in ipairs(b.regions) do if t.sublevel == 2 then tint = t end end
 assert(tint and tint.layer == 'ARTWORK' and tint.all == b.fill and tint.fillColor[4] == 0.28, 'fill tint missing or above text')
 assert(not _G[f.name .. 'BarVariance'].shown, 'disabled variance indicator became visible')
-first.hasVariance, first.varianceWidth = true, 73
+first.hasVariance, first.varianceWidth, first.varianceDuration, first.totalTime = true, 73, 5, 20
 assert(first:SetVariance() == 'native-variance')
 local variance = _G[f.name .. 'BarVariance']
 assert(variance.path == 'Interface\\Buttons\\WHITE8X8' and variance.blend == 'BLEND')
-assert(variance.shown and variance.w == 73 and variance.points[1][1] == 'RIGHT', 'native variance geometry/visibility changed')
+assert(variance.shown and variance.w == b:GetWidth() * 0.25 and variance.points[1][1] == 'RIGHT', 'variance time proportion/direction changed')
 assert(variance.color[1] == 0.14 and variance.color[4] == 0.65)
 assert(f.children[#f.children].shown == false, 'hidden right icon acquired a visible border')
 local nativeUpdate = f.scripts.OnUpdate
@@ -178,18 +192,38 @@ for _ = 1, 1000 do f.scripts.OnUpdate() end
 assert(nativeUpdate == f.scripts.OnUpdate and created == oldCreated and hooks == oldHooks and fontWrites == oldFonts and childReads == oldReads)
 assert(first.duration < 20, 'native timer stopped')
 assert(first:ApplyStyle() == 'native-style' and b.fill.path == 'Interface\\Buttons\\WHITE8X8')
-assert(_G[f.name .. 'BarName'].font == 'eui' and _G[f.name .. 'BarName'].size == 14)
+assert(_G[f.name .. 'BarName'].font == 'eui' and math.abs(_G[f.name .. 'BarName'].size - 10.08) < 0.001)
 assert(first:SetIcon(999) == 'native-icon' and _G[f.name .. 'BarIcon1'].path == 999)
-assert(b.h == 18, 'repeated paint cumulatively shrank bar')
+assert(math.abs(b.h - 3.96) < 0.001, 'repeated paint cumulatively shrank strip')
 first.enlarged = true; first:ApplyStyle()
-assert(b.h == 26 and _G[f.name .. 'BarIcon1'].h == 26, 'large bar gap did not follow native size')
+assert(math.abs(b.h - 5.72) < 0.001 and _G[f.name .. 'BarIcon1'].h == 24, 'large panel did not follow native size')
 DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 2, 3
 first:ApplyStyle()
-assert(_G[f.name .. 'BarName'].points[1][4] == 8 and _G[f.name .. 'BarTimer'].points[1][5] == 3.5)
+assert(_G[f.name .. 'BarName'].points[1][4] == 8 and _G[f.name .. 'BarTimer'].points[1][5] == 3)
 DBT.Options.JournalIcons = 4
 local stacked = _G[f.name .. 'BarIJIcons']; stacked:ClearAllPoints(); stacked:SetPoint('BOTTOMRIGHT', _G[f.name .. 'BarIcon1'], 'BOTTOMLEFT', 0, 0)
-first:ApplyStyle(); assert(stacked.points[1][1] == 'BOTTOMRIGHT' and stacked.w == 10.4, 'stacked mechanic layout changed')
+first:ApplyStyle(); assert(stacked.points[1][1] == 'TOPRIGHT' and stacked.w == 9.36, 'four-symbol group not compact')
+assert(_G[f.name .. 'BarIJIcons3'].points[1][5] < stacked.points[1][5], 'four symbols should use two rows')
+-- AnimateEnlarge updates the native frame and calls SetWidth on the strip.
+-- Opposing anchors keep the strip inside its allocated body region.
+local beforeWidth = b:GetWidth()
+f:SetSize(230, 28); b:SetWidth(230)
+assert(b:GetWidth() == beforeWidth + 35 and b:GetWidth() < f:GetWidth())
+f:SetSize(195, 20)
 DBT.Options.JournalIcons = 2; first.enlarged = false; first:ApplyStyle()
+DBT.Options.IconLeft, DBT.Options.IconRight = false, true
+first:ApplyStyle()
+assert(not _G[f.name .. 'BarIcon1'].shown and _G[f.name .. 'BarIcon2'].shown)
+assert(panel.points[1][4] == 0 and panel.points[2][4] == 24, 'panel did not follow native icon visibility')
+DBT.Options.IconLeft, DBT.Options.IconRight = true, false
+DBT.Options.Height = 10; f:SetSize(100, 10); first:ApplyStyle()
+assert(b:GetWidth() > 20 and _G[f.name .. 'BarName'].points[1][1] == 'LEFT', 'smallest native row needs compact fallback')
+DBT.Options.Height = 20; f:SetSize(195, 20); first:ApplyStyle()
+assert(_G[f.name .. 'BarName'].points[1][1] == 'TOPLEFT' and panel.points[1][4] == -24)
+DBT.Options.IconLocked, DBT.Options.Height = false, 30
+first:ApplyStyle()
+assert(f.h == 20 and panel.points[1][5] == 14 and panel.points[2][5] == -14, 'unlocked native hit frame changed or panel height lost')
+DBT.Options.IconLocked, DBT.Options.Height = true, 20; first:ApplyStyle()
 -- Native color updates remain authoritative; the same tint tracks the fill.
 b.fill:SetVertexColor(0.1, 0.3, 0.9, 0.75)
 assert(b.fill.color[3] == 0.9 and tint.all == b.fill)
@@ -282,7 +316,7 @@ DBM.Auras.AuraTrackingState = {player = {buttonRegions = {[liveButton] = {icon =
 secret = true; DBM.Auras:OnSettingsChange(); assert(not liveIcon.crop, 'restricted live aura touched')
 secret = false; DBM.Auras:OnSettingsChange(); assert(liveIcon.crop)
 accent = 0.8; for _, fn in ipairs(looks) do fn() end; flush()
-assert(b.regions[#b.regions].fillColor[1] == accent and preview.Border.borderColor[1] == accent)
+assert(f.regions[#f.regions].fillColor[1] == accent and preview.Border.borderColor[1] == accent)
 combat = true
 warning:SetText('Combat |T789:12:12|t'); assert(warning.text == 'Combat |T789:12:12:0:0:64:64:5:59:5:59|t')
 local duringCombat = DBT:CreateBar(20, 'combat')

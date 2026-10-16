@@ -1,11 +1,11 @@
-## Interface: 16001, 120000, 120001, 120005, 120007, 120100
+## Interface: 16001, 120000, 120001, 120005, 120007, 120100, 120105
 ## Title: EUI AddonSkins
 ## IconTexture: Interface\AddOns\EUIAddonSkins\Media\Icon.tga
 ## Notes: EllesmereUI skins for World of Warcraft addons.
 ## Author: Smarre
 ## X-License: MIT
 ## X-Wago-ID: aN0a2M6j
-## Version: 1.3.0
+## Version: 1.4.0
 ## Dependencies: EllesmereUI, EllesmereUIBlizzardSkin
 ## SavedVariables: EUIAddonSkinsDB
 
@@ -22,6 +22,7 @@ Skins\Altoholic.lua
 Skins\AtlasLootContinued.lua
 Skins\Attune.lua
 Skins\Auctionator.lua
+Skins\BtWQuests.lua
 Skins\BugSack.lua
 Skins\DBM.lua
 Skins\Details.lua

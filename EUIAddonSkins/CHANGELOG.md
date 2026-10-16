@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.4.0 — BtWQuests, ItemRack and Other Skin Improvements
+
+### BtWQuests — New Skin
+- Added Retail support for BtWQuests, including category cards, quest trees, search, dropdowns and options menus.
+- Styled navigation, scrollbars and controls to match EllesmereUI.
+- Preserved quest status colours, completion indicators and expansion artwork.
+
+### ItemRack
+- Updated settings, saved-set menus, equipment selectors and quick-access menus with softer EUI styling.
+- Added square item icons with rarity-coloured borders.
+- Improved sliders, checkboxes, dropdowns and input alignment.
+- Added accent colours to tab labels and quick-access menu controls.
+- Removed repeated input refreshes that could disrupt set editing and reduce performance.
+
+### Auctionator
+- Improved integration with the EUI auction-house background, tabs and result tables.
+- Updated scrollbars, search controls, shopping-list buttons and pooled item rows.
+- Corrected quantity, price and duration alignment in the Selling tab while preserving currency icons.
+
+### Altoholic
+- Improved summary tables, category navigation, options controls and scrollbars.
+- Corrected missing equipment artwork and added square borders that follow item quality.
+- Restored bottom-tab backgrounds and improved accent styling.
+- Updated the Agenda calendar with dark day cells, subtle dividers, EUI navigation arrows and an accent outline for today.
+- Aligned calendar filters and reduced unnecessary processing of hidden tabs and panels.
+
 ## 1.3.0 — PallyPower and Skin Loader Optimization
 
 - Added PallyPower styling for Blessing Assignments, options, menus and buff controls, with clearer columns and softer controls. Kept the original lock button.

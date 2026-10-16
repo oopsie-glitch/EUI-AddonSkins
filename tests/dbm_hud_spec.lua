@@ -106,7 +106,7 @@ local function event(name)
     for _, f in ipairs(frames) do if f.events[name] and f.scripts.OnEvent then f.scripts.OnEvent(f, name) end end
     flush()
 end
-local pool, nextID = {}, 0
+local pool, nextID, iteratorCalls = {}, 0, 0
 local prototype = {}
 function prototype:ApplyStyle()
     local prefix = self.frame.name .. 'Bar'
@@ -155,7 +155,7 @@ end
 local first = bar('existing')
 DBT = {Options = {Height = 20, HugeHeight = 28, IconLocked = true, IconLeft = true, JournalIcons = 2},
     GetBar = function(_, id) return pool[id] end,
-    GetBarIterator = function() local key; return function() key = next(pool, key); return key and pool[key] end end,
+    GetBarIterator = function() iteratorCalls = iteratorCalls + 1; local key; return function() key = next(pool, key); return key and pool[key] end end,
     CreateBar = function(_, _, id) return pool[id] or bar(id), 'native-create' end}
 event('ADDON_LOADED')
 local f, b = first.frame, _G[first.frame.name .. 'Bar']
@@ -254,6 +254,13 @@ b.fill:SetVertexColor(0.1, 0.3, 0.9, 0.75)
 assert(b.fill.color[3] == 0.9 and tint.all == b.fill)
 local new, result = DBT:CreateBar(20, 'new')
 assert(result == 'native-create' and _G[new.frame.name .. 'Bar'].fill.path == 'Interface\\Buttons\\WHITE8X8')
+-- Unlike the reference skins' CreateBar handlers, creating a timer must not
+-- enumerate the entire active pool or repaint existing timer text.
+local beforeIterator, beforeFonts = iteratorCalls, fontWrites
+for i = 1, 25 do DBT:CreateBar(20, 'burst-' .. i) end
+assert(iteratorCalls == beforeIterator, 'timer creation traversed existing bars')
+assert(fontWrites - beforeFonts == 25 * 4, 'timer burst repainted existing timer fonts')
+print('BENCH dbm_create burst=25 active_pool_walks=' .. (iteratorCalls - beforeIterator) .. ' font_writes=' .. (fontWrites - beforeFonts))
 oldCreated, oldHooks = created, hooks
 for _ = 1, 20 do DBT:CreateBar(20, 'new'); first:ApplyStyle() end
 assert(created == oldCreated and hooks == oldHooks, 'pooled bar duplicated UI objects/hooks')

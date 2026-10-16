@@ -1,0 +1,33 @@
+# DBM skin reference review
+
+Reviewed on 2026-10-17 while HUD alpha.7 was being evaluated. No reference implementation or assets were copied into the addon.
+
+## Sources
+
+- [Azilroka AddOnSkins DBM integration](https://github.com/Azilroka/AddOnSkins/blob/main/AddOnSkins/Skins/AddOns/DBM.lua), reviewed blob `148022bbe6d7baa2fac6574a6fb7092e998371db`.
+- [Cataclysm 4.3.4 DBM integration](https://github.com/ElvUI-Cataclysm/ElvUI_AddOnSkins-4.3.4/blob/master/ElvUI_AddOnSkins/Skins/Addons/DBM.lua).
+- Azilroka's core registration, skin helpers and license, plus the current DBM timer lifecycle already reviewed for the HUD implementation.
+
+## Findings
+
+| Pattern | References | EUI AddonSkins decision |
+| --- | --- | --- |
+| Per-object ApplyStyle hook | Both integrations follow DBT restyling and guard installation | Retain our existing once-per-object hooks and UI object caches |
+| CreateBar pool traversal | Both enumerate all active bars to discover unhooked objects | Keep direct GetBar(id) lookup; no active-pool traversal on timer creation |
+| Countdown Update hook | Azilroka adjusts its half-bar spark on each Update | Keep our countdown path untouched; the spark is suppressed and fill tint follows the native texture |
+| DBT skin profiles | Azilroka registers/selects a DBT skin and supplies height, icon-lock and half-bar spacing options | Do not import profile selection or spacing overrides; DBM settings remain user-controlled |
+| Icon backgrounds | Guarded reusable icon backdrops, explicit left/right visibility | Our cached borders and native icon shown states already provide this |
+| Half-bar layout | Azilroka places text above the bar and enlarges spell icons | Confirms DBT permits alternate layouts; our concept panels are independently implemented and fit native row space |
+| Additional HUD windows | Range/radar and information frames in Azilroka; boss-health frames in the old Cataclysm skin | Add range/radar and information windows to the interface review; verify current APIs before implementation. The current DBM source tree has range and information modules, but no matching legacy boss-health module |
+| Warning icon text | Old Cataclysm skin replaces the global RaidNotice_AddMessage function | Keep our DBM-owned font-string hooks, exact plain-icon matching and secret-text guards |
+| GUI load timing | Old skin has a separate DBM-GUI callback and hardcoded historical widget names | Retain lazy GUI discovery; do not transplant old frame names or owner.options access |
+
+## Performance assessment
+
+No runtime change was justified by copying these approaches. Our direct creation lookup avoids the references' repeated pool walks, and our existing countdown regression checks for no added skin allocations, font writes, hooks or hierarchy reads over 1,000 simulated ticks. The new creation-burst regression checks 25 new timers with zero active-pool enumerations and only the four expected font writes per new timer.
+
+These are mocked operation counts, not live CPU/FPS measurements or timings. The references' per-creation traversal has cumulative growth as the active timer pool grows; no numerical speedup over either addon is claimed.
+
+A separate candidate remains in our implementation: the scoped GUI hooks call the HUD refresh, so an options-page refresh can repaint existing timers and aura previews. Removing that coupling needs coverage for theme changes, late-loaded APIs, manual refreshes and enable transitions. It is recorded for the DBM performance pass; alpha.7's runtime is unchanged by this review.
+
+Azilroka's custom license restricts modifications and reserves other rights. The older repository does not establish permission to transplant its code merely by being public. This review retains implementation ideas and API observations only; project licensing is unchanged.

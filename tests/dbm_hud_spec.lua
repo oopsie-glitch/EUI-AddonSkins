@@ -108,6 +108,7 @@ local S = {GetAccentColor = function() return accent, 0.6, 0.7 end,
     GetFont = function() return 'eui', '' end, OnLooksChanged = function(fn) looks[#looks + 1] = fn end}
 function S.Font(f) local _, size = f:GetFont(); f:SetFont('eui', size) end
 function S.SquareIcon(t) t:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
+assert(loadfile('EUIAddonSkins/Accent.lua'))('EUIAddonSkins', ns)
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
 assert(loadfile('EUIAddonSkins/Scoped.lua'))('EUIAddonSkins', ns)
 assert(loadfile('EUIAddonSkins/Skins/DBM.lua'))('EUIAddonSkins', ns)
@@ -265,6 +266,16 @@ assert(spellIcon.w == spellIcon.h and spellIcon.w == 69 and spellIcon.points[1][
 assert(f.regions[6].shown and f.regions[6].points[1][4] == 677, 'mechanic compartment separator missing')
 DBT.Options.HugeHeight = 66; f:SetSize(565.5, 66); first:ApplyStyle()
 assert(math.abs(b:GetWidth() - 317.25) <= 1 and b.h == 17 and conceptLabel.size == 17.25 and conceptTimer.size == 25.5)
+-- A single visible mechanic uses its full size even with four slots configured.
+DBT.Options.JournalIcons = 4; first:ApplyStyle()
+local symbol = _G[f.name .. 'BarIJIcons3']
+for i = 1, 4 do _G[f.name .. 'BarIJIcons' .. (i == 1 and '' or i)]:SetShown(i == 3) end
+local fixedWidth, fixedTimer = b:GetWidth(), conceptTimer.points[1][4]
+first:SetIcon(999)
+assert(symbol.w == 25 and symbol.points[1][4] == 536, 'single mechanic should fill its centered compartment')
+assert(b:GetWidth() == fixedWidth and conceptTimer.points[1][4] == fixedTimer, 'symbol count moved progress/countdown')
+DBT.Options.JournalIcons = 2; first:ApplyStyle()
+assert(symbol.w < 25, 'multiple symbols must fit without overlap')
 -- Text bands center mixed-height inline artwork without changing native text.
 conceptLabel:SetText('|Twarning:20:20|t Custom User Bar')
 first:ApplyStyle()
@@ -423,6 +434,16 @@ local liveIcon = liveButton:CreateTexture(); liveIcon.path = 987
 DBM.Auras.AuraTrackingState = {player = {buttonRegions = {[liveButton] = {icon = liveIcon}}}}
 secret = true; DBM.Auras:OnSettingsChange(); assert(not liveIcon.crop, 'restricted live aura touched')
 secret = false; DBM.Auras:OnSettingsChange(); assert(liveIcon.crop)
+-- Blizzard Skins+ custom accent controls timer edges independently of global accent.
+EllesmereUIDB = {blizzWinAccentBar = {useCustom = true, color = {r = 0.35, g = 0.45, b = 0.55}}}
+local fillR, fillG, fillB = b.fill:GetVertexColor()
+for _, fn in ipairs(looks) do fn() end; flush()
+assert(f.regions[2].fillColor[1] == 0.35 and f.children[#f.children - 1].regions[1].fillColor[1] == 0.35)
+first.enlarged = true; first:ApplyStyle()
+assert(f.regions[2].fillColor[1] == 0.35 and f.children[#f.children - 1].regions[1].fillColor[1] == 0.35, 'huge timer ignored Blizzard Skins+ accent')
+first.enlarged = false; first:ApplyStyle()
+assert(b.fill.color[1] == fillR and b.fill.color[2] == fillG and b.fill.color[3] == fillB, 'custom border accent recolored semantic fill')
+EllesmereUIDB.blizzWinAccentBar.useCustom = false
 accent = 0.8; for _, fn in ipairs(looks) do fn() end; flush()
 assert(f.regions[2].fillColor[1] == accent and preview.Border.borderColor[1] == accent)
 assert(f.regions[3].fillColor[1] == accent and f.children[#f.children - 1].regions[1].fillColor[1] == accent, 'full panel/spell icon accent did not refresh')

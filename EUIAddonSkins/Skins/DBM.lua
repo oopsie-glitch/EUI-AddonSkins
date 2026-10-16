@@ -137,7 +137,7 @@ local function HUD(C)
         d.panel:SetPoint("TOPLEFT", frame, "LEFT", 0, Snap(top, pixel))
         d.panel:SetPoint("BOTTOMRIGHT", frame, "RIGHT", 0, Snap(-top, pixel))
         d.panel:SetColorTexture(11 / 255, 16 / 255, 20 / 255, 0.875)
-        local r, g, b = S.GetAccentColor()
+        local r, g, b = ns.AccentBarColor(S)
         for i, edge in ipairs(d.edges) do
             if i <= 2 then edge:SetHeight(pixel) else edge:SetWidth(pixel) end
             edge:SetColorTexture(r, g, b, i == 1 and 0.8 or 0.45)
@@ -145,16 +145,24 @@ local function HUD(C)
         d.borderPixel = pixel
         local capacity = math.max(0, math.min(4, options.JournalIcons or 0))
         d.mechanicAlpha = d.mechanicAlpha or {}
-        local columns, rows = capacity > 1 and 2 or 1, capacity > 2 and 2 or 1
+        -- Reserve the same compartment, but size only for symbols actually shown.
+        local count = 0
+        for i = 1, 4 do
+            local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
+            if H.Texture(icon) and icon:IsShown() then count = count + 1 end
+        end
+        local columns, rows = count > 1 and 2 or 1, count > 2 and 2 or 1
         local symbolSize = math.min(height * 33 / 88, width * 65 / 754 / columns)
         symbolSize = math.max(pixel, Snap(symbolSize, pixel))
         local centerX = width * 714.5 / 754
+        local slot = 0
         for i = 1, 4 do
             local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
             if H.Texture(icon) then
                 if d.mechanicAlpha[icon] == nil then d.mechanicAlpha[icon] = icon:GetAlpha() end
                 icon:SetAlpha(d.mechanicAlpha[icon]); icon:SetSize(symbolSize, symbolSize)
-                local column, row = (i - 1) % columns, math.floor((i - 1) / columns)
+                local column, row = slot % columns, math.floor(slot / columns)
+                if icon:IsShown() then slot = slot + 1 end
                 icon:ClearAllPoints()
                 icon:SetPoint("CENTER", frame, "LEFT", Snap(centerX + (column - (columns - 1) / 2) * (symbolSize + pixel), pixel),
                     Snap(((rows - 1) / 2 - row) * (symbolSize + pixel), pixel))
@@ -276,7 +284,7 @@ local function HUD(C)
         d.panel:SetPoint("TOPLEFT", obj.frame, "LEFT", -leftSpace, rowHeight / 2)
         d.panel:SetPoint("BOTTOMRIGHT", obj.frame, "RIGHT", rightSpace, -rowHeight / 2)
         d.panel:SetColorTexture(0.065, 0.07, 0.075, 0.78)
-        local r, g, b = S.GetAccentColor()
+        local r, g, b = ns.AccentBarColor(S)
         for i, edge in ipairs(d.edges) do
             if i <= 2 then edge:SetHeight(1) else edge:SetWidth(1) end
             edge:SetColorTexture(r, g, b, 0.5)
@@ -357,7 +365,7 @@ local function HUD(C)
                 if i <= 2 then edge:SetHeight(d.borderPixel) else edge:SetWidth(d.borderPixel) end
             end
             PaintVariance(obj)
-            local r, g, b = S.GetAccentColor()
+            local r, g, b = ns.AccentBarColor(S)
             for i = 1, 2 do
                 local icon = _G[name .. "BarIcon" .. i]
                 if H.Texture(icon) then

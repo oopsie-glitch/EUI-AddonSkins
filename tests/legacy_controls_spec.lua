@@ -24,15 +24,20 @@ local function texture(kind, parent)
     function t:SetAllPoints() end
     function t:ClearAllPoints() self.points = {} end
     function t:SetShown(v) self.shown = v end
+    function t:IsShown() return self.shown ~= false end
     function t:GetVertexColor() return table.unpack(self.color or {1, 1, 1, 1}) end
     function t:SetSize(w, h) self.width, self.height = w, h end
     function t:SetHeight(h) self.height = h end
     function t:SetWidth(w) self.width = w end
     function t:SetTexCoord(...) self.crop = {...} end
+    function t:SetDesaturated(v) self.desaturated = v end
+    function t:SetBlendMode(v) self.blendMode = v end
+    function t:SetRotation(v) self.rotation = v end
+    function t:SetGradientAlpha(...) self.gradient = {...} end
     function t:GetNumMaskTextures() return self.masked and 1 or 0 end
     function t:SetText(s) assert(self.font, "FontString:SetText(): Font not set"); self.text = s end
-    function t:GetFont() return self.font, self.font and 12, '' end
-    function t:SetFont(v) self.font = v; self.fontWrites = (self.fontWrites or 0) + 1 end
+    function t:GetFont() return self.font, self.font and (self.fontSize or 12), '' end
+    function t:SetFont(v, size) self.font, self.fontSize = v, size; self.fontWrites = (self.fontWrites or 0) + 1 end
     function t:SetFontObject(v) self.font = v end
     function t:SetTextColor(...) self.textColor = {...} end
     function t:GetTextColor() return table.unpack(self.textColor or {1, 1, 1, 1}) end
@@ -82,7 +87,7 @@ local function frame(kind, name, parent)
 end
 CreateFrame = function(kind, name, parent) local f = frame(kind, name, parent); events[#events + 1] = f; return f end
 local S = {GetAccentColor = function() return accent, 0.6, 0.7 end}
-function S.Font(t, r, g, b) t:SetFont('eui'); if r then t:SetTextColor(r, g, b) end end
+function S.Font(t, r, g, b) local _, size = t:GetFont(); t:SetFont('eui', size or 12); if r then t:SetTextColor(r, g, b) end end
 function S.Button(f, keys)
     local keep = {}; for _, key in ipairs(keys or {}) do keep[f[key] or false] = true end
     for _, t in ipairs(f.regions) do if t.kind == 'Texture' and not keep[t] then t:SetAlpha(0) end end
@@ -103,10 +108,17 @@ function S.FadeNineSlice() end
 SetPortraitTexture = function(t) t:SetTexture('player-face') end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
 local auditScans = setmetatable({}, {__mode = 'k'})
+local auditVisits = setmetatable({}, {__mode = 'k'})
 local auditHelper = ns.CreateSkinHelper
 ns.CreateSkinHelper = function(...)
     local H = auditHelper(...); local scan = H.Scan
-    H.Scan = function(root, ...) auditScans[root] = (auditScans[root] or 0) + 1; return scan(root, ...) end
+    H.Scan = function(root, refresh, visit, exclude)
+        auditScans[root] = (auditScans[root] or 0) + 1
+        return scan(root, refresh, function(f, kind)
+            auditVisits[f] = (auditVisits[f] or 0) + 1
+            if visit then return visit(f, kind) end
+        end, exclude)
+    end
     return H
 end
 local auditBaseline = os.getenv('EUI_AUDIT_BASELINE') == '1'
@@ -270,7 +282,7 @@ realmRow.DrawCharacterLine = function(self)
 end
 modules.Altoholic.refresh(); flush()
 for _, key in ipairs({'scrollBorderTop', 'scrollBorderMiddle', 'scrollBorderBottom', 'scrollFrameScrollBarBackground'}) do assert(altoScroll[key].alpha == 0, 'Altoholic retained native scroll border') end
-assert(altoThumb.width == 8 and altoThumb.height == 18 and altoThumb.crop[1] == 0 and altoThumb.crop[2] == 1 and altoThumb.path == 'solid')
+assert(altoThumb.width == 4 and altoThumb.height == 18 and altoThumb.crop[1] == 0 and altoThumb.crop[2] == 1 and altoThumb.path == 'solid')
 assert(altoBar.ScrollUpButton.glyph == '^' and altoBar.ScrollDownButton.glyph == 'v')
 altoBar.ScrollUpButton.hooks.OnClick(); assert(altoBar.value == 0, 'native scroll-up action changed')
 altoBar.ScrollDownButton.hooks.OnClick(); assert(altoBar.value == 12 and altoBar.maximum == 300 and altoBar.points[1][4] == -20, 'native scrolling range or anchors changed')
@@ -284,7 +296,7 @@ assert(realmRow:DrawRealmLine() == 'realm-native' and not realmRow.Item11:IsShow
 combat = true; altoThumb:SetSize(18, 24); modules.Altoholic.refresh(); flush(); assert(altoThumb.width == 18)
 combat = false
 for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
-flush(); assert(altoThumb.width == 8)
+flush(); assert(altoThumb.width == 4)
 enabled = false; realmRow.Item11:Show(); realmRow.Item12:Show(); realmRow:DrawRealmLine()
 assert(realmRow.Item11:IsShown() and realmRow.Item12:IsShown(), 'disabled Altoholic skin processed realm rows')
 enabled = true
@@ -346,6 +358,921 @@ do
     enabled = false; category:SetCategory('Disabled'); assert(category.NormalTexture.alpha == 1 and category.Text.font == 'native-font', 'disabled skin processed a category redraw')
     enabled = true
 end
+end
+
+-- Altoholic's summary is a data table, not a grid of independent action boxes.
+do
+    local originalButton, originalInset, originalCreate = S.Button, S.Inset, CreateFrame
+    S.Inset = function(f)
+        f.inset = true
+        for _, region in ipairs(f.regions) do if region.kind == 'Texture' then region:SetAlpha(0) end end
+    end
+    S.Button = function(f, keys)
+        local keep = {}; for _, key in ipairs(keys or {}) do keep[#keep + 1] = key end
+        keep[#keep + 1] = 'fill'; keep[#keep + 1] = 'hover'
+        originalButton(f, keep)
+        primitive(f); f.fill.layer = 'BACKGROUND'; f.hover.layer = 'HIGHLIGHT'
+        f.fill:SetColorTexture(0.08, 0.08, 0.08, 0.92)
+    end
+    CreateFrame = function(kind, name, parent)
+        local f = originalCreate(kind, name, parent)
+        function f:SetAllPoints(other) self.allPoints = other end
+        return f
+    end
+    local root = frame('Frame'); AltoholicFrame = root; root.Tabs = {}
+    root.Inset = frame('Frame', nil, root); root.Inset.Bg = root.Inset:CreateTexture()
+    local tab = frame('Frame', nil, root)
+    tab.CategoriesList = frame('Frame', nil, tab); tab.CategoriesList.Background = tab.CategoriesList:CreateTexture()
+    tab.Background = frame('Frame', nil, tab); tab.Background.bg = tab.Background:CreateTexture()
+    tab.HeaderContainer = frame('Frame', nil, tab)
+    local category = frame('Button', nil, tab.CategoriesList)
+    category.Text = category:CreateFontString(nil, nil, 'native')
+    category.data = {isSelected = true}
+    category.SetCategory = function() return 'category' end
+    category.SetSelected = function(self, selected) self.data = {isSelected = selected}; return 'selection' end
+    local row = frame('Button', nil, tab); row.Collapse = frame('Button', nil, row)
+    row.DrawRealmLine = function() return 'realm' end
+    local function Cell()
+        local f = frame('Button', nil, row); f.Text = f:CreateFontString(nil, nil, 'native')
+        f.Text.textColor = {0.2, 0.8, 0.1}; f.geometry = 'native-column'
+        f.SetColumnData = function(self) self.Text:SetFont('native'); return 'data', nil, 4 end
+        f.SetColumnTotal = function() return 'total' end
+        f.hooks.OnClick = function() f.clicked = (f.clicked or 0) + 1 end
+        return f
+    end
+    row.Item1 = Cell()
+    local header = frame('Button', nil, tab.HeaderContainer)
+    header.Text = header:CreateFontString(nil, nil, 'native')
+    header.Arrow = header:CreateTexture(); header.normal = header.Arrow
+    header.DrawArrow = function(self, ascending) self.Arrow:SetShown(true); self.Arrow.direction = ascending; return 'sort' end
+    local action = frame('Button', nil, tab); action.label = action:CreateFontString(nil, nil, 'native')
+    local function ShowTree(f)
+        if f.hooks.OnShow then f.hooks.OnShow(f) end
+        for _, child in ipairs(f.children) do if child:IsShown() then ShowTree(child) end end
+    end
+    root.SwitchToTab = function(self, id)
+        if self.TabFrames then
+            self.selectedTab = id
+            local selected
+            for _, page in pairs(self.TabFrames) do
+                if page:GetID() == id then page:Show(); selected = page; ShowTree(page)
+                else page:Hide() end
+            end
+            return selected
+        end
+        row.Item2 = Cell(); return 'tab-native'
+    end
+    modules.Altoholic.install(S, modules.Altoholic); flush()
+    assert(root.Inset.inset and not root.Inset.panel and root.Inset.Bg.alpha == 0, 'main inset became a black subpanel')
+    assert(tab.Background.bg.alpha == 0 and tab.CategoriesList.Background.alpha == 0, 'native content art survived')
+    assert(#tab.Background.children == 1 and tab.Background.children[1].allPoints == tab.Background)
+    assert(tab.Background.children[1].regions[1].color[4] == 0.02, 'results wash lost its restrained contrast')
+    assert(row.Item1.fill.color[4] == 0 and row.Item1.hover.color[4] == 0.06, 'summary cell became an opaque action button')
+    assert(row.Item1.pixelBorder.regions[1].color[4] == 0 and header.pixelBorder.regions[1].color[4] == 0)
+    assert(action.fill.color[4] == 0.92 and action.pixelBorder.regions[1].color[4] == 1, 'actual action lost its control surface')
+    assert(category.fill.color[4] == 0 and category.euiSelection.color[4] == 0.2,
+        'transparent category lost its selected fill')
+    assert(category:SetSelected(false) == 'selection' and category.euiSelection.color[4] == 0)
+    assert(header:DrawArrow(true) == 'sort' and header.Arrow.alpha == 1 and header.Arrow.shown and header.Arrow.direction)
+    local a, b, c = row.Item1:SetColumnData()
+    assert(a == 'data' and b == nil and c == 4 and row.Item1.Text.font == 'eui')
+    row.Item1.hooks.OnClick(); flush()
+    assert(row.Item1.Text.textColor[2] == 0.8 and row.Item1.geometry == 'native-column'
+        and row.Item1.clicked == 1, 'summary semantics, alignment or action changed')
+    auditScans[root] = 0
+    for _ = 1, 100 do row.Item1:SetColumnData() end
+    assert(auditScans[root] == 0, 'cell redraw traversed the entire Altoholic window')
+    assert(root:SwitchToTab() == 'tab-native' and row.Item2.fill.color[4] == 0, 'lazy tab controls were not styled synchronously')
+    local hooks, count, layers = row.Item1.SetColumnData, #row.Item1.regions, #tab.Background.children
+    for _ = 1, 10 do modules.Altoholic.refresh(); flush() end
+    assert(row.Item1.SetColumnData == hooks and #row.Item1.regions == count and #tab.Background.children == layers,
+        'warm styling duplicated objects or hooks')
+    row.Item1.fill:SetColorTexture(0.08, 0.08, 0.08, 0.92)
+    modules.Altoholic.refresh(); flush()
+    assert(row.Item1.fill.color[4] == 0 and header.Arrow.alpha == 1, 'theme repaint restored a boxed cell or lost the sort indicator')
+    combat = true; root:SwitchToTab(); assert(not row.Item2.fill, 'new combat cell was skinned')
+    combat = false
+    for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(row.Item2.fill.color[4] == 0)
+    enabled = false; root:SwitchToTab(); assert(not row.Item2.fill, 'disabled skin styled a new tab')
+    enabled = true
+    -- Source-shaped AddonFactory tabs, pooled controls and options panels.
+    -- Native show/click bursts queue refreshes as well as the completed switch.
+    root.TabFrames = {tab}; tab.id = 1; root.selectedTab = 1
+    for i = 1, 8 do root.Tabs[i] = frame('Button', nil, root) end
+    local hiddenCells = {}
+    for i = 2, 8 do
+        local page = frame('Frame', nil, root); page.id = i; page:Hide()
+        root.TabFrames[i] = page
+        for _ = 1, 30 do
+            local cell = frame('Button', nil, page)
+            cell.Text = cell:CreateFontString(nil, nil, 'native')
+            cell.SetColumnData = function() return 'cell' end
+            hiddenCells[#hiddenCells + 1] = cell
+        end
+    end
+    local activePanel, hiddenPanel = frame('Frame', nil, tab), frame('Frame', nil, tab)
+    hiddenPanel:Hide(); tab.Panels = {activePanel, hiddenPanel}; tab.currentPanelKey = 1
+    tab.GetCurrentPanel = function(self) return self.Panels[self.currentPanelKey] end
+    tab.ShowPanel = function(self, key)
+        self.currentPanelKey = key
+        for i, panel in ipairs(self.Panels) do if i == key then panel:Show(); ShowTree(panel) else panel:Hide() end end
+        return 'panel-native'
+    end
+    local option = frame('Button', nil, hiddenPanel); option.label = option:CreateFontString(nil, nil, 'native')
+    modules.Altoholic.refresh(); flush()
+    auditScans[root] = 0; for _, cell in ipairs(hiddenCells) do auditVisits[cell] = 0 end
+    for _ = 1, 10 do root:SwitchToTab(1); row.Item1.hooks.OnClick(); flush() end
+    local hiddenVisits = 0; for _, cell in ipairs(hiddenCells) do hiddenVisits = hiddenVisits + (auditVisits[cell] or 0) end
+    print(('BENCH altoholic_tabs full=%d hidden_cells=%d switches=10'):format(auditScans[root] or 0, hiddenVisits))
+    if os.getenv('EUI_ALTO_BASELINE') ~= '1' then
+        assert((auditScans[root] or 0) == 10 and hiddenVisits == 0, 'tab switch repeated full scans or visited hidden tabs')
+        assert(not option.fill, 'hidden options panel initialized before selection')
+    end
+    assert(tab:ShowPanel(2) == 'panel-native' and option.fill.color[4] == 0.92, 'newly selected options panel missed synchronous styling')
+    flush()
+    assert(root:SwitchToTab(2) == root.TabFrames[2] and hiddenCells[1].fill.color[4] == 0, 'previously hidden tab was not styled before paint')
+    flush()
+    combat = true; root:SwitchToTab(3)
+    if os.getenv('EUI_ALTO_BASELINE') ~= '1' then
+        assert(not hiddenCells[31].fill and root.Tabs[2].selected and not root.Tabs[3].selected,
+            'selected combat tab or tab strip was styled')
+    end
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(hiddenCells[31].fill.color[4] == 0)
+    enabled = false; root:SwitchToTab(4); flush()
+    if os.getenv('EUI_ALTO_BASELINE') ~= '1' then assert(not hiddenCells[61].fill, 'disabled skin processed a hidden tab') end
+    enabled = true
+    S.Button, S.Inset, CreateFrame = originalButton, originalInset, originalCreate
+end
+
+-- Forever templates: artwork stored in Background, grid row reuse and options.
+do
+    local oldDropdown, oldTab, oldBind = S.Dropdown, S.Tab, ns.BindPopupList
+    local oldInput, oldFont = S.EditBox, S.GetFont
+    local root = frame('Frame'); AltoholicFrame = root; root.Tabs = {}; root.selectedTab = 1
+    local search = frame('EditBox', nil, root); root.SearchBox = search
+    search.GetFont = function(self) return self.font or 'native', 11, '' end
+    search.SetFont = function(self, path) self.font = path end
+    search.searchIcon = search:CreateTexture(); search.searchIcon.path = 'native-search-icon'
+    search.hooks.OnEnterPressed = function() return 'search-native' end
+    S.GetFont = function() return 'eui-user-font', '' end
+    S.EditBox = function(f, options)
+        oldInput(f, options)
+        if not f.fixtureFill then
+            for _, region in ipairs(f.regions) do if region.kind == 'Texture' then region:SetAlpha(0) end end
+            f.fixtureFill = f:CreateTexture(); f.fixtureFill.layer = 'BACKGROUND'
+        end
+    end
+    local page = frame('Frame', nil, root); page.id = 1; root.TabFrames = {page}
+    local tab = frame('Button', nil, root); tab.label = tab:CreateFontString(nil, nil, 'native'); root.Tabs[1] = tab
+    local euiLabel
+    S.Tab = function(f)
+        oldTab(f)
+        if f == tab and not euiLabel then
+            f.label:SetTextColor(0, 0, 0, 0)
+            euiLabel = f:CreateFontString(nil, nil, 'eui')
+        end
+    end
+    S.Dropdown = function(f)
+        oldDropdown(f)
+        if not f.fixtureArrow then f.fixtureArrow = f:CreateTexture(); f.fixtureArrow.layer = 'OVERLAY' end
+    end
+    local row = frame('Button', nil, page); row.Name = frame('Button', nil, row)
+    row.Name.Text = row.Name:CreateFontString(nil, nil, 'native')
+    local function GridCell(index)
+        local cell = frame('Button', nil, row); row['Item' .. index] = cell
+        cell.Background = cell:CreateTexture(); cell.Background.layer = 'BACKGROUND'; cell.Background.path = 'equipment-art'
+        cell.IconBorder = cell:CreateTexture(); cell.IconBorder:SetVertexColor(0, 0.44, 0.87, 0.5)
+        cell.Name = cell:CreateFontString(nil, nil, 'native'); cell.Name.text = '37'
+        cell:SetBackdrop({edgeFile = 'native-rounded-border'})
+        cell.action = function() return 'equip-tooltip-native' end
+        return cell
+    end
+    local cell = GridCell(1)
+    row.Update = function(self, empty)
+        self.Item1.Background:SetTexture(empty and 'empty-slot-art' or 'equipment-art')
+        self.Item1.IconBorder:SetShown(not empty)
+        self.Item1.IconBorder:SetVertexColor(0.12, 1, 0, 0.5)
+        if not self.Item2 then GridCell(2) end
+        return 'grid-native', nil, 13
+    end
+    local class = frame('Button', nil, page)
+    class.Icon = class:CreateTexture(); class.Icon.path = 'class-atlas'; class.Icon:SetTexCoord(0.25, 0.5, 0, 0.25)
+    class.IconBorder = class:CreateTexture(); class.IconBorder:SetVertexColor(0.1, 0.25, 1, 0.5)
+    class.SetClass = function(self) self.Icon:SetTexCoord(0.5, 0.75, 0, 0.25); return 'class-native' end
+    local drop = frame('Frame', nil, page)
+    drop.Text = drop:CreateFontString(nil, nil, 'native'); drop.Text.text = 'Profession Cooldowns'
+    for _, key in ipairs({'Left', 'Middle', 'Right'}) do drop[key] = drop:CreateTexture() end
+    drop.Button = frame('Button', nil, drop); drop.Button.normal = drop.Button:CreateTexture()
+    drop.Button.action = function() return 'dropdown-native' end
+    drop.Initialize = function(self) self.initialize = function() end; return 'init-native' end
+    drop.AddButtonInfo = function() end
+    drop.Toggle = function() return 'toggle-native' end
+    drop.SetMenuWidth = function(self, width) self:SetWidth(width); return 'width-native' end
+    drop.SetText = function(self, text) self.Text:SetText(text); return 'text-native' end
+    ns.BindPopupList = function(_, _, bound) assert(bound == drop) end
+    local options = frame('Frame', nil, page)
+    local slider = frame('Slider', nil, options)
+    slider.Text = slider:CreateFontString(nil, nil, 'native'); slider.Low = slider:CreateFontString(nil, nil, 'native'); slider.High = slider:CreateFontString(nil, nil, 'native')
+    slider.Backdrop = frame('Frame', nil, slider); slider.Backdrop:SetBackdrop({bgFile = 'native-track', edgeFile = 'native-edge'})
+    local thumb = slider:CreateTexture(); thumb:SetSize(32, 32)
+    slider.GetThumbTexture = function() return thumb end; slider.GetOrientation = function() return 'HORIZONTAL' end
+    slider.value, slider.minimum, slider.maximum = 180, 1, 360
+    slider.hooks.OnValueChanged = function() return 'value-native' end
+    local check = frame('CheckButton', nil, options); check.locLabel = 'SHOW_ICON_TEXT'; check.checked = true
+    check.Text = check:CreateFontString(nil, nil, 'native'); check.Text.textColor = {1, 0.82, 0, 1}
+    local tick = check:CreateTexture(); check.GetCheckedTexture = function() return tick end
+    check.action = function() return 'check-native' end
+    page.NextPage = frame('Button', nil, page); page.PrevPage = frame('Button', nil, page)
+    page.NextPage.action = function() return 'next-native' end
+    local startEvents = #events
+    modules.Altoholic.install(S, modules.Altoholic); flush()
+    local function Edges(f)
+        local result = {}; for _, t in ipairs(f.regions) do if t.width == 1 or t.height == 1 then result[#result + 1] = t end end
+        return result
+    end
+    assert(root.shellOptions.noTopBar and root.shellOptions.noAccent and not root.shellOptions.bottomBar and not root.accent)
+    assert(search.font == 'eui-user-font' and search.searchIcon.alpha == 1 and search.fixtureFill.color[1] == 0.055
+        and search.hooks.OnEnterPressed() == 'search-native', 'search input lost its icon/action or missed theme styling')
+    assert(cell.Background.alpha == 1 and cell.Background.path == 'equipment-art' and cell.Background.crop and cell.backdrop == nil
+        and cell.IconBorder.alpha == 0 and #Edges(cell) == 4 and Edges(cell)[1].color[3] == 0.87, 'grid artwork was hidden or quality border lost')
+    assert(cell.Name.text == '37' and cell.action() == 'equip-tooltip-native' and row.Name.button)
+    assert(class.Icon.crop[1] == 0.25 and class.Icon.crop[2] == 0.5 and class.Icon.alpha == 1, 'class atlas coordinates were cropped as an item icon')
+    assert(class:SetClass() == 'class-native' and class.Icon.crop[1] == 0.5)
+    assert(drop.dropdown and drop.Left.alpha == 0 and drop.Right.alpha == 0 and drop.Button.normal.alpha == 0
+        and drop.Button.action() == 'dropdown-native' and drop.fixtureArrow.path:find('eui%-arrow%-left'))
+    assert(drop:SetText('Dungeon Resets') == 'text-native' and drop.Text.text == 'Dungeon Resets' and drop:SetMenuWidth(140) == 'width-native')
+    assert(slider.Backdrop.backdrop == nil and thumb.width == 8 and thumb.height == 12
+        and slider.Text.fontSize == 10 and slider.Low.fontSize == 9 and slider.Text.points[1][5] == 5
+        and slider.Low.points[1][5] == -4 and slider.maximum == 360 and slider.value == 180 and slider.hooks.OnValueChanged() == 'value-native')
+    assert(check.checked and tick.desaturated and tick.color[1] == accent and check.Text.textColor[1] == 0.88 and check.action() == 'check-native')
+    assert(tab.label.alpha == 0 and euiLabel.textColor[1] == accent and page.NextPage.glyph == '>' and page.PrevPage.glyph == '<' and page.NextPage.action() == 'next-native')
+    euiLabel:SetTextColor(1, 1, 1, 1); assert(euiLabel.textColor[1] == accent, 'EUI tab repaint reset the accent tint')
+    local a, b, c = row:Update(true); assert(a == 'grid-native' and b == nil and c == 13)
+    assert(cell.Background.path == 'empty-slot-art' and cell.Background.alpha == 1 and Edges(cell)[1].color[1] == 0.15 and #Edges(row.Item2) == 4)
+    local count, hook = #cell.regions, row.Update; auditScans[root] = 0
+    for _ = 1, 50 do row:Update(false) end
+    assert(auditScans[root] == 0 and #cell.regions == count and row.Update == hook and Edges(cell)[1].color[2] == 1, 'grid reuse triggered full scans or allocated repeated regions/hooks')
+    combat = true; row:Update(true); assert(Edges(cell)[1].color[2] == 1)
+    combat = false
+    for index = startEvents + 1, #events do local f = events[index]; if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(Edges(cell)[1].color[1] == 0.15)
+    enabled = false; row:Update(false); assert(Edges(cell)[1].color[1] == 0.15)
+    enabled = true; modules.Altoholic.refresh(); flush(); assert(Edges(cell)[1].color[2] == 1)
+    S.Dropdown, S.Tab, ns.BindPopupList = oldDropdown, oldTab, oldBind
+    S.EditBox, S.GetFont = oldInput, oldFont
+end
+
+-- Agenda uses its own calendar template, not Blizzard's CalendarDayButton globals.
+do
+    local oldCreate, oldButton, oldTab, oldPage, oldTime = CreateFrame, S.Button, S.Tab, S.PageButton, C_DateAndTime
+    CreateFrame = function(...)
+        local f = oldCreate(...)
+        function f:SetAllPoints(other) self.allPoints = other end
+        function f:EnableMouse(value) self.mouseEnabled = value end
+        return f
+    end
+    S.Button = function(f, keys)
+        if f.agendaFill then return end
+        oldButton(f, keys)
+        f.agendaFill = f:CreateTexture(); f.agendaFill.layer = 'BACKGROUND'
+        f.agendaHover = f:CreateTexture(); f.agendaHover.layer = 'HIGHLIGHT'
+    end
+    S.Tab = function(f)
+        oldTab(f)
+        if f.agendaTabFill then return end
+        f.agendaTabFill = f:CreateTexture(); f.agendaTabFill.layer = 'BACKGROUND'
+        f.agendaTabLabel = f:CreateFontString(nil, nil, 'eui')
+    end
+    S.PageButton = function(f, glyph)
+        oldPage(f, glyph)
+        if f.normal then f.normal:SetAlpha(0) end
+    end
+    C_DateAndTime = {GetCurrentCalendarTime = function() return {year = 2026, month = 10, monthDay = 16} end}
+    local root = frame('Frame'); AltoholicFrame = root; root.Tabs = {}; root.selectedTab = 1
+    local agenda = frame('Frame', nil, root); agenda.id = 5; root.TabAgenda = agenda; root.TabFrames = {agenda}
+    agenda.Panels = {}
+    root.SwitchToTab = function(self, id) self.selectedTab = id; return 'switch-native', nil, id end
+    for i = 1, 7 do
+        local tab = frame('Button', nil, root); tab.label = tab:CreateFontString(nil, nil, 'native')
+        tab:SetPoint('TOPLEFT', root, 'BOTTOMLEFT', (i - 1) * 70, 0); root.Tabs[i] = tab
+    end
+    local hoverCalls, month, eventUpdates, dayUpdates = 0, 10, 0, 0
+    for _, key in ipairs({'CharacterFilterIcon', 'DateFilterIcon', 'EventFilterIcon'}) do
+        local button = frame('Button', nil, agenda); agenda[key] = button
+        button.Icon = button:CreateTexture(); button.Icon.path = key
+        button.action = function() hoverCalls = hoverCalls + 1; return 'filter-native' end
+    end
+    local startEvents = #events
+    modules.Altoholic.install(S, modules.Altoholic); flush() -- Calendar is not loaded yet.
+    assert(root.Tabs[1].agendaTabFill.alpha == 1 and root.Tabs[5].agendaTabFill.alpha == 1,
+        'bottom tab backgrounds were hidden outside the window')
+    local calendar = frame('Frame', nil, agenda); agenda.Calendar = calendar; agenda.Panels.Calendar = calendar
+    calendar.MonthYear = calendar:CreateFontString(nil, nil, 'native')
+    calendar.EventList = frame('Frame', nil, calendar)
+    calendar.EventList.Update = function() eventUpdates = eventUpdates + 1; return 'events-native', nil, 18 end
+    calendar.EventList.Row = frame('Button', nil, calendar.EventList)
+    calendar.EventList.Row.Date = calendar.EventList.Row:CreateFontString(nil, nil, 'native')
+    calendar.EventList.Row.Background = calendar.EventList.Row:CreateTexture()
+    calendar.PrevMonth, calendar.NextMonth = frame('Button', nil, calendar), frame('Button', nil, calendar)
+    calendar.PrevMonth.normal = calendar.PrevMonth:CreateTexture(); calendar.NextMonth.normal = calendar.NextMonth:CreateTexture()
+    for i = 1, 7 do
+        calendar['Weekday' .. i .. 'Background'] = calendar:CreateTexture()
+        calendar['Weekday' .. i .. 'Name'] = calendar:CreateFontString(nil, nil, 'native')
+    end
+    for i = 1, 42 do
+        local day = frame('Button', nil, calendar); calendar['Day' .. i] = day
+        day:SetSize(50, 50); day:SetPoint('TOPLEFT', calendar, 'TOPLEFT', (i - 1) % 7 * 50 + 280, -math.floor((i - 1) / 7) * 50 - 3)
+        day.normal = day:CreateTexture(); day.normal.path = 'Interface\\Calendar\\CalendarBackground'
+        day.Date = day:CreateFontString(nil, nil, 'native'); day.Count = day:CreateFontString(nil, nil, 'native')
+        day.Count:SetTextColor(0.2, 1, 0.2, 1)
+        day.action = function() return 'day-click-native' end
+        day.hooks.OnEnter = function() return 'day-tooltip-native' end
+        day.Update = function(self, date, m, y, dark, count)
+            dayUpdates = dayUpdates + 1
+            self.day, self.month, self.year = date, m, y
+            self.Date:SetText(date); self.normal:SetVertexColor(dark and 0.4 or 1, 1, 1)
+            self.Count:SetText(count); self.Count:SetShown(count > 0)
+            return 'day-native', nil, date
+        end
+    end
+    calendar.Update = function(self)
+        self.EventList:Update(); self.MonthYear:SetText('Month ' .. month)
+        for i = 1, 42 do self['Day' .. i]:Update(i > 31 and i - 31 or i, i > 31 and month + 1 or month, 2026, i > 31, i == 16 and 2 or 0) end
+        return 'calendar-native', nil, month
+    end
+    calendar.PrevMonth.action = function() month = month - 1; return calendar:Update() end
+    calendar.NextMonth.action = function() month = month + 1; return calendar:Update() end
+    calendar:Update()
+    local a, b, c = root:SwitchToTab(5); assert(a == 'switch-native' and b == nil and c == 5)
+    assert(root.Tabs[5].selected and root.Tabs[5].agendaTabFill.alpha == 1 and root.Tabs[5].points[1][3] == 'BOTTOMLEFT')
+    local today, outside = calendar.Day16, calendar.Day42
+    local layer = today.children[#today.children]
+    assert(today.normal.alpha == 0 and today.agendaFill.color[1] == 0.08 and today.agendaFill.color[4] == 0.92)
+    assert(outside.Date.textColor[1] == 0.38 and outside.agendaFill.color[1] == 0.08 * 0.4 and outside.agendaFill.color[4] == 0.92)
+    assert(today.Count.text == 2 and today.Count:IsShown() and today.Count.textColor[2] == 1
+        and not outside.Count:IsShown() and today.Date.text == 16 and today.action() == 'day-click-native'
+        and today.hooks.OnEnter() == 'day-tooltip-native', 'day styling changed event data, visibility or actions')
+    assert(layer.mouseEnabled == false and #layer.regions == 4 and layer.regions[1].color[1] == accent)
+    assert(calendar.Weekday1Background.alpha == 0 and calendar.Weekday1Name.textColor[3] == 0.604
+        and calendar.MonthYear.text == 'Month 10' and calendar.MonthYear.textColor[1] == 0.95)
+    assert(calendar.PrevMonth.glyph == '<' and calendar.NextMonth.glyph == '>' and calendar.PrevMonth.normal.alpha == 0)
+    assert(calendar.PrevMonth.points[1][2] == calendar.Day1 and calendar.NextMonth.points[1][2] == calendar.Day7
+        and calendar.MonthYear.points[1][2] == calendar.PrevMonth and calendar.MonthYear.points[2][2] == calendar.NextMonth)
+    assert(agenda.CharacterFilterIcon.width == 32 and agenda.CharacterFilterIcon.points[1][2] == calendar.EventList
+        and agenda.DateFilterIcon.points[1][2] == agenda.CharacterFilterIcon and agenda.EventFilterIcon.points[1][2] == agenda.DateFilterIcon)
+    for _, key in ipairs({'CharacterFilterIcon', 'DateFilterIcon', 'EventFilterIcon'}) do assert(agenda[key].action() == 'filter-native') end
+    assert(hoverCalls == 3 and today.width == 50 and today.height == 50 and today.points[1][4] == 330,
+        'calendar styling changed native day geometry')
+    local objects, childCount, hook, eventsHook = #today.regions, #today.children, today.Update, calendar.EventList.Update
+    auditScans[root], auditScans[agenda] = 0, 0
+    local before = dayUpdates
+    for _ = 1, 20 do
+        local a, b, c = calendar:Update(); assert(a == 'calendar-native' and b == nil and c == month)
+    end
+    assert(dayUpdates - before == 42 * 20 and #today.regions == objects and #today.children == childCount
+        and today.Update == hook and calendar.EventList.Update == eventsHook
+        and auditScans[root] == 0 and auditScans[agenda] == 0, 'month updates duplicated hooks/objects or scanned the whole window')
+    a, b, c = calendar.NextMonth.action(); assert(a == 'calendar-native' and b == nil and c == 11)
+    assert(today.month == 11 and layer.regions[1].color[1] == 0.18)
+    calendar.PrevMonth.action(); assert(today.month == 10 and layer.regions[1].color[1] == accent)
+    accent = 0.7; modules.Altoholic.refresh(); flush(); assert(layer.regions[1].color[1] == accent)
+    combat = true; outside:Update(5, 10, 2026, false, 3)
+    assert(outside.Date.textColor[1] == 0.38, 'calendar repaint ran during combat')
+    combat = false
+    for i = startEvents + 1, #events do local f = events[i]; if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(outside.Date.textColor[1] == 0.95 and outside.Count:IsShown())
+    enabled = false; today:Update(4, 10, 2026, true, 0)
+    assert(today.Date.textColor[1] == 0.95, 'disabled calendar skin processed a day update')
+    enabled = true; modules.Altoholic.refresh(); flush(); assert(today.Date.textColor[1] == 0.38)
+    CreateFrame, S.Button, S.Tab, S.PageButton, C_DateAndTime = oldCreate, oldButton, oldTab, oldPage, oldTime
+end
+
+-- ItemRack options: native scripts and equipment semantics survive restyling.
+do
+    assert(loadfile('EUIAddonSkins/Skins/ItemRack.lua'))('EUIAddonSkins', ns)
+    local checkbox, inset, getFFD, pageButton = S.Checkbox, S.Inset, S.GetFFD, S.PageButton
+    local tabPrimitive, tabSelection, dropdownPrimitive, inputPrimitive, shellPrimitive, getFont = S.Tab, S.SetTabSelection, S.Dropdown, S.EditBox, S.Shell, S.GetFont
+    S.GetFont = function() return 'eui', '' end
+    -- The public EUI facade deliberately does not expose its internal FFD.
+    S.GetFFD = nil
+    S.Checkbox = function(f, opts) f.checkOptions = opts; checkbox(f) end
+    S.Inset = function(f) f.inset = true end
+    ItemRackOptFrame = frame('Frame', 'ItemRackOptFrame')
+    local root = ItemRackOptFrame
+    local tabLabels = {}
+    for index = 1, 4 do
+        local tab = frame('Button', 'ItemRackOptTab' .. index, root)
+        tab.label = tab:CreateFontString(nil, nil, 'native')
+        tab.disabled = index == 4
+    end
+    S.Tab = function(f)
+        tabPrimitive(f)
+        if not tabLabels[f] then
+            f.label:SetTextColor(0, 0, 0, 0)
+            tabLabels[f] = f:CreateFontString(nil, nil, 'eui')
+            f.fixturePlate = f:CreateTexture(); f.fixturePlate.layer = 'BACKGROUND'
+        end
+    end
+    S.SetTabSelection = function(f, selected)
+        tabSelection(f, selected)
+        if tabLabels[f] then tabLabels[f]:SetTextColor(1, 1, 1, selected and 1 or 0.5) end
+    end
+    S.Shell = function(f, options)
+        shellPrimitive(f, options)
+        if not f.fixtureBackdrop then
+            f.fixtureBackdrop = f:CreateTexture(); f.fixtureBackdrop.layer = 'BACKGROUND'
+            f.fixtureBackdrop:SetAllPoints(f)
+        end
+    end
+    S.EditBox = function(f, options)
+        inputPrimitive(f, options)
+        if not f.fixtureInput then f.fixtureInput = f:CreateTexture(); f.fixtureInput.layer = 'BACKGROUND' end
+    end
+    S.Dropdown = function(f)
+        dropdownPrimitive(f)
+        if not f.fixtureArrow then
+            f.fixtureArrow = f:CreateTexture(); f.fixtureArrow.layer = 'OVERLAY'; f.fixtureArrow.path = 'Azerite-PointingArrow'
+        end
+    end
+    S.PageButton = function(f, ...)
+        pageButton(f, ...)
+        if (f.name == 'ItemRackButtonMenuQueue' or f.name == 'ItemRackButtonMenuClose') and not f.fixtureGlyph then
+            f.fixtureGlyph = f:CreateFontString(nil, nil, 'eui')
+        end
+    end
+    local sets = frame('Frame', 'ItemRackOptSubFrame2', root)
+    sets.gradient = sets:CreateTexture(); sets.gradient.layer = 'BACKGROUND'; sets:SetBackdrop({edgeFile = 'bevel'})
+    local artwork = sets:CreateTexture(); artwork.layer = 'ARTWORK'; artwork.path = 'semantic-art'
+    for _, side in ipairs({'Left', 'Middle', 'Right'}) do _G['ItemRackOptSetsDropTexture' .. side] = sets:CreateTexture() end
+    local choose = frame('Button', 'ItemRackOptSetsDropDownButton', sets)
+    choose.action = function() return 'choose-set' end
+    local move = frame('Button', 'ItemRackOptSortMoveUp', root)
+    move.action = function() return 'move-native' end
+    local slot = frame('CheckButton', 'ItemRackOptInv7', root)
+    ItemRackOptInv7Icon = slot:CreateTexture(); slot.normal = slot:CreateTexture()
+    slot.checked = true; slot.action = function() return 'select-equipment' end
+    local check = frame('CheckButton', 'ItemRackOptQueueEnable', root); check.checked = true
+    local tristate = frame('CheckButton', 'ItemRackOptShowHelm', sets)
+    local triCheck = tristate:CreateTexture(); triCheck.color = {0.5, 0.5, 0.5, 1}
+    tristate.GetCheckedTexture = function() return triCheck end
+    local horizontal = frame('Slider', 'ItemRackOptSlider1', root)
+    local hthumb = horizontal:CreateTexture(); horizontal.GetThumbTexture = function() return hthumb end
+    horizontal.GetOrientation = function() return 'HORIZONTAL' end
+    horizontal.value, horizontal.range = 1, {0.5, 2}
+    horizontal.hooks.OnValueChanged = function() return 'scale-native' end
+    local vertical = frame('Slider', 'ItemRackOptSetsIconScrollFrameScrollBar', sets)
+    local vthumb = vertical:CreateTexture(); vertical.GetThumbTexture = function() return vthumb end
+    vertical.GetOrientation = function() return 'VERTICAL' end
+    local row = frame('Button', 'ItemRackOptSortList1', root)
+    ItemRackOptSortList1Icon = row:CreateTexture()
+    ItemRackOptSortList1Highlight = row:CreateTexture(); ItemRackOptSortList1Highlight:SetShown(true)
+    local label = row:CreateFontString(nil, nil, 'native'); label.textColor = {0, 0.44, 0.87}
+    row.action = function() return 'queue-selection' end
+    ItemRackMenuFrame = frame('Frame', 'ItemRackMenuFrame')
+    local menu = ItemRackMenuFrame
+    local function MenuItem(index)
+        local f = frame('CheckButton', 'ItemRackMenu' .. index, menu)
+        _G[f.name .. 'Icon'] = f:CreateTexture(); f.normal = f:CreateTexture()
+        f.action = function() return 'equip-native' end
+        return f
+    end
+    local item = MenuItem(1)
+    local secure = MenuItem(2); secure.protected = true; secure.attributes = {macro = 'equip'}
+    local config = frame('Frame', 'ItemRackOptSubFrame1', root)
+    local gradient = config:CreateTexture(); gradient.layer = 'BACKGROUND'
+    local configRows = {}
+    for index = 1, 5 do
+        local row = frame('Button', 'ItemRackOptList' .. index, config)
+        row.GetWidth = function() return 156 end
+        configRows[index] = row
+        for _, suffix in ipairs({'Label', 'CheckText', 'NumberLabel'}) do
+            _G[row.name .. suffix] = row:CreateFontString(nil, nil, 'native')
+        end
+        _G[row.name .. 'Underline'] = row:CreateTexture()
+        frame('CheckButton', row.name .. 'CheckButton', row)
+    end
+    local tick = ItemRackOptList3CheckButton:CreateTexture(); tick.path = 'gold-check'
+    ItemRackOptList3CheckButton.GetCheckedTexture = function() return tick end
+    ItemRackOptList3CheckButton.checked = true
+    local setPicker = frame('Frame', 'ItemRackOptSubFrame5', root)
+    local anonymous = frame('Frame', nil, setPicker)
+    anonymous:SetBackdrop({edgeFile = 'Interface\\Tooltips\\UI-Tooltip-Border'})
+    local anonymousGradient = anonymous:CreateTexture(); anonymousGradient.layer = 'BACKGROUND'
+    local setRow = frame('Button', 'ItemRackOptSetList1', anonymous)
+    ItemRackOptSetList1Icon = setRow:CreateTexture(); ItemRackOptSetList1Icon.path = 'set-art'
+    ItemRackOptSetList1Highlight = setRow:CreateTexture(); ItemRackOptSetList1Highlight.shown = false
+    local setLabel = setRow:CreateFontString(nil, nil, 'native'); setLabel.textColor = {0.7, 0.7, 0.7, 1}
+    setRow.action = function() return 'select-set-native' end
+    local pickerClose = frame('Button', 'ItemRackOptSetListClose', anonymous)
+    pickerClose.action = function() return 'close-native' end
+    local unrelated = frame('Frame', nil, root)
+    local unrelatedArt = unrelated:CreateTexture(); unrelatedArt.layer = 'BACKGROUND'
+    local grid = frame('Frame', 'ItemRackOptSetsIconFrame', sets)
+    local gridGradient = grid:CreateTexture(); gridGradient.layer = 'BACKGROUND'
+    grid:SetBackdrop({edgeFile = 'native-border'})
+    local function SetIcon(index)
+        local button = frame('Button', 'ItemRackOptSetsIcon' .. index, grid)
+        _G[button.name .. 'Icon'] = button:CreateTexture()
+        button.highlight = button:CreateTexture(); button.highlight.path = 'gold-highlight'
+        button.GetHighlightTexture = function(self) return self.highlight end
+        button.action = function() return 'set-icon-native' end
+        return button
+    end
+    local gridIcon = SetIcon(1); gridIcon.highlight.shown = true
+    local preview = frame('CheckButton', 'ItemRackOptSetsCurrentSet', sets)
+    ItemRackOptSetsCurrentSetIcon = preview:CreateTexture(); ItemRackOptSetsCurrentSetIcon.path = 'preview-art'
+    local setName = frame('EditBox', 'ItemRackOptSetsName', sets)
+    local number = frame('EditBox', 'ItemRackOptMenuScale', config)
+    number.GetFont, number.SetFont = ItemRackOptList1Label.GetFont, ItemRackOptList1Label.SetFont
+    number.GetTextColor, number.SetTextColor = ItemRackOptList1Label.GetTextColor, ItemRackOptList1Label.SetTextColor
+    number.SetJustifyH = function(self, v) self.justify = v end
+    number.SetJustifyV = function(self, v) self.justifyV = v end
+    number.SetTextInsets = function(self, ...) self.textInsets = {...} end
+    setName.GetFont, setName.SetFont = number.GetFont, number.SetFont
+    setName.GetTextColor, setName.SetTextColor = number.GetTextColor, number.SetTextColor
+    setName.SetTextInsets = number.SetTextInsets
+    setName.text, setName.font = 'Saved set', 'native-input'
+    setName.hooks.OnTextChanged = function() return 'validate-native' end
+    number.font, number.text = 'native-input', '0.85'
+    number.hooks.OnEnterPressed = function() return 'number-native' end
+    local scale = frame('Slider', 'ItemRackOptMenuScaleSlider', config)
+    local scaleThumb = scale:CreateTexture(); scale.GetThumbTexture = function() return scaleThumb end
+    scale.GetOrientation = function() return 'HORIZONTAL' end
+    ItemRackOptMenuScaleSliderMin = scale:CreateFontString(nil, nil, 'native')
+    ItemRackOptMenuScaleSliderMax = scale:CreateFontString(nil, nil, 'native')
+    scale.value, scale.range = 0.85, {0.5, 2}
+    local drop = frame('Button', 'ItemRackOptQuickAccessMenuSide', config)
+    ItemRackOptQuickAccessMenuSideText = drop:CreateFontString(nil, nil, 'native')
+    local arrow = frame('Button', 'ItemRackOptQuickAccessMenuSideButton', drop)
+    arrow.nativeArt = arrow:CreateTexture(); arrow.action = function() return 'arrow-native' end
+    ItemRack = {BuildMenu = function() MenuItem(3); return 'menu-native', nil, 7 end, ToggleOptions = function() return 'options' end}
+    ItemRackOpt = {TabOnClick = function(_, which)
+            for index = 1, 4 do _G['ItemRackOptTab' .. index].disabled = index == which end
+            return 'tab-native'
+        end,
+        OptInfo = {{type = 'label'}, {type = 'number', button = number}, {type = 'check'},
+            {type = 'button', button = drop}, {type = 'slider', button = scale}},
+        ListScrollFrameUpdate = function()
+            ItemRackOptList1Label:SetFont('native-heading', 12); ItemRackOptList1Label:SetTextColor(1, 0.82, 0)
+            ItemRackOptList1Underline:SetAlpha(1)
+            ItemRackOptList1Underline:SetTexture('native-gradient')
+            ItemRackOptList3CheckText:SetTextColor(0.5, 0.5, 0.5)
+            number:ClearAllPoints(); number:SetPoint('LEFT', ItemRackOptList2NumberLabel, 'RIGHT', 16, -1)
+            return 'config-native', nil, 4
+        end,
+        SetsIconScrollFrameUpdate = function()
+            if not ItemRackOptSetsIcon2 then SetIcon(2) end
+            gridIcon.highlight.shown = false; ItemRackOptSetsIcon2.highlight.shown = true
+            return 'icons-native', nil, 2
+        end,
+        PickSetOnShow = function() return 'show-sets-native' end,
+        SetListScrollFrameUpdate = function() return 'sets-native' end,
+        ToggleQuickAccessMenuSidePick = function()
+            if not ItemRackOptQuickAccessMenuSidePick then
+                local picker = frame('Frame', 'ItemRackOptQuickAccessMenuSidePick', drop)
+                picker:SetBackdrop({edgeFile = 'native-border'})
+                local choice = frame('Button', 'ItemRackOptQuickAccessMenuSidePick1', picker)
+                choice.label = choice:CreateFontString(nil, nil, 'native'); choice.action = function() return 'pick-native' end
+            end
+            return 'picker-native'
+        end,
+        SortListScrollFrameUpdate = function() ItemRackOptSortList1Highlight:SetColorTexture(0.8, 0.7, 0.5, 1); return 'rows-native' end}
+    modules.ItemRack.install(S, modules.ItemRack); flush()
+    local inputFill, setNameFill, euiArrow = number.fixtureInput, setName.fixtureInput, drop.fixtureArrow
+    assert(root.shellOptions.noAccent and not root.accent, 'window-wide accent bar was attached')
+    assert(root.shellOptions.noTopBar and not root.shellOptions.bottomBar and not config.panel and not sets.panel
+        and root.fixtureBackdrop.alpha == 1 and ItemRackOptTab4.fixturePlate.alpha == 0,
+        'window backdrop retained header/footer/centre/idle-tab blocks')
+    assert(tabLabels[ItemRackOptTab4].textColor[1] == accent and tabLabels[ItemRackOptTab1].textColor[1] == accent * 0.65)
+    assert(ItemRackOptTab4.label.alpha == 0, 'native tab label became visible behind EUI label')
+    ItemRackOptTab4.label:SetTextColor(1, 1, 1, 1); ItemRackOptTab4.label:SetAlpha(1)
+    assert(ItemRackOptTab4.label.alpha == 0, 'native tab repaint exposed a second label')
+    assert(ItemRackOpt.TabOnClick(nil, 2) == 'tab-native')
+    assert(ItemRackOptTab2.selected and not ItemRackOptTab4.selected and tabLabels[ItemRackOptTab2].textColor[1] == accent
+        and tabLabels[ItemRackOptTab4].textColor[1] == accent * 0.65)
+    tabLabels[ItemRackOptTab2]:SetTextColor(1, 1, 1, 0.5)
+    assert(tabLabels[ItemRackOptTab2].textColor[1] == accent, 'EUI tab repaint reset the accent tint')
+    assert(not sets.panel and sets.gradient.alpha == 0 and sets.gradient.path == nil and sets.backdrop == nil and artwork.alpha == 1)
+    assert(ItemRackOptSetsDropTextureLeft.alpha == 0 and choose.glyph == 'v' and choose.action() == 'choose-set')
+    assert(slot.normal.alpha == 0 and ItemRackOptInv7Icon.crop and not slot.checkbox and slot.checked and slot.action() == 'select-equipment')
+    assert(check.checkbox and check.checkOptions.borderInset == 4 and check.checked and tristate.checkOptions.stockCheck)
+    assert(horizontal.backdrop == nil and hthumb.width == 8 and hthumb.height == 12
+        and horizontal.value == 1 and horizontal.range[2] == 2 and horizontal.hooks.OnValueChanged() == 'scale-native')
+    assert(move.glyph == '^' and move.action() == 'move-native')
+    assert(gradient.alpha == 0 and drop.dropdown and arrow.nativeArt.alpha == 0 and arrow.action() == 'arrow-native')
+    assert(gradient.path == nil and ItemRackOptList1Underline.path == nil)
+    assert(euiArrow.path:find('eui%-arrow%-left') and euiArrow.width == 9 and euiArrow.color[1] == 0.75
+        and euiArrow.rotation == math.pi / 2 and ItemRackOptQuickAccessMenuSideText.points[2][4] == -22,
+        'dropdown retained its gold arrow or failed to reserve label clearance')
+    assert(tick.desaturated and tick.color[1] == accent and ItemRackOptList3CheckButton.checked
+        and tick.points[1][4] == 4 and tick.points[2][4] == -4
+        and not triCheck.desaturated and triCheck.color[1] == 0.5, 'checkbox treatment changed native tristate semantics')
+    assert(anonymous.panel and anonymous.backdrop == nil and anonymousGradient.alpha == 0 and anonymousGradient.path == nil,
+        'unnamed saved-set container retained its native gradient/border')
+    assert(unrelatedArt.path == 'native' and unrelatedArt.alpha == 1, 'cleanup reached an unrelated unnamed frame')
+    assert(ItemRackOptSetList1Icon.path == 'set-art' and setLabel.textColor[1] == 0.7
+        and ItemRackOptSetList1Highlight.color[4] == 0.13 and not ItemRackOptSetList1Highlight.shown
+        and setRow.action() == 'select-set-native' and pickerClose.close and pickerClose.action() == 'close-native')
+    assert(grid.panel and grid.backdrop == nil and gridGradient.path == nil and gridIcon.highlight.color[4] == 0.13
+        and gridIcon.highlight.blendMode == 'BLEND' and gridIcon.highlight.shown and gridIcon.action() == 'set-icon-native'
+        and gridIcon.highlight.gradient[2] == 1 and gridIcon.highlight.gradient[9] == 1)
+    assert(preview.width == 30 and preview.height == 30 and ItemRackOptSetsCurrentSetIcon.path == 'preview-art')
+    assert(setName.input and setName.font == 'eui' and setName.fontSize == 11 and setName.text == 'Saved set'
+        and setNameFill.color[1] == 0.055 and setName.textInsets[1] == 4 and setName.hooks.OnTextChanged() == 'validate-native')
+    local a, b, c = ItemRackOpt.SetsIconScrollFrameUpdate(); assert(a == 'icons-native' and b == nil and c == 2)
+    assert(not gridIcon.highlight.shown and ItemRackOptSetsIcon2.highlight.color[4] == 0.13
+        and ItemRackOptSetsIcon2.highlight.shown, 'dynamic icon selection lost its styling/native visibility')
+    assert(ItemRackOpt.PickSetOnShow() == 'show-sets-native')
+    local iconRegions, chooserRegions = #gridIcon.regions, #anonymous.regions
+    auditScans[root] = 0
+    for _ = 1, 50 do ItemRackOpt.SetsIconScrollFrameUpdate(); assert(ItemRackOpt.SetListScrollFrameUpdate() == 'sets-native') end
+    assert(auditScans[root] == 0 and #gridIcon.regions == iconRegions and #anonymous.regions == chooserRegions,
+        'set icon/list updates allocated controls or scanned the full options window')
+    gridGradient:SetTexture('native-gradient'); anonymousGradient:SetTexture('native-gradient')
+    anonymous:SetBackdrop({edgeFile = 'restored-native-border'})
+    modules.ItemRack.refresh(); flush()
+    assert(gridGradient.path == nil and anonymousGradient.path == nil and anonymous.backdrop == nil,
+        'native repaint restored a gradient or the saved-set border')
+    local oldCreateColor, colorCalls = CreateColor, 0
+    CreateColor = function(...) colorCalls = colorCalls + 1; return {...} end
+    gridIcon.highlight.SetGradientAlpha = false
+    gridIcon.highlight.SetGradient = function(self, direction, first, last) self.modernGradient = {direction, first, last} end
+    for _ = 1, 10 do ItemRackOpt.SetsIconScrollFrameUpdate() end
+    assert(colorCalls == 1 and gridIcon.highlight.modernGradient[2] == gridIcon.highlight.modernGradient[3],
+        'modern gradient reset allocated colours repeatedly or used different endpoints')
+    CreateColor = oldCreateColor
+    combat = true; gridIcon.highlight:SetTexture('combat-native-highlight'); ItemRackOpt.SetsIconScrollFrameUpdate()
+    assert(gridIcon.highlight.path == 'combat-native-highlight')
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(gridIcon.highlight.path == 'solid')
+    enabled = false; gridIcon.highlight:SetTexture('disabled-native-highlight'); ItemRackOpt.SetsIconScrollFrameUpdate()
+    assert(gridIcon.highlight.path == 'disabled-native-highlight')
+    enabled = true; modules.ItemRack.refresh(); flush()
+    assert(ItemRackOptList1Label.font == 'eui' and ItemRackOptList1Label.fontSize == 11
+        and ItemRackOptList1Label.textColor[1] == 0.78 and ItemRackOptList1Underline.alpha == 0)
+    assert(ItemRackOptList3CheckText.width == 132 and ItemRackOptList3CheckButton.width == 20)
+    assert(number.input and number.font == 'eui' and number.fontSize == 10 and number.justify == 'CENTER'
+        and number.text == '0.85' and number.hooks.OnEnterPressed() == 'number-native')
+    assert(inputFill.color[1] == 0.055 and inputFill.color[4] == 0.9)
+    assert(not number.inputOptions.padInput and number.justifyV == 'MIDDLE'
+        and number.textInsets[1] == 2 and number.textInsets[2] == 2, 'numeric field inherited asymmetric popup padding')
+    assert(number.points[1][1] == 'RIGHT' and number.points[1][2] == configRows[2])
+    assert(scaleThumb.width == 8 and scaleThumb.height == 12 and scale.range[2] == 2 and scale.value == 0.85)
+    assert(ItemRackOptMenuScaleSliderMin.fontSize == 9 and ItemRackOptMenuScaleSliderMax.fontSize == 9)
+    auditScans[root] = 0
+    local settingsHook, regions = ItemRackOpt.ListScrollFrameUpdate, #scale.regions
+    for _ = 1, 50 do
+        local a, b, c = ItemRackOpt.ListScrollFrameUpdate(); assert(a == 'config-native' and b == nil and c == 4)
+    end
+    assert(auditScans[root] == 0 and #scale.regions == regions and ItemRackOpt.ListScrollFrameUpdate == settingsHook,
+        'Config row refresh scanned the full window or duplicated objects/hooks')
+    assert(ItemRackOptList1Label.font == 'eui' and ItemRackOptList1Label.textColor[1] == 0.78
+        and ItemRackOptList3CheckText.textColor[1] == 0.5 and ItemRackOptList1Underline.alpha == 0,
+        'Config redraw lost heading styling or native disabled-label colour')
+    local oldOffset, oldScroll = FauxScrollFrame_GetOffset, ItemRackOptListScrollFrame
+    ItemRackOptListScrollFrame = frame('ScrollFrame')
+    FauxScrollFrame_GetOffset = function() return 1 end
+    ItemRackOpt.ListScrollFrameUpdate()
+    assert(number.points[1][2] == configRows[1], 'recycled number field stayed anchored to its previous row')
+    FauxScrollFrame_GetOffset, ItemRackOptListScrollFrame = oldOffset, oldScroll
+    ItemRackOpt.ListScrollFrameUpdate(); assert(number.points[1][2] == configRows[2])
+    assert(ItemRackOpt.ToggleQuickAccessMenuSidePick() == 'picker-native')
+    assert(ItemRackOptQuickAccessMenuSidePick.panel and ItemRackOptQuickAccessMenuSidePick.backdrop == nil
+        and ItemRackOptQuickAccessMenuSidePick1.button and ItemRackOptQuickAccessMenuSidePick1.action() == 'pick-native')
+    combat = true; ItemRackOpt.ListScrollFrameUpdate(); assert(ItemRackOptList1Label.font == 'native-heading')
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(ItemRackOptList1Label.font == 'eui')
+    enabled = false; ItemRackOpt.ListScrollFrameUpdate(); assert(ItemRackOptList1Label.font == 'native-heading')
+    enabled = true; modules.ItemRack.refresh(); flush()
+    assert(menu.panel and not item.checkbox and item.normal.alpha == 0 and item.action() == 'equip-native')
+    assert(not secure.normal.alpha or secure.normal.alpha == 1); assert(secure.attributes.macro == 'equip')
+    local a, b, c = ItemRack.BuildMenu(); assert(a == 'menu-native' and b == nil and c == 7)
+    assert(ItemRackMenu3.normal.alpha == 0, 'new hover item missed completed-menu styling')
+    auditScans[root] = 0
+    for _ = 1, 100 do assert(ItemRackOpt.SortListScrollFrameUpdate() == 'rows-native') end
+    assert((auditScans[root] or 0) == 0 and label.textColor[3] == 0.87 and row.action() == 'queue-selection')
+    assert(ItemRackOptSortList1Highlight.color[4] == 0.13 and ItemRackOptSortList1Highlight.shown)
+    local objects, hook = #vertical.regions, ItemRackOpt.SortListScrollFrameUpdate
+    for _ = 1, 10 do modules.ItemRack.refresh(); flush() end
+    assert(#vertical.regions == objects and ItemRackOpt.SortListScrollFrameUpdate == hook)
+    local strip = vertical.regions[#vertical.regions]
+    assert(strip.width == 4 and strip.alpha == 1 and vthumb.alpha == 0, 'scroll strip disappeared on refresh')
+    combat = true; ItemRackOpt.SortListScrollFrameUpdate(); assert(ItemRackOptSortList1Highlight.color[4] == 1)
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(ItemRackOptSortList1Highlight.color[4] == 0.13)
+    enabled = false; ItemRackOpt.SortListScrollFrameUpdate(); assert(ItemRackOptSortList1Highlight.color[4] == 1)
+    enabled = true
+    -- EditBox formatting can dispatch OnTextChanged without a user edit. The
+    -- set-name handler validates buttons and resets spec ticks; a repaint must
+    -- not re-enter it after a click or between mouse-down and mouse-up.
+    local validations, saves, deletes, bindings = 0, 0, 0, 0
+    local save = frame('Button', 'ItemRackOptSetsSaveButton', sets)
+    save.label = save:CreateFontString(nil, nil, 'native')
+    local bind = frame('Button', 'ItemRackOptSetsBindButton', sets)
+    bind.label = bind:CreateFontString(nil, nil, 'native')
+    local delete = frame('Button', 'ItemRackOptSetsDeleteButton', sets)
+    delete.label = delete:CreateFontString(nil, nil, 'native')
+    local spec = frame('CheckButton', 'ItemRackOptSpec1', sets)
+    local secondary = frame('CheckButton', 'ItemRackOptSpec2', sets)
+    local saved, selected, dirty = {}, true, false
+    setName.GetText = function(self) return self.text end
+    setName.hooks.OnTextChanged = function()
+        validations = validations + 1
+        spec:SetChecked(false); secondary:SetChecked(false)
+        save:Disable(); bind:Disable(); delete:Disable()
+        if setName.text ~= '' and selected then save:Enable() end
+        if saved[setName.text] then
+            bind:Enable(); delete:Enable()
+            if not dirty then spec:SetChecked(saved[setName.text].spec == 1) end
+        end
+    end
+    setName.SetText = function(self, text) self.text = text; self.hooks.OnTextChanged(self) end
+    local editFont, editInsets = setName.SetFont, setName.SetTextInsets
+    setName.SetFont = function(self, ...)
+        editFont(self, ...); self.hooks.OnTextChanged(self)
+    end
+    setName.SetTextInsets = function(self, ...)
+        editInsets(self, ...); self.hooks.OnTextChanged(self)
+    end
+    local internalText = setName:CreateFontString(nil, nil, 'native')
+    internalText.SetFont = function(self, ...)
+        editFont(self, ...); setName.hooks.OnTextChanged(setName)
+    end
+    spec.hooks.OnClick = function()
+        secondary:SetChecked(false); dirty = true; save:Enable()
+    end
+    save.hooks.OnClick = function()
+        saved[setName.text] = {spec = spec:GetChecked() and 1 or nil, selected = selected}
+        saves = saves + 1; dirty = false; setName.hooks.OnTextChanged(setName)
+    end
+    bind.hooks.OnClick = function() bindings = bindings + 1 end
+    delete.hooks.OnClick = function() saved[setName.text] = nil; deletes = deletes + 1; setName.hooks.OnTextChanged(setName) end
+    local function Click(button)
+        assert(button:IsEnabled(), 'native control was disabled')
+        if button.kind == 'CheckButton' then button:SetChecked(not button:GetChecked()) end
+        button.hooks.OnClick(button); flush()
+    end
+    modules.ItemRack.refresh(); flush() -- first-time native control discovery
+    setName:SetText('New rogue set')
+    local before = validations
+    for _ = 1, 20 do modules.ItemRack.refresh(); flush() end
+    assert(validations == before and save:IsEnabled(), 'skin repaint re-entered set validation')
+    Click(spec)
+    before = validations
+    for _ = 1, 20 do modules.ItemRack.refresh(); flush() end
+    assert(validations == before and spec:GetChecked() and dirty, 'skin reset the unsaved Rogue/spec selection')
+    Click(save)
+    assert(saves == 1 and saved['New rogue set'].spec == 1 and saved['New rogue set'].selected)
+    Click(bind); assert(bindings == 1)
+    setName:SetText('Second set'); Click(save); assert(saves == 2 and saved['Second set'])
+    setName:SetText('New rogue set'); assert(spec:GetChecked(), 'saved-set selection lost specialization')
+    Click(delete); assert(deletes == 1 and not saved['New rogue set'] and saved['Second set'])
+    assert(not bind:IsEnabled() and not delete:IsEnabled(), 'skin enabled native unavailable actions')
+    selected = false; setName:SetText('No items'); assert(not save:IsEnabled())
+    before = validations; modules.ItemRack.refresh(); flush()
+    assert(validations == before and not save:IsEnabled(), 'skin changed native empty-set validation')
+    local scriptInput = frame('EditBox', 'ItemRackOptEventEditScriptEditBox', root)
+    scriptInput.GetFont, scriptInput.SetFont = number.GetFont, number.SetFont
+    scriptInput.GetTextColor, scriptInput.SetTextColor = number.GetTextColor, number.SetTextColor
+    scriptInput.font, scriptInput.fontSize, scriptInput.text = 'native', 13, 'return true'
+    scriptInput.IsMultiLine = function() return true end
+    scriptInput:SetPoint('LEFT', root, 'LEFT', 10, 0)
+    scriptInput.hooks.OnTextChanged = function() return 'script-native' end
+    modules.ItemRack.refresh(); flush()
+    local nameWrites, numberWrites, scriptWrites = setName.fontWrites, number.fontWrites, scriptInput.fontWrites
+    for _ = 1, 20 do modules.ItemRack.refresh(); flush() end
+    assert(setName.fontWrites == nameWrites and number.fontWrites == numberWrites and scriptInput.fontWrites == scriptWrites,
+        'warm refresh rewrote a native editing field font')
+    assert(not scriptInput.inputOptions.padInput and scriptInput.fontSize == 13 and scriptInput.text == 'return true'
+        and scriptInput.points[1][4] == 10 and scriptInput.hooks.OnTextChanged() == 'script-native',
+        'event script styling changed native text, geometry or callbacks')
+    -- Detached secure equipment buttons get cosmetics only, outside combat.
+    local oldQuality, oldInventoryQuality = GetItemQualityColor, GetInventoryItemQuality
+    GetItemQualityColor = function(q) if q == 3 then return 0, 0.44, 0.87 else return 0.12, 1, 0 end end
+    local equippedQuality = 3
+    GetInventoryItemQuality = function(_, id) if id == 7 then return equippedQuality end end
+    ItemRackUser = {Locked = 'ON', Sets = {}}
+    ItemRack.Menu = {101, 0}
+    ItemRack.GetInfoByID = function(id) return 'item', 'item-art', 'INVTYPE_LEGS', id == 101 and 3 or 2 end
+    ItemRackOpt.Inv = {[7] = {id = 101, selected = 1}}
+    local detached = frame('CheckButton', 'ItemRackButton7'); detached.protected = true
+    ItemRackButton7Icon = detached:CreateTexture(); detached.normal = detached:CreateTexture()
+    detached.attributes = {type = 'item', slot = 7}; detached.checked = true
+    detached.hooks.PostClick = function() return 'secure-action' end
+    detached.SetAttribute = function() error('skin changed secure attributes') end
+    local empty = frame('CheckButton', 'ItemRackButton8'); empty.protected = true
+    ItemRackButton8Icon = empty:CreateTexture(); ItemRackButton8Icon.path = 'empty-slot-art'; empty.normal = empty:CreateTexture()
+    for _, key in ipairs({'Lock', 'Queue', 'Options', 'Close'}) do
+        local control = frame('Button', 'ItemRackButtonMenu' .. key, menu)
+        control.action = function() return 'control-native' end
+    end
+    ItemRack.UpdateButtons = function() return 'buttons-native' end
+    ItemRack.ReflectLock = function() return 'lock-native' end
+    modules.ItemRack.refresh(); flush()
+    local function Edges(button)
+        local edges = {}
+        for _, r in ipairs(button.regions) do if r.width == 1 or r.height == 1 then edges[#edges + 1] = r end end
+        return edges
+    end
+    local edges = Edges(detached)
+    assert(#edges == 4 and edges[1].color[3] == 0.87 and detached.normal.alpha == 0)
+    assert(ItemRackButton7Icon.crop and detached.attributes.type == 'item' and detached.attributes.slot == 7
+        and detached.checked and detached.hooks.PostClick() == 'secure-action', 'detached skin changed an equipment action/state')
+    assert(Edges(empty)[1].color[1] == 0.35 and ItemRackButton8Icon.path == 'empty-slot-art', 'empty slot lost its native artwork/neutral border')
+    assert(Edges(slot)[1].color[3] == 0.87 and Edges(item)[1].color[3] == 0.87, 'rarity styling differs between options and menus')
+    local marker
+    for _, r in ipairs(slot.regions) do if r.width == 4 and r.height == 4 then marker = r end end
+    assert(not marker, 'redundant set-selection square was recreated')
+    ItemRackOpt.Inv[7].selected = false; ItemRackOptInv7Icon:SetVertexColor(0.25, 0.25, 0.25)
+    modules.ItemRack.refresh(); flush()
+    assert(ItemRackOptInv7Icon.color[1] == 0.25 and Edges(slot)[1].color[3] == 0.87,
+        'removing selection markers changed native fading or the rarity border')
+    local lockIcon = ItemRackButtonMenuLock.regions[#ItemRackButtonMenuLock.regions]
+    assert(lockIcon.path:find('eui%-lock%-locked') and ItemRackButtonMenuClose.glyph == 'X'
+        and ItemRackButtonMenuQueue.action() == 'control-native')
+    local settingsIcon = ItemRackButtonMenuOptions.regions[#ItemRackButtonMenuOptions.regions]
+    assert(lockIcon.color[1] == accent and settingsIcon.color[1] == accent
+        and ItemRackButtonMenuQueue.fixtureGlyph.textColor[1] == accent and ItemRackButtonMenuClose.fixtureGlyph.textColor[1] == accent)
+    local oldAccent = accent; accent = 0.3; modules.ItemRack.refresh(); flush()
+    assert(lockIcon.color[1] == 0.3 and settingsIcon.color[1] == 0.3 and tabLabels[ItemRackOptTab2].textColor[1] == 0.3
+        and ItemRackButtonMenuQueue.fixtureGlyph.textColor[1] == 0.3 and Edges(slot)[1].color[3] == 0.87,
+        'theme update missed control accents or tinted equipment rarity')
+    accent = oldAccent; modules.ItemRack.refresh(); flush()
+    local tintHook = tabLabels[ItemRackOptTab2].SetTextColor
+    for _ = 1, 10 do modules.ItemRack.refresh(); flush() end
+    assert(tabLabels[ItemRackOptTab2].SetTextColor == tintHook)
+    enabled = false; tabLabels[ItemRackOptTab2]:SetTextColor(1, 1, 1, 1)
+    assert(tabLabels[ItemRackOptTab2].textColor[1] == 1)
+    enabled = true; combat = true; tabLabels[ItemRackOptTab2]:SetTextColor(1, 1, 1, 1); flush()
+    assert(tabLabels[ItemRackOptTab2].textColor[1] == 1)
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(tabLabels[ItemRackOptTab2].textColor[1] == accent)
+    ItemRackUser.Locked = 'OFF'; assert(ItemRack.ReflectLock() == 'lock-native' and lockIcon.path:find('eui%-lock%-unlocked'))
+    menu.protected = true; modules.ItemRack.refresh(); flush()
+    assert(Edges(secure)[1].color[1] == 0.35 and secure.attributes.macro == 'equip', 'secure-parent hover menu lost cosmetics or its action')
+    local total = #detached.regions; local lockedHook = ItemRack.ReflectLock
+    auditScans[root] = 0
+    for _ = 1, 20 do ItemRack.UpdateButtons() end
+    assert(#detached.regions == total and ItemRack.ReflectLock == lockedHook and auditScans[root] == 0,
+        'detached styling duplicated regions/hooks or scanned options')
+    combat = true; equippedQuality = 2; detached.normal:SetAlpha(1)
+    assert(ItemRack.UpdateButtons() == 'buttons-native' and detached.normal.alpha == 1 and edges[1].color[3] == 0.87,
+        'protected cosmetics changed during combat')
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(detached.normal.alpha == 0 and edges[1].color[2] == 1)
+    enabled = false; detached.normal:SetAlpha(1); ItemRack.UpdateButtons(); assert(detached.normal.alpha == 1)
+    enabled = true
+    -- Universal uses ItemRackIcon names and modern item-colour APIs.
+    local oldCItem, oldColors = C_Item, ITEM_QUALITY_COLORS
+    local universal = frame('CheckButton', 'ItemRackButton9'); universal.protected = true
+    ItemRackButton9ItemRackIcon = universal:CreateTexture()
+    universal.icon = ItemRackButton9ItemRackIcon; universal.Icon = universal.icon
+    universal.normal = universal:CreateTexture()
+    universal.attributes = {type = 'item', slot = 9}
+    universal.SetAttribute = function() error('Universal secure attributes changed') end
+    GetInventoryItemQuality = function(_, id) if id == 9 then return 3 elseif id == 7 then return equippedQuality end end
+    GetItemQualityColor = nil
+    C_Item = {GetItemQualityColor = function(q) if q == 3 then return 0, 0.44, 0.87 end return 0.12, 1, 0 end}
+    ItemRack.RefreshCustomItemIcons = function() return 'custom-native' end
+    modules.ItemRack.refresh(); flush()
+    assert(universal.icon.crop and universal.normal.alpha == 0 and #Edges(universal) == 4,
+        'Universal detached icon retained vanilla styling')
+    assert(Edges(universal)[1].color[3] == 0.87 and Edges(slot)[1].color[3] == 0.87,
+        'modern-only colour API produced grey rarity borders')
+    assert(Edges(empty)[1].color[1] == 0.35 and universal.attributes.slot == 9)
+    local universalTotal = #universal.regions
+    ItemRackButton9ItemRackIcon = nil -- Also support the addon-owned icon field.
+    auditScans[root] = 0
+    for _ = 1, 20 do assert(ItemRack.RefreshCustomItemIcons() == 'custom-native') end
+    assert(#universal.regions == universalTotal and auditScans[root] == 0)
+    C_Item = nil; ITEM_QUALITY_COLORS = {[3] = {r = 0, g = 0.44, b = 0.87}, [0] = {r = 0.62, g = 0.62, b = 0.62}}
+    ItemRack.UpdateButtons()
+    assert(Edges(universal)[1].color[3] == 0.87, 'quality colour table fallback failed')
+    GetInventoryItemQuality = nil
+    local oldGetID = ItemRack.GetID
+    ItemRack.GetID = function(id) return id == 9 and 101 or 0 end
+    ItemRack.UpdateButtons(); assert(Edges(universal)[1].color[3] == 0.87, 'inventory ID quality fallback failed')
+    GetInventoryItemQuality = function() return 0 end
+    ItemRack.UpdateButtons(); assert(Edges(universal)[1].color[1] == 0.62, 'poor quality was treated as an empty slot')
+    combat = true; universal.normal:SetAlpha(1); ItemRack.RefreshCustomItemIcons()
+    assert(universal.normal.alpha == 1, 'custom-icon hook changed protected cosmetics in combat')
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(universal.normal.alpha == 0)
+    enabled = false; universal.normal:SetAlpha(1); ItemRack.RefreshCustomItemIcons(); assert(universal.normal.alpha == 1)
+    enabled = true
+    C_Item, ITEM_QUALITY_COLORS, ItemRack.GetID = oldCItem, oldColors, oldGetID
+    GetItemQualityColor, GetInventoryItemQuality = oldQuality, oldInventoryQuality
+    S.Checkbox, S.Inset, S.GetFFD, S.PageButton = checkbox, inset, getFFD, pageButton
+    S.Tab, S.SetTabSelection, S.Dropdown, S.EditBox, S.Shell, S.GetFont = tabPrimitive, tabSelection, dropdownPrimitive, inputPrimitive, shellPrimitive, getFont
 end
 
 assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)

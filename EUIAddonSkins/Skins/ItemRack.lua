@@ -21,6 +21,27 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         if not C.Clear then
             local H, S = C.H, C.S
             local cleared, icons, borders, controls = {}, {}, {}, {}
+            C.GetQualityColor = function(quality)
+                if quality == nil or quality == false then return 0.35, 0.35, 0.35 end
+                local getter = type(GetItemQualityColor) == "function" and GetItemQualityColor
+                    or (_G.C_Item and C_Item.GetItemQualityColor)
+                if type(getter) == "function" then
+                    local r, g, b = getter(quality)
+                    if r ~= nil and g ~= nil and b ~= nil then return r, g, b end
+                end
+                local color = _G.ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality]
+                if color and color.r ~= nil and color.g ~= nil and color.b ~= nil then return color.r, color.g, color.b end
+                return 0.35, 0.35, 0.35
+            end
+            C.ButtonIcon = function(f, name)
+                return _G[name .. "ItemRackIcon"] or _G[name .. "Icon"] or f.icon or f.Icon
+            end
+            C.InventoryQuality = function(slot)
+                if slot >= 20 then return end
+                if GetInventoryItemQuality then return GetInventoryItemQuality("player", slot) end
+                local rack = _G.ItemRack
+                if rack and type(rack.GetID) == "function" then return C.ItemQuality(rack.GetID(slot)) end
+            end
             C.ItemQuality = function(id)
                 local rack = _G.ItemRack
                 if not id or id == 0 or id == "MENU" or (_G.ItemRackUser and ItemRackUser.Sets and ItemRackUser.Sets[id]) then return end
@@ -46,8 +67,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                         entry[#entry + 1] = edge
                     end
                 end
-                local r, g, b = 0.35, 0.35, 0.35
-                if quality and GetItemQualityColor then r, g, b = GetItemQualityColor(quality) end
+                local r, g, b = C.GetQualityColor(quality)
                 for _, edge in ipairs(entry) do edge:SetColorTexture(r, g, b, 1) end
                 if selected ~= nil then
                     if not entry.marker then
@@ -64,14 +84,15 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                 -- Exact addon-owned secure buttons only. No attributes, native
                 -- scripts, frame anchors, state drivers or visibility changes.
                 for slot = 0, 20 do
-                    local f, icon = _G["ItemRackButton" .. slot], _G["ItemRackButton" .. slot .. "Icon"]
+                    local name = "ItemRackButton" .. slot
+                    local f = _G[name]
+                    local icon = f and C.ButtonIcon(f, name)
                     if f and icon and not (f.IsForbidden and f:IsForbidden())
                         and not (icon.IsForbidden and icon:IsForbidden()) and type(icon.SetTexCoord) == "function" then
                         S.SquareIcon(icon)
                         local normal = f.GetNormalTexture and f:GetNormalTexture()
                         if normal and normal ~= icon then normal:SetAlpha(0) end
-                        local quality = slot < 20 and GetInventoryItemQuality and GetInventoryItemQuality("player", slot)
-                        C.QualityBorder(f, icon, quality)
+                        C.QualityBorder(f, icon, C.InventoryQuality(slot))
                     end
                 end
                 local menu = _G.ItemRackMenuFrame
@@ -80,7 +101,9 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                     if menu.SetBackdrop then menu:SetBackdrop(nil) end
                 end
                 for index, id in ipairs(_G.ItemRack and ItemRack.Menu or {}) do
-                    local f, icon = _G["ItemRackMenu" .. index], _G["ItemRackMenu" .. index .. "Icon"]
+                    local name = "ItemRackMenu" .. index
+                    local f = _G[name]
+                    local icon = f and C.ButtonIcon(f, name)
                     if f and icon and not (f.IsForbidden and f:IsForbidden())
                         and not (icon.IsForbidden and icon:IsForbidden()) then
                         S.SquareIcon(icon)
@@ -146,7 +169,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                 if slot then
                     local data = _G.ItemRackOpt and ItemRackOpt.Inv and ItemRackOpt.Inv[slot]
                     local quality = data and C.ItemQuality(data.id)
-                    if not data and GetInventoryItemQuality then quality = GetInventoryItemQuality("player", slot) end
+                    if not data then quality = C.InventoryQuality(slot) end
                     C.QualityBorder(f, icon, quality, data and data.selected and true or false)
                 elseif menuIndex then
                     C.QualityBorder(f, icon, C.ItemQuality(_G.ItemRack and ItemRack.Menu and ItemRack.Menu[menuIndex]))
@@ -190,7 +213,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         C.H.Hook(_G.ItemRack, "ToggleOptions", refresh)
         C.H.Hook(_G.ItemRack, "SlashHandler", refresh)
         C.H.Hook(_G.ItemRack, "BuildMenu", C.Menu)
-        for _, method in ipairs({"InitButtons", "UpdateButtons", "ConstructLayout", "ReflectLock", "AddButton", "ReflectMainScale"}) do
+        for _, method in ipairs({"InitButtons", "UpdateButtons", "ConstructLayout", "ReflectLock", "AddButton", "ReflectMainScale", "RefreshCustomItemIcons"}) do
             C.H.Hook(_G.ItemRack, method, C.Detached)
         end
         C.Detached()

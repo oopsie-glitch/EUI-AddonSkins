@@ -479,6 +479,46 @@ do
     flush(); assert(detached.normal.alpha == 0 and edges[1].color[2] == 1)
     enabled = false; detached.normal:SetAlpha(1); ItemRack.UpdateButtons(); assert(detached.normal.alpha == 1)
     enabled = true
+    -- Universal uses ItemRackIcon names and modern item-colour APIs.
+    local oldCItem, oldColors = C_Item, ITEM_QUALITY_COLORS
+    local universal = frame('CheckButton', 'ItemRackButton9'); universal.protected = true
+    ItemRackButton9ItemRackIcon = universal:CreateTexture()
+    universal.icon = ItemRackButton9ItemRackIcon; universal.Icon = universal.icon
+    universal.normal = universal:CreateTexture()
+    universal.attributes = {type = 'item', slot = 9}
+    universal.SetAttribute = function() error('Universal secure attributes changed') end
+    GetInventoryItemQuality = function(_, id) if id == 9 then return 3 elseif id == 7 then return equippedQuality end end
+    GetItemQualityColor = nil
+    C_Item = {GetItemQualityColor = function(q) if q == 3 then return 0, 0.44, 0.87 end return 0.12, 1, 0 end}
+    ItemRack.RefreshCustomItemIcons = function() return 'custom-native' end
+    modules.ItemRack.refresh(); flush()
+    assert(universal.icon.crop and universal.normal.alpha == 0 and #Edges(universal) == 4,
+        'Universal detached icon retained vanilla styling')
+    assert(Edges(universal)[1].color[3] == 0.87 and Edges(slot)[1].color[3] == 0.87,
+        'modern-only colour API produced grey rarity borders')
+    assert(Edges(empty)[1].color[1] == 0.35 and universal.attributes.slot == 9)
+    local universalTotal = #universal.regions
+    ItemRackButton9ItemRackIcon = nil -- Also support the addon-owned icon field.
+    auditScans[root] = 0
+    for _ = 1, 20 do assert(ItemRack.RefreshCustomItemIcons() == 'custom-native') end
+    assert(#universal.regions == universalTotal and auditScans[root] == 0)
+    C_Item = nil; ITEM_QUALITY_COLORS = {[3] = {r = 0, g = 0.44, b = 0.87}, [0] = {r = 0.62, g = 0.62, b = 0.62}}
+    ItemRack.UpdateButtons()
+    assert(Edges(universal)[1].color[3] == 0.87, 'quality colour table fallback failed')
+    GetInventoryItemQuality = nil
+    local oldGetID = ItemRack.GetID
+    ItemRack.GetID = function(id) return id == 9 and 101 or 0 end
+    ItemRack.UpdateButtons(); assert(Edges(universal)[1].color[3] == 0.87, 'inventory ID quality fallback failed')
+    GetInventoryItemQuality = function() return 0 end
+    ItemRack.UpdateButtons(); assert(Edges(universal)[1].color[1] == 0.62, 'poor quality was treated as an empty slot')
+    combat = true; universal.normal:SetAlpha(1); ItemRack.RefreshCustomItemIcons()
+    assert(universal.normal.alpha == 1, 'custom-icon hook changed protected cosmetics in combat')
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(universal.normal.alpha == 0)
+    enabled = false; universal.normal:SetAlpha(1); ItemRack.RefreshCustomItemIcons(); assert(universal.normal.alpha == 1)
+    enabled = true
+    C_Item, ITEM_QUALITY_COLORS, ItemRack.GetID = oldCItem, oldColors, oldGetID
     GetItemQualityColor, GetInventoryItemQuality = oldQuality, oldInventoryQuality
     S.Checkbox, S.Inset = checkbox, inset
 end

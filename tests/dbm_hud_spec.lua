@@ -2,6 +2,8 @@
 local timers, modules, frames, looks, errors = {}, {}, {}, {}, {}
 local enabled, combat, accent, secret = true, false, 0.2, false
 local created, hooks, fontWrites, childReads = 0, 0, 0, 0
+local gradientMode = 'modern'
+CreateColor = function(r, g, b, a) return {r = r, g = g, b = b, a = a} end
 DBM_GUI, DBM_GUI_OptionsFrame, DBM_GUI_OptionsFrameList, DBM_GUI_DropDown, DBT = nil, nil, nil, nil, nil
 DBM = {}
 InCombatLockdown = function() return combat end
@@ -53,6 +55,11 @@ local function object(kind, name, parent)
     function o:GetTexture() return self.path end
     function o:SetTexture(v) self.path = v end
     function o:SetBlendMode(v) self.blend = v end
+    if gradientMode == 'modern' then
+        function o:SetGradient(direction, bottom, top) self.gradient = {direction, bottom, top} end
+    elseif gradientMode == 'legacy' then
+        function o:SetGradientAlpha(...) self.gradientAlpha = {...} end
+    end
     function o:SetColorTexture(...) self.fillColor = {...} end
     function o:GetVertexColor() return table.unpack(self.color) end
     function o:SetVertexColor(...) self.color = {...} end
@@ -168,17 +175,22 @@ assert(_G[f.name .. 'BarIcon1'].crop and _G[f.name .. 'BarIcon1'].path == 136116
 assert(f.children[#f.children - 1].regions[1].fillColor[1] == accent, 'spell icon edge should follow accent')
 assert(_G[f.name .. 'BarBackground'].fillColor[1] == 0.16 and _G[f.name .. 'BarBackground'].fillColor[4] == 0.68, 'unfilled track should be visible')
 assert(math.abs(b.h - 3.96) < 0.001 and f.h == 20 and DBT.Options.Height == 20, 'thin strip changed native frame/settings')
-assert(_G[f.name .. 'BarIcon1'].w == 16 and _G[f.name .. 'BarIcon1'].h == 16)
+assert(_G[f.name .. 'BarIcon1'].w == 14 and _G[f.name .. 'BarIcon1'].h == 14)
 assert(math.abs(_G[f.name .. 'BarIJIcons'].w - 11.16) < 0.001 and _G[f.name .. 'BarIJIcons'].path == 'role-1')
 assert(_G[f.name .. 'BarIJIcons2'].points[1][1] == 'RIGHT' and _G[f.name .. 'BarIJIcons2'].points[1][2] == f)
 assert(_G[f.name .. 'BarName'].points[1][1] == 'TOPLEFT' and _G[f.name .. 'BarName'].points[1][4] == 4)
 assert(_G[f.name .. 'BarTimer'].points[1][2] == f and _G[f.name .. 'BarTimer'].size > _G[f.name .. 'BarName'].size)
 assert(b:GetWidth() < f:GetWidth() and b:GetWidth() > 30, 'strip did not reserve space for timer/mechanics')
 local panel = f.regions[1]
-assert(panel.layer == 'BACKGROUND' and panel.fillColor[4] == 0.78 and panel.points[1][4] == -20, 'panel should be translucent and contain spell icon')
+assert(panel.layer == 'BACKGROUND' and panel.fillColor[4] == 0.78 and panel.points[1][4] == -21, 'panel should be translucent and contain spell icon')
 assert(#f.regions == 5, 'panel background and four accent edges missing')
-for i = 2, 5 do assert(f.regions[i].fillColor[1] == accent and f.regions[i].fillColor[4] == 0.55, 'panel needs full accent outline') end
-assert(f.regions[2].h == 2 and f.regions[4].w == 2, 'panel outline should be two pixels thick')
+for i = 2, 5 do assert(f.regions[i].fillColor[1] == accent and f.regions[i].fillColor[4] == 0.5, 'panel needs full accent outline') end
+assert(f.regions[2].h == 1 and f.regions[4].w == 1, 'panel outline should be one pixel thick')
+local spellIcon = _G[f.name .. 'BarIcon1']
+local iconLeft = spellIcon.points[1][4] - spellIcon.w
+assert(iconLeft - panel.points[1][4] > f.regions[4].w, 'spell icon overlaps outer left border')
+assert((18 - spellIcon.h) / 2 > f.regions[2].h, 'spell icon overlaps top/bottom border')
+assert(_G[f.name .. 'BarTimer'].points[1][4] == -6, 'small countdown needs inner right padding')
 assert(_G[f.name .. 'BarIJIcons'].alpha == 0 and _G[f.name .. 'BarIcon1'].alpha == 1, 'small row should hide only mechanic symbols')
 local stripWidth, labelRight, timerRight = b:GetWidth(), _G[f.name .. 'BarName'].points[2][4], _G[f.name .. 'BarTimer'].points[1][4]
 _G[f.name .. 'BarIJIcons2']:Hide(); first:SetIcon(136116)
@@ -187,14 +199,16 @@ _G[f.name .. 'BarIJIcons']:Hide(); first:SetIcon(136116)
 assert(b:GetWidth() == stripWidth, 'empty mechanic group changed reserved width')
 assert(f.points[1][2] == nativeAnchor and f.points[1][4] == 27 and f.points[1][5] == -60, 'skin moved native stack row')
 _G[f.name .. 'BarIJIcons']:SetShown(true); _G[f.name .. 'BarIJIcons2']:SetShown(true)
-local tint
-for _, t in ipairs(b.regions) do if t.sublevel == 2 then tint = t end end
+local tint, gloss
+for _, t in ipairs(b.regions) do if t.sublevel == 2 then tint = t elseif t.sublevel == 3 then gloss = t end end
 assert(tint and tint.layer == 'ARTWORK' and tint.all == b.fill and tint.fillColor[4] == 0.1, 'fill tint should be lighter and below text')
+assert(gloss and gloss.all == b.fill and gloss.blend == 'MOD' and gloss.gradient[1] == 'VERTICAL', 'shading should follow the fill below text')
+assert(gloss.gradient[2].r == 0.85 and gloss.gradient[3].r == 1, 'shading contrast is too strong')
 local trackEdges = 0
 for _, region in ipairs(b.regions) do
     if region.sublevel == -1 then
         trackEdges = trackEdges + 1
-        assert(region.fillColor[1] == 0.26 and region.points[1][2] == b, 'full track needs a visible edge')
+        assert(region.fillColor[1] == 0.2 and region.fillColor[4] == 0.4 and region.points[1][2] == b, 'track edge should be subtle')
     end
 end
 assert(trackEdges == 4)
@@ -216,7 +230,7 @@ assert(_G[f.name .. 'BarName'].font == 'eui' and math.abs(_G[f.name .. 'BarName'
 assert(first:SetIcon(999) == 'native-icon' and _G[f.name .. 'BarIcon1'].path == 999)
 assert(math.abs(b.h - 3.96) < 0.001, 'repeated paint cumulatively shrank strip')
 first.enlarged = true; first:ApplyStyle()
-assert(math.abs(b.h - 5.72) < 0.001 and _G[f.name .. 'BarIcon1'].h == 24, 'large panel did not follow native size')
+assert(math.abs(b.h - 5.72) < 0.001 and _G[f.name .. 'BarIcon1'].h == 22, 'large panel did not follow native size')
 assert(_G[f.name .. 'BarIJIcons'].alpha == 1, 'enlargement did not restore mechanic symbols')
 local largeWidth, largeTimer = b:GetWidth(), _G[f.name .. 'BarTimer'].points[1][4]
 _G[f.name .. 'BarIJIcons2']:Hide(); first:SetIcon(999)
@@ -239,12 +253,12 @@ assert(_G[f.name .. 'BarIJIcons'].alpha == 0 and b:GetWidth() > largeWidth, 'sma
 DBT.Options.IconLeft, DBT.Options.IconRight = false, true
 first:ApplyStyle()
 assert(not _G[f.name .. 'BarIcon1'].shown and _G[f.name .. 'BarIcon2'].shown)
-assert(panel.points[1][4] == 0 and panel.points[2][4] == 20, 'panel did not follow native icon visibility')
+assert(panel.points[1][4] == 0 and panel.points[2][4] == 21, 'panel did not follow native icon visibility')
 DBT.Options.IconLeft, DBT.Options.IconRight = true, false
 DBT.Options.Height = 10; f:SetSize(100, 10); first:ApplyStyle()
 assert(b:GetWidth() > 20 and _G[f.name .. 'BarName'].points[1][1] == 'LEFT', 'smallest native row needs compact fallback')
 DBT.Options.Height = 20; f:SetSize(195, 20); first:ApplyStyle()
-assert(_G[f.name .. 'BarName'].points[1][1] == 'TOPLEFT' and panel.points[1][4] == -20)
+assert(_G[f.name .. 'BarName'].points[1][1] == 'TOPLEFT' and panel.points[1][4] == -21)
 DBT.Options.IconLocked, DBT.Options.Height = false, 30
 first:ApplyStyle()
 assert(f.h == 20 and panel.points[1][5] == 14 and panel.points[2][5] == -14, 'unlocked native hit frame changed or panel height lost')
@@ -254,6 +268,17 @@ b.fill:SetVertexColor(0.1, 0.3, 0.9, 0.75)
 assert(b.fill.color[3] == 0.9 and tint.all == b.fill)
 local new, result = DBT:CreateBar(20, 'new')
 assert(result == 'native-create' and _G[new.frame.name .. 'Bar'].fill.path == 'Interface\\Buttons\\WHITE8X8')
+gradientMode = 'legacy'
+local legacy = DBT:CreateBar(20, 'legacy-gradient')
+local legacyGloss
+for _, t in ipairs(_G[legacy.frame.name .. 'Bar'].regions) do if t.sublevel == 3 then legacyGloss = t end end
+assert(legacyGloss.gradientAlpha[1] == 'VERTICAL' and legacyGloss.gradientAlpha[2] == 0.85)
+gradientMode = 'none'
+local fallback = DBT:CreateBar(20, 'fallback-gradient')
+local fallbackGloss
+for _, t in ipairs(_G[fallback.frame.name .. 'Bar'].regions) do if t.sublevel == 3 then fallbackGloss = t end end
+assert(fallbackGloss.color[1] == 0.94, 'missing gradient API needs a safe fallback')
+gradientMode = 'modern'
 -- Unlike the reference skins' CreateBar handlers, creating a timer must not
 -- enumerate the entire active pool or repaint existing timer text.
 local beforeIterator, beforeFonts = iteratorCalls, fontWrites
@@ -367,4 +392,5 @@ local skipped = DBT:CreateBar(20, 'disabled'); assert(_G[skipped.frame.name .. '
 assert(#errors == 0, table.concat(errors, '\n'))
 DBM, DBT, C_Secrets, DebuffTypeColor, AuraUtil = nil, nil, nil, nil, nil
 DBMWarning1, DBMSpecialWarning1, issecretvalue = nil, nil, nil
+CreateColor = nil
 print('PASS: DBM HUD late/core-only load, timer lifecycle/native colors/actions, reuse, no countdown work, aura previews, restricted guards, theme/combat/toggles')

@@ -10,6 +10,7 @@ local function HUD(C)
     local WHITE = "Interface\\Buttons\\WHITE8X8"
     local bars, icons = {}, {}
     local active, pending = false, false
+    local glossBottom, glossTop
     local function Allowed(f)
         return H.Allowed(f) and not (f.IsProtected and f:IsProtected())
     end
@@ -93,15 +94,15 @@ local function HUD(C)
         local height = options[prefix .. "Height"] or obj.frame:GetHeight()
         local rowHeight = math.max(8, height - 2)
         local compact = rowHeight < 16 or obj.frame:GetWidth() < 150
-        local iconSize = math.max(6, rowHeight - 2)
+        local iconSize = math.max(4, rowHeight - 4)
         local left, right = _G[name .. "BarIcon1"], _G[name .. "BarIcon2"]
-        local leftSpace = H.Texture(left) and left:IsShown() and iconSize + 4 or 0
-        local rightSpace = H.Texture(right) and right:IsShown() and iconSize + 4 or 0
+        local leftSpace = H.Texture(left) and left:IsShown() and iconSize + 7 or 0
+        local rightSpace = H.Texture(right) and right:IsShown() and iconSize + 7 or 0
         for i = 1, 2 do
             local icon = i == 1 and left or right
             if H.Texture(icon) then
                 icon:SetSize(iconSize, iconSize); icon:ClearAllPoints()
-                icon:SetPoint(i == 1 and "RIGHT" or "LEFT", obj.frame, i == 1 and "LEFT" or "RIGHT", i == 1 and -2 or 2, 0)
+                icon:SetPoint(i == 1 and "RIGHT" or "LEFT", obj.frame, i == 1 and "LEFT" or "RIGHT", i == 1 and -3 or 3, 0)
             end
         end
         -- Keep native mechanic artwork, but display it only on enlarged rows.
@@ -164,9 +165,9 @@ local function HUD(C)
             for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
                 local edge = obj.frame:CreateTexture(nil, "BORDER")
                 if i <= 2 then
-                    edge:SetPoint(side .. "LEFT", d.panel, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", d.panel, side .. "RIGHT"); edge:SetHeight(2)
+                    edge:SetPoint(side .. "LEFT", d.panel, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", d.panel, side .. "RIGHT"); edge:SetHeight(1)
                 else
-                    edge:SetPoint("TOP" .. side, d.panel, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, d.panel, "BOTTOM" .. side); edge:SetWidth(2)
+                    edge:SetPoint("TOP" .. side, d.panel, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, d.panel, "BOTTOM" .. side); edge:SetWidth(1)
                 end
                 d.edges[i] = edge
             end
@@ -178,12 +179,12 @@ local function HUD(C)
         d.panel:SetPoint("BOTTOMRIGHT", obj.frame, "RIGHT", rightSpace, -rowHeight / 2)
         d.panel:SetColorTexture(0.065, 0.07, 0.075, 0.78)
         local r, g, b = S.GetAccentColor()
-        for _, edge in ipairs(d.edges) do edge:SetColorTexture(r, g, b, 0.55) end
+        for _, edge in ipairs(d.edges) do edge:SetColorTexture(r, g, b, 0.5) end
         local x, y = options[prefix .. "TextXOffset"] or 0, options[prefix .. "TextYOffset"] or 0
         local path, flags = S.GetFont()
         if Allowed(timer) then
             timer:SetFont(path, timerSize, flags or "")
-            timer:ClearAllPoints(); timer:SetPoint("RIGHT", obj.frame, "RIGHT", -mechanicSpace - 3 + x, y)
+            timer:ClearAllPoints(); timer:SetPoint("RIGHT", obj.frame, "RIGHT", -mechanicSpace - 6 + x, y)
             Shadow(timer)
         end
         if Allowed(label) and Allowed(timer) then
@@ -240,7 +241,7 @@ local function HUD(C)
                     else
                         edge:SetPoint("TOP" .. side, bar, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, bar, "BOTTOM" .. side); edge:SetWidth(1)
                     end
-                    edge:SetColorTexture(0.26, 0.28, 0.3, 0.55)
+                    edge:SetColorTexture(0.2, 0.215, 0.23, 0.4)
                     d.trackEdges[i] = edge
                 end
             end
@@ -258,6 +259,24 @@ local function HUD(C)
                 if not d.tint then d.tint = bar:CreateTexture(nil, "ARTWORK", nil, 2) end
                 d.tint:SetAllPoints(fill)
                 d.tint:SetColorTexture(0.045, 0.045, 0.05, 0.1)
+                if not d.gloss then
+                    d.gloss = bar:CreateTexture(nil, "ARTWORK", nil, 3)
+                    d.gloss:SetTexture(WHITE)
+                    -- Multiplicative shading adds depth without a white overlay
+                    -- remaining bright when DBT flashes its native fill alpha.
+                    d.gloss:SetBlendMode("MOD")
+                    if d.gloss.SetGradient and CreateColor then
+                        if not glossBottom then
+                            glossBottom, glossTop = CreateColor(0.85, 0.85, 0.85, 1), CreateColor(1, 1, 1, 1)
+                        end
+                        d.gloss:SetGradient("VERTICAL", glossBottom, glossTop)
+                    elseif d.gloss.SetGradientAlpha then
+                        d.gloss:SetGradientAlpha("VERTICAL", 0.85, 0.85, 0.85, 1, 1, 1, 1, 1)
+                    else
+                        d.gloss:SetVertexColor(0.94, 0.94, 0.94, 1)
+                    end
+                end
+                d.gloss:SetAllPoints(fill)
             end
         end)
         active = false

@@ -88,8 +88,114 @@ local function HUD(C)
         end
         if H.Texture(boundary) then boundary:SetVertexColor(0.25, 0.25, 0.27, 0.65) end
     end
+    local function Panel(parent, d)
+        if d.panel then return end
+        d.panel = parent:CreateTexture(nil, "BACKGROUND")
+        d.edges = {}
+        for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+            local edge = parent:CreateTexture(nil, "BORDER")
+            if i <= 2 then
+                edge:SetPoint(side .. "LEFT", d.panel, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", d.panel, side .. "RIGHT")
+            else
+                edge:SetPoint("TOP" .. side, d.panel, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, d.panel, "BOTTOM" .. side)
+            end
+            d.edges[i] = edge
+        end
+    end
+    local function Snap(value, pixel) return math.floor(value / pixel + 0.5) * pixel end
+    local function ConceptLayout(obj, bar, d, name)
+        local frame, options = obj.frame, _G.DBT and _G.DBT.Options or {}
+        local width, height = frame:GetWidth(), options.HugeHeight or frame:GetHeight()
+        local scale = frame.GetEffectiveScale and frame:GetEffectiveScale() or 1
+        local factor = PixelUtil and PixelUtil.GetPixelToUIUnitFactor and PixelUtil.GetPixelToUIUnitFactor()
+        if not factor and GetPhysicalScreenSize then
+            local _, physicalHeight = GetPhysicalScreenSize()
+            if physicalHeight and physicalHeight > 0 then factor = 768 / physicalHeight end
+        end
+        factor = factor or 1
+        local pixel = factor / math.max(scale, 0.01)
+        local top = height / 2
+        -- The 754x88 specification is a coordinate system, not an installation
+        -- size. Only the row contents change; the native hit/stack frame stays.
+        local contentX = Snap(width * 110 / 754, pixel)
+        local trackRight = Snap(width * (754 - 533) / 754, pixel)
+        bar:ClearAllPoints()
+        bar:SetPoint("TOPLEFT", frame, "LEFT", contentX, Snap(top - height * 53 / 88, pixel))
+        bar:SetPoint("TOPRIGHT", frame, "RIGHT", -trackRight, Snap(top - height * 53 / 88, pixel))
+        bar:SetHeight(math.max(pixel, Snap(height * 22 / 88, pixel)))
+        local iconSize = math.max(pixel, Snap(math.min(width * 73 / 754, height * 69 / 88), pixel))
+        for i = 1, 2 do
+            local icon = _G[name .. "BarIcon" .. i]
+            if H.Texture(icon) then
+                icon:ClearAllPoints(); icon:SetSize(iconSize, iconSize)
+                local center = i == 1 and width * 51.5 / 754 or width * 714.5 / 754
+                icon:SetPoint("CENTER", frame, "LEFT", Snap(center, pixel), Snap(top - height * 43.5 / 88, pixel))
+            end
+        end
+        Panel(frame, d)
+        d.panel:ClearAllPoints()
+        d.panel:SetPoint("TOPLEFT", frame, "LEFT", 0, Snap(top, pixel))
+        d.panel:SetPoint("BOTTOMRIGHT", frame, "RIGHT", 0, Snap(-top, pixel))
+        d.panel:SetColorTexture(11 / 255, 16 / 255, 20 / 255, 0.875)
+        local r, g, b = S.GetAccentColor()
+        for i, edge in ipairs(d.edges) do
+            if i <= 2 then edge:SetHeight(pixel) else edge:SetWidth(pixel) end
+            edge:SetColorTexture(r, g, b, i == 1 and 0.8 or 0.45)
+        end
+        d.borderPixel = pixel
+        local capacity = math.max(0, math.min(4, options.JournalIcons or 0))
+        d.mechanicAlpha = d.mechanicAlpha or {}
+        local columns, rows = capacity > 1 and 2 or 1, capacity > 2 and 2 or 1
+        local symbolSize = math.min(height * 33 / 88, width * 65 / 754 / columns)
+        symbolSize = math.max(pixel, Snap(symbolSize, pixel))
+        local centerX = width * 714.5 / 754
+        for i = 1, 4 do
+            local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
+            if H.Texture(icon) then
+                if d.mechanicAlpha[icon] == nil then d.mechanicAlpha[icon] = icon:GetAlpha() end
+                icon:SetAlpha(d.mechanicAlpha[icon]); icon:SetSize(symbolSize, symbolSize)
+                local column, row = (i - 1) % columns, math.floor((i - 1) / columns)
+                icon:ClearAllPoints()
+                icon:SetPoint("CENTER", frame, "LEFT", Snap(centerX + (column - (columns - 1) / 2) * (symbolSize + pixel), pixel),
+                    Snap(((rows - 1) / 2 - row) * (symbolSize + pixel), pixel))
+            end
+        end
+        if not d.separator then d.separator = frame:CreateTexture(nil, "BORDER") end
+        d.separator:ClearAllPoints()
+        d.separator:SetPoint("TOPLEFT", frame, "LEFT", Snap(width * 677 / 754, pixel), Snap(top - height * 6 / 88, pixel))
+        d.separator:SetPoint("BOTTOMLEFT", frame, "LEFT", Snap(width * 677 / 754, pixel), Snap(-top + height * 6 / 88, pixel))
+        d.separator:SetWidth(pixel); d.separator:SetColorTexture(0.12, 0.14, 0.16, 0.55)
+        d.separator:SetShown(capacity > 0)
+        local label, timer = _G[name .. "BarName"], _G[name .. "BarTimer"]
+        local path, flags = S.GetFont()
+        local x, y = options.HugeTextXOffset or 0, options.HugeTextYOffset or 0
+        local baseFont = _G.DBT and _G.DBT.DefaultOptions and _G.DBT.DefaultOptions.FontSize or 10
+        local fontScale = (options.FontSize or baseFont) / math.max(baseFont, 1)
+        d.labelSize = math.max(6, height * 23 / 88 * fontScale)
+        if Allowed(label) then
+            label:SetFont(path, d.labelSize, flags or ""); label:ClearAllPoints()
+            label:SetPoint("TOPLEFT", frame, "LEFT", contentX + x, Snap(top - height * 19 / 88, pixel) + y)
+            label:SetPoint("TOPRIGHT", frame, "RIGHT", -Snap(width * (754 - 565) / 754, pixel) + x, Snap(top - height * 19 / 88, pixel) + y)
+            if label.SetWordWrap then label:SetWordWrap(false) end
+            if label.SetNonSpaceWrap then label:SetNonSpaceWrap(false) end
+            Shadow(label)
+        end
+        if Allowed(timer) then
+            timer:SetFont(path, math.max(8, height * 34 / 88 * fontScale), flags or "")
+            timer:ClearAllPoints(); timer:SetWidth(Snap(width * 95 / 754, pixel))
+            timer:SetPoint("RIGHT", frame, "RIGHT", -Snap(width * (754 - 661) / 754, pixel) + x, y)
+            if timer.SetJustifyH then timer:SetJustifyH("RIGHT") end
+            Shadow(timer)
+        end
+    end
     local function BarLayout(obj, bar, d, name)
         local options = _G.DBT and _G.DBT.Options or {}
+        if obj.enlarged and (options.HugeHeight or obj.frame:GetHeight()) >= 18
+            and obj.frame:GetWidth() >= 150 and not options.IconRight then
+            ConceptLayout(obj, bar, d, name); return
+        end
+        d.borderPixel = 1
+        if d.separator then d.separator:Hide() end
         local prefix = obj.enlarged and "Huge" or ""
         local height = options[prefix .. "Height"] or obj.frame:GetHeight()
         local rowHeight = math.max(8, height - 2)
@@ -159,19 +265,7 @@ local function HUD(C)
         bar:SetPoint("BOTTOMLEFT", obj.frame, "LEFT", 4, -height / 2 + 3)
         bar:SetPoint("BOTTOMRIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 3, -height / 2 + 3)
         bar:SetHeight(compact and rowHeight - 2 or math.max(2, math.min(6, rowHeight * 0.22)))
-        if not d.panel then
-            d.panel = obj.frame:CreateTexture(nil, "BACKGROUND")
-            d.edges = {}
-            for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
-                local edge = obj.frame:CreateTexture(nil, "BORDER")
-                if i <= 2 then
-                    edge:SetPoint(side .. "LEFT", d.panel, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", d.panel, side .. "RIGHT"); edge:SetHeight(1)
-                else
-                    edge:SetPoint("TOP" .. side, d.panel, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, d.panel, "BOTTOM" .. side); edge:SetWidth(1)
-                end
-                d.edges[i] = edge
-            end
-        end
+        Panel(obj.frame, d)
         d.panel:ClearAllPoints()
         -- Center-relative offsets also support DBT's unlocked-icon mode, where
         -- the native hit frame can retain a different height from the bar.
@@ -179,11 +273,15 @@ local function HUD(C)
         d.panel:SetPoint("BOTTOMRIGHT", obj.frame, "RIGHT", rightSpace, -rowHeight / 2)
         d.panel:SetColorTexture(0.065, 0.07, 0.075, 0.78)
         local r, g, b = S.GetAccentColor()
-        for _, edge in ipairs(d.edges) do edge:SetColorTexture(r, g, b, 0.5) end
+        for i, edge in ipairs(d.edges) do
+            if i <= 2 then edge:SetHeight(1) else edge:SetWidth(1) end
+            edge:SetColorTexture(r, g, b, 0.5)
+        end
         local x, y = options[prefix .. "TextXOffset"] or 0, options[prefix .. "TextYOffset"] or 0
         local path, flags = S.GetFont()
         if Allowed(timer) then
             timer:SetFont(path, timerSize, flags or "")
+            timer:SetWidth(0)
             timer:ClearAllPoints(); timer:SetPoint("RIGHT", obj.frame, "RIGHT", -mechanicSpace - 6 + x, y)
             Shadow(timer)
         end
@@ -232,6 +330,7 @@ local function HUD(C)
             Font(_G[name .. "BarName"]); Font(_G[name .. "BarTimer"])
             local d = bars[obj]
             BarLayout(obj, bar, d, name)
+            if obj.enlarged and H.Texture(bg) then bg:SetColorTexture(32 / 255, 38 / 255, 43 / 255, 0.9) end
             if not d.trackEdges then
                 d.trackEdges = {}
                 for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
@@ -245,11 +344,21 @@ local function HUD(C)
                     d.trackEdges[i] = edge
                 end
             end
+            for i, edge in ipairs(d.trackEdges) do
+                if i <= 2 then edge:SetHeight(d.borderPixel) else edge:SetWidth(d.borderPixel) end
+            end
             PaintVariance(obj)
             local r, g, b = S.GetAccentColor()
             for i = 1, 2 do
                 local icon = _G[name .. "BarIcon" .. i]
-                if H.Texture(icon) then Icon(obj.frame, icon, nil, r, g, b) end
+                if H.Texture(icon) then
+                    local border = Icon(obj.frame, icon, nil, r, g, b)
+                    if border then
+                        for j, edge in ipairs(border.edge) do
+                            if j <= 2 then edge:SetHeight(d.borderPixel) else edge:SetWidth(d.borderPixel) end
+                        end
+                    end
+                end
             end
             -- A cached neutral tint follows the native fill region itself.
             -- DBT can change its color/value every tick without a skin callback;

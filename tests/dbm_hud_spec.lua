@@ -32,6 +32,7 @@ local function object(kind, name, parent)
     function o:GetObjectType() return self.kind end
     function o:GetName() return self.name end
     function o:GetParent() return self.parent end
+    function o:GetEffectiveScale() return self.scale or 1 end
     function o:IsForbidden() return self.forbidden end
     function o:IsProtected() return self.protected end
     function o:SetPoint(...) self.points[#self.points + 1] = {...} end
@@ -46,7 +47,7 @@ local function object(kind, name, parent)
     function o:SetWidth(v) self.w = v end
     function o:GetWidth()
         local a, b = self.points[1], self.points[2]
-        if self.kind == 'StatusBar' and a and b and a[1] == 'BOTTOMLEFT' and b[1] == 'BOTTOMRIGHT' and a[2] == b[2] then
+        if self.kind == 'StatusBar' and a and b and (a[1] == 'BOTTOMLEFT' and b[1] == 'BOTTOMRIGHT' or a[1] == 'TOPLEFT' and b[1] == 'TOPRIGHT') and a[2] == b[2] then
             return a[2]:GetWidth() + b[4] - a[4]
         end
         return self.w
@@ -74,6 +75,9 @@ local function object(kind, name, parent)
     function o:GetText() return self.text end
     function o:SetText(v) self.text = v end
     function o:SetFontObject(v) self.font = v end
+    function o:SetWordWrap(v) self.wordWrap = v end
+    function o:SetNonSpaceWrap(v) self.nonSpaceWrap = v end
+    function o:SetJustifyH(v) self.justifyH = v end
     function o:GetTextColor() return table.unpack(self.color) end
     function o:SetTextColor(...) self.color = {...} end
     function o:GetFontString() return self.label end
@@ -230,17 +234,17 @@ assert(_G[f.name .. 'BarName'].font == 'eui' and math.abs(_G[f.name .. 'BarName'
 assert(first:SetIcon(999) == 'native-icon' and _G[f.name .. 'BarIcon1'].path == 999)
 assert(math.abs(b.h - 3.96) < 0.001, 'repeated paint cumulatively shrank strip')
 first.enlarged = true; first:ApplyStyle()
-assert(math.abs(b.h - 5.72) < 0.001 and _G[f.name .. 'BarIcon1'].h == 22, 'large panel did not follow native size')
+assert(b.h == 7 and _G[f.name .. 'BarIcon1'].h == 19, 'huge concept proportions did not follow native size')
 assert(_G[f.name .. 'BarIJIcons'].alpha == 1, 'enlargement did not restore mechanic symbols')
 local largeWidth, largeTimer = b:GetWidth(), _G[f.name .. 'BarTimer'].points[1][4]
 _G[f.name .. 'BarIJIcons2']:Hide(); first:SetIcon(999)
 assert(b:GetWidth() == largeWidth and _G[f.name .. 'BarTimer'].points[1][4] == largeTimer, 'large timer alignment varies by icon count')
 DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 2, 3
 first:ApplyStyle()
-assert(_G[f.name .. 'BarName'].points[1][4] == 6 and _G[f.name .. 'BarTimer'].points[1][5] == 3)
+assert(_G[f.name .. 'BarName'].points[1][4] == 30 and _G[f.name .. 'BarTimer'].points[1][5] == 3)
 DBT.Options.JournalIcons = 4
 local stacked = _G[f.name .. 'BarIJIcons']; stacked:ClearAllPoints(); stacked:SetPoint('BOTTOMRIGHT', _G[f.name .. 'BarIcon1'], 'BOTTOMLEFT', 0, 0)
-first:ApplyStyle(); assert(stacked.points[1][1] == 'TOPRIGHT' and stacked.w == 9.36, 'four-symbol group not compact')
+first:ApplyStyle(); assert(stacked.points[1][1] == 'CENTER' and stacked.w == 8, 'four-symbol compartment not compact')
 assert(_G[f.name .. 'BarIJIcons3'].points[1][5] < stacked.points[1][5], 'four symbols should use two rows')
 -- AnimateEnlarge updates the native frame and calls SetWidth on the strip.
 -- Opposing anchors keep the strip inside its allocated body region.
@@ -248,6 +252,36 @@ local beforeWidth = b:GetWidth()
 f:SetSize(230, 28); b:SetWidth(230)
 assert(b:GetWidth() == beforeWidth + 35 and b:GetWidth() < f:GetWidth())
 f:SetSize(195, 20)
+-- Exact concept coordinate system, including font ratios and optional symbols.
+DBT.Options.HugeHeight, DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 88, 0, 0
+f:SetSize(754, 88); first:ApplyStyle()
+local conceptLabel, conceptTimer = _G[f.name .. 'BarName'], _G[f.name .. 'BarTimer']
+assert(b:GetWidth() == 423 and b.h == 22 and b.points[1][4] == 110 and b.points[1][5] == -9)
+assert(conceptLabel.size == 23 and conceptTimer.size == 34 and conceptLabel.points[1][4] == 110 and conceptLabel.points[1][5] == 25)
+assert(conceptLabel.wordWrap == false and conceptTimer.w == 95 and conceptTimer.justifyH == 'RIGHT')
+assert(conceptTimer.points[1][4] == -93 and panel.points[1][4] == 0 and panel.points[2][4] == 0)
+assert(spellIcon.w == spellIcon.h and spellIcon.w == 69 and spellIcon.points[1][4] == 52)
+assert(f.regions[6].shown and f.regions[6].points[1][4] == 677, 'mechanic compartment separator missing')
+DBT.Options.HugeHeight = 66; f:SetSize(565.5, 66); first:ApplyStyle()
+assert(math.abs(b:GetWidth() - 317.25) <= 1 and b.h == 17 and conceptLabel.size == 17.25 and conceptTimer.size == 25.5)
+-- Effective scale/pixel factor affect snapping and one-physical-pixel edges,
+-- rather than treating screenshot pixels as fixed WoW UI coordinates.
+PixelUtil = {GetPixelToUIUnitFactor = function() return 0.75 end}; f.scale = 1.5
+first:ApplyStyle()
+assert(f.regions[2].h == 0.5 and f.regions[4].w == 0.5 and f.children[#f.children - 1].regions[1].h == 0.5)
+assert(b.points[1][4] * 2 == math.floor(b.points[1][4] * 2))
+PixelUtil = nil; GetPhysicalScreenSize = function() return 1820, 1024 end
+first:ApplyStyle(); assert(f.regions[2].h == 0.5, 'physical-screen fallback lost pixel conversion')
+GetPhysicalScreenSize = nil; f.scale = 1
+DBT.Options.JournalIcons = 0; first:ApplyStyle()
+assert(not f.regions[6].shown and conceptTimer.points[1][4] == -70, 'optional mechanic compartment moved the countdown')
+DBT.Options.JournalIcons, DBT.Options.HugeHeight = 2, 28
+f:SetSize(195, 20)
+DBT.Options.IconRight = true; first:ApplyStyle()
+assert(not f.regions[6].shown and conceptTimer.w == 0 and _G[f.name .. 'BarIcon2'].shown, 'second-spell-icon mode needs compact fallback')
+DBT.Options.IconRight, DBT.Options.HugeHeight = false, 10; first:ApplyStyle()
+assert(not f.regions[6].shown and conceptLabel.points[1][1] == 'LEFT', 'short huge rows need compact fallback')
+DBT.Options.HugeHeight = 28
 DBT.Options.JournalIcons = 2; first.enlarged = false; first:ApplyStyle()
 assert(_G[f.name .. 'BarIJIcons'].alpha == 0 and b:GetWidth() > largeWidth, 'small row should reclaim mechanic space')
 DBT.Options.IconLeft, DBT.Options.IconRight = false, true

@@ -63,6 +63,20 @@ local function HUD(C)
         for _, edge in ipairs(d.edge) do edge:SetColorTexture(r, g, b, 0.85) end
         return d
     end
+    local function PaintVariance(obj)
+        if type(obj) ~= "table" or obj.isSecret or not Allowed(obj.frame) then return end
+        local name = obj.frame:GetName()
+        if not name then return end
+        local variance, boundary = _G[name .. "BarVariance"], _G[name .. "BarVarianceBorder"]
+        -- This region conveys timing uncertainty. Keep DBT's native width,
+        -- anchors and visibility; only replace its additive gradient artwork.
+        if H.Texture(variance) then
+            variance:SetTexture(WHITE)
+            variance:SetBlendMode("BLEND")
+            variance:SetVertexColor(0.14, 0.14, 0.16, 0.65)
+        end
+        if H.Texture(boundary) then boundary:SetVertexColor(0.25, 0.25, 0.27, 0.65) end
+    end
     local function PaintBar(obj)
         if not ns.IsEnabled(C.module) or active then return end
         -- Ordinary DBT timer frames are insecure and need styling when created
@@ -86,6 +100,7 @@ local function HUD(C)
             end
             local bg = _G[name .. "BarBackground"]
             if H.Texture(bg) then bg:SetColorTexture(0.045, 0.045, 0.05, 0.95) end
+            PaintVariance(obj)
             local spark = _G[name .. "BarSpark"]
             if H.Texture(spark) then H.Fade(spark) end
             for _, side in ipairs({"Top", "Bottom", "Left", "Right"}) do
@@ -114,6 +129,7 @@ local function HUD(C)
             bars[obj] = {}
             H.Hook(obj, "ApplyStyle", PaintBar)
             H.Hook(obj, "SetIcon", PaintBar)
+            H.Hook(obj, "SetVariance", PaintVariance)
         end
         PaintBar(obj)
     end
@@ -199,6 +215,45 @@ local function HUD(C)
             end
         end
     end
+    local warnings = {}
+    local function BindWarning(text)
+        if not Allowed(text) or not text.GetFont then return end
+        local state = warnings[text]
+        if not state then
+            state = {}; warnings[text] = state
+            state.font = function()
+                if state.painting or not ns.IsEnabled(C.module) or not Allowed(text) then return end
+                state.painting = true
+                H.Safe(function()
+                    local _, size = text:GetFont()
+                    local path, flags = S.GetFont()
+                    if path and size then text:SetFont(path, size, flags or "") end
+                end)
+                state.painting = false
+            end
+            state.icons = function()
+                if state.painting or not ns.IsEnabled(C.module) or not Allowed(text) then return end
+                local value = text:GetText()
+                if issecretvalue and issecretvalue(value) then return end
+                if type(value) ~= "string" or not value:find("|T", 1, true) then return end
+                -- DBM's own warning icons use exactly :12:12. Leave other
+                -- inline art (raid markers, timeline glyphs, custom crops) intact.
+                local cropped = value:gsub("|T([^:|]+):12:12|t", "|T%1:12:12:0:0:64:64:5:59:5:59|t")
+                if cropped == value then return end
+                state.painting = true
+                H.Safe(text.SetText, text, cropped)
+                state.painting = false
+            end
+            H.Hook(text, "SetFont", state.font)
+            H.Hook(text, "SetFontObject", state.font)
+            H.Hook(text, "SetText", state.icons)
+        end
+        state.font(); state.icons()
+    end
+    local function PaintWarnings()
+        for i = 1, 3 do BindWarning(_G["DBMWarning" .. i]) end
+        for i = 1, 2 do BindWarning(_G["DBMSpecialWarning" .. i]) end
+    end
     local function Refresh()
         if not ns.IsEnabled(C.module) then return end
         if InCombatLockdown and InCombatLockdown() then pending = true; return end
@@ -214,6 +269,9 @@ local function HUD(C)
         for _, method in ipairs({"PreviewToggle", "OnSettingsChange", "UpdateAuraAnchors", "RegisterAllUnits"}) do
             H.Hook(auras, method, PaintAuras)
         end
+        H.Hook(_G.DBM, "UpdateWarningOptions", PaintWarnings)
+        H.Hook(_G.DBM, "UpdateSpecialWarningOptions", PaintWarnings)
+        PaintWarnings()
         PaintAuras()
     end
     local events = CreateFrame("Frame")

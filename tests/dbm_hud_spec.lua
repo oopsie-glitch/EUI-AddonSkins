@@ -46,6 +46,7 @@ local function object(kind, name, parent)
     function o:GetHeight() return self.h end
     function o:GetTexture() return self.path end
     function o:SetTexture(v) self.path = v end
+    function o:SetBlendMode(v) self.blend = v end
     function o:SetColorTexture(...) self.fillColor = {...} end
     function o:GetVertexColor() return table.unpack(self.color) end
     function o:SetVertexColor(...) self.color = {...} end
@@ -57,6 +58,9 @@ local function object(kind, name, parent)
     function o:IsShown() return self.shown end
     function o:IsVisible() return self.shown end
     function o:GetFont() return self.font, self.size, '' end
+    function o:GetText() return self.text end
+    function o:SetText(v) self.text = v end
+    function o:SetFontObject(v) self.font = v end
     function o:GetTextColor() return table.unpack(self.color) end
     function o:SetTextColor(...) self.color = {...} end
     function o:GetFontString() return self.label end
@@ -106,6 +110,15 @@ function prototype:ApplyStyle()
 end
 function prototype:SetIcon(v) _G[self.frame.name .. 'BarIcon1']:SetTexture(v); return 'native-icon' end
 function prototype:Update() self.duration = self.duration - 0.01 end
+function prototype:SetVariance()
+    local prefix = self.frame.name .. 'Bar'
+    local t = _G[prefix .. 'Variance']
+    t:SetTexture('native-gradient'); t:SetBlendMode('ADD'); t:SetVertexColor(1, 1, 1, 0.5)
+    t:SetWidth(self.varianceWidth or 40); t:ClearAllPoints(); t:SetPoint('RIGHT', _G[prefix], 'RIGHT')
+    t:SetShown(self.hasVariance == true)
+    _G[prefix .. 'VarianceBorder']:SetShown(self.hasVariance == true)
+    return 'native-variance'
+end
 local function bar(id)
     nextID = nextID + 1
     local f = CreateFrame('Frame', 'DBT_Bar_' .. nextID)
@@ -114,10 +127,12 @@ local function bar(id)
     b.fill = b:CreateTexture(); b.fill.path = 'dbm-gloss'; b.fill.color = {0.9, 0.4, 0.1, 0.75}
     b:CreateTexture(prefix .. 'Background')
     b:CreateTexture(prefix .. 'Spark')
+    b:CreateTexture(prefix .. 'Variance'); b:CreateTexture(prefix .. 'VarianceBorder')
     for _, side in ipairs({'Top', 'Bottom', 'Left', 'Right'}) do b:CreateTexture(prefix .. 'Border' .. side) end
     for i = 1, 2 do local t = b:CreateTexture(prefix .. 'Icon' .. i); t.path = 136116; t.shown = i == 1 end
     object('FontString', prefix .. 'Name', b); object('FontString', prefix .. 'Timer', b)
     local obj = setmetatable({frame = f, id = id, duration = 20}, {__index = prototype})
+    obj:SetVariance()
     f.scripts.OnUpdate = function() obj:Update() end
     pool[id] = obj
     return obj
@@ -134,6 +149,13 @@ assert(_G[f.name .. 'BarSpark'].alpha == 0 and _G[f.name .. 'BarBorderTop'].alph
 assert(_G[f.name .. 'BarIcon1'].crop and _G[f.name .. 'BarIcon1'].path == 136116)
 assert(f.children[#f.children - 1].regions[1].fillColor[1] == 0.16, 'timer icon edge should be neutral')
 assert(_G[f.name .. 'BarBackground'].fillColor[4] == 0.95)
+assert(not _G[f.name .. 'BarVariance'].shown, 'disabled variance indicator became visible')
+first.hasVariance, first.varianceWidth = true, 73
+assert(first:SetVariance() == 'native-variance')
+local variance = _G[f.name .. 'BarVariance']
+assert(variance.path == 'Interface\\Buttons\\WHITE8X8' and variance.blend == 'BLEND')
+assert(variance.shown and variance.w == 73 and variance.points[1][1] == 'RIGHT', 'native variance geometry/visibility changed')
+assert(variance.color[1] == 0.14 and variance.color[4] == 0.65)
 assert(f.children[#f.children].shown == false, 'hidden right icon acquired a visible border')
 local nativeUpdate = f.scripts.OnUpdate
 local oldCreated, oldHooks, oldFonts, oldReads = created, hooks, fontWrites, childReads
@@ -200,6 +222,31 @@ assert(created == modernCreated and hooks == modernHooks, 'preview refresh dupli
 preview.BorderTextures[1]:Hide(); DBM.Auras:OnSettingsChange()
 assert(not preview.children[2].regions[5].shown, 'disabled dispel glyph remained visible')
 preview.BorderTextures[1]:SetShown(true); DBM.Auras:OnSettingsChange()
+-- Warning text is owned by DBM; retain content/colors/size/anchors and native
+-- animation methods. Crop only DBM's plain inline spell-icon tags.
+local warning = object('FontString', 'DBMWarning1')
+local specialWarning = object('FontString', 'DBMSpecialWarning1')
+warning.size, specialWarning.size = 22, 50
+warning.color, specialWarning.color = {1, 0.4, 0, 1}, {1, 1, 0, 1}
+warning:SetPoint('TOP', 0, 0)
+warning:SetText('|cffff4400Danger|r |T136116:12:12|t |TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:0|t')
+specialWarning:SetText('Move |T123:12:12|t |T456:20:20|t')
+DBM.UpdateWarningOptions = function() warning:SetFont('native', 24); return 'native-options' end
+DBM.UpdateSpecialWarningOptions = function() specialWarning:SetFont('native', 48); return 'native-special-options' end
+event('ADDON_LOADED')
+assert(warning.font == 'eui' and warning.size == 22 and specialWarning.font == 'eui' and specialWarning.size == 50)
+assert(warning.text == '|cffff4400Danger|r |T136116:12:12:0:0:64:64:5:59:5:59|t |TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:0|t')
+assert(specialWarning.text == 'Move |T123:12:12:0:0:64:64:5:59:5:59|t |T456:20:20|t')
+assert(warning.color[2] == 0.4 and warning.points[1][1] == 'TOP')
+assert(DBM:UpdateWarningOptions() == 'native-options' and warning.font == 'eui' and warning.size == 24)
+assert(DBM:UpdateSpecialWarningOptions() == 'native-special-options' and specialWarning.font == 'eui' and specialWarning.size == 48)
+warning:SetFontObject('native'); assert(warning.font == 'eui')
+local privateText = {}; issecretvalue = function(v) return v == privateText end
+warning:SetText(privateText); assert(warning.text == privateText, 'secret warning text modified')
+warning:SetText('New |T789:12:12|t'); assert(warning.text == 'New |T789:12:12:0:0:64:64:5:59:5:59|t')
+local warningHooks = hooks
+for _ = 1, 20 do event('ADDON_LOADED') end
+assert(hooks == warningHooks, 'warning refresh duplicated hooks')
 local liveButton = CreateFrame('Button')
 local liveIcon = liveButton:CreateTexture(); liveIcon.path = 987
 DBM.Auras.AuraTrackingState = {player = {buttonRegions = {[liveButton] = {icon = liveIcon}}}}
@@ -208,6 +255,7 @@ secret = false; DBM.Auras:OnSettingsChange(); assert(liveIcon.crop)
 accent = 0.8; for _, fn in ipairs(looks) do fn() end; flush()
 assert(b.regions[#b.regions].fillColor[1] == accent and preview.Border.borderColor[1] == accent)
 combat = true
+warning:SetText('Combat |T789:12:12|t'); assert(warning.text == 'Combat |T789:12:12:0:0:64:64:5:59:5:59|t')
 local duringCombat = DBT:CreateBar(20, 'combat')
 assert(_G[duringCombat.frame.name .. 'Bar'].fill.path == 'Interface\\Buttons\\WHITE8X8', 'ordinary combat timer not styled')
 accent = 0.9; for _, fn in ipairs(looks) do fn() end; flush()
@@ -215,8 +263,12 @@ assert(preview.Border.borderColor[1] ~= accent, 'aura refresh should defer durin
 combat = false; event('PLAYER_REGEN_ENABLED')
 assert(preview.Border.borderColor[1] == accent, 'deferred theme refresh lost')
 enabled = false
+warning:SetFont('native', 30); warning:SetText('Disabled |T789:12:12|t')
+assert(warning.font == 'native' and warning.text == 'Disabled |T789:12:12|t')
+first:SetVariance(); assert(variance.path == 'native-gradient')
 first:ApplyStyle(); assert(b.fill.path == 'dbm-gloss')
 local skipped = DBT:CreateBar(20, 'disabled'); assert(_G[skipped.frame.name .. 'Bar'].fill.path == 'dbm-gloss')
 assert(#errors == 0, table.concat(errors, '\n'))
 DBM, DBT, C_Secrets, DebuffTypeColor, AuraUtil = nil, nil, nil, nil, nil
+DBMWarning1, DBMSpecialWarning1, issecretvalue = nil, nil, nil
 print('PASS: DBM HUD late/core-only load, timer lifecycle/native colors/actions, reuse, no countdown work, aura previews, restricted guards, theme/combat/toggles')

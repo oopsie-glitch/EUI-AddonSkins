@@ -30,4 +30,6 @@ These are mocked checks, not in-game profiling or visual verification. No FPS or
 
 Alpha.2 extends the fixture with Retail-only colors (legacy global absent), contained dispel glyphs, preview object reuse, hidden dispel glyphs, text padding and selection geometry. Timer backgrounds are slightly more opaque for contrast against the world.
 
+Alpha.3 replaces the additive variance gradient with a subtle flat charcoal band. DBM still controls its timing range, width, direction and visibility. Normal and special warnings use the EUI font while retaining native size, colors, positions and animation. Plain DBM inline spell icons are cropped; raid markers, custom crops and secret text are left intact. Tests cover variance geometry/visibility, warning settings refreshes, preserved text and native returns, combat, disabled skins and hook reuse.
+
 Install the test ZIP's `EUIAddonSkins` folder in `Interface/AddOns`, replacing the existing folder. DBM and EllesmereUI remain separate requirements. Do not install this alongside another copy of EUI AddonSkins.

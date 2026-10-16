@@ -95,28 +95,34 @@ local function HUD(C)
         local compact = rowHeight < 16 or obj.frame:GetWidth() < 150
         local iconSize = math.max(6, rowHeight - 2)
         local left, right = _G[name .. "BarIcon1"], _G[name .. "BarIcon2"]
-        local leftSpace = H.Texture(left) and left:IsShown() and iconSize + 8 or 0
-        local rightSpace = H.Texture(right) and right:IsShown() and iconSize + 8 or 0
+        local leftSpace = H.Texture(left) and left:IsShown() and iconSize + 4 or 0
+        local rightSpace = H.Texture(right) and right:IsShown() and iconSize + 4 or 0
         for i = 1, 2 do
             local icon = i == 1 and left or right
             if H.Texture(icon) then
                 icon:SetSize(iconSize, iconSize); icon:ClearAllPoints()
-                icon:SetPoint(i == 1 and "RIGHT" or "LEFT", obj.frame, i == 1 and "LEFT" or "RIGHT", i == 1 and -4 or 4, 0)
+                icon:SetPoint(i == 1 and "RIGHT" or "LEFT", obj.frame, i == 1 and "LEFT" or "RIGHT", i == 1 and -2 or 2, 0)
             end
         end
-        -- Keep each native mechanic texture and visibility state. Four-symbol
-        -- mode remains a compact two-by-two group; other modes use one row.
+        -- Keep native mechanic artwork, but display it only on enlarged rows.
+        -- Alpha preserves DBM's own shown/hidden states and stored settings.
+        d.mechanicAlpha = d.mechanicAlpha or {}
         local count = 0
         for i = 1, 4 do
             local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
-            if H.Texture(icon) and icon:IsShown() then count = count + 1 end
+            if H.Texture(icon) then
+                if d.mechanicAlpha[icon] == nil then d.mechanicAlpha[icon] = icon:GetAlpha() end
+                icon:SetAlpha(obj.enlarged and d.mechanicAlpha[icon] or 0)
+                if icon:IsShown() then count = count + 1 end
+            end
         end
         local stacked = options.JournalIcons == 4
         local symbolSize = math.min(16, rowHeight * (stacked and 0.36 or 0.62), obj.frame:GetWidth() / 12)
         -- Reserve the configured symbol capacity, even when a timer has fewer
         -- populated icons. Labels, strips and countdowns then align per size.
         local capacity = type(options.JournalIcons) == "number" and math.max(0, math.min(4, options.JournalIcons)) or count
-        local mechanicSpace = capacity > 0 and ((stacked and math.min(capacity, 2) or capacity) * (symbolSize + 2) + 4) or 0
+        if not obj.enlarged then capacity = 0 end
+        local mechanicSpace = capacity > 0 and ((stacked and math.min(capacity, 2) or capacity) * (symbolSize + 1) + 2) or 0
         local slot = 0
         for i = 1, 4 do
             local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
@@ -124,9 +130,9 @@ local function HUD(C)
                 local column = stacked and slot % 2 or slot
                 icon:SetSize(symbolSize, symbolSize); icon:ClearAllPoints()
                 if stacked then
-                    icon:SetPoint("TOPRIGHT", obj.frame, "RIGHT", -3 - column * (symbolSize + 2), rowHeight / 2 - 1 - math.floor(slot / 2) * (symbolSize + 2))
+                    icon:SetPoint("TOPRIGHT", obj.frame, "RIGHT", -2 - column * (symbolSize + 1), rowHeight / 2 - 1 - math.floor(slot / 2) * (symbolSize + 1))
                 else
-                    icon:SetPoint("RIGHT", obj.frame, "RIGHT", -3 - column * (symbolSize + 2), 0)
+                    icon:SetPoint("RIGHT", obj.frame, "RIGHT", -2 - column * (symbolSize + 1), 0)
                 end
                 slot = slot + 1
             end
@@ -138,19 +144,19 @@ local function HUD(C)
         nativeSize = options.FontSize or d.nativeTextSize or 10
         d.labelSize = math.max(8, math.min(nativeSize, rowHeight * 0.56))
         local timerSize = math.min(rowHeight * 0.82, math.max(12, nativeSize * 1.25))
-        local timerSpace = math.max(40, timerSize * 4)
+        local timerSpace = math.max(30, timerSize * 3.1)
         -- DBT permits rows as small as 100x10. Keep a readable single-line
         -- fallback at those sizes rather than overlap a two-line panel.
         if compact then
             d.labelSize = math.max(6, math.min(nativeSize, rowHeight * 0.7, obj.frame:GetWidth() * 0.07))
             timerSize = d.labelSize
-            timerSpace = math.max(24, timerSize * 3.5)
+            timerSpace = math.max(22, timerSize * 3)
         end
         -- Both horizontal anchors constrain the native StatusBar during DBT's
         -- AnimateEnlarge SetWidth calls; its parent remains the native stack row.
         bar:ClearAllPoints()
-        bar:SetPoint("BOTTOMLEFT", obj.frame, "LEFT", 6, -height / 2 + 3)
-        bar:SetPoint("BOTTOMRIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 6, -height / 2 + 3)
+        bar:SetPoint("BOTTOMLEFT", obj.frame, "LEFT", 4, -height / 2 + 3)
+        bar:SetPoint("BOTTOMRIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 3, -height / 2 + 3)
         bar:SetHeight(compact and rowHeight - 2 or math.max(2, math.min(6, rowHeight * 0.22)))
         if not d.panel then
             d.panel = obj.frame:CreateTexture(nil, "BACKGROUND")
@@ -158,9 +164,9 @@ local function HUD(C)
             for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
                 local edge = obj.frame:CreateTexture(nil, "BORDER")
                 if i <= 2 then
-                    edge:SetPoint(side .. "LEFT", d.panel, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", d.panel, side .. "RIGHT"); edge:SetHeight(1)
+                    edge:SetPoint(side .. "LEFT", d.panel, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", d.panel, side .. "RIGHT"); edge:SetHeight(2)
                 else
-                    edge:SetPoint("TOP" .. side, d.panel, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, d.panel, "BOTTOM" .. side); edge:SetWidth(1)
+                    edge:SetPoint("TOP" .. side, d.panel, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, d.panel, "BOTTOM" .. side); edge:SetWidth(2)
                 end
                 d.edges[i] = edge
             end
@@ -170,26 +176,25 @@ local function HUD(C)
         -- the native hit frame can retain a different height from the bar.
         d.panel:SetPoint("TOPLEFT", obj.frame, "LEFT", -leftSpace, rowHeight / 2)
         d.panel:SetPoint("BOTTOMRIGHT", obj.frame, "RIGHT", rightSpace, -rowHeight / 2)
-        d.panel:SetColorTexture(0.035, 0.035, 0.038, 0.94)
+        d.panel:SetColorTexture(0.065, 0.07, 0.075, 0.78)
         local r, g, b = S.GetAccentColor()
-        d.edges[1]:SetColorTexture(r, g, b, 0.2)
-        for i = 2, 4 do d.edges[i]:SetColorTexture(0.07, 0.075, 0.08, 0.75) end
+        for _, edge in ipairs(d.edges) do edge:SetColorTexture(r, g, b, 0.55) end
         local x, y = options[prefix .. "TextXOffset"] or 0, options[prefix .. "TextYOffset"] or 0
         local path, flags = S.GetFont()
         if Allowed(timer) then
             timer:SetFont(path, timerSize, flags or "")
-            timer:ClearAllPoints(); timer:SetPoint("RIGHT", obj.frame, "RIGHT", -mechanicSpace - 5 + x, y)
+            timer:ClearAllPoints(); timer:SetPoint("RIGHT", obj.frame, "RIGHT", -mechanicSpace - 3 + x, y)
             Shadow(timer)
         end
         if Allowed(label) and Allowed(timer) then
             label:SetFont(path, d.labelSize, flags or "")
             label:ClearAllPoints()
             if compact then
-                label:SetPoint("LEFT", obj.frame, "LEFT", 6 + x, y)
-                label:SetPoint("RIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 6 + x, y)
+                label:SetPoint("LEFT", obj.frame, "LEFT", 4 + x, y)
+                label:SetPoint("RIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 3 + x, y)
             else
-                label:SetPoint("TOPLEFT", obj.frame, "LEFT", 6 + x, rowHeight / 2 - 1 + y)
-                label:SetPoint("TOPRIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 6 + x, rowHeight / 2 - 1 + y)
+                label:SetPoint("TOPLEFT", obj.frame, "LEFT", 4 + x, rowHeight / 2 - 1 + y)
+                label:SetPoint("TOPRIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 3 + x, rowHeight / 2 - 1 + y)
             end
             Shadow(label)
         end
@@ -216,7 +221,7 @@ local function HUD(C)
                 end
             end
             local bg = _G[name .. "BarBackground"]
-            if H.Texture(bg) then bg:SetColorTexture(0.045, 0.045, 0.05, 0.95) end
+            if H.Texture(bg) then bg:SetColorTexture(0.16, 0.17, 0.18, 0.68) end
             local spark = _G[name .. "BarSpark"]
             if H.Texture(spark) then H.Fade(spark) end
             for _, side in ipairs({"Top", "Bottom", "Left", "Right"}) do
@@ -226,10 +231,24 @@ local function HUD(C)
             Font(_G[name .. "BarName"]); Font(_G[name .. "BarTimer"])
             local d = bars[obj]
             BarLayout(obj, bar, d, name)
+            if not d.trackEdges then
+                d.trackEdges = {}
+                for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+                    local edge = bar:CreateTexture(nil, "OVERLAY", nil, -1)
+                    if i <= 2 then
+                        edge:SetPoint(side .. "LEFT", bar, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", bar, side .. "RIGHT"); edge:SetHeight(1)
+                    else
+                        edge:SetPoint("TOP" .. side, bar, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, bar, "BOTTOM" .. side); edge:SetWidth(1)
+                    end
+                    edge:SetColorTexture(0.26, 0.28, 0.3, 0.55)
+                    d.trackEdges[i] = edge
+                end
+            end
             PaintVariance(obj)
+            local r, g, b = S.GetAccentColor()
             for i = 1, 2 do
                 local icon = _G[name .. "BarIcon" .. i]
-                if H.Texture(icon) then Icon(obj.frame, icon, nil, nil, nil, nil, true) end
+                if H.Texture(icon) then Icon(obj.frame, icon, nil, r, g, b) end
             end
             -- A cached neutral tint follows the native fill region itself.
             -- DBT can change its color/value every tick without a skin callback;
@@ -238,7 +257,7 @@ local function HUD(C)
             if H.Texture(fill) then
                 if not d.tint then d.tint = bar:CreateTexture(nil, "ARTWORK", nil, 2) end
                 d.tint:SetAllPoints(fill)
-                d.tint:SetColorTexture(0.045, 0.045, 0.05, 0.28)
+                d.tint:SetColorTexture(0.045, 0.045, 0.05, 0.1)
             end
         end)
         active = false

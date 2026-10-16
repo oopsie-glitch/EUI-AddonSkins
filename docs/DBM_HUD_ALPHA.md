@@ -4,7 +4,7 @@ Branch: `skin/dbm-refinement`. This untagged test build does not publish to Curs
 
 ## Included
 
-- Dark timer panels with restrained EUI accent edges and square spell icons.
+- Translucent dark timer panels with two-pixel EUI accent outlines and accent-bordered square spell icons.
 - Names above thin colored progress strips, separate countdowns and mechanic symbols on the right. Native mechanic colors and urgency updates remain intact.
 - Native stack anchors, configured sizes, icon visibility and countdown behavior; rendered rows have a small visual inset.
 - Move-mode aura previews with thin dispel-colored edges, EUI text and an accent selection outline.
@@ -39,5 +39,7 @@ Alpha.5 adopts the panel concept: a dark row with subtle accent edges, a spell i
 Alpha.5 tests additionally cover panel bounds, normal/enlarged typography, opposing width anchors during simulated enlargement, left/right icon visibility, compact fallback, semantic symbol groups, variance proportions and object reuse. Actual client rendering, drag behavior and animation remain unverified by the mocked environment.
 
 Alpha.6 is appearance-only: the top edge retains a faint live accent, while side/bottom edges use a subdued neutral color. Panel backgrounds are neutral charcoal. Each timer size reserves the configured mechanic-symbol capacity, keeping progress strips, labels and countdowns aligned even when individual timers have fewer icons. No changes to native row positioning, spacing, sizes or movement settings are introduced in this pass. Regression checks cover icon-count-independent alignment, preserved native stack anchors and neutral edges across accent changes.
+
+Alpha.7 improves readability: brighter unfilled tracks have thin outlines that show their full length, the cached fill tint is lighter, and panels are brighter and more translucent. Full two-pixel accent borders return around panels, with accent edges around spell icons. Internal horizontal padding and countdown reservations are tighter. Native mechanic symbols appear only on enlarged rows; small timers keep their spell icons and reclaim the right-hand space. Alpha changes preserve native shown states and restore the mechanic textures when enlarged. No saved settings, native stack positioning or row spacing are changed. Regressions cover full track edges, accent refreshes, enlarged-only mechanic symbols and small/large transitions.
 
 Install the test ZIP's `EUIAddonSkins` folder in `Interface/AddOns`, replacing the existing folder. DBM and EllesmereUI remain separate requirements. Do not install this alongside another copy of EUI AddonSkins.

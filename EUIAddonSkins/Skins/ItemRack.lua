@@ -23,6 +23,34 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         if not C.Clear then
             local H, S = C.H, C.S
             local cleared, icons, borders, controls = {}, {}, {}, {}
+            C.RemoveArt = function(texture)
+                if not H.Texture(texture) then return end
+                H.Fade(texture)
+                -- These are static, addon-owned decorations. Clear the source
+                -- too so a restored alpha cannot expose the native gradient.
+                if texture:GetTexture() then texture:SetTexture(nil) end
+            end
+            C.FlatHighlight = function(texture, r, g, b, a)
+                texture:SetColorTexture(r, g, b, a)
+                -- A solid texture can still carry the template's vertex gradient.
+                if texture.SetGradientAlpha then texture:SetGradientAlpha("VERTICAL", 1, 1, 1, 1, 1, 1, 1, 1)
+                elseif texture.SetGradient and CreateColor then
+                    C.White = C.White or CreateColor(1, 1, 1, 1)
+                    texture:SetGradient("VERTICAL", C.White, C.White)
+                end
+            end
+            C.Check = function(f, stock)
+                S.Checkbox(f, {borderInset = 4, hover = 0.06, stockCheck = stock})
+                if stock then return end
+                local check = f.GetCheckedTexture and H.Texture(f:GetCheckedTexture())
+                if check then
+                    if check.SetDesaturated then check:SetDesaturated(true) end
+                    check:ClearAllPoints(); check:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
+                    check:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -4, 4)
+                    local r, g, b = S.GetAccentColor()
+                    check:SetVertexColor(r, g, b, 1)
+                end
+            end
             C.SettingsFont = function(text, size, r, g, b)
                 if not H.Allowed(text) or not text.GetFont or not text.SetFont then return end
                 S.Font(text, r, g, b)
@@ -33,7 +61,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
             C.SettingsRow = function(row)
                 if not H.Allowed(row) then return end
                 local name = row:GetName()
-                H.Fade(_G[name .. "Underline"])
+                C.RemoveArt(_G[name .. "Underline"])
                 C.SettingsFont(_G[name .. "Label"], 11, 0.78, 0.78, 0.8)
                 local label = _G[name .. "CheckText"]
                 C.SettingsFont(label, 10)
@@ -46,7 +74,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                 if H.Allowed(check) then
                     check:SetSize(20, 20)
                     check:ClearAllPoints(); check:SetPoint("LEFT", row, "LEFT", 0, 0)
-                    S.Checkbox(check, {borderInset = 4, hover = 0.06})
+                    C.Check(check)
                 end
             end
             C.Settings = function()
@@ -105,7 +133,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                     return quality
                 end
             end
-            C.QualityBorder = function(f, icon, quality, selected)
+            C.QualityBorder = function(f, icon, quality)
                 if icon.GetNumMaskTextures and icon:GetNumMaskTextures() > 0 then return end
                 local entry = borders[f]
                 if not entry then
@@ -124,15 +152,6 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                 end
                 local r, g, b = C.GetQualityColor(quality)
                 for _, edge in ipairs(entry) do edge:SetColorTexture(r, g, b, 1) end
-                if selected ~= nil then
-                    if not entry.marker then
-                        local marker = f:CreateTexture(nil, "OVERLAY", nil, 6)
-                        marker:SetSize(4, 4); marker:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -2, 2)
-                        entry.marker = marker
-                    end
-                    local ar, ag, ab = S.GetAccentColor()
-                    entry.marker:SetColorTexture(ar, ag, ab, selected and 0.9 or 0)
-                end
             end
             C.Detached = function()
                 if InCombatLockdown and InCombatLockdown() then refresh(); return end
@@ -190,22 +209,23 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
             C.Clear = function(f)
                 if not H.Allowed(f) then return end
                 if not cleared[f] then
-                    cleared[f] = true
-                    local regions, foreground = H.Regions(f), false
+                    local regions, foreground, decorations = H.Regions(f), false, {}
                     for _, region in ipairs(regions) do
                         if H.Texture(region) then
                             local layer = region:GetDrawLayer()
                             if layer ~= "BACKGROUND" and layer ~= "BORDER" then foreground = true end
                         end
                     end
-                    if not foreground and S.Inset then S.Inset(f) end
                     for _, region in ipairs(regions) do
                         if H.Texture(region) then
                             local layer = region:GetDrawLayer()
-                            if layer == "BACKGROUND" or layer == "BORDER" then H.Fade(region) end
+                            if layer == "BACKGROUND" or layer == "BORDER" then decorations[#decorations + 1] = region end
                         end
                     end
+                    cleared[f] = decorations
+                    if not foreground and S.Inset then S.Inset(f) end
                 end
+                for _, region in ipairs(cleared[f]) do C.RemoveArt(region) end
                 if f.SetBackdrop then f:SetBackdrop(nil) end
             end
             C.Icon = function(f, icon)
@@ -225,10 +245,18 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                     local data = _G.ItemRackOpt and ItemRackOpt.Inv and ItemRackOpt.Inv[slot]
                     local quality = data and C.ItemQuality(data.id)
                     if not data then quality = C.InventoryQuality(slot) end
-                    C.QualityBorder(f, icon, quality, data and data.selected and true or false)
+                    C.QualityBorder(f, icon, quality)
                 elseif menuIndex then
                     C.QualityBorder(f, icon, C.ItemQuality(_G.ItemRack and ItemRack.Menu and ItemRack.Menu[menuIndex]))
                 end
+                if name:match("^ItemRackOptSetsIcon%d+$") then
+                    local highlight = f.GetHighlightTexture and H.Texture(f:GetHighlightTexture())
+                    if highlight then
+                        C.FlatHighlight(highlight, 1, 1, 1, 0.13)
+                        if highlight.SetBlendMode then highlight:SetBlendMode("BLEND") end
+                        highlight:ClearAllPoints(); highlight:SetAllPoints(icon)
+                    end
+                elseif name == "ItemRackOptSetsCurrentSet" then f:SetSize(30, 30) end
             end
             C.Row = function(row)
                 if not H.Allowed(row) then return end
@@ -236,7 +264,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                 local highlight = H.Texture(_G[name .. "Highlight"])
                 if highlight then
                     local r, g, b = S.GetAccentColor()
-                    highlight:SetColorTexture(r, g, b, 0.13)
+                    C.FlatHighlight(highlight, r, g, b, 0.13)
                 end
                 C.Icon(row, _G[name .. "Icon"])
                 for _, region in ipairs(H.Regions(row)) do H.Font(region) end
@@ -278,6 +306,11 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         for _, method in ipairs({"SortListScrollFrameUpdate", "EventListScrollFrameUpdate", "SetListScrollFrameUpdate"}) do
             C.H.Hook(_G.ItemRackOpt, method, C.UpdateRows)
         end
+        C.H.Hook(_G.ItemRackOpt, "SetsIconScrollFrameUpdate", function()
+            if InCombatLockdown and InCombatLockdown() then refresh(); return end
+            C.RefreshControlsNow(_G.ItemRackOptSetsIconFrame)
+        end)
+        C.H.Hook(_G.ItemRackOpt, "PickSetOnShow", function() C.RefreshControlsNow(_G.ItemRackOptSubFrame5) end)
         C.H.Hook(_G.ItemRackOpt, "LockHighlight", C.UpdateHighlight)
         C.H.Hook(_G.ItemRackOpt, "UnlockHighlight", C.UpdateHighlight)
         C.H.Hook(_G.ItemRackOpt, "ListScrollFrameUpdate", C.Settings)
@@ -302,6 +335,18 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
             f.Text = f.Text or _G[name .. "Text"]
             S.Dropdown(f)
             C.SettingsFont(f.Text, 10, 0.9, 0.9, 0.92)
+            local data = S.GetFFD and S.GetFFD(f)
+            if data and H.Texture(data.arrow) then
+                data.arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-left.png")
+                data.arrow:SetTexCoord(0, 1, 0, 1)
+                if data.arrow.SetRotation then data.arrow:SetRotation(math.pi / 2) end
+                data.arrow:SetSize(9, 9); data.arrow:SetVertexColor(0.75, 0.75, 0.77, 1)
+            end
+            if H.Allowed(f.Text) then
+                if f.Text.GetStringWidth then f:SetWidth(math.max(f:GetWidth(), f.Text:GetStringWidth() + 30)) end
+                f.Text:ClearAllPoints(); f.Text:SetPoint("LEFT", f, "LEFT", 6, 0)
+                f.Text:SetPoint("RIGHT", f, "RIGHT", -22, 0)
+            end
             return true
         end
         if name:match("Button$") and settingsDrops[name:sub(1, -7)] then
@@ -315,11 +360,19 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
             for _, side in ipairs({"Left", "Middle", "Right"}) do H.Fade(_G["ItemRackOptSetsDropTexture" .. side]) end
         end
         local picker = _G.ItemRackOpt and _G.ItemRackOpt.QueueIconPicker
+        -- The saved-set list's decorated inner frame has no global name.
+        local setRow = _G.ItemRackOptSetList1
+        if kind == "Frame" and name == "" and setRow and f == setRow:GetParent() then
+            C.Clear(f); C.Panel(f)
+        end
         if kind == "Frame" and name:match("^ItemRackOpt") and f ~= _G.ItemRackOptFrame and f ~= picker then
             local point, relative, relativePoint
             if f.GetPoint then point, relative, relativePoint = f:GetPoint(1) end
             if point and relativePoint and point:find("LEFT") and relative == _G.ItemRackOptFrame and relativePoint:find("RIGHT") then C.Panel(f)
-            else C.Clear(f) end
+            else
+                C.Clear(f)
+                if name:match("^ItemRackOptSubFrame%d+$") or name == "ItemRackOptSetsIconFrame" then C.Panel(f) end
+            end
         end
         if kind == "ScrollFrame" and name:match("^ItemRackOpt") then
             C.Clear(f)
@@ -381,7 +434,15 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
             end
         end
         if kind == "CheckButton" then
-            S.Checkbox(f, {borderInset = 4, hover = 0.06, stockCheck = name == "ItemRackOptShowHelm" or name == "ItemRackOptShowCloak"})
+            C.Check(f, name == "ItemRackOptShowHelm" or name == "ItemRackOptShowCloak")
+            return true
+        end
+        if kind == "EditBox" and name == "ItemRackOptSetsName" then
+            S.EditBox(f)
+            local data = S.GetFFD and S.GetFFD(f)
+            if data and H.Texture(data.bg) then data.bg:SetColorTexture(0.055, 0.055, 0.055, 0.9) end
+            C.SettingsFont(f, 11, 0.9, 0.9, 0.92)
+            if f.SetTextInsets then f:SetTextInsets(4, 4, 0, 0) end
             return true
         end
         if kind == "EditBox" and name:match("^ItemRackOpt") and _G[name .. "Slider"] then

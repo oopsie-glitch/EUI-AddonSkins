@@ -29,6 +29,10 @@ local function texture(kind, parent)
     function t:SetHeight(h) self.height = h end
     function t:SetWidth(w) self.width = w end
     function t:SetTexCoord(...) self.crop = {...} end
+    function t:SetDesaturated(v) self.desaturated = v end
+    function t:SetBlendMode(v) self.blendMode = v end
+    function t:SetRotation(v) self.rotation = v end
+    function t:SetGradientAlpha(...) self.gradient = {...} end
     function t:GetNumMaskTextures() return self.masked and 1 or 0 end
     function t:SetText(s) assert(self.font, "FontString:SetText(): Font not set"); self.text = s end
     function t:GetFont() return self.font, self.font and (self.fontSize or 12), '' end
@@ -369,6 +373,8 @@ do
     slot.checked = true; slot.action = function() return 'select-equipment' end
     local check = frame('CheckButton', 'ItemRackOptQueueEnable', root); check.checked = true
     local tristate = frame('CheckButton', 'ItemRackOptShowHelm', sets)
+    local triCheck = tristate:CreateTexture(); triCheck.color = {0.5, 0.5, 0.5, 1}
+    tristate.GetCheckedTexture = function() return triCheck end
     local horizontal = frame('Slider', 'ItemRackOptSlider1', root)
     local hthumb = horizontal:CreateTexture(); horizontal.GetThumbTexture = function() return hthumb end
     horizontal.GetOrientation = function() return 'HORIZONTAL' end
@@ -405,15 +411,51 @@ do
         _G[row.name .. 'Underline'] = row:CreateTexture()
         frame('CheckButton', row.name .. 'CheckButton', row)
     end
+    local tick = ItemRackOptList3CheckButton:CreateTexture(); tick.path = 'gold-check'
+    ItemRackOptList3CheckButton.GetCheckedTexture = function() return tick end
+    ItemRackOptList3CheckButton.checked = true
+    local setPicker = frame('Frame', 'ItemRackOptSubFrame5', root)
+    local anonymous = frame('Frame', nil, setPicker)
+    anonymous:SetBackdrop({edgeFile = 'Interface\\Tooltips\\UI-Tooltip-Border'})
+    local anonymousGradient = anonymous:CreateTexture(); anonymousGradient.layer = 'BACKGROUND'
+    local setRow = frame('Button', 'ItemRackOptSetList1', anonymous)
+    ItemRackOptSetList1Icon = setRow:CreateTexture(); ItemRackOptSetList1Icon.path = 'set-art'
+    ItemRackOptSetList1Highlight = setRow:CreateTexture(); ItemRackOptSetList1Highlight.shown = false
+    local setLabel = setRow:CreateFontString(nil, nil, 'native'); setLabel.textColor = {0.7, 0.7, 0.7, 1}
+    setRow.action = function() return 'select-set-native' end
+    local pickerClose = frame('Button', 'ItemRackOptSetListClose', anonymous)
+    pickerClose.action = function() return 'close-native' end
+    local unrelated = frame('Frame', nil, root)
+    local unrelatedArt = unrelated:CreateTexture(); unrelatedArt.layer = 'BACKGROUND'
+    local grid = frame('Frame', 'ItemRackOptSetsIconFrame', sets)
+    local gridGradient = grid:CreateTexture(); gridGradient.layer = 'BACKGROUND'
+    grid:SetBackdrop({edgeFile = 'native-border'})
+    local function SetIcon(index)
+        local button = frame('Button', 'ItemRackOptSetsIcon' .. index, grid)
+        _G[button.name .. 'Icon'] = button:CreateTexture()
+        button.highlight = button:CreateTexture(); button.highlight.path = 'gold-highlight'
+        button.GetHighlightTexture = function(self) return self.highlight end
+        button.action = function() return 'set-icon-native' end
+        return button
+    end
+    local gridIcon = SetIcon(1); gridIcon.highlight.shown = true
+    local preview = frame('CheckButton', 'ItemRackOptSetsCurrentSet', sets)
+    ItemRackOptSetsCurrentSetIcon = preview:CreateTexture(); ItemRackOptSetsCurrentSetIcon.path = 'preview-art'
+    local setName = frame('EditBox', 'ItemRackOptSetsName', sets)
     local number = frame('EditBox', 'ItemRackOptMenuScale', config)
     number.GetFont, number.SetFont = ItemRackOptList1Label.GetFont, ItemRackOptList1Label.SetFont
     number.GetTextColor, number.SetTextColor = ItemRackOptList1Label.GetTextColor, ItemRackOptList1Label.SetTextColor
     number.SetJustifyH = function(self, v) self.justify = v end
     number.SetJustifyV = function(self, v) self.justifyV = v end
     number.SetTextInsets = function(self, ...) self.textInsets = {...} end
+    setName.GetFont, setName.SetFont = number.GetFont, number.SetFont
+    setName.GetTextColor, setName.SetTextColor = number.GetTextColor, number.SetTextColor
+    setName.SetTextInsets = number.SetTextInsets
+    setName.text, setName.font = 'Saved set', 'native-input'
+    setName.hooks.OnTextChanged = function() return 'validate-native' end
     number.font, number.text = 'native-input', '0.85'
     local inputFill = number:CreateTexture()
-    S.GetFFD = function(f) if f == number then return {bg = inputFill} end end
+    local setNameFill = setName:CreateTexture()
     number.hooks.OnEnterPressed = function() return 'number-native' end
     local scale = frame('Slider', 'ItemRackOptMenuScaleSlider', config)
     local scaleThumb = scale:CreateTexture(); scale.GetThumbTexture = function() return scaleThumb end
@@ -425,6 +467,12 @@ do
     ItemRackOptQuickAccessMenuSideText = drop:CreateFontString(nil, nil, 'native')
     local arrow = frame('Button', 'ItemRackOptQuickAccessMenuSideButton', drop)
     arrow.nativeArt = arrow:CreateTexture(); arrow.action = function() return 'arrow-native' end
+    local euiArrow = drop:CreateTexture(); euiArrow.path = 'Azerite-PointingArrow'
+    S.GetFFD = function(f)
+        if f == number then return {bg = inputFill}
+        elseif f == setName then return {bg = setNameFill}
+        elseif f == drop then return {arrow = euiArrow} end
+    end
     ItemRack = {BuildMenu = function() MenuItem(3); return 'menu-native', nil, 7 end, ToggleOptions = function() return 'options' end}
     ItemRackOpt = {TabOnClick = function() return 'tab-native' end,
         OptInfo = {{type = 'label'}, {type = 'number', button = number}, {type = 'check'},
@@ -432,10 +480,18 @@ do
         ListScrollFrameUpdate = function()
             ItemRackOptList1Label:SetFont('native-heading', 12); ItemRackOptList1Label:SetTextColor(1, 0.82, 0)
             ItemRackOptList1Underline:SetAlpha(1)
+            ItemRackOptList1Underline:SetTexture('native-gradient')
             ItemRackOptList3CheckText:SetTextColor(0.5, 0.5, 0.5)
             number:ClearAllPoints(); number:SetPoint('LEFT', ItemRackOptList2NumberLabel, 'RIGHT', 16, -1)
             return 'config-native', nil, 4
         end,
+        SetsIconScrollFrameUpdate = function()
+            if not ItemRackOptSetsIcon2 then SetIcon(2) end
+            gridIcon.highlight.shown = false; ItemRackOptSetsIcon2.highlight.shown = true
+            return 'icons-native', nil, 2
+        end,
+        PickSetOnShow = function() return 'show-sets-native' end,
+        SetListScrollFrameUpdate = function() return 'sets-native' end,
         ToggleQuickAccessMenuSidePick = function()
             if not ItemRackOptQuickAccessMenuSidePick then
                 local picker = frame('Frame', 'ItemRackOptQuickAccessMenuSidePick', drop)
@@ -447,7 +503,7 @@ do
         end,
         SortListScrollFrameUpdate = function() ItemRackOptSortList1Highlight:SetColorTexture(0.8, 0.7, 0.5, 1); return 'rows-native' end}
     modules.ItemRack.install(S, modules.ItemRack); flush()
-    assert(not sets.panel and sets.gradient.alpha == 0 and sets.backdrop == nil and artwork.alpha == 1)
+    assert(sets.panel and sets.gradient.alpha == 0 and sets.gradient.path == nil and sets.backdrop == nil and artwork.alpha == 1)
     assert(ItemRackOptSetsDropTextureLeft.alpha == 0 and choose.glyph == 'v' and choose.action() == 'choose-set')
     assert(slot.normal.alpha == 0 and ItemRackOptInv7Icon.crop and not slot.checkbox and slot.checked and slot.action() == 'select-equipment')
     assert(check.checkbox and check.checkOptions.borderInset == 4 and check.checked and tristate.checkOptions.stockCheck)
@@ -455,6 +511,55 @@ do
         and horizontal.value == 1 and horizontal.range[2] == 2 and horizontal.hooks.OnValueChanged() == 'scale-native')
     assert(move.glyph == '^' and move.action() == 'move-native')
     assert(gradient.alpha == 0 and drop.dropdown and arrow.nativeArt.alpha == 0 and arrow.action() == 'arrow-native')
+    assert(gradient.path == nil and ItemRackOptList1Underline.path == nil)
+    assert(euiArrow.path:find('eui%-arrow%-left') and euiArrow.width == 9 and euiArrow.color[1] == 0.75
+        and euiArrow.rotation == math.pi / 2 and ItemRackOptQuickAccessMenuSideText.points[2][4] == -22,
+        'dropdown retained its gold arrow or failed to reserve label clearance')
+    assert(tick.desaturated and tick.color[1] == accent and ItemRackOptList3CheckButton.checked
+        and tick.points[1][4] == 4 and tick.points[2][4] == -4
+        and not triCheck.desaturated and triCheck.color[1] == 0.5, 'checkbox treatment changed native tristate semantics')
+    assert(anonymous.panel and anonymous.backdrop == nil and anonymousGradient.alpha == 0 and anonymousGradient.path == nil,
+        'unnamed saved-set container retained its native gradient/border')
+    assert(unrelatedArt.path == 'native' and unrelatedArt.alpha == 1, 'cleanup reached an unrelated unnamed frame')
+    assert(ItemRackOptSetList1Icon.path == 'set-art' and setLabel.textColor[1] == 0.7
+        and ItemRackOptSetList1Highlight.color[4] == 0.13 and not ItemRackOptSetList1Highlight.shown
+        and setRow.action() == 'select-set-native' and pickerClose.close and pickerClose.action() == 'close-native')
+    assert(grid.panel and grid.backdrop == nil and gridGradient.path == nil and gridIcon.highlight.color[4] == 0.13
+        and gridIcon.highlight.blendMode == 'BLEND' and gridIcon.highlight.shown and gridIcon.action() == 'set-icon-native'
+        and gridIcon.highlight.gradient[2] == 1 and gridIcon.highlight.gradient[9] == 1)
+    assert(preview.width == 30 and preview.height == 30 and ItemRackOptSetsCurrentSetIcon.path == 'preview-art')
+    assert(setName.input and setName.font == 'eui' and setName.fontSize == 11 and setName.text == 'Saved set'
+        and setNameFill.color[1] == 0.055 and setName.textInsets[1] == 4 and setName.hooks.OnTextChanged() == 'validate-native')
+    local a, b, c = ItemRackOpt.SetsIconScrollFrameUpdate(); assert(a == 'icons-native' and b == nil and c == 2)
+    assert(not gridIcon.highlight.shown and ItemRackOptSetsIcon2.highlight.color[4] == 0.13
+        and ItemRackOptSetsIcon2.highlight.shown, 'dynamic icon selection lost its styling/native visibility')
+    assert(ItemRackOpt.PickSetOnShow() == 'show-sets-native')
+    local iconRegions, chooserRegions = #gridIcon.regions, #anonymous.regions
+    auditScans[root] = 0
+    for _ = 1, 50 do ItemRackOpt.SetsIconScrollFrameUpdate(); assert(ItemRackOpt.SetListScrollFrameUpdate() == 'sets-native') end
+    assert(auditScans[root] == 0 and #gridIcon.regions == iconRegions and #anonymous.regions == chooserRegions,
+        'set icon/list updates allocated controls or scanned the full options window')
+    gridGradient:SetTexture('native-gradient'); anonymousGradient:SetTexture('native-gradient')
+    anonymous:SetBackdrop({edgeFile = 'restored-native-border'})
+    modules.ItemRack.refresh(); flush()
+    assert(gridGradient.path == nil and anonymousGradient.path == nil and anonymous.backdrop == nil,
+        'native repaint restored a gradient or the saved-set border')
+    local oldCreateColor, colorCalls = CreateColor, 0
+    CreateColor = function(...) colorCalls = colorCalls + 1; return {...} end
+    gridIcon.highlight.SetGradientAlpha = false
+    gridIcon.highlight.SetGradient = function(self, direction, first, last) self.modernGradient = {direction, first, last} end
+    for _ = 1, 10 do ItemRackOpt.SetsIconScrollFrameUpdate() end
+    assert(colorCalls == 1 and gridIcon.highlight.modernGradient[2] == gridIcon.highlight.modernGradient[3],
+        'modern gradient reset allocated colours repeatedly or used different endpoints')
+    CreateColor = oldCreateColor
+    combat = true; gridIcon.highlight:SetTexture('combat-native-highlight'); ItemRackOpt.SetsIconScrollFrameUpdate()
+    assert(gridIcon.highlight.path == 'combat-native-highlight')
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(gridIcon.highlight.path == 'solid')
+    enabled = false; gridIcon.highlight:SetTexture('disabled-native-highlight'); ItemRackOpt.SetsIconScrollFrameUpdate()
+    assert(gridIcon.highlight.path == 'disabled-native-highlight')
+    enabled = true; modules.ItemRack.refresh(); flush()
     assert(ItemRackOptList1Label.font == 'eui' and ItemRackOptList1Label.fontSize == 11
         and ItemRackOptList1Label.textColor[1] == 0.78 and ItemRackOptList1Underline.alpha == 0)
     assert(ItemRackOptList3CheckText.width == 132 and ItemRackOptList3CheckButton.width == 20)
@@ -547,8 +652,11 @@ do
     assert(Edges(slot)[1].color[3] == 0.87 and Edges(item)[1].color[3] == 0.87, 'rarity styling differs between options and menus')
     local marker
     for _, r in ipairs(slot.regions) do if r.width == 4 and r.height == 4 then marker = r end end
-    assert(marker and marker.color[4] == 0.9, 'editing selection was not separate from rarity')
-    ItemRackOpt.Inv[7].selected = false; modules.ItemRack.refresh(); flush(); assert(marker.color[4] == 0)
+    assert(not marker, 'redundant set-selection square was recreated')
+    ItemRackOpt.Inv[7].selected = false; ItemRackOptInv7Icon:SetVertexColor(0.25, 0.25, 0.25)
+    modules.ItemRack.refresh(); flush()
+    assert(ItemRackOptInv7Icon.color[1] == 0.25 and Edges(slot)[1].color[3] == 0.87,
+        'removing selection markers changed native fading or the rarity border')
     local lockIcon = ItemRackButtonMenuLock.regions[#ItemRackButtonMenuLock.regions]
     assert(lockIcon.path:find('eui%-lock%-locked') and ItemRackButtonMenuClose.glyph == 'X'
         and ItemRackButtonMenuQueue.action() == 'control-native')

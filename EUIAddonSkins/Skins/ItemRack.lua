@@ -14,7 +14,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
     panelOptions = {noBorder = true},
     available = function() return _G.ItemRack ~= nil end,
     roots = function()
-        local result = ns.SkinRoots({"ItemRackOptFrame", "ItemRackLogFrame"}, {bottomBar = 24, noAccent = true})
+        local result = ns.SkinRoots({"ItemRackOptFrame", "ItemRackLogFrame"}, {noTopBar = true, noAccent = true})
         if _G.ItemRackMenuFrame then result[#result + 1] = {frame = _G.ItemRackMenuFrame, mode = "controls"} end
         if _G.ItemRackOpt and _G.ItemRackOpt.QueueIconPicker then result[#result + 1] = {frame = _G.ItemRackOpt.QueueIconPicker} end
         return result
@@ -23,11 +23,36 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         if not C.Clear then
             local H, S = C.H, C.S
             local cleared, icons, borders, controls, tabLabels = {}, {}, {}, {}, {}
+            local visuals = {}
+            C.Primitive = function(f, key, method, ...)
+                local entry = visuals[f]
+                if not entry then entry = {}; visuals[f] = entry end
+                if not entry[key] then
+                    local before = {}
+                    for _, region in ipairs(H.Regions(f)) do before[region] = true end
+                    method(f, ...)
+                    local added = {}
+                    for _, region in ipairs(H.Regions(f)) do if not before[region] then added[#added + 1] = region end end
+                    entry[key] = added
+                else method(f, ...) end
+                return entry[key]
+            end
             C.TabLabel = function(f)
-                local data = S.GetFFD and S.GetFFD(f)
-                -- EUI tabs have their own visible label; leave the hidden native
-                -- label transparent so it cannot render a second copy.
-                local text = data and data.label or (f.GetFontString and f:GetFontString()) or f.Text
+                local added = C.Primitive(f, "tab", H.Tab, f.IsEnabled and not f:IsEnabled())
+                local native = (f.GetFontString and f:GetFontString()) or f.Text
+                local text
+                for _, region in ipairs(added) do
+                    if region:GetObjectType() == "FontString" then text = region
+                    elseif H.Texture(region) and region:GetDrawLayer() == "BACKGROUND" then H.Fade(region) end
+                end
+                if not text then
+                    -- A previously styled tab can already have its EUI label.
+                    for _, region in ipairs(H.Regions(f)) do
+                        if region ~= native and region:GetObjectType() == "FontString" then text = region end
+                    end
+                end
+                if text and native and text ~= native then H.Fade(native) end
+                text = text or native
                 if not H.Allowed(text) or not text.SetTextColor then return end
                 local entry = tabLabels[f]
                 if not entry or entry.text ~= text then
@@ -43,6 +68,13 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                     H.Hook(text, "SetTextColor", Paint)
                 end
                 entry.paint()
+            end
+            C.Input = function(f)
+                for _, region in ipairs(C.Primitive(f, "input", S.EditBox)) do
+                    if H.Texture(region) and region:GetDrawLayer() == "BACKGROUND" then
+                        region:SetColorTexture(0.055, 0.055, 0.055, 0.9)
+                    end
+                end
             end
             C.RemoveArt = function(texture)
                 if not H.Texture(texture) then return end
@@ -216,19 +248,22 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                             path = "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-lock-" .. (locked and "locked" or "unlocked") .. ".png"
                         elseif key == "Options" then path = "Interface\\AddOns\\EllesmereUI\\media\\icons\\sidebar\\settings-ig-2.png" end
                         if not controls[f] then
-                            S.PageButton(f, path and "" or (key == "Queue" and "Q" or "X"), 10)
+                            local added = C.Primitive(f, "page", S.PageButton, path and "" or (key == "Queue" and "Q" or "X"), 10)
                             if path then
                                 local icon = f:CreateTexture(nil, "OVERLAY")
                                 icon:SetSize(11, 11); icon:SetPoint("CENTER", f, "CENTER")
                                 controls[f] = icon
-                            else controls[f] = true end
+                            else
+                                for _, region in ipairs(added) do
+                                    if region:GetObjectType() == "FontString" then controls[f] = region end
+                                end
+                            end
                         end
                         local r, g, b = S.GetAccentColor()
-                        if path and controls[f] ~= true then
+                        if path and controls[f] then
                             controls[f]:SetTexture(path); controls[f]:SetVertexColor(r, g, b, 1)
                         else
-                            local data = S.GetFFD and S.GetFFD(f)
-                            local glyph = data and data.arrow or (f.GetFontString and f:GetFontString())
+                            local glyph = controls[f] or (f.GetFontString and f:GetFontString())
                             if H.Allowed(glyph) and glyph.SetTextColor then glyph:SetTextColor(r, g, b, 1) end
                         end
                     end
@@ -361,14 +396,15 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         local name = f.GetName and f:GetName() or ""
         if settingsDrops[name] then
             f.Text = f.Text or _G[name .. "Text"]
-            S.Dropdown(f)
+            local added = C.Primitive(f, "dropdown", S.Dropdown)
             C.SettingsFont(f.Text, 10, 0.9, 0.9, 0.92)
-            local data = S.GetFFD and S.GetFFD(f)
-            if data and H.Texture(data.arrow) then
-                data.arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-left.png")
-                data.arrow:SetTexCoord(0, 1, 0, 1)
-                if data.arrow.SetRotation then data.arrow:SetRotation(math.pi / 2) end
-                data.arrow:SetSize(9, 9); data.arrow:SetVertexColor(0.75, 0.75, 0.77, 1)
+            for _, arrow in ipairs(added) do
+                if H.Texture(arrow) and arrow:GetDrawLayer() == "OVERLAY" then
+                    arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-left.png")
+                    arrow:SetTexCoord(0, 1, 0, 1)
+                    if arrow.SetRotation then arrow:SetRotation(math.pi / 2) end
+                    arrow:SetSize(9, 9); arrow:SetVertexColor(0.75, 0.75, 0.77, 1)
+                end
             end
             if H.Allowed(f.Text) then
                 if f.Text.GetStringWidth then f:SetWidth(math.max(f:GetWidth(), f.Text:GetStringWidth() + 30)) end
@@ -399,7 +435,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
             if point and relativePoint and point:find("LEFT") and relative == _G.ItemRackOptFrame and relativePoint:find("RIGHT") then C.Panel(f)
             else
                 C.Clear(f)
-                if name:match("^ItemRackOptSubFrame%d+$") or name == "ItemRackOptSetsIconFrame" then C.Panel(f) end
+                if name == "ItemRackOptSetsIconFrame" then C.Panel(f) end
             end
         end
         if kind == "ScrollFrame" and name:match("^ItemRackOpt") then
@@ -450,7 +486,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         if (kind == "Button" or kind == "CheckButton") and f.GetName then
             local name = f:GetName() or ""
             if name:match("^ItemRackOptTab%d+$") then
-                H.Tab(f, f.IsEnabled and not f:IsEnabled()); C.TabLabel(f); return true
+                C.TabLabel(f); return true
             end
             if name == "ItemRackOptClose" or name == "ItemRackOptSetListClose" or name == "ItemRackOptSortListClose" then
                 C.S.CloseButton(f); return true
@@ -468,9 +504,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
             return true
         end
         if kind == "EditBox" and name == "ItemRackOptSetsName" then
-            S.EditBox(f)
-            local data = S.GetFFD and S.GetFFD(f)
-            if data and H.Texture(data.bg) then data.bg:SetColorTexture(0.055, 0.055, 0.055, 0.9) end
+            C.Input(f)
             C.SettingsFont(f, 11, 0.9, 0.9, 0.92)
             if f.SetTextInsets then f:SetTextInsets(4, 4, 0, 0) end
             return true
@@ -478,9 +512,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         if kind == "EditBox" and name:match("^ItemRackOpt") and _G[name .. "Slider"] then
             -- Popup padding shifts the field's anchors; these numeric controls
             -- have their own right-aligned layout and symmetric text insets.
-            S.EditBox(f)
-            local data = S.GetFFD and S.GetFFD(f)
-            if data and H.Texture(data.bg) then data.bg:SetColorTexture(0.055, 0.055, 0.055, 0.9) end
+            C.Input(f)
             C.SettingsFont(f, 10, 0.9, 0.9, 0.92)
             f:SetSize(32, 18)
             if f.SetJustifyH then f:SetJustifyH("CENTER") end

@@ -356,6 +356,9 @@ end
 do
     assert(loadfile('EUIAddonSkins/Skins/ItemRack.lua'))('EUIAddonSkins', ns)
     local checkbox, inset, getFFD, pageButton = S.Checkbox, S.Inset, S.GetFFD, S.PageButton
+    local tabPrimitive, tabSelection, dropdownPrimitive, inputPrimitive, shellPrimitive = S.Tab, S.SetTabSelection, S.Dropdown, S.EditBox, S.Shell
+    -- The public EUI facade deliberately does not expose its internal FFD.
+    S.GetFFD = nil
     S.Checkbox = function(f, opts) f.checkOptions = opts; checkbox(f) end
     S.Inset = function(f) f.inset = true end
     ItemRackOptFrame = frame('Frame', 'ItemRackOptFrame')
@@ -363,9 +366,37 @@ do
     local tabLabels = {}
     for index = 1, 4 do
         local tab = frame('Button', 'ItemRackOptTab' .. index, root)
-        tab.label = tab:CreateFontString(nil, nil, 'native'); tab.label:SetTextColor(0, 0, 0, 0)
-        tabLabels[tab] = tab:CreateFontString(nil, nil, 'eui')
+        tab.label = tab:CreateFontString(nil, nil, 'native')
         tab.disabled = index == 4
+    end
+    S.Tab = function(f)
+        tabPrimitive(f)
+        if not tabLabels[f] then
+            f.label:SetTextColor(0, 0, 0, 0)
+            tabLabels[f] = f:CreateFontString(nil, nil, 'eui')
+            f.fixturePlate = f:CreateTexture(); f.fixturePlate.layer = 'BACKGROUND'
+        end
+    end
+    S.SetTabSelection = function(f, selected)
+        tabSelection(f, selected)
+        if tabLabels[f] then tabLabels[f]:SetTextColor(1, 1, 1, selected and 1 or 0.5) end
+    end
+    S.Shell = function(f, options)
+        shellPrimitive(f, options)
+        if not f.fixtureBackdrop then
+            f.fixtureBackdrop = f:CreateTexture(); f.fixtureBackdrop.layer = 'BACKGROUND'
+            f.fixtureBackdrop:SetAllPoints(f)
+        end
+    end
+    S.EditBox = function(f, options)
+        inputPrimitive(f, options)
+        if not f.fixtureInput then f.fixtureInput = f:CreateTexture(); f.fixtureInput.layer = 'BACKGROUND' end
+    end
+    S.Dropdown = function(f)
+        dropdownPrimitive(f)
+        if not f.fixtureArrow then
+            f.fixtureArrow = f:CreateTexture(); f.fixtureArrow.layer = 'OVERLAY'; f.fixtureArrow.path = 'Azerite-PointingArrow'
+        end
     end
     S.PageButton = function(f, ...)
         pageButton(f, ...)
@@ -467,8 +498,6 @@ do
     setName.text, setName.font = 'Saved set', 'native-input'
     setName.hooks.OnTextChanged = function() return 'validate-native' end
     number.font, number.text = 'native-input', '0.85'
-    local inputFill = number:CreateTexture()
-    local setNameFill = setName:CreateTexture()
     number.hooks.OnEnterPressed = function() return 'number-native' end
     local scale = frame('Slider', 'ItemRackOptMenuScaleSlider', config)
     local scaleThumb = scale:CreateTexture(); scale.GetThumbTexture = function() return scaleThumb end
@@ -480,14 +509,6 @@ do
     ItemRackOptQuickAccessMenuSideText = drop:CreateFontString(nil, nil, 'native')
     local arrow = frame('Button', 'ItemRackOptQuickAccessMenuSideButton', drop)
     arrow.nativeArt = arrow:CreateTexture(); arrow.action = function() return 'arrow-native' end
-    local euiArrow = drop:CreateTexture(); euiArrow.path = 'Azerite-PointingArrow'
-    S.GetFFD = function(f)
-        if tabLabels[f] then return {label = tabLabels[f]}
-        elseif f.fixtureGlyph then return {arrow = f.fixtureGlyph}
-        elseif f == number then return {bg = inputFill}
-        elseif f == setName then return {bg = setNameFill}
-        elseif f == drop then return {arrow = euiArrow} end
-    end
     ItemRack = {BuildMenu = function() MenuItem(3); return 'menu-native', nil, 7 end, ToggleOptions = function() return 'options' end}
     ItemRackOpt = {TabOnClick = function(_, which)
             for index = 1, 4 do _G['ItemRackOptTab' .. index].disabled = index == which end
@@ -521,15 +542,21 @@ do
         end,
         SortListScrollFrameUpdate = function() ItemRackOptSortList1Highlight:SetColorTexture(0.8, 0.7, 0.5, 1); return 'rows-native' end}
     modules.ItemRack.install(S, modules.ItemRack); flush()
+    local inputFill, setNameFill, euiArrow = number.fixtureInput, setName.fixtureInput, drop.fixtureArrow
     assert(root.shellOptions.noAccent and not root.accent, 'window-wide accent bar was attached')
+    assert(root.shellOptions.noTopBar and not root.shellOptions.bottomBar and not config.panel and not sets.panel
+        and root.fixtureBackdrop.alpha == 1 and ItemRackOptTab4.fixturePlate.alpha == 0,
+        'window backdrop retained header/footer/centre/idle-tab blocks')
     assert(tabLabels[ItemRackOptTab4].textColor[1] == accent and tabLabels[ItemRackOptTab1].textColor[1] == accent * 0.65)
-    assert(ItemRackOptTab4.label.textColor[4] == 0, 'native tab label became visible behind EUI label')
+    assert(ItemRackOptTab4.label.alpha == 0, 'native tab label became visible behind EUI label')
+    ItemRackOptTab4.label:SetTextColor(1, 1, 1, 1); ItemRackOptTab4.label:SetAlpha(1)
+    assert(ItemRackOptTab4.label.alpha == 0, 'native tab repaint exposed a second label')
     assert(ItemRackOpt.TabOnClick(nil, 2) == 'tab-native')
     assert(ItemRackOptTab2.selected and not ItemRackOptTab4.selected and tabLabels[ItemRackOptTab2].textColor[1] == accent
         and tabLabels[ItemRackOptTab4].textColor[1] == accent * 0.65)
     tabLabels[ItemRackOptTab2]:SetTextColor(1, 1, 1, 0.5)
     assert(tabLabels[ItemRackOptTab2].textColor[1] == accent, 'EUI tab repaint reset the accent tint')
-    assert(sets.panel and sets.gradient.alpha == 0 and sets.gradient.path == nil and sets.backdrop == nil and artwork.alpha == 1)
+    assert(not sets.panel and sets.gradient.alpha == 0 and sets.gradient.path == nil and sets.backdrop == nil and artwork.alpha == 1)
     assert(ItemRackOptSetsDropTextureLeft.alpha == 0 and choose.glyph == 'v' and choose.action() == 'choose-set')
     assert(slot.normal.alpha == 0 and ItemRackOptInv7Icon.crop and not slot.checkbox and slot.checked and slot.action() == 'select-equipment')
     assert(check.checkbox and check.checkOptions.borderInset == 4 and check.checked and tristate.checkOptions.stockCheck)
@@ -762,6 +789,7 @@ do
     C_Item, ITEM_QUALITY_COLORS, ItemRack.GetID = oldCItem, oldColors, oldGetID
     GetItemQualityColor, GetInventoryItemQuality = oldQuality, oldInventoryQuality
     S.Checkbox, S.Inset, S.GetFFD, S.PageButton = checkbox, inset, getFFD, pageButton
+    S.Tab, S.SetTabSelection, S.Dropdown, S.EditBox, S.Shell = tabPrimitive, tabSelection, dropdownPrimitive, inputPrimitive, shellPrimitive
 end
 
 assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)

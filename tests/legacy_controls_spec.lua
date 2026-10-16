@@ -623,6 +623,131 @@ do
     S.EditBox, S.GetFont = oldInput, oldFont
 end
 
+-- Agenda uses its own calendar template, not Blizzard's CalendarDayButton globals.
+do
+    local oldCreate, oldButton, oldTab, oldPage, oldTime = CreateFrame, S.Button, S.Tab, S.PageButton, C_DateAndTime
+    CreateFrame = function(...)
+        local f = oldCreate(...)
+        function f:SetAllPoints(other) self.allPoints = other end
+        function f:EnableMouse(value) self.mouseEnabled = value end
+        return f
+    end
+    S.Button = function(f, keys)
+        if f.agendaFill then return end
+        oldButton(f, keys)
+        f.agendaFill = f:CreateTexture(); f.agendaFill.layer = 'BACKGROUND'
+        f.agendaHover = f:CreateTexture(); f.agendaHover.layer = 'HIGHLIGHT'
+    end
+    S.Tab = function(f)
+        oldTab(f)
+        if f.agendaTabFill then return end
+        f.agendaTabFill = f:CreateTexture(); f.agendaTabFill.layer = 'BACKGROUND'
+        f.agendaTabLabel = f:CreateFontString(nil, nil, 'eui')
+    end
+    S.PageButton = function(f, glyph)
+        oldPage(f, glyph)
+        if f.normal then f.normal:SetAlpha(0) end
+    end
+    C_DateAndTime = {GetCurrentCalendarTime = function() return {year = 2026, month = 10, monthDay = 16} end}
+    local root = frame('Frame'); AltoholicFrame = root; root.Tabs = {}; root.selectedTab = 1
+    local agenda = frame('Frame', nil, root); agenda.id = 5; root.TabAgenda = agenda; root.TabFrames = {agenda}
+    agenda.Panels = {}
+    root.SwitchToTab = function(self, id) self.selectedTab = id; return 'switch-native', nil, id end
+    for i = 1, 7 do
+        local tab = frame('Button', nil, root); tab.label = tab:CreateFontString(nil, nil, 'native')
+        tab:SetPoint('TOPLEFT', root, 'BOTTOMLEFT', (i - 1) * 70, 0); root.Tabs[i] = tab
+    end
+    local hoverCalls, month, eventUpdates, dayUpdates = 0, 10, 0, 0
+    for _, key in ipairs({'CharacterFilterIcon', 'DateFilterIcon', 'EventFilterIcon'}) do
+        local button = frame('Button', nil, agenda); agenda[key] = button
+        button.Icon = button:CreateTexture(); button.Icon.path = key
+        button.action = function() hoverCalls = hoverCalls + 1; return 'filter-native' end
+    end
+    local startEvents = #events
+    modules.Altoholic.install(S, modules.Altoholic); flush() -- Calendar is not loaded yet.
+    assert(root.Tabs[1].agendaTabFill.alpha == 1 and root.Tabs[5].agendaTabFill.alpha == 1,
+        'bottom tab backgrounds were hidden outside the window')
+    local calendar = frame('Frame', nil, agenda); agenda.Calendar = calendar; agenda.Panels.Calendar = calendar
+    calendar.MonthYear = calendar:CreateFontString(nil, nil, 'native')
+    calendar.EventList = frame('Frame', nil, calendar)
+    calendar.EventList.Update = function() eventUpdates = eventUpdates + 1; return 'events-native', nil, 18 end
+    calendar.EventList.Row = frame('Button', nil, calendar.EventList)
+    calendar.EventList.Row.Date = calendar.EventList.Row:CreateFontString(nil, nil, 'native')
+    calendar.EventList.Row.Background = calendar.EventList.Row:CreateTexture()
+    calendar.PrevMonth, calendar.NextMonth = frame('Button', nil, calendar), frame('Button', nil, calendar)
+    calendar.PrevMonth.normal = calendar.PrevMonth:CreateTexture(); calendar.NextMonth.normal = calendar.NextMonth:CreateTexture()
+    for i = 1, 7 do
+        calendar['Weekday' .. i .. 'Background'] = calendar:CreateTexture()
+        calendar['Weekday' .. i .. 'Name'] = calendar:CreateFontString(nil, nil, 'native')
+    end
+    for i = 1, 42 do
+        local day = frame('Button', nil, calendar); calendar['Day' .. i] = day
+        day:SetSize(50, 50); day:SetPoint('TOPLEFT', calendar, 'TOPLEFT', (i - 1) % 7 * 50 + 280, -math.floor((i - 1) / 7) * 50 - 3)
+        day.normal = day:CreateTexture(); day.normal.path = 'Interface\\Calendar\\CalendarBackground'
+        day.Date = day:CreateFontString(nil, nil, 'native'); day.Count = day:CreateFontString(nil, nil, 'native')
+        day.Count:SetTextColor(0.2, 1, 0.2, 1)
+        day.action = function() return 'day-click-native' end
+        day.hooks.OnEnter = function() return 'day-tooltip-native' end
+        day.Update = function(self, date, m, y, dark, count)
+            dayUpdates = dayUpdates + 1
+            self.day, self.month, self.year = date, m, y
+            self.Date:SetText(date); self.normal:SetVertexColor(dark and 0.4 or 1, 1, 1)
+            self.Count:SetText(count); self.Count:SetShown(count > 0)
+            return 'day-native', nil, date
+        end
+    end
+    calendar.Update = function(self)
+        self.EventList:Update(); self.MonthYear:SetText('Month ' .. month)
+        for i = 1, 42 do self['Day' .. i]:Update(i > 31 and i - 31 or i, i > 31 and month + 1 or month, 2026, i > 31, i == 16 and 2 or 0) end
+        return 'calendar-native', nil, month
+    end
+    calendar.PrevMonth.action = function() month = month - 1; return calendar:Update() end
+    calendar.NextMonth.action = function() month = month + 1; return calendar:Update() end
+    calendar:Update()
+    local a, b, c = root:SwitchToTab(5); assert(a == 'switch-native' and b == nil and c == 5)
+    assert(root.Tabs[5].selected and root.Tabs[5].agendaTabFill.alpha == 1 and root.Tabs[5].points[1][3] == 'BOTTOMLEFT')
+    local today, outside = calendar.Day16, calendar.Day42
+    local layer = today.children[#today.children]
+    assert(today.normal.alpha == 0 and today.agendaFill.color[1] == 0.08 and today.agendaFill.color[4] == 0.92)
+    assert(outside.Date.textColor[1] == 0.38 and outside.agendaFill.color[1] == 0.08 * 0.4 and outside.agendaFill.color[4] == 0.92)
+    assert(today.Count.text == 2 and today.Count:IsShown() and today.Count.textColor[2] == 1
+        and not outside.Count:IsShown() and today.Date.text == 16 and today.action() == 'day-click-native'
+        and today.hooks.OnEnter() == 'day-tooltip-native', 'day styling changed event data, visibility or actions')
+    assert(layer.mouseEnabled == false and #layer.regions == 4 and layer.regions[1].color[1] == accent)
+    assert(calendar.Weekday1Background.alpha == 0 and calendar.Weekday1Name.textColor[3] == 0.604
+        and calendar.MonthYear.text == 'Month 10' and calendar.MonthYear.textColor[1] == 0.95)
+    assert(calendar.PrevMonth.glyph == '<' and calendar.NextMonth.glyph == '>' and calendar.PrevMonth.normal.alpha == 0)
+    assert(calendar.PrevMonth.points[1][2] == calendar.Day1 and calendar.NextMonth.points[1][2] == calendar.Day7
+        and calendar.MonthYear.points[1][2] == calendar.PrevMonth and calendar.MonthYear.points[2][2] == calendar.NextMonth)
+    assert(agenda.CharacterFilterIcon.width == 32 and agenda.CharacterFilterIcon.points[1][2] == calendar.EventList
+        and agenda.DateFilterIcon.points[1][2] == agenda.CharacterFilterIcon and agenda.EventFilterIcon.points[1][2] == agenda.DateFilterIcon)
+    for _, key in ipairs({'CharacterFilterIcon', 'DateFilterIcon', 'EventFilterIcon'}) do assert(agenda[key].action() == 'filter-native') end
+    assert(hoverCalls == 3 and today.width == 50 and today.height == 50 and today.points[1][4] == 330,
+        'calendar styling changed native day geometry')
+    local objects, childCount, hook, eventsHook = #today.regions, #today.children, today.Update, calendar.EventList.Update
+    auditScans[root], auditScans[agenda] = 0, 0
+    local before = dayUpdates
+    for _ = 1, 20 do
+        local a, b, c = calendar:Update(); assert(a == 'calendar-native' and b == nil and c == month)
+    end
+    assert(dayUpdates - before == 42 * 20 and #today.regions == objects and #today.children == childCount
+        and today.Update == hook and calendar.EventList.Update == eventsHook
+        and auditScans[root] == 0 and auditScans[agenda] == 0, 'month updates duplicated hooks/objects or scanned the whole window')
+    a, b, c = calendar.NextMonth.action(); assert(a == 'calendar-native' and b == nil and c == 11)
+    assert(today.month == 11 and layer.regions[1].color[1] == 0.18)
+    calendar.PrevMonth.action(); assert(today.month == 10 and layer.regions[1].color[1] == accent)
+    accent = 0.7; modules.Altoholic.refresh(); flush(); assert(layer.regions[1].color[1] == accent)
+    combat = true; outside:Update(5, 10, 2026, false, 3)
+    assert(outside.Date.textColor[1] == 0.38, 'calendar repaint ran during combat')
+    combat = false
+    for i = startEvents + 1, #events do local f = events[i]; if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(outside.Date.textColor[1] == 0.95 and outside.Count:IsShown())
+    enabled = false; today:Update(4, 10, 2026, true, 0)
+    assert(today.Date.textColor[1] == 0.95, 'disabled calendar skin processed a day update')
+    enabled = true; modules.Altoholic.refresh(); flush(); assert(today.Date.textColor[1] == 0.38)
+    CreateFrame, S.Button, S.Tab, S.PageButton, C_DateAndTime = oldCreate, oldButton, oldTab, oldPage, oldTime
+end
+
 assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)
 ForeverDungeonJournal_NS = {THEMES = {}, ToggleJournal = function() end}
 ForeverDungeonJournalFrame = frame('Frame')

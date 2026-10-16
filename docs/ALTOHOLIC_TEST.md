@@ -36,3 +36,14 @@ The revised path also performs the immediate selected-tab pass. Newly selected t
 - Use only the public skinning facade. Primitive-created regions are discovered once and cached; no internal EUI frame-data accessor is used. No shared runtime files, target data or saved variables are changed.
 
 The source-shaped fixtures cover real grid Background/Name/IconBorder fields, item-to-empty reuse, new pooled cells, quality colour changes, class atlas updates, public primitive-created tab labels/arrows, native dropdown methods/actions, slider backdrop/geometry/value preservation, normal checkbox semantics, and combat/disabled guards. Fifty grid-row updates perform no full-window scans or repeated edge allocation. Existing hidden-tab benchmark and all 16 regression suites still pass. No in-game rendering or taint verification is claimed.
+
+## Agenda calendar
+
+- Restore the public EUI tab primitive's dark backgrounds on the external bottom tabs. Native tab anchors, labels and selection remain intact, including active accent underlines.
+- Replace Agenda's gold calendar tiles and orange weekday strip with EUI button fills, subtle single grid dividers, muted neighbouring-month dates and a restrained hover. Today's date has an accent outline. Native event counts, colours, visibility, date values, tooltips and click actions remain authoritative.
+- Use EUI month arrows and a neutral month/year heading aligned over the seven-column grid. Group the existing three filter icons above the event list at a uniform size and spacing, clear of the search field. The native filter hover menus and month actions remain in place.
+- Style day updates directly after their native `Update` method. Event-list updates scan only their own subtree; month changes do not request a full-window scan. Dividers are created once on visual-only, mouse-disabled children. No polling or shared runtime changes.
+
+Checked against `Thaoky/Altoholic_Forever` Agenda/calendar templates at `873969817e8aa1a4f37cf1fe3d9e7f88218a9a2d` and EUI's Blizzard calendar implementation. Altoholic's calendar contains event counts rather than Blizzard's holiday illustrations; no new event data or actions are introduced.
+
+Automated fixtures cover late Agenda loading, all 42 days, public primitive-created tab backgrounds, current/adjacent month colours, today/accent changes, weekday art, heading/filter alignment, original day geometry and actions, event visibility/colours, navigation/return values, combat deferral and disabled skins. Twenty mocked month updates retain the same objects/hooks, execute exactly the native 42 day updates per month, and perform no main-window or Agenda-tab scans. All 16 suites and the 35-file MIT-licensed one-folder package checks pass. Actual client layout, hit-testing and taint remain unverified.

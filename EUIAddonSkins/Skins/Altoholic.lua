@@ -17,6 +17,7 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
             local H, S = C.H, C.S
             local surfaces, clear, zones = {}, {}, {}
             local primitives, edges, tabLabels, dropdowns, tabPaints = {}, {}, {}, {}, {}
+            local calendarDays, calendarBorders, calendarLayouts = {}, {}, {}
             local atlasIcons, square = {}, S.SquareIcon
             S.SquareIcon = function(icon, parent)
                 if not atlasIcons[icon] then return square(icon, parent) end
@@ -47,8 +48,7 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
                 local label = tabLabels[f]
                 if not label then
                     for _, region in ipairs(added) do
-                        if region:GetObjectType() == "FontString" then label = region
-                        elseif H.Texture(region) and region:GetDrawLayer() == "BACKGROUND" then H.Fade(region) end
+                        if region:GetObjectType() == "FontString" then label = region end
                     end
                     label = label or native; tabLabels[f] = label
                 end
@@ -105,6 +105,95 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
                 end
             end
             C.Local = function(f) C.RefreshControlsNow(f) end
+            C.CalendarDay = function(day)
+                if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                local normal = day.GetNormalTexture and H.Texture(day:GetNormalTexture())
+                local shade = normal and normal.GetVertexColor and normal:GetVertexColor() or 1
+                local dark = shade < 0.9
+                local br, bg, bb, ba = 0.08, 0.08, 0.08, 0.92
+                if S.GetPanelColor then br, bg, bb, ba = S.GetPanelColor() end
+                local dim = dark and 0.4 or 1
+                local fill = C.Primitive(day, "calendarDay", S.Button, {"Date", "Count"})
+                H.Fade(normal)
+                for _, region in ipairs(fill) do
+                    if H.Texture(region) and region:GetDrawLayer() == "BACKGROUND" then
+                        region:SetColorTexture(br * dim, bg * dim, bb * dim, ba)
+                    elseif H.Texture(region) and region:GetDrawLayer() == "HIGHLIGHT" then
+                        region:SetColorTexture(1, 1, 1, 0.05)
+                    end
+                end
+                local border = calendarBorders[day]
+                if not border then
+                    -- Keep these visual-only dividers outside EUI's direct
+                    -- texture re-strip registry. The child never takes input.
+                    local layer = CreateFrame("Frame", nil, day)
+                    layer:SetAllPoints(day)
+                    if layer.EnableMouse then layer:EnableMouse(false) end
+                    if day.GetFrameLevel and layer.SetFrameLevel then layer:SetFrameLevel(day:GetFrameLevel()) end
+                    border = {}; calendarBorders[day] = border
+                    for _, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+                        local edge = layer:CreateTexture(nil, "OVERLAY", nil, 7)
+                        if side == "TOP" or side == "BOTTOM" then
+                            edge:SetPoint(side .. "LEFT", day, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", day, side .. "RIGHT"); edge:SetHeight(1)
+                        else
+                            edge:SetPoint("TOP" .. side, day, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, day, "BOTTOM" .. side); edge:SetWidth(1)
+                        end
+                        border[side] = edge
+                    end
+                end
+                local now = C_DateAndTime and C_DateAndTime.GetCurrentCalendarTime and C_DateAndTime.GetCurrentCalendarTime()
+                local today = now and day.day == now.monthDay and day.month == now.month and day.year == now.year
+                local r, g, b = 0.18, 0.18, 0.18
+                if today then r, g, b = S.GetAccentColor() end
+                local index = calendarDays[day]
+                for side, edge in pairs(border) do
+                    local outer = side == "TOP" or side == "LEFT" or side == "RIGHT" and index % 7 == 0 or side == "BOTTOM" and index > 35
+                    edge:SetColorTexture(r, g, b, (today or outer) and 1 or 0)
+                end
+                local color = dark and 0.38 or 0.95
+                H.Font(day.Date, color, color, color)
+                H.Font(day.Count) -- Native event count/visibility remains authoritative.
+            end
+            C.IsCalendarDay = function(day) return calendarDays[day] ~= nil end
+            C.Calendar = function(calendar)
+                if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                for index = 1, 42 do
+                    local day = calendar["Day" .. index]
+                    if H.Allowed(day) and not calendarDays[day] then
+                        calendarDays[day] = index
+                        H.Hook(day, "Update", C.CalendarDay)
+                    end
+                end
+                for index = 1, 7 do
+                    H.Fade(calendar["Weekday" .. index .. "Background"])
+                    H.Font(calendar["Weekday" .. index .. "Name"], 1, 1, 0.604)
+                end
+                C.Font(calendar.MonthYear, 16, 0.95, 0.95, 0.95)
+                S.SoftPageButton(calendar.PrevMonth, "<", 16)
+                S.SoftPageButton(calendar.NextMonth, ">", 16)
+                if not calendarLayouts[calendar] then
+                    calendarLayouts[calendar] = true
+                    local first, last = calendar.Day1, calendar.Day7
+                    calendar.PrevMonth:ClearAllPoints(); calendar.PrevMonth:SetPoint("TOPLEFT", first, "TOPLEFT", 0, 62)
+                    calendar.NextMonth:ClearAllPoints(); calendar.NextMonth:SetPoint("TOPRIGHT", last, "TOPRIGHT", 0, 62)
+                    calendar.MonthYear:ClearAllPoints()
+                    calendar.MonthYear:SetPoint("LEFT", calendar.PrevMonth, "RIGHT", 8, 0)
+                    calendar.MonthYear:SetPoint("RIGHT", calendar.NextMonth, "LEFT", -8, 0)
+                    local agenda = _G.AltoholicFrame and AltoholicFrame.TabAgenda
+                    local previous
+                    for _, key in ipairs({"CharacterFilterIcon", "DateFilterIcon", "EventFilterIcon"}) do
+                        local button = agenda and agenda[key]
+                        if H.Allowed(button) and calendar.EventList then
+                            button:SetSize(32, 32); button:ClearAllPoints()
+                            if previous then button:SetPoint("LEFT", previous, "RIGHT", 8, 0)
+                            else button:SetPoint("TOPLEFT", calendar.EventList, "TOPLEFT", 32, 59) end
+                            previous = button
+                        end
+                    end
+                end
+                H.Hook(calendar, "Update", C.Calendar)
+                if H.Allowed(calendar.EventList) then H.Hook(calendar.EventList, "Update", C.Local) end
+            end
             C.Dropdown = function(f)
                 dropdowns[f] = true
                 local icon = H.Texture(f.Icon); local alpha = icon and icon:GetAlpha()
@@ -233,6 +322,10 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
     visit = function(C, f, kind, refresh)
         local H, S, main = C.H, C.S, _G.AltoholicFrame
         if f == main then H.Portrait(f, true, true) end
+        if kind == "Frame" and f.Day1 and f.Day7 and f.MonthYear and H.Allowed(f.PrevMonth) and H.Allowed(f.NextMonth) then
+            C.Calendar(f)
+        end
+        if kind == "Button" and C.IsCalendarDay(f) then C.CalendarDay(f); return true end
         if kind == "Button" and H.Texture(f.Background) and H.Texture(f.IconBorder) and f.Name then
             C.Item(f, f.Background); return true
         end
@@ -375,6 +468,9 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
         if kind == "Button" then
             if C.DropChild(f) then return true end
             local parent = f:GetParent()
+            if parent and (parent.PrevMonth == f or parent.NextMonth == f) then
+                S.SoftPageButton(f, parent.NextMonth == f and ">" or "<", 16); return true
+            end
             if parent and (parent.NextPage == f or parent.PrevPage == f) then
                 S.SoftPageButton(f, parent.NextPage == f and ">" or "<", 12); return true
             end

@@ -174,8 +174,11 @@ local function HUD(C)
         d.labelSize = math.max(6, height * 23 / 88 * fontScale)
         if Allowed(label) then
             label:SetFont(path, d.labelSize, flags or ""); label:ClearAllPoints()
-            label:SetPoint("TOPLEFT", frame, "LEFT", contentX + x, Snap(top - height * 19 / 88, pixel) + y)
-            label:SetPoint("TOPRIGHT", frame, "RIGHT", -Snap(width * (754 - 565) / 754, pixel) + x, Snap(top - height * 19 / 88, pixel) + y)
+            label:SetPoint("TOPLEFT", frame, "LEFT", contentX + x, Snap(top - height * 10 / 88, pixel) + y)
+            label:SetPoint("TOPRIGHT", frame, "RIGHT", -Snap(width * (754 - 565) / 754, pixel) + x, Snap(top - height * 10 / 88, pixel) + y)
+            -- A fixed upper text band centers both plain lines and taller inline icons.
+            label:SetHeight(math.max(pixel, Snap(height * 34 / 88, pixel)))
+            if label.SetJustifyV then label:SetJustifyV("MIDDLE") end
             if label.SetWordWrap then label:SetWordWrap(false) end
             if label.SetNonSpaceWrap then label:SetNonSpaceWrap(false) end
             Shadow(label)
@@ -264,7 +267,8 @@ local function HUD(C)
         bar:ClearAllPoints()
         bar:SetPoint("BOTTOMLEFT", obj.frame, "LEFT", 4, -height / 2 + 3)
         bar:SetPoint("BOTTOMRIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 3, -height / 2 + 3)
-        bar:SetHeight(compact and rowHeight - 2 or math.max(2, math.min(6, rowHeight * 0.22)))
+        local stripHeight = compact and rowHeight - 2 or math.max(2, height * 0.25)
+        bar:SetHeight(stripHeight)
         Panel(obj.frame, d)
         d.panel:ClearAllPoints()
         -- Center-relative offsets also support DBT's unlocked-icon mode, where
@@ -288,12 +292,17 @@ local function HUD(C)
         if Allowed(label) and Allowed(timer) then
             label:SetFont(path, d.labelSize, flags or "")
             label:ClearAllPoints()
+            if label.SetJustifyV then label:SetJustifyV("MIDDLE") end
             if compact then
+                label:SetHeight(rowHeight - 2)
                 label:SetPoint("LEFT", obj.frame, "LEFT", 4 + x, y)
                 label:SetPoint("RIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 3 + x, y)
             else
-                label:SetPoint("TOPLEFT", obj.frame, "LEFT", 4 + x, rowHeight / 2 - 1 + y)
-                label:SetPoint("TOPRIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 3 + x, rowHeight / 2 - 1 + y)
+                local labelTop = rowHeight / 2 - 2
+                local labelBottom = -height / 2 + 3 + stripHeight + 2
+                label:SetHeight(math.max(1, labelTop - labelBottom))
+                label:SetPoint("TOPLEFT", obj.frame, "LEFT", 4 + x, labelTop + y)
+                label:SetPoint("TOPRIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 3 + x, labelTop + y)
             end
             Shadow(label)
         end

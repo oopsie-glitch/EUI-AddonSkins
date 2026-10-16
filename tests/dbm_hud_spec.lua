@@ -78,6 +78,7 @@ local function object(kind, name, parent)
     function o:SetWordWrap(v) self.wordWrap = v end
     function o:SetNonSpaceWrap(v) self.nonSpaceWrap = v end
     function o:SetJustifyH(v) self.justifyH = v end
+    function o:SetJustifyV(v) self.justifyV = v end
     function o:GetTextColor() return table.unpack(self.color) end
     function o:SetTextColor(...) self.color = {...} end
     function o:GetFontString() return self.label end
@@ -178,7 +179,7 @@ assert(_G[f.name .. 'BarSpark'].alpha == 0 and _G[f.name .. 'BarBorderTop'].alph
 assert(_G[f.name .. 'BarIcon1'].crop and _G[f.name .. 'BarIcon1'].path == 136116)
 assert(f.children[#f.children - 1].regions[1].fillColor[1] == accent, 'spell icon edge should follow accent')
 assert(_G[f.name .. 'BarBackground'].fillColor[1] == 0.16 and _G[f.name .. 'BarBackground'].fillColor[4] == 0.68, 'unfilled track should be visible')
-assert(math.abs(b.h - 3.96) < 0.001 and f.h == 20 and DBT.Options.Height == 20, 'thin strip changed native frame/settings')
+assert(math.abs(b.h - 5) < 0.001 and f.h == 20 and DBT.Options.Height == 20, 'thin strip changed native frame/settings')
 assert(_G[f.name .. 'BarIcon1'].w == 14 and _G[f.name .. 'BarIcon1'].h == 14)
 assert(math.abs(_G[f.name .. 'BarIJIcons'].w - 11.16) < 0.001 and _G[f.name .. 'BarIJIcons'].path == 'role-1')
 assert(_G[f.name .. 'BarIJIcons2'].points[1][1] == 'RIGHT' and _G[f.name .. 'BarIJIcons2'].points[1][2] == f)
@@ -232,7 +233,7 @@ assert(first.duration < 20, 'native timer stopped')
 assert(first:ApplyStyle() == 'native-style' and b.fill.path == 'Interface\\Buttons\\WHITE8X8')
 assert(_G[f.name .. 'BarName'].font == 'eui' and math.abs(_G[f.name .. 'BarName'].size - 10.08) < 0.001)
 assert(first:SetIcon(999) == 'native-icon' and _G[f.name .. 'BarIcon1'].path == 999)
-assert(math.abs(b.h - 3.96) < 0.001, 'repeated paint cumulatively shrank strip')
+assert(math.abs(b.h - 5) < 0.001, 'repeated paint cumulatively shrank strip')
 first.enlarged = true; first:ApplyStyle()
 assert(b.h == 7 and _G[f.name .. 'BarIcon1'].h == 19, 'huge concept proportions did not follow native size')
 assert(_G[f.name .. 'BarIJIcons'].alpha == 1, 'enlargement did not restore mechanic symbols')
@@ -257,13 +258,21 @@ DBT.Options.HugeHeight, DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset
 f:SetSize(754, 88); first:ApplyStyle()
 local conceptLabel, conceptTimer = _G[f.name .. 'BarName'], _G[f.name .. 'BarTimer']
 assert(b:GetWidth() == 423 and b.h == 22 and b.points[1][4] == 110 and b.points[1][5] == -9)
-assert(conceptLabel.size == 23 and conceptTimer.size == 34 and conceptLabel.points[1][4] == 110 and conceptLabel.points[1][5] == 25)
+assert(conceptLabel.size == 23 and conceptTimer.size == 34 and conceptLabel.points[1][4] == 110 and conceptLabel.points[1][5] == 34)
 assert(conceptLabel.wordWrap == false and conceptTimer.w == 95 and conceptTimer.justifyH == 'RIGHT')
 assert(conceptTimer.points[1][4] == -93 and panel.points[1][4] == 0 and panel.points[2][4] == 0)
 assert(spellIcon.w == spellIcon.h and spellIcon.w == 69 and spellIcon.points[1][4] == 52)
 assert(f.regions[6].shown and f.regions[6].points[1][4] == 677, 'mechanic compartment separator missing')
 DBT.Options.HugeHeight = 66; f:SetSize(565.5, 66); first:ApplyStyle()
 assert(math.abs(b:GetWidth() - 317.25) <= 1 and b.h == 17 and conceptLabel.size == 17.25 and conceptTimer.size == 25.5)
+-- Text bands center mixed-height inline artwork without changing native text.
+conceptLabel:SetText('|Twarning:20:20|t Custom User Bar')
+first:ApplyStyle()
+assert(conceptLabel.justifyV == 'MIDDLE' and conceptLabel.h == 26)
+assert(conceptLabel.text == '|Twarning:20:20|t Custom User Bar')
+DBT.Options.HugeHeight = 132; f:SetSize(565.5, 132); first:ApplyStyle()
+assert(b.h == 33 and conceptLabel.h == 51, 'huge strip/text band must scale with configured height')
+DBT.Options.HugeHeight = 66; f:SetSize(565.5, 66); first:ApplyStyle()
 -- Effective scale/pixel factor affect snapping and one-physical-pixel edges,
 -- rather than treating screenshot pixels as fixed WoW UI coordinates.
 PixelUtil = {GetPixelToUIUnitFactor = function() return 0.75 end}; f.scale = 1.5
@@ -297,6 +306,14 @@ DBT.Options.IconLocked, DBT.Options.Height = false, 30
 first:ApplyStyle()
 assert(f.h == 20 and panel.points[1][5] == 14 and panel.points[2][5] == -14, 'unlocked native hit frame changed or panel height lost')
 DBT.Options.IconLocked, DBT.Options.Height = true, 20; first:ApplyStyle()
+-- Small bars also scale their strip vertically, with no six-unit ceiling.
+DBT.Options.Height = 40; f:SetSize(195, 40); first:ApplyStyle()
+local smallLabel = _G[f.name .. 'BarName']
+assert(b.h == 10 and smallLabel.justifyV == 'MIDDLE' and smallLabel.h == 22)
+assert(smallLabel.points[1][5] == 17 and smallLabel.points[1][5] - smallLabel.h > b.points[1][5] + b.h)
+DBT.Options.Height = 60; f:SetSize(195, 60); first:ApplyStyle()
+assert(b.h == 15, 'small progress height was capped')
+DBT.Options.Height = 20; f:SetSize(195, 20); first:ApplyStyle()
 -- Native color updates remain authoritative; the same tint tracks the fill.
 b.fill:SetVertexColor(0.1, 0.3, 0.9, 0.75)
 assert(b.fill.color[3] == 0.9 and tint.all == b.fill)

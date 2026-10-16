@@ -14,7 +14,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
     panelOptions = {noBorder = true},
     available = function() return _G.ItemRack ~= nil end,
     roots = function()
-        local result = ns.SkinRoots({"ItemRackOptFrame", "ItemRackLogFrame"}, {bottomBar = 24})
+        local result = ns.SkinRoots({"ItemRackOptFrame", "ItemRackLogFrame"}, {bottomBar = 24, noAccent = true})
         if _G.ItemRackMenuFrame then result[#result + 1] = {frame = _G.ItemRackMenuFrame, mode = "controls"} end
         if _G.ItemRackOpt and _G.ItemRackOpt.QueueIconPicker then result[#result + 1] = {frame = _G.ItemRackOpt.QueueIconPicker} end
         return result
@@ -22,7 +22,28 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
     hooks = function(C, refresh)
         if not C.Clear then
             local H, S = C.H, C.S
-            local cleared, icons, borders, controls = {}, {}, {}, {}
+            local cleared, icons, borders, controls, tabLabels = {}, {}, {}, {}, {}
+            C.TabLabel = function(f)
+                local data = S.GetFFD and S.GetFFD(f)
+                -- EUI tabs have their own visible label; leave the hidden native
+                -- label transparent so it cannot render a second copy.
+                local text = data and data.label or (f.GetFontString and f:GetFontString()) or f.Text
+                if not H.Allowed(text) or not text.SetTextColor then return end
+                local entry = tabLabels[f]
+                if not entry or entry.text ~= text then
+                    local painting = false
+                    local function Paint()
+                        if painting then return end
+                        if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                        local r, g, b = S.GetAccentColor()
+                        local shade = f.IsEnabled and f:IsEnabled() and 0.65 or 1
+                        painting = true; text:SetTextColor(r * shade, g * shade, b * shade, 1); painting = false
+                    end
+                    entry = {text = text, paint = Paint}; tabLabels[f] = entry
+                    H.Hook(text, "SetTextColor", Paint)
+                end
+                entry.paint()
+            end
             C.RemoveArt = function(texture)
                 if not H.Texture(texture) then return end
                 H.Fade(texture)
@@ -202,7 +223,14 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                                 controls[f] = icon
                             else controls[f] = true end
                         end
-                        if path and controls[f] ~= true then controls[f]:SetTexture(path) end
+                        local r, g, b = S.GetAccentColor()
+                        if path and controls[f] ~= true then
+                            controls[f]:SetTexture(path); controls[f]:SetVertexColor(r, g, b, 1)
+                        else
+                            local data = S.GetFFD and S.GetFFD(f)
+                            local glyph = data and data.arrow or (f.GetFontString and f:GetFontString())
+                            if H.Allowed(glyph) and glyph.SetTextColor then glyph:SetTextColor(r, g, b, 1) end
+                        end
                     end
                 end
             end
@@ -421,7 +449,9 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         end
         if (kind == "Button" or kind == "CheckButton") and f.GetName then
             local name = f:GetName() or ""
-            if name:match("^ItemRackOptTab%d+$") then return C.H.Tab(f, f.IsEnabled and not f:IsEnabled()) end
+            if name:match("^ItemRackOptTab%d+$") then
+                H.Tab(f, f.IsEnabled and not f:IsEnabled()); C.TabLabel(f); return true
+            end
             if name == "ItemRackOptClose" or name == "ItemRackOptSetListClose" or name == "ItemRackOptSortListClose" then
                 C.S.CloseButton(f); return true
             end

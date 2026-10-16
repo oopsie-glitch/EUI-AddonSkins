@@ -355,11 +355,24 @@ end
 -- ItemRack options: native scripts and equipment semantics survive restyling.
 do
     assert(loadfile('EUIAddonSkins/Skins/ItemRack.lua'))('EUIAddonSkins', ns)
-    local checkbox, inset, getFFD = S.Checkbox, S.Inset, S.GetFFD
+    local checkbox, inset, getFFD, pageButton = S.Checkbox, S.Inset, S.GetFFD, S.PageButton
     S.Checkbox = function(f, opts) f.checkOptions = opts; checkbox(f) end
     S.Inset = function(f) f.inset = true end
     ItemRackOptFrame = frame('Frame', 'ItemRackOptFrame')
     local root = ItemRackOptFrame
+    local tabLabels = {}
+    for index = 1, 4 do
+        local tab = frame('Button', 'ItemRackOptTab' .. index, root)
+        tab.label = tab:CreateFontString(nil, nil, 'native'); tab.label:SetTextColor(0, 0, 0, 0)
+        tabLabels[tab] = tab:CreateFontString(nil, nil, 'eui')
+        tab.disabled = index == 4
+    end
+    S.PageButton = function(f, ...)
+        pageButton(f, ...)
+        if (f.name == 'ItemRackButtonMenuQueue' or f.name == 'ItemRackButtonMenuClose') and not f.fixtureGlyph then
+            f.fixtureGlyph = f:CreateFontString(nil, nil, 'eui')
+        end
+    end
     local sets = frame('Frame', 'ItemRackOptSubFrame2', root)
     sets.gradient = sets:CreateTexture(); sets.gradient.layer = 'BACKGROUND'; sets:SetBackdrop({edgeFile = 'bevel'})
     local artwork = sets:CreateTexture(); artwork.layer = 'ARTWORK'; artwork.path = 'semantic-art'
@@ -469,12 +482,17 @@ do
     arrow.nativeArt = arrow:CreateTexture(); arrow.action = function() return 'arrow-native' end
     local euiArrow = drop:CreateTexture(); euiArrow.path = 'Azerite-PointingArrow'
     S.GetFFD = function(f)
-        if f == number then return {bg = inputFill}
+        if tabLabels[f] then return {label = tabLabels[f]}
+        elseif f.fixtureGlyph then return {arrow = f.fixtureGlyph}
+        elseif f == number then return {bg = inputFill}
         elseif f == setName then return {bg = setNameFill}
         elseif f == drop then return {arrow = euiArrow} end
     end
     ItemRack = {BuildMenu = function() MenuItem(3); return 'menu-native', nil, 7 end, ToggleOptions = function() return 'options' end}
-    ItemRackOpt = {TabOnClick = function() return 'tab-native' end,
+    ItemRackOpt = {TabOnClick = function(_, which)
+            for index = 1, 4 do _G['ItemRackOptTab' .. index].disabled = index == which end
+            return 'tab-native'
+        end,
         OptInfo = {{type = 'label'}, {type = 'number', button = number}, {type = 'check'},
             {type = 'button', button = drop}, {type = 'slider', button = scale}},
         ListScrollFrameUpdate = function()
@@ -503,6 +521,14 @@ do
         end,
         SortListScrollFrameUpdate = function() ItemRackOptSortList1Highlight:SetColorTexture(0.8, 0.7, 0.5, 1); return 'rows-native' end}
     modules.ItemRack.install(S, modules.ItemRack); flush()
+    assert(root.shellOptions.noAccent and not root.accent, 'window-wide accent bar was attached')
+    assert(tabLabels[ItemRackOptTab4].textColor[1] == accent and tabLabels[ItemRackOptTab1].textColor[1] == accent * 0.65)
+    assert(ItemRackOptTab4.label.textColor[4] == 0, 'native tab label became visible behind EUI label')
+    assert(ItemRackOpt.TabOnClick(nil, 2) == 'tab-native')
+    assert(ItemRackOptTab2.selected and not ItemRackOptTab4.selected and tabLabels[ItemRackOptTab2].textColor[1] == accent
+        and tabLabels[ItemRackOptTab4].textColor[1] == accent * 0.65)
+    tabLabels[ItemRackOptTab2]:SetTextColor(1, 1, 1, 0.5)
+    assert(tabLabels[ItemRackOptTab2].textColor[1] == accent, 'EUI tab repaint reset the accent tint')
     assert(sets.panel and sets.gradient.alpha == 0 and sets.gradient.path == nil and sets.backdrop == nil and artwork.alpha == 1)
     assert(ItemRackOptSetsDropTextureLeft.alpha == 0 and choose.glyph == 'v' and choose.action() == 'choose-set')
     assert(slot.normal.alpha == 0 and ItemRackOptInv7Icon.crop and not slot.checkbox and slot.checked and slot.action() == 'select-equipment')
@@ -660,6 +686,24 @@ do
     local lockIcon = ItemRackButtonMenuLock.regions[#ItemRackButtonMenuLock.regions]
     assert(lockIcon.path:find('eui%-lock%-locked') and ItemRackButtonMenuClose.glyph == 'X'
         and ItemRackButtonMenuQueue.action() == 'control-native')
+    local settingsIcon = ItemRackButtonMenuOptions.regions[#ItemRackButtonMenuOptions.regions]
+    assert(lockIcon.color[1] == accent and settingsIcon.color[1] == accent
+        and ItemRackButtonMenuQueue.fixtureGlyph.textColor[1] == accent and ItemRackButtonMenuClose.fixtureGlyph.textColor[1] == accent)
+    local oldAccent = accent; accent = 0.3; modules.ItemRack.refresh(); flush()
+    assert(lockIcon.color[1] == 0.3 and settingsIcon.color[1] == 0.3 and tabLabels[ItemRackOptTab2].textColor[1] == 0.3
+        and ItemRackButtonMenuQueue.fixtureGlyph.textColor[1] == 0.3 and Edges(slot)[1].color[3] == 0.87,
+        'theme update missed control accents or tinted equipment rarity')
+    accent = oldAccent; modules.ItemRack.refresh(); flush()
+    local tintHook = tabLabels[ItemRackOptTab2].SetTextColor
+    for _ = 1, 10 do modules.ItemRack.refresh(); flush() end
+    assert(tabLabels[ItemRackOptTab2].SetTextColor == tintHook)
+    enabled = false; tabLabels[ItemRackOptTab2]:SetTextColor(1, 1, 1, 1)
+    assert(tabLabels[ItemRackOptTab2].textColor[1] == 1)
+    enabled = true; combat = true; tabLabels[ItemRackOptTab2]:SetTextColor(1, 1, 1, 1); flush()
+    assert(tabLabels[ItemRackOptTab2].textColor[1] == 1)
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(tabLabels[ItemRackOptTab2].textColor[1] == accent)
     ItemRackUser.Locked = 'OFF'; assert(ItemRack.ReflectLock() == 'lock-native' and lockIcon.path:find('eui%-lock%-unlocked'))
     menu.protected = true; modules.ItemRack.refresh(); flush()
     assert(Edges(secure)[1].color[1] == 0.35 and secure.attributes.macro == 'equip', 'secure-parent hover menu lost cosmetics or its action')
@@ -717,7 +761,7 @@ do
     enabled = true
     C_Item, ITEM_QUALITY_COLORS, ItemRack.GetID = oldCItem, oldColors, oldGetID
     GetItemQualityColor, GetInventoryItemQuality = oldQuality, oldInventoryQuality
-    S.Checkbox, S.Inset, S.GetFFD = checkbox, inset, getFFD
+    S.Checkbox, S.Inset, S.GetFFD, S.PageButton = checkbox, inset, getFFD, pageButton
 end
 
 assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)

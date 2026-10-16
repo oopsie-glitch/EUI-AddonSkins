@@ -17,7 +17,7 @@ function ns.RegisterScopedSkin(id, label, config)
             end}, {__index = S})
         end
         local H = ns.CreateSkinHelper(S, module)
-        local styled, panels, checks = {}, {}, {}
+        local styled, panels, checks, scanned = {}, {}, {}, {}
         local refresh, waiting, applying
         local events = CreateFrame("Frame")
         events:RegisterEvent("ADDON_LOADED")
@@ -156,7 +156,13 @@ function ns.RegisterScopedSkin(id, label, config)
                     end
                     if styled[f] and f.SetBackdrop then f:SetBackdrop(nil) end
                     H.Script(f, "OnShow", config.immediateShow and C.RefreshNow or refresh)
-                    H.Scan(f, refresh, Visit, target.exclude)
+                    -- A hidden root is walked once, which hooks its controls' OnShow;
+                    -- after that only visible roots are walked. Hidden roots cannot
+                    -- change the look, and showing one queues its own refresh.
+                    if not scanned[f] or not f.IsVisible or f:IsVisible() then
+                        scanned[f] = true
+                        H.Scan(f, refresh, Visit, target.exclude)
+                    end
                 end
             end
             if S.RefreshSoftBorders then S.RefreshSoftBorders() end

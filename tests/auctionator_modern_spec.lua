@@ -152,7 +152,11 @@ function S.SquareIcon(icon, owner) icon.square = (icon.square or 0) + 1; icon.ow
 function S.White(fs) fs.color = {1, 1, 1} end
 function S.GetAccentColor() return 0.1, 0.8, 0.6 end
 function S.Dropdown(f) f.dropdown = true end
-function S.Font(f) f.fontFace = fontFace end
+function S.GetFont() return fontFace, '' end
+function S.Font(f, r, g, b)
+    f.fontFace = fontFace; f.fontWrites = (f.fontWrites or 0) + 1
+    if r then f:SetTextColor(r, g, b) end
+end
 for _, key in ipairs({'FadeNineSlice', 'CloseButton', 'Checkbox', 'StateButtonLabel', 'PageButton'}) do S[key] = function() end end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
 assert(loadfile('EUIAddonSkins/Skins/Auctionator.lua'))('EUIAddonSkins', ns)
@@ -291,7 +295,46 @@ shopping.ContainerTabs = frame('Frame', shopping)
 shopping.ContainerTabs.ListsTab = frame('Button', shopping.ContainerTabs); shopping.ContainerTabs.ListsTab.t = 58
 shopping.ContainerTabs.RecentsTab = frame('Button', shopping.ContainerTabs)
 
+-- Existing Classic/Forever profession addition: the host and its recipe rows
+-- belong to Blizzard/EUI, not this skin. Keep native colors, text and anchors.
+local professionHost = frame('Frame')
+local nativeRecipe = frame('Button', professionHost)
+local function profession(name)
+    local f = frame('Frame', professionHost, name); _G[name] = f
+    f.Total = fontString('To Craft: |Tcoin:0|t\nProfit: |cffff0000-27|r', 1, 0.82, 0)
+    f.regions = {f.Total}
+    f.SearchButton = frame('Button', f); f.SearchButton.label = fontString('Search')
+    f.SearchButton.scripts.OnClick = function(_, button) return 'native-search', button end
+    f:SetPoint('TOPLEFT', professionHost, 'TOPLEFT', 205, -6)
+    return f
+end
+local existingProfession = profession('AuctionatorCraftingInfo')
+local existingOrders = profession('AuctionatorCraftingInfoProfessionsOrderFrame')
+local originalProfessionPoints = existingProfession.points
+Auctionator.CraftingInfo = {
+    Initialize = function() return 'already initialized' end,
+    InitializeProfessionsFrame = function()
+        local f = profession('AuctionatorCraftingInfoProfessionsFrame')
+        f.CustomQuantity = frame('Frame', f); f.CustomQuantity.shown = false
+        f.CustomQuantity.Quantity = frame('Frame', f.CustomQuantity)
+        local input = frame('EditBox', f.CustomQuantity.Quantity)
+        f.CustomQuantity.Quantity.InputBox = input
+        input.Label = fontString('Quantity'); input.value = 7
+        f.CustomQuantity.SearchButton = frame('Button', f.CustomQuantity)
+        f.CustomQuantity.SearchButton.scripts.OnClick = function() return input.value end
+        return f, 'native-initialized'
+    end,
+    InitializeCustomerOrdersFrame = function() return profession('AuctionatorTradeSkillSearch') end,
+}
+Auctionator.EnchantInfo = {Initialize = function() return profession('AuctionatorEnchantInfoFrame') end}
+
 modules.Auctionator.install(S, modules.Auctionator); flush()
+assert(existingProfession.SearchButton.button and existingProfession.Total.fontFace == fontFace)
+assert(existingOrders.SearchButton.button)
+assert(existingProfession.Total.color[1] == 1 and existingProfession.Total.color[2] == 0.82)
+assert(existingProfession.Total.text:find('|Tcoin:0|t', 1, true) and existingProfession.Total.text:find('|cffff0000-27|r', 1, true))
+assert(existingProfession.points == originalProfessionPoints and not existingProfession.shell)
+assert(not professionHost.shell and not nativeRecipe.button, 'walked or shelled the native profession host')
 -- Tabs: styled, chained a physical pixel after Blizzard's last tab, Blizzard row left alone.
 assert(shoppingTab.tab and sellingTab.tab and shoppingTab.h == 22)
 assert(shoppingTab.points[1][2] == host.Tabs[3] and shoppingTab.points[1][4] == 0.5)
@@ -440,7 +483,54 @@ local bare = frame('Button', AuctionatorCancellingFrame); bare.Icon = bare:Creat
 AuctionatorCancellingFrame.shown = true; modules.Auctionator.refresh(); flush()
 assert(bare.Icon.alpha == 1 and #bare.regions == 1, 'refresh button blanked without its atlas')
 AuctionatorCancellingFrame.shown = false; C_Texture = nil; modules.Auctionator.refresh(); flush()
+-- Profession windows created after activation are painted by initializer
+-- post-hooks synchronously; return values/actions and the hidden popup survive.
+local lateProfession, nativeResult = Auctionator.CraftingInfo.InitializeProfessionsFrame()
+assert(nativeResult == 'native-initialized' and lateProfession.SearchButton.button)
+local popup = lateProfession.CustomQuantity
+local quantity = popup.Quantity.InputBox
+assert(popup.shell and not popup.shown and quantity.input and quantity.value == 7)
+assert(popup.SearchButton.scripts.OnClick() == 7)
+local searchResult, mouseButton = lateProfession.SearchButton.scripts.OnClick(nil, 'RightButton')
+assert(searchResult == 'native-search' and mouseButton == 'RightButton')
+assert(Auctionator.CraftingInfo.Initialize() == 'already initialized')
+assert(Auctionator.CraftingInfo.InitializeCustomerOrdersFrame().SearchButton.button)
+assert(Auctionator.EnchantInfo.Initialize().SearchButton.button)
+-- A newly replaced control is picked up on show, without walking native rows.
+lateProfession.SearchButton = frame('Button', lateProfession)
+lateProfession.scripts.OnShow(lateProfession)
+assert(lateProfession.SearchButton.button and not nativeRecipe.button)
+-- Warm refreshes reuse hooks/UI objects and do not write EditBox fonts again.
+local objectCount, hooks, writes = created, hookCount, quantity.fontWrites
+for _ = 1, 20 do modules.Auctionator.refresh(); flush() end
+assert(created == objectCount and hookCount == hooks and quantity.fontWrites == writes)
+fontFace = 'profession-theme-font'; for _, fn in ipairs(looks) do fn() end; flush()
+assert(quantity.fontFace == fontFace and existingProfession.Total.fontFace == fontFace)
+assert(existingProfession.Total.color[2] == 0.82 and quantity.value == 7)
+-- Auction-house style settings do not gate independent profession additions.
+EllesmereUI = {GetBlizzWindowStyle = function() return 'off' end}
+local stockProfession = Auctionator.EnchantInfo.Initialize()
+assert(stockProfession.SearchButton.button); EllesmereUI = nil
+local savedAH = AuctionHouseFrame; AuctionHouseFrame = nil
+assert(Auctionator.EnchantInfo.Initialize().SearchButton.button, 'profession controls require an auction-house frame')
+AuctionHouseFrame = savedAH
+-- Load-on-demand initializer methods are discovered on ADDON_LOADED.
+Auctionator.CraftingInfo.InitializeObjectiveTrackerFrame = function() return profession('AuctionatorCraftingInfoObjectiveTrackerFrame') end
+for _, f in ipairs(events) do if f.events and f.events.ADDON_LOADED then f.scripts.OnEvent(f, 'ADDON_LOADED') end end
+flush()
+local orders = Auctionator.CraftingInfo.InitializeObjectiveTrackerFrame()
+assert(orders.SearchButton.button)
+combat = true
+local combatProfession = Auctionator.EnchantInfo.Initialize()
+assert(not combatProfession.SearchButton.button)
+combat = false
+for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.scripts.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
+flush(); assert(combatProfession.SearchButton.button)
 -- Disabled: no further work.
 enabled = false; selling.shown = true; host:SetDisplayMode({}); flush()
 assert(zone.alpha == 1 and sellingTab.selected == false, 'disabled skin repainted')
-print('PASS: Auctionator modern tab row/seams, zone washes, clipped header strip, pooled rows/icons, money/quantity/labels, copper gap, refresh glyph (named and by panel), even list buttons, flat aligned price tabs, search gap, bordered controls, warm idempotence, visible-only rescans, EUI auction house style gate and disable')
+local disabledProfession = Auctionator.EnchantInfo.Initialize()
+assert(not disabledProfession.SearchButton.button, 'disabled profession skin repainted')
+for _, name in ipairs({'AuctionatorCraftingInfo', 'AuctionatorCraftingInfoProfessionsFrame', 'AuctionatorEnchantInfoFrame',
+    'AuctionatorTradeSkillSearch', 'AuctionatorCraftingInfoObjectiveTrackerFrame', 'AuctionatorCraftingInfoProfessionsOrderFrame'}) do _G[name] = nil end
+print('PASS: Auctionator modern tabs/zones/rows/icons/form alignment, owned profession additions and quantity popup, native actions/colors/placement, late initialization, warm reuse, theme/combat/toggle guards and visible-only rescans')

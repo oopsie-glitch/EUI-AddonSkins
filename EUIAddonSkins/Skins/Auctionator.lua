@@ -676,9 +676,84 @@ end, function(S, module)
     end
     local TAB_METHODS = {"Selected", "DeselectTab"}
     local DIALOGS = {"AuctionatorShoppingTabItemFrame", "AuctionatorExportListFrame", "AuctionatorImportListFrame", "AuctionatorItemHistoryFrame"}
+    -- Auctionator's profession additions sit on Blizzard's already themed form.
+    -- Style only their owned controls, never the host, reagents or recipe list.
+    -- Frame names/initializers follow the remaining coverage from PR #1.
+    local PROFESSION_ROOTS = {"AuctionatorCraftingInfo", "AuctionatorEnchantInfoFrame",
+        "AuctionatorCraftingInfoProfessionsFrame", "AuctionatorCraftingInfoProfessionsOrderFrame",
+        "AuctionatorTradeSkillSearch", "AuctionatorCraftingInfoObjectiveTrackerFrame"}
+    local PROFESSION_INITIALIZERS = {"Initialize", "InitializeProfessionsFrame",
+        "InitializeCustomerOrdersFrame", "InitializeObjectiveTrackerFrame"}
+    local professionPaint, professionInputs = {}, {}
+    local function ProfessionText(text)
+        if not H.Allowed(text) or text:GetObjectType() ~= "FontString" then return end
+        -- Keep gold labels, inline profit/warning colors and money textures.
+        local r, g, b = text:GetTextColor()
+        raw.Font(text, r, g, b)
+    end
+    local function ProfessionButton(button)
+        if not H.Allowed(button) then return end
+        raw.Button(button)
+        if raw.StateButtonLabel then raw.StateButtonLabel(button) end
+    end
+    local function PaintProfession(f)
+        if not ns.IsEnabled(module) or not H.Allowed(f) then return end
+        if InCombatLockdown() then waiting = true; return end
+        ProfessionText(f.Total)
+        ProfessionButton(f.SearchButton)
+        local popup = f.CustomQuantity
+        if H.Allowed(popup) then
+            if not shells[popup] then
+                shells[popup] = true
+                raw.Shell(popup, {noAccent = true})
+                if popup.SetBackdrop then popup:SetBackdrop(nil) end
+                if H.Allowed(popup.NineSlice) then raw.FadeNineSlice(popup.NineSlice) end
+                if H.Allowed(popup.CloseButton) then raw.CloseButton(popup.CloseButton) end
+            end
+            local quantity = popup.Quantity
+            local input = H.Allowed(quantity) and (quantity.InputBox or quantity)
+            if H.Allowed(input) and input:GetObjectType() == "EditBox" then
+                local state = professionInputs[input]
+                if not state then
+                    state = {}; professionInputs[input] = state
+                    raw.EditBox(input)
+                end
+                local font, flags
+                if raw.GetFont then font, flags = raw.GetFont() end
+                -- EditBox font writes can fire native OnTextChanged handlers.
+                if not state.painted or state.font ~= font or state.flags ~= flags then
+                    raw.Font(input)
+                    state.painted, state.font, state.flags = true, font, flags
+                end
+                ProfessionText(input.Label)
+            end
+            ProfessionButton(popup.SearchButton)
+            ProfessionText(popup.TitleText)
+        end
+    end
+    local function RefreshProfessions()
+        for _, name in ipairs(PROFESSION_ROOTS) do
+            local f = _G[name]
+            if H.Allowed(f) then
+                if not professionPaint[f] then
+                    local paint = function() PaintProfession(f) end
+                    professionPaint[f] = paint
+                    H.Script(f, "OnShow", paint)
+                end
+                local popup = f.CustomQuantity
+                if H.Allowed(popup) then H.Script(popup, "OnShow", professionPaint[f]) end
+                PaintProfession(f)
+            end
+        end
+    end
     local function Apply()
         if InCombatLockdown() then waiting = true; return end
         waiting = false
+        -- Initializers may arrive with a load-on-demand profession addon.
+        -- Post-hooks paint completed controls before the next rendered frame.
+        for _, method in ipairs(PROFESSION_INITIALIZERS) do H.Hook(A.CraftingInfo, method, RefreshProfessions) end
+        H.Hook(A.EnchantInfo, "Initialize", RefreshProfessions)
+        RefreshProfessions()
         if Stock() then
             if zoneHost then zoneHost:SetAlpha(zoneAlpha) end
             return

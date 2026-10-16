@@ -348,6 +348,82 @@ do
 end
 end
 
+-- ItemRack options: native scripts and equipment semantics survive restyling.
+do
+    assert(loadfile('EUIAddonSkins/Skins/ItemRack.lua'))('EUIAddonSkins', ns)
+    local checkbox, inset = S.Checkbox, S.Inset
+    S.Checkbox = function(f, opts) f.checkOptions = opts; checkbox(f) end
+    S.Inset = function(f) f.inset = true end
+    ItemRackOptFrame = frame('Frame', 'ItemRackOptFrame')
+    local root = ItemRackOptFrame
+    local sets = frame('Frame', 'ItemRackOptSubFrame2', root)
+    sets.gradient = sets:CreateTexture(); sets.gradient.layer = 'BACKGROUND'; sets:SetBackdrop({edgeFile = 'bevel'})
+    local artwork = sets:CreateTexture(); artwork.layer = 'ARTWORK'; artwork.path = 'semantic-art'
+    for _, side in ipairs({'Left', 'Middle', 'Right'}) do _G['ItemRackOptSetsDropTexture' .. side] = sets:CreateTexture() end
+    local choose = frame('Button', 'ItemRackOptSetsDropDownButton', sets)
+    choose.action = function() return 'choose-set' end
+    local move = frame('Button', 'ItemRackOptSortMoveUp', root)
+    move.action = function() return 'move-native' end
+    local slot = frame('CheckButton', 'ItemRackOptInv7', root)
+    ItemRackOptInv7Icon = slot:CreateTexture(); slot.normal = slot:CreateTexture()
+    slot.checked = true; slot.action = function() return 'select-equipment' end
+    local check = frame('CheckButton', 'ItemRackOptQueueEnable', root); check.checked = true
+    local tristate = frame('CheckButton', 'ItemRackOptShowHelm', sets)
+    local horizontal = frame('Slider', 'ItemRackOptSlider1', root)
+    local hthumb = horizontal:CreateTexture(); horizontal.GetThumbTexture = function() return hthumb end
+    horizontal.GetOrientation = function() return 'HORIZONTAL' end
+    horizontal.value, horizontal.range = 1, {0.5, 2}
+    horizontal.hooks.OnValueChanged = function() return 'scale-native' end
+    local vertical = frame('Slider', 'ItemRackOptSetsIconScrollFrameScrollBar', sets)
+    local vthumb = vertical:CreateTexture(); vertical.GetThumbTexture = function() return vthumb end
+    vertical.GetOrientation = function() return 'VERTICAL' end
+    local row = frame('Button', 'ItemRackOptSortList1', root)
+    ItemRackOptSortList1Icon = row:CreateTexture()
+    ItemRackOptSortList1Highlight = row:CreateTexture(); ItemRackOptSortList1Highlight:SetShown(true)
+    local label = row:CreateFontString(nil, nil, 'native'); label.textColor = {0, 0.44, 0.87}
+    row.action = function() return 'queue-selection' end
+    ItemRackMenuFrame = frame('Frame', 'ItemRackMenuFrame')
+    local menu = ItemRackMenuFrame
+    local function MenuItem(index)
+        local f = frame('CheckButton', 'ItemRackMenu' .. index, menu)
+        _G[f.name .. 'Icon'] = f:CreateTexture(); f.normal = f:CreateTexture()
+        f.action = function() return 'equip-native' end
+        return f
+    end
+    local item = MenuItem(1)
+    local secure = MenuItem(2); secure.protected = true; secure.attributes = {macro = 'equip'}
+    ItemRack = {BuildMenu = function() MenuItem(3); return 'menu-native', nil, 7 end, ToggleOptions = function() return 'options' end}
+    ItemRackOpt = {TabOnClick = function() return 'tab-native' end,
+        SortListScrollFrameUpdate = function() ItemRackOptSortList1Highlight:SetColorTexture(0.8, 0.7, 0.5, 1); return 'rows-native' end}
+    modules.ItemRack.install(S, modules.ItemRack); flush()
+    assert(not sets.panel and sets.gradient.alpha == 0 and sets.backdrop == nil and artwork.alpha == 1)
+    assert(ItemRackOptSetsDropTextureLeft.alpha == 0 and choose.glyph == 'v' and choose.action() == 'choose-set')
+    assert(slot.normal.alpha == 0 and ItemRackOptInv7Icon.crop and not slot.checkbox and slot.checked and slot.action() == 'select-equipment')
+    assert(check.checkbox and check.checkOptions.borderInset == 4 and check.checked and tristate.checkOptions.stockCheck)
+    assert(horizontal.backdrop == nil and hthumb.width == 10 and hthumb.height == 16
+        and horizontal.value == 1 and horizontal.range[2] == 2 and horizontal.hooks.OnValueChanged() == 'scale-native')
+    assert(move.glyph == '^' and move.action() == 'move-native')
+    assert(menu.panel and not item.checkbox and item.normal.alpha == 0 and item.action() == 'equip-native')
+    assert(not secure.normal.alpha or secure.normal.alpha == 1); assert(secure.attributes.macro == 'equip')
+    local a, b, c = ItemRack.BuildMenu(); assert(a == 'menu-native' and b == nil and c == 7)
+    assert(ItemRackMenu3.normal.alpha == 0, 'new hover item missed completed-menu styling')
+    auditScans[root] = 0
+    for _ = 1, 100 do assert(ItemRackOpt.SortListScrollFrameUpdate() == 'rows-native') end
+    assert((auditScans[root] or 0) == 0 and label.textColor[3] == 0.87 and row.action() == 'queue-selection')
+    assert(ItemRackOptSortList1Highlight.color[4] == 0.13 and ItemRackOptSortList1Highlight.shown)
+    local objects, hook = #vertical.regions, ItemRackOpt.SortListScrollFrameUpdate
+    for _ = 1, 10 do modules.ItemRack.refresh(); flush() end
+    assert(#vertical.regions == objects and ItemRackOpt.SortListScrollFrameUpdate == hook)
+    local strip = vertical.regions[#vertical.regions]
+    assert(strip.width == 4 and strip.alpha == 1 and vthumb.alpha == 0, 'scroll strip disappeared on refresh')
+    combat = true; ItemRackOpt.SortListScrollFrameUpdate(); assert(ItemRackOptSortList1Highlight.color[4] == 1)
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(ItemRackOptSortList1Highlight.color[4] == 0.13)
+    enabled = false; ItemRackOpt.SortListScrollFrameUpdate(); assert(ItemRackOptSortList1Highlight.color[4] == 1)
+    enabled = true; S.Checkbox, S.Inset = checkbox, inset
+end
+
 assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)
 ForeverDungeonJournal_NS = {THEMES = {}, ToggleJournal = function() end}
 ForeverDungeonJournalFrame = frame('Frame')

@@ -31,8 +31,8 @@ local function texture(kind, parent)
     function t:SetTexCoord(...) self.crop = {...} end
     function t:GetNumMaskTextures() return self.masked and 1 or 0 end
     function t:SetText(s) assert(self.font, "FontString:SetText(): Font not set"); self.text = s end
-    function t:GetFont() return self.font, self.font and 12, '' end
-    function t:SetFont(v) self.font = v; self.fontWrites = (self.fontWrites or 0) + 1 end
+    function t:GetFont() return self.font, self.font and (self.fontSize or 12), '' end
+    function t:SetFont(v, size) self.font, self.fontSize = v, size; self.fontWrites = (self.fontWrites or 0) + 1 end
     function t:SetFontObject(v) self.font = v end
     function t:SetTextColor(...) self.textColor = {...} end
     function t:GetTextColor() return table.unpack(self.textColor or {1, 1, 1, 1}) end
@@ -82,7 +82,7 @@ local function frame(kind, name, parent)
 end
 CreateFrame = function(kind, name, parent) local f = frame(kind, name, parent); events[#events + 1] = f; return f end
 local S = {GetAccentColor = function() return accent, 0.6, 0.7 end}
-function S.Font(t, r, g, b) t:SetFont('eui'); if r then t:SetTextColor(r, g, b) end end
+function S.Font(t, r, g, b) local _, size = t:GetFont(); t:SetFont('eui', size or 12); if r then t:SetTextColor(r, g, b) end end
 function S.Button(f, keys)
     local keep = {}; for _, key in ipairs(keys or {}) do keep[f[key] or false] = true end
     for _, t in ipairs(f.regions) do if t.kind == 'Texture' and not keep[t] then t:SetAlpha(0) end end
@@ -351,7 +351,7 @@ end
 -- ItemRack options: native scripts and equipment semantics survive restyling.
 do
     assert(loadfile('EUIAddonSkins/Skins/ItemRack.lua'))('EUIAddonSkins', ns)
-    local checkbox, inset = S.Checkbox, S.Inset
+    local checkbox, inset, getFFD = S.Checkbox, S.Inset, S.GetFFD
     S.Checkbox = function(f, opts) f.checkOptions = opts; checkbox(f) end
     S.Inset = function(f) f.inset = true end
     ItemRackOptFrame = frame('Frame', 'ItemRackOptFrame')
@@ -392,17 +392,106 @@ do
     end
     local item = MenuItem(1)
     local secure = MenuItem(2); secure.protected = true; secure.attributes = {macro = 'equip'}
+    local config = frame('Frame', 'ItemRackOptSubFrame1', root)
+    local gradient = config:CreateTexture(); gradient.layer = 'BACKGROUND'
+    local configRows = {}
+    for index = 1, 5 do
+        local row = frame('Button', 'ItemRackOptList' .. index, config)
+        row.GetWidth = function() return 156 end
+        configRows[index] = row
+        for _, suffix in ipairs({'Label', 'CheckText', 'NumberLabel'}) do
+            _G[row.name .. suffix] = row:CreateFontString(nil, nil, 'native')
+        end
+        _G[row.name .. 'Underline'] = row:CreateTexture()
+        frame('CheckButton', row.name .. 'CheckButton', row)
+    end
+    local number = frame('EditBox', 'ItemRackOptMenuScale', config)
+    number.GetFont, number.SetFont = ItemRackOptList1Label.GetFont, ItemRackOptList1Label.SetFont
+    number.GetTextColor, number.SetTextColor = ItemRackOptList1Label.GetTextColor, ItemRackOptList1Label.SetTextColor
+    number.SetJustifyH = function(self, v) self.justify = v end
+    number.SetJustifyV = function(self, v) self.justifyV = v end
+    number.SetTextInsets = function(self, ...) self.textInsets = {...} end
+    number.font, number.text = 'native-input', '0.85'
+    local inputFill = number:CreateTexture()
+    S.GetFFD = function(f) if f == number then return {bg = inputFill} end end
+    number.hooks.OnEnterPressed = function() return 'number-native' end
+    local scale = frame('Slider', 'ItemRackOptMenuScaleSlider', config)
+    local scaleThumb = scale:CreateTexture(); scale.GetThumbTexture = function() return scaleThumb end
+    scale.GetOrientation = function() return 'HORIZONTAL' end
+    ItemRackOptMenuScaleSliderMin = scale:CreateFontString(nil, nil, 'native')
+    ItemRackOptMenuScaleSliderMax = scale:CreateFontString(nil, nil, 'native')
+    scale.value, scale.range = 0.85, {0.5, 2}
+    local drop = frame('Button', 'ItemRackOptQuickAccessMenuSide', config)
+    ItemRackOptQuickAccessMenuSideText = drop:CreateFontString(nil, nil, 'native')
+    local arrow = frame('Button', 'ItemRackOptQuickAccessMenuSideButton', drop)
+    arrow.nativeArt = arrow:CreateTexture(); arrow.action = function() return 'arrow-native' end
     ItemRack = {BuildMenu = function() MenuItem(3); return 'menu-native', nil, 7 end, ToggleOptions = function() return 'options' end}
     ItemRackOpt = {TabOnClick = function() return 'tab-native' end,
+        OptInfo = {{type = 'label'}, {type = 'number', button = number}, {type = 'check'},
+            {type = 'button', button = drop}, {type = 'slider', button = scale}},
+        ListScrollFrameUpdate = function()
+            ItemRackOptList1Label:SetFont('native-heading', 12); ItemRackOptList1Label:SetTextColor(1, 0.82, 0)
+            ItemRackOptList1Underline:SetAlpha(1)
+            ItemRackOptList3CheckText:SetTextColor(0.5, 0.5, 0.5)
+            number:ClearAllPoints(); number:SetPoint('LEFT', ItemRackOptList2NumberLabel, 'RIGHT', 16, -1)
+            return 'config-native', nil, 4
+        end,
+        ToggleQuickAccessMenuSidePick = function()
+            if not ItemRackOptQuickAccessMenuSidePick then
+                local picker = frame('Frame', 'ItemRackOptQuickAccessMenuSidePick', drop)
+                picker:SetBackdrop({edgeFile = 'native-border'})
+                local choice = frame('Button', 'ItemRackOptQuickAccessMenuSidePick1', picker)
+                choice.label = choice:CreateFontString(nil, nil, 'native'); choice.action = function() return 'pick-native' end
+            end
+            return 'picker-native'
+        end,
         SortListScrollFrameUpdate = function() ItemRackOptSortList1Highlight:SetColorTexture(0.8, 0.7, 0.5, 1); return 'rows-native' end}
     modules.ItemRack.install(S, modules.ItemRack); flush()
     assert(not sets.panel and sets.gradient.alpha == 0 and sets.backdrop == nil and artwork.alpha == 1)
     assert(ItemRackOptSetsDropTextureLeft.alpha == 0 and choose.glyph == 'v' and choose.action() == 'choose-set')
     assert(slot.normal.alpha == 0 and ItemRackOptInv7Icon.crop and not slot.checkbox and slot.checked and slot.action() == 'select-equipment')
     assert(check.checkbox and check.checkOptions.borderInset == 4 and check.checked and tristate.checkOptions.stockCheck)
-    assert(horizontal.backdrop == nil and hthumb.width == 10 and hthumb.height == 16
+    assert(horizontal.backdrop == nil and hthumb.width == 8 and hthumb.height == 12
         and horizontal.value == 1 and horizontal.range[2] == 2 and horizontal.hooks.OnValueChanged() == 'scale-native')
     assert(move.glyph == '^' and move.action() == 'move-native')
+    assert(gradient.alpha == 0 and drop.dropdown and arrow.nativeArt.alpha == 0 and arrow.action() == 'arrow-native')
+    assert(ItemRackOptList1Label.font == 'eui' and ItemRackOptList1Label.fontSize == 11
+        and ItemRackOptList1Label.textColor[1] == 0.78 and ItemRackOptList1Underline.alpha == 0)
+    assert(ItemRackOptList3CheckText.width == 132 and ItemRackOptList3CheckButton.width == 20)
+    assert(number.input and number.font == 'eui' and number.fontSize == 10 and number.justify == 'CENTER'
+        and number.text == '0.85' and number.hooks.OnEnterPressed() == 'number-native')
+    assert(inputFill.color[1] == 0.055 and inputFill.color[4] == 0.9)
+    assert(not number.inputOptions.padInput and number.justifyV == 'MIDDLE'
+        and number.textInsets[1] == 2 and number.textInsets[2] == 2, 'numeric field inherited asymmetric popup padding')
+    assert(number.points[1][1] == 'RIGHT' and number.points[1][2] == configRows[2])
+    assert(scaleThumb.width == 8 and scaleThumb.height == 12 and scale.range[2] == 2 and scale.value == 0.85)
+    assert(ItemRackOptMenuScaleSliderMin.fontSize == 9 and ItemRackOptMenuScaleSliderMax.fontSize == 9)
+    auditScans[root] = 0
+    local settingsHook, regions = ItemRackOpt.ListScrollFrameUpdate, #scale.regions
+    for _ = 1, 50 do
+        local a, b, c = ItemRackOpt.ListScrollFrameUpdate(); assert(a == 'config-native' and b == nil and c == 4)
+    end
+    assert(auditScans[root] == 0 and #scale.regions == regions and ItemRackOpt.ListScrollFrameUpdate == settingsHook,
+        'Config row refresh scanned the full window or duplicated objects/hooks')
+    assert(ItemRackOptList1Label.font == 'eui' and ItemRackOptList1Label.textColor[1] == 0.78
+        and ItemRackOptList3CheckText.textColor[1] == 0.5 and ItemRackOptList1Underline.alpha == 0,
+        'Config redraw lost heading styling or native disabled-label colour')
+    local oldOffset, oldScroll = FauxScrollFrame_GetOffset, ItemRackOptListScrollFrame
+    ItemRackOptListScrollFrame = frame('ScrollFrame')
+    FauxScrollFrame_GetOffset = function() return 1 end
+    ItemRackOpt.ListScrollFrameUpdate()
+    assert(number.points[1][2] == configRows[1], 'recycled number field stayed anchored to its previous row')
+    FauxScrollFrame_GetOffset, ItemRackOptListScrollFrame = oldOffset, oldScroll
+    ItemRackOpt.ListScrollFrameUpdate(); assert(number.points[1][2] == configRows[2])
+    assert(ItemRackOpt.ToggleQuickAccessMenuSidePick() == 'picker-native')
+    assert(ItemRackOptQuickAccessMenuSidePick.panel and ItemRackOptQuickAccessMenuSidePick.backdrop == nil
+        and ItemRackOptQuickAccessMenuSidePick1.button and ItemRackOptQuickAccessMenuSidePick1.action() == 'pick-native')
+    combat = true; ItemRackOpt.ListScrollFrameUpdate(); assert(ItemRackOptList1Label.font == 'native-heading')
+    combat = false
+    for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end end
+    flush(); assert(ItemRackOptList1Label.font == 'eui')
+    enabled = false; ItemRackOpt.ListScrollFrameUpdate(); assert(ItemRackOptList1Label.font == 'native-heading')
+    enabled = true; modules.ItemRack.refresh(); flush()
     assert(menu.panel and not item.checkbox and item.normal.alpha == 0 and item.action() == 'equip-native')
     assert(not secure.normal.alpha or secure.normal.alpha == 1); assert(secure.attributes.macro == 'equip')
     local a, b, c = ItemRack.BuildMenu(); assert(a == 'menu-native' and b == nil and c == 7)
@@ -520,7 +609,7 @@ do
     enabled = true
     C_Item, ITEM_QUALITY_COLORS, ItemRack.GetID = oldCItem, oldColors, oldGetID
     GetItemQualityColor, GetInventoryItemQuality = oldQuality, oldInventoryQuality
-    S.Checkbox, S.Inset = checkbox, inset
+    S.Checkbox, S.Inset, S.GetFFD = checkbox, inset, getFFD
 end
 
 assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)

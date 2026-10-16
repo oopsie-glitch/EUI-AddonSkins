@@ -1,6 +1,8 @@
 local ADDON, ns = ...
 local function DefineSkin()
 local scrollThumbs = setmetatable({}, {__mode = "k"})
+local settingsDrops = {ItemRackOptQuickAccessMenuSide = true, ItemRackOptQuickAccessMenuDir = true,
+    ItemRackOptMinimapMenuDir = true, ItemRackOptEventEditTypeDrop = true}
 local glyphs = {ItemRackOptSetsDropDownButton = "v", ItemRackOptEventEditTypeDropButton = "v",
     ItemRackOptSortMoveTop = "^^", ItemRackOptSortMoveUp = "^", ItemRackOptSortMoveDown = "v",
     ItemRackOptSortMoveBottom = "vv", ItemRackOptSortMoveDelete = "X", ItemRackOptToggleInvAll = "All"}
@@ -21,6 +23,59 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         if not C.Clear then
             local H, S = C.H, C.S
             local cleared, icons, borders, controls = {}, {}, {}, {}
+            C.SettingsFont = function(text, size, r, g, b)
+                if not H.Allowed(text) or not text.GetFont or not text.SetFont then return end
+                S.Font(text, r, g, b)
+                local font, _, flags = text:GetFont()
+                if font then text:SetFont(font, size, flags or "") end
+                if text.SetDrawLayer then text:SetDrawLayer("OVERLAY") end
+            end
+            C.SettingsRow = function(row)
+                if not H.Allowed(row) then return end
+                local name = row:GetName()
+                H.Fade(_G[name .. "Underline"])
+                C.SettingsFont(_G[name .. "Label"], 11, 0.78, 0.78, 0.8)
+                local label = _G[name .. "CheckText"]
+                C.SettingsFont(label, 10)
+                if H.Allowed(label) then
+                    label:ClearAllPoints(); label:SetPoint("LEFT", row, "LEFT", 22, 0)
+                    label:SetWidth(math.max(1, row:GetWidth() - 24))
+                end
+                C.SettingsFont(_G[name .. "NumberLabel"], 10)
+                local check = _G[name .. "CheckButton"]
+                if H.Allowed(check) then
+                    check:SetSize(20, 20)
+                    check:ClearAllPoints(); check:SetPoint("LEFT", row, "LEFT", 0, 0)
+                    S.Checkbox(check, {borderInset = 4, hover = 0.06})
+                end
+            end
+            C.Settings = function()
+                if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                local offset = FauxScrollFrame_GetOffset and _G.ItemRackOptListScrollFrame
+                    and FauxScrollFrame_GetOffset(ItemRackOptListScrollFrame) or 0
+                for index = 1, 11 do
+                    local row = _G["ItemRackOptList" .. index]
+                    if row then
+                        C.SettingsRow(row)
+                        local opt = _G.ItemRackOpt and ItemRackOpt.OptInfo and ItemRackOpt.OptInfo[offset + index]
+                        if opt and H.Allowed(opt.button) then
+                            C.RefreshControlsNow(opt.button)
+                            if opt.type == "number" then
+                                local label = _G[row:GetName() .. "NumberLabel"]
+                                if H.Allowed(label) then label:SetWidth(90) end
+                                opt.button:ClearAllPoints(); opt.button:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+                            end
+                        end
+                    end
+                end
+            end
+            C.SettingsPickers = function()
+                if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                for name in pairs(settingsDrops) do
+                    C.RefreshControlsNow(_G[name])
+                    C.RefreshControlsNow(_G[name .. "Pick"])
+                end
+            end
             C.GetQualityColor = function(quality)
                 if quality == nil or quality == false then return 0.35, 0.35, 0.35 end
                 local getter = type(GetItemQualityColor) == "function" and GetItemQualityColor
@@ -225,6 +280,12 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         end
         C.H.Hook(_G.ItemRackOpt, "LockHighlight", C.UpdateHighlight)
         C.H.Hook(_G.ItemRackOpt, "UnlockHighlight", C.UpdateHighlight)
+        C.H.Hook(_G.ItemRackOpt, "ListScrollFrameUpdate", C.Settings)
+        for _, method in ipairs({"UpdateQuickAccessMenuSide", "UpdateQuickAccessMenuDir", "UpdateMinimapMenuDir",
+            "ToggleQuickAccessMenuSidePick", "ToggleQuickAccessMenuDirPick", "ToggleMinimapMenuDirPick"}) do
+            C.H.Hook(_G.ItemRackOpt, method, C.SettingsPickers)
+        end
+        C.Settings()
     end,
     visit = function(C, f, kind)
         local H, S = C.H, C.S
@@ -237,6 +298,18 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
             end
         end
         local name = f.GetName and f:GetName() or ""
+        if settingsDrops[name] then
+            f.Text = f.Text or _G[name .. "Text"]
+            S.Dropdown(f)
+            C.SettingsFont(f.Text, 10, 0.9, 0.9, 0.92)
+            return true
+        end
+        if name:match("Button$") and settingsDrops[name:sub(1, -7)] then
+            -- The parent supplies EUI's arrow; keep this native click target.
+            for _, region in ipairs(H.Regions(f)) do if H.Texture(region) then H.Fade(region) end end
+            return true
+        end
+        if name:match("Pick$") and settingsDrops[name:sub(1, -5)] then C.Panel(f); return true end
         if f == _G.ItemRackMenuFrame then C.Panel(f) end
         if name == "ItemRackOptSubFrame2" then
             for _, side in ipairs({"Left", "Middle", "Right"}) do H.Fade(_G["ItemRackOptSetsDropTexture" .. side]) end
@@ -255,10 +328,18 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         -- still uses classic Slider thumbs; draw a strip on the existing thumb
         -- without changing its range, drag area or OnValueChanged callback.
         if kind == "Slider" and f.GetThumbTexture and f.GetOrientation then
+            if f:GetOrientation() == "VERTICAL" and S.SoftPageButton then
+                local up = f.ScrollUpButton or _G[name .. "ScrollUpButton"]
+                local down = f.ScrollDownButton or _G[name .. "ScrollDownButton"]
+                if H.Allowed(up) then S.SoftPageButton(up, "^", 9) end
+                if H.Allowed(down) then S.SoftPageButton(down, "v", 9) end
+            end
             H.LegacySlider(f, scrollThumbs[f])
             local thumb = f:GetThumbTexture()
             if f:GetOrientation() == "HORIZONTAL" then
-                if H.Texture(thumb) then thumb:SetTexCoord(0, 1, 0, 1); thumb:SetSize(10, 16) end
+                if H.Texture(thumb) then thumb:SetTexCoord(0, 1, 0, 1); thumb:SetSize(8, 12) end
+                C.SettingsFont(_G[name .. "Min"], 9, 0.6, 0.6, 0.62)
+                C.SettingsFont(_G[name .. "Max"], 9, 0.6, 0.6, 0.62)
                 return true
             end
             if thumb and not scrollThumbs[f] then
@@ -274,7 +355,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         end
         if kind == "Button" and (name:match("^ItemRackOptList%d+$") or name:match("^ItemRackOptSoundList%d+$")
             or name:match("^ItemRackOptSoundTestList%d+$")) then
-            C.H.Fade(_G[name .. "Underline"])
+            C.SettingsRow(f)
             return true
         end
         if kind == "Button" and (name:match("^ItemRackOptSortList%d+$") or name:match("^ItemRackOptEventList%d+$")
@@ -303,9 +384,18 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
             S.Checkbox(f, {borderInset = 4, hover = 0.06, stockCheck = name == "ItemRackOptShowHelm" or name == "ItemRackOptShowCloak"})
             return true
         end
-        if kind == "Button" and name == "ItemRackOptEventEditTypeDrop" then
-            f.Text = f.Text or _G[name .. "Text"]
-            S.Dropdown(f); return true
+        if kind == "EditBox" and name:match("^ItemRackOpt") and _G[name .. "Slider"] then
+            -- Popup padding shifts the field's anchors; these numeric controls
+            -- have their own right-aligned layout and symmetric text insets.
+            S.EditBox(f)
+            local data = S.GetFFD and S.GetFFD(f)
+            if data and H.Texture(data.bg) then data.bg:SetColorTexture(0.055, 0.055, 0.055, 0.9) end
+            C.SettingsFont(f, 10, 0.9, 0.9, 0.92)
+            f:SetSize(32, 18)
+            if f.SetJustifyH then f:SetJustifyH("CENTER") end
+            if f.SetJustifyV then f:SetJustifyV("MIDDLE") end
+            if f.SetTextInsets then f:SetTextInsets(2, 2, 0, 0) end
+            return true
         end
         -- Equipment/action buttons outside options are protected and stay intact.
     end,

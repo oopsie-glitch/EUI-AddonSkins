@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.2 — Auctionator and Performance Improvements
+
+- Themed Auctionator’s crafting and enchanting price controls, Search buttons and quantity-search popup.
+- Reduced unnecessary skin refresh work for hidden addon windows.
+
 ## 1.4.1 — Auctionator and Performance Improvements
 
 - Themed Auctionator’s crafting and enchanting price controls, Search buttons and quantity-search popup.

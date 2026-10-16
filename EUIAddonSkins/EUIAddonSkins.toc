@@ -1,11 +1,11 @@
 ## Interface: 16001, 120000, 120001, 120005, 120007, 120100, 120105
-## Title: EUI AddonSkins
+## Title: |cfffac076EUI|r AddonSkins
 ## IconTexture: Interface\AddOns\EUIAddonSkins\Media\Icon.tga
 ## Notes: EllesmereUI skins for World of Warcraft addons.
 ## Author: Smarre
 ## X-License: MIT
 ## X-Wago-ID: aN0a2M6j
-## Version: 1.4.1
+## Version: 1.4.2
 ## Dependencies: EllesmereUI, EllesmereUIBlizzardSkin
 ## SavedVariables: EUIAddonSkinsDB
 

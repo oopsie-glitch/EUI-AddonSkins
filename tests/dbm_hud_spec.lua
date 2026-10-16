@@ -35,6 +35,12 @@ local function object(kind, name, parent)
     function o:SetPoint(...) self.points[#self.points + 1] = {...} end
     function o:SetAllPoints(v) self.all = v end
     function o:SetHeight(v) self.h = v end
+    function o:SetSize(w, h) self.w, self.h = w, h end
+    function o:ClearAllPoints() self.points = {} end
+    function o:Hide() self.shown = false end
+    function o:SetBackdrop(v) self.backdrop = v end
+    function o:SetShadowColor(...) self.shadow = {...} end
+    function o:SetShadowOffset(...) self.shadowOffset = {...} end
     function o:SetWidth(v) self.w = v end
     function o:GetWidth() return self.w end
     function o:GetHeight() return self.h end
@@ -126,6 +132,8 @@ assert(b.fill.path == 'Interface\\Buttons\\WHITE8X8' and b.fill.color[1] == 0.9 
 assert(_G[f.name .. 'BarName'].font == 'eui' and _G[f.name .. 'BarName'].size == 16)
 assert(_G[f.name .. 'BarSpark'].alpha == 0 and _G[f.name .. 'BarBorderTop'].alpha == 0)
 assert(_G[f.name .. 'BarIcon1'].crop and _G[f.name .. 'BarIcon1'].path == 136116)
+assert(f.children[#f.children - 1].regions[1].fillColor[1] == 0.16, 'timer icon edge should be neutral')
+assert(_G[f.name .. 'BarBackground'].fillColor[4] == 0.95)
 assert(f.children[#f.children].shown == false, 'hidden right icon acquired a visible border')
 local nativeUpdate = f.scripts.OnUpdate
 local oldCreated, oldHooks, oldFonts, oldReads = created, hooks, fontWrites, childReads
@@ -157,6 +165,9 @@ event('ADDON_LOADED')
 assert(DBM.Auras:PreviewToggle() == 'native-preview')
 assert(preview.Textures[1].crop and preview.BorderTextures[1].alpha == 0 and preview.DurationTexts[1].font == 'eui')
 assert(preview.Border.borderColor[1] == accent)
+assert(preview.Border.backdrop.edgeSize == 1 and preview.Border.points[1][4] == -1, 'selection outline not tightened')
+assert(preview.StackTexts[1].size < preview.DurationTexts[1].size)
+assert(preview.StackTexts[1].points[1][4] == -3 and preview.StackTexts[1].shadow[4] == 0.9)
 -- Five semantic preview edge colors; never recolor the cooldown or symbol.
 for i = 1, 5 do
     local edgeLayer = preview.children[i + 1]
@@ -166,6 +177,29 @@ local colors = DebuffTypeColor; DebuffTypeColor = nil
 DBM.Auras:OnSettingsChange()
 assert(preview.BorderTextures[1].alpha == 1 and not preview.children[2].shown, 'native border fallback not restored')
 DebuffTypeColor = colors; DBM.Auras:OnSettingsChange()
+-- Current Retail exposes colors and standalone glyphs through AuraUtil,
+-- without the old global table. Native border art must still disappear.
+DebuffTypeColor = nil
+AuraUtil = {
+    GetAuraBorderColor = function(kind) return colors[kind] end,
+    SetAuraDispelTypeIcon = function(t, kind) t.atlas = 'native-' .. kind end,
+}
+preview.Symbols = {object('FontString')}; preview.Symbols[1].text = 'M'
+DBM.Auras:OnSettingsChange()
+local modernCreated, modernHooks = created, hooks
+for i, kind in ipairs({'Magic','Curse','Disease','Poison','Bleed'}) do
+    local layer = preview.children[i + 1]
+    local symbol = layer.regions[5]
+    assert(preview.BorderTextures[i].alpha == 0 and layer.shown)
+    assert(layer.regions[1].fillColor[1] == colors[kind].r)
+    assert(symbol.atlas == 'native-' .. kind and symbol.w <= 18 and symbol.points[1][1] == 'TOPRIGHT')
+end
+assert(preview.Symbols[1].text == 'M', 'native accessibility abbreviation changed')
+for _ = 1, 20 do DBM.Auras:OnSettingsChange() end
+assert(created == modernCreated and hooks == modernHooks, 'preview refresh duplicated objects/hooks')
+preview.BorderTextures[1]:Hide(); DBM.Auras:OnSettingsChange()
+assert(not preview.children[2].regions[5].shown, 'disabled dispel glyph remained visible')
+preview.BorderTextures[1]:SetShown(true); DBM.Auras:OnSettingsChange()
 local liveButton = CreateFrame('Button')
 local liveIcon = liveButton:CreateTexture(); liveIcon.path = 987
 DBM.Auras.AuraTrackingState = {player = {buttonRegions = {[liveButton] = {icon = liveIcon}}}}
@@ -184,5 +218,5 @@ enabled = false
 first:ApplyStyle(); assert(b.fill.path == 'dbm-gloss')
 local skipped = DBT:CreateBar(20, 'disabled'); assert(_G[skipped.frame.name .. 'Bar'].fill.path == 'dbm-gloss')
 assert(#errors == 0, table.concat(errors, '\n'))
-DBM, DBT, C_Secrets, DebuffTypeColor = nil, nil, nil, nil
+DBM, DBT, C_Secrets, DebuffTypeColor, AuraUtil = nil, nil, nil, nil, nil
 print('PASS: DBM HUD late/core-only load, timer lifecycle/native colors/actions, reuse, no countdown work, aura previews, restricted guards, theme/combat/toggles')

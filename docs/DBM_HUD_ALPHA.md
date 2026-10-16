@@ -8,6 +8,8 @@ Branch: `skin/dbm-refinement`. This untagged test build does not publish to Curs
 - A thin EUI accent line below each timer, square icons and EUI fonts.
 - Native timer sizes, positions, icon visibility and countdown behavior.
 - Move-mode aura previews with thin dispel-colored edges, EUI text and an accent selection outline.
+- Retail AuraUtil color support removes the remaining ornate preview borders. Standalone native dispel glyphs sit inside the top-right corner; colorblind abbreviations remain intact.
+- Smaller inset stack counts, subtle text shadows, a tighter one-pixel selection outline and dark neutral timer icon edges.
 - Existing accessible live aura regions receive square icons and EUI text on DBM settings/anchor refreshes. Their native dispel borders remain intact.
 
 Timer styling follows creation, pooled reuse, `ApplyStyle` and `SetIcon`. No countdown/OnUpdate hook, aura polling or saved-setting changes are added. Ordinary insecure timers can be styled during combat; aura and broader refreshes defer until combat ends. Existing EUI DBM toggle and theme callbacks apply.
@@ -25,5 +27,7 @@ Reviewed DBM upstream `master` tree `d1b3a3fca2652a8eac018f6460216f438a1a1d4e`, 
 `python3 scripts/package.py` runs Lua syntax validation, all regression suites and the single-folder archive checks. The HUD fixture covers late/core-only loading, inherited timer methods, pooled reuse, native return values/colors, icon visibility, theme changes, combat, disabled skins and restricted controls. A simulated 1,000 countdown ticks create no additional skin objects, hooks, font writes or hierarchy reads.
 
 These are mocked checks, not in-game profiling or visual verification. No FPS or live-client performance claim is made.
+
+Alpha.2 extends the fixture with Retail-only colors (legacy global absent), contained dispel glyphs, preview object reuse, hidden dispel glyphs, text padding and selection geometry. Timer backgrounds are slightly more opaque for contrast against the world.
 
 Install the test ZIP's `EUIAddonSkins` folder in `Interface/AddOns`, replacing the existing folder. DBM and EllesmereUI remain separate requirements. Do not install this alongside another copy of EUI AddonSkins.

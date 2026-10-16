@@ -38,7 +38,7 @@ local function HUD(C)
         d = {layer = layer, edge = edge}; icons[icon] = d
         return d
     end
-    local function Icon(parent, icon, border, r, g, b)
+    local function Icon(parent, icon, border, r, g, b, neutral)
         if not Allowed(parent) or not H.Texture(icon) then return end
         -- Do not modify masked/private icons or guess the meaning of a border.
         if icon.GetNumMaskTextures and icon:GetNumMaskTextures() > 0 then return end
@@ -56,8 +56,12 @@ local function HUD(C)
             border:SetAlpha(d.nativeBorderAlpha)
             d.nativeBorderAlpha = nil
         end
-        if not r then r, g, b = S.GetAccentColor() end
+        if not r then
+            if neutral then r, g, b = 0.16, 0.16, 0.18
+            else r, g, b = S.GetAccentColor() end
+        end
         for _, edge in ipairs(d.edge) do edge:SetColorTexture(r, g, b, 0.85) end
+        return d
     end
     local function PaintBar(obj)
         if not ns.IsEnabled(C.module) or active then return end
@@ -81,7 +85,7 @@ local function HUD(C)
                 end
             end
             local bg = _G[name .. "BarBackground"]
-            if H.Texture(bg) then bg:SetColorTexture(0.055, 0.055, 0.06, 0.85) end
+            if H.Texture(bg) then bg:SetColorTexture(0.045, 0.045, 0.05, 0.95) end
             local spark = _G[name .. "BarSpark"]
             if H.Texture(spark) then H.Fade(spark) end
             for _, side in ipairs({"Top", "Bottom", "Left", "Right"}) do
@@ -91,7 +95,7 @@ local function HUD(C)
             Font(_G[name .. "BarName"]); Font(_G[name .. "BarTimer"])
             for i = 1, 2 do
                 local icon = _G[name .. "BarIcon" .. i]
-                if H.Texture(icon) then Icon(obj.frame, icon) end
+                if H.Texture(icon) then Icon(obj.frame, icon, nil, nil, nil, nil, true) end
             end
             local d = bars[obj]
             if not d.line then
@@ -114,17 +118,63 @@ local function HUD(C)
         PaintBar(obj)
     end
     local TYPES = {"Magic", "Curse", "Disease", "Poison", "Bleed"}
+    local selectionBackdrop = {edgeFile = WHITE, edgeSize = 1}
+    local function Shadow(text)
+        if text.SetShadowColor then text:SetShadowColor(0, 0, 0, 0.9) end
+        if text.SetShadowOffset then text:SetShadowOffset(1, -1) end
+    end
     local function Preview(f)
         if not Allowed(f) then return end
         for i, icon in ipairs(f.Textures or {}) do
             local border = f.BorderTextures and f.BorderTextures[i]
-            local color = border and border.IsShown and border:IsShown()
-                and DebuffTypeColor and DebuffTypeColor[TYPES[(i - 1) % #TYPES + 1]]
-            Icon(f.OverlayFrames and f.OverlayFrames[i] or f, icon, border,
+            local dispelType = TYPES[(i - 1) % #TYPES + 1]
+            -- Retail removed the legacy DebuffTypeColor global. Resolve the
+            -- preview's known demo type through AuraUtil, never live aura data.
+            local color
+            if border and border.IsShown and border:IsShown() then
+                color = AuraUtil and AuraUtil.GetAuraBorderColor and AuraUtil.GetAuraBorderColor(dispelType)
+                    or DebuffTypeColor and DebuffTypeColor[dispelType]
+            end
+            local d = Icon(f.OverlayFrames and f.OverlayFrames[i] or f, icon, border,
                 color and color.r, color and color.g, color and color.b)
-            Font(f.DurationTexts and f.DurationTexts[i]); Font(f.StackTexts and f.StackTexts[i])
+            if d then
+                -- The large protruding glyph is part of Blizzard's border
+                -- atlas. Replace it with the matching standalone native atlas.
+                if color and AuraUtil and AuraUtil.SetAuraDispelTypeIcon then
+                    if not d.symbol then d.symbol = d.layer:CreateTexture(nil, "OVERLAY") end
+                    local size = math.max(10, math.min(18, icon:GetWidth() * 0.24))
+                    AuraUtil.SetAuraDispelTypeIcon(d.symbol, dispelType)
+                    d.symbol:SetSize(size, size)
+                    d.symbol:ClearAllPoints(); d.symbol:SetPoint("TOPRIGHT", icon, "TOPRIGHT", -2, -2)
+                    d.symbol:SetShown(not icon.IsShown or icon:IsShown())
+                elseif d.symbol then d.symbol:Hide() end
+            end
+            local duration, stack = f.DurationTexts and f.DurationTexts[i], f.StackTexts and f.StackTexts[i]
+            Font(duration); Font(stack)
+            local durationSize = Allowed(duration) and select(2, duration:GetFont()) or 20
+            if Allowed(duration) then
+                duration:ClearAllPoints(); duration:SetPoint("CENTER", icon, "CENTER", 0, 1)
+                Shadow(duration)
+            end
+            if Allowed(stack) then
+                local path, size, flags = stack:GetFont()
+                stack:SetFont(path, math.min(size or 12, math.max(8, (durationSize or 20) * 0.55)), flags)
+                stack:ClearAllPoints(); stack:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -3, 3)
+                Shadow(stack)
+            end
+            -- Keep native colorblind abbreviations; do not replace their text.
+            local symbol = f.Symbols and f.Symbols[i]
+            if Allowed(symbol) then
+                Font(symbol)
+                symbol:ClearAllPoints(); symbol:SetPoint("TOPLEFT", icon, "TOPLEFT", 2, -2)
+                Shadow(symbol)
+            end
         end
         if Allowed(f.Border) and f.Border.SetBackdropBorderColor then
+            if f.Border.SetBackdrop then f.Border:SetBackdrop(selectionBackdrop) end
+            f.Border:ClearAllPoints()
+            f.Border:SetPoint("TOPLEFT", f, "TOPLEFT", -1, 1)
+            f.Border:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 1, -1)
             local r, g, b = S.GetAccentColor(); f.Border:SetBackdropBorderColor(r, g, b, 0.8)
         end
         Font(f.NameLabel)

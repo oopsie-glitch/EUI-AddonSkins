@@ -117,8 +117,15 @@ local function HUD(C)
         local top = height / 2
         -- The 754x88 specification is a coordinate system, not an installation
         -- size. Only the row contents change; the native hit/stack frame stays.
+        local count = 0
+        for i = 1, 4 do
+            local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
+            if H.Texture(icon) and icon:IsShown() then count = count + 1 end
+        end
+        -- Reclaim the mechanic compartment only when no indicator is shown.
+        local reclaimed = count == 0 and 77 or 0
         local contentX = Snap(width * 110 / 754, pixel)
-        local trackRight = Snap(width * (754 - 533) / 754, pixel)
+        local trackRight = Snap(width * (754 - 533 - reclaimed) / 754, pixel)
         bar:ClearAllPoints()
         bar:SetPoint("TOPLEFT", frame, "LEFT", contentX, Snap(top - height * 53 / 88, pixel))
         bar:SetPoint("TOPRIGHT", frame, "RIGHT", -trackRight, Snap(top - height * 53 / 88, pixel))
@@ -141,16 +148,10 @@ local function HUD(C)
         for i, edge in ipairs(d.edges) do
             if i <= 2 then edge:SetHeight(pixel) else edge:SetWidth(pixel) end
             edge:SetColorTexture(r, g, b, i == 1 and 0.8 or 0.45)
+            edge:SetShown(ns.AccentBarShown())
         end
         d.borderPixel = pixel
-        local capacity = math.max(0, math.min(4, options.JournalIcons or 0))
         d.mechanicAlpha = d.mechanicAlpha or {}
-        -- Reserve the same compartment, but size only for symbols actually shown.
-        local count = 0
-        for i = 1, 4 do
-            local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
-            if H.Texture(icon) and icon:IsShown() then count = count + 1 end
-        end
         local columns, rows = count > 1 and 2 or 1, count > 2 and 2 or 1
         local symbolSize = math.min(height * 33 / 88, width * 65 / 754 / columns)
         symbolSize = math.max(pixel, Snap(symbolSize, pixel))
@@ -173,7 +174,7 @@ local function HUD(C)
         d.separator:SetPoint("TOPLEFT", frame, "LEFT", Snap(width * 677 / 754, pixel), Snap(top - height * 6 / 88, pixel))
         d.separator:SetPoint("BOTTOMLEFT", frame, "LEFT", Snap(width * 677 / 754, pixel), Snap(-top + height * 6 / 88, pixel))
         d.separator:SetWidth(pixel); d.separator:SetColorTexture(0.12, 0.14, 0.16, 0.55)
-        d.separator:SetShown(capacity > 0)
+        d.separator:SetShown(count > 0)
         local label, timer = _G[name .. "BarName"], _G[name .. "BarTimer"]
         local path, flags = S.GetFont()
         local x, y = options.HugeTextXOffset or 0, options.HugeTextYOffset or 0
@@ -183,7 +184,7 @@ local function HUD(C)
         if Allowed(label) then
             label:SetFont(path, d.labelSize, flags or ""); label:ClearAllPoints()
             label:SetPoint("TOPLEFT", frame, "LEFT", contentX + x, Snap(top - height * 10 / 88, pixel) + y)
-            label:SetPoint("TOPRIGHT", frame, "RIGHT", -Snap(width * (754 - 565) / 754, pixel) + x, Snap(top - height * 10 / 88, pixel) + y)
+            label:SetPoint("TOPRIGHT", frame, "RIGHT", -Snap(width * (754 - 565 - reclaimed) / 754, pixel) + x, Snap(top - height * 10 / 88, pixel) + y)
             -- A fixed upper text band centers both plain lines and taller inline icons.
             label:SetHeight(math.max(pixel, Snap(height * 34 / 88, pixel)))
             if label.SetJustifyV then label:SetJustifyV("MIDDLE") end
@@ -194,7 +195,7 @@ local function HUD(C)
         if Allowed(timer) then
             timer:SetFont(path, math.max(8, height * 34 / 88 * fontScale), flags or "")
             timer:ClearAllPoints(); timer:SetWidth(Snap(width * 95 / 754, pixel))
-            timer:SetPoint("RIGHT", frame, "RIGHT", -Snap(width * (754 - 661) / 754, pixel) + x, y)
+            timer:SetPoint("RIGHT", frame, "RIGHT", -Snap(width * (754 - 661 - reclaimed) / 754, pixel) + x, y)
             if timer.SetJustifyH then timer:SetJustifyH("RIGHT") end
             Shadow(timer)
         end
@@ -236,9 +237,8 @@ local function HUD(C)
         end
         local stacked = options.JournalIcons == 4
         local symbolSize = math.min(16, rowHeight * (stacked and 0.36 or 0.62), obj.frame:GetWidth() / 12)
-        -- Reserve the configured symbol capacity, even when a timer has fewer
-        -- populated icons. Labels, strips and countdowns then align per size.
-        local capacity = type(options.JournalIcons) == "number" and math.max(0, math.min(4, options.JournalIcons)) or count
+        -- Compact fallback reserves space only for visible mechanic symbols.
+        local capacity = count
         if not obj.enlarged then capacity = 0 end
         local mechanicSpace = capacity > 0 and ((stacked and math.min(capacity, 2) or capacity) * (symbolSize + 1) + 2) or 0
         local slot = 0
@@ -288,6 +288,7 @@ local function HUD(C)
         for i, edge in ipairs(d.edges) do
             if i <= 2 then edge:SetHeight(1) else edge:SetWidth(1) end
             edge:SetColorTexture(r, g, b, 0.5)
+            edge:SetShown(ns.AccentBarShown())
         end
         local x, y = options[prefix .. "TextXOffset"] or 0, options[prefix .. "TextYOffset"] or 0
         local path, flags = S.GetFont()
@@ -373,6 +374,7 @@ local function HUD(C)
                     if border then
                         for j, edge in ipairs(border.edge) do
                             if j <= 2 then edge:SetHeight(d.borderPixel) else edge:SetWidth(d.borderPixel) end
+                            edge:SetShown(ns.AccentBarShown())
                         end
                     end
                 end

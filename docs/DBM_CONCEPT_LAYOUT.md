@@ -1,6 +1,6 @@
 # DBM measured concept layout
 
-Applied in HUD alpha.9, refined in alpha.10–11 to native **Huge Bars**. The user's Blizzard Skins+ accent-bar color (custom or linked to the overall EUI accent) replaces the concept's fixed teal and mechanic-colored spell-icon borders. DBM retains control of positions, row spacing, normal/huge dimensions, scale, timer values, priorities and number formatting. No profiles or saved settings are rewritten.
+Applied in HUD alpha.9, refined in alpha.10–12 to native **Huge Bars**. The user's Blizzard Skins+ accent-bar color (custom or linked to the overall EUI accent) replaces the concept's fixed teal and mechanic-colored spell-icon borders. DBM retains control of positions, row spacing, normal/huge dimensions, scale, timer values, priorities and number formatting. No profiles or saved settings are rewritten.
 
 The supplied 754x88 screenshot measurements define proportions, not fixed live dimensions. For a configured native row width W and height H:
 
@@ -14,6 +14,8 @@ The supplied 754x88 screenshot measurements define proportions, not fixed live d
 | Countdown | Width 95/754; right edge at 661/754 | Center vertically |
 | Mechanic compartment | Separator at 677/754; symbols centered around 714.5/754 | Native symbols centered; visible symbols fit in a compact grid; a single symbol uses the full 33/88-height target, limited by compartment width |
 | Typography | EUI font | Name 23/88 of H; countdown 34/88, adjusted by DBM font-size preference |
+
+When no right-side mechanic symbols are shown, alpha.12 reclaims the 77/754-width compartment: the name and progress strip extend by that amount, the countdown moves right by the same amount, and the separator is hidden. Appearance of a symbol restores the compartment through the existing lifecycle hooks. Timer panel and spell-icon accent edges follow Blizzard Skins+ Show accent bar; neutral track edges remain visible.
 
 The supplied countdown measurements contain an inconsistency: a 95-wide region ending at X=661 starts at 566, rather than the approximate X=580. The explicit fixed right edge and region width take precedence. Square icons are centered inside the approximate 73x69 reference cell rather than stretched.
 

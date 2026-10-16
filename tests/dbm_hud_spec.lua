@@ -274,6 +274,13 @@ local fixedWidth, fixedTimer = b:GetWidth(), conceptTimer.points[1][4]
 first:SetIcon(999)
 assert(symbol.w == 25 and symbol.points[1][4] == 536, 'single mechanic should fill its centered compartment')
 assert(b:GetWidth() == fixedWidth and conceptTimer.points[1][4] == fixedTimer, 'symbol count moved progress/countdown')
+for i = 1, 4 do _G[f.name .. 'BarIJIcons' .. (i == 1 and '' or i)]:Hide() end
+first:SetIcon(999)
+assert(b:GetWidth() > fixedWidth and conceptTimer.points[1][4] > fixedTimer and not f.regions[6].shown, 'hidden indicators left an empty compartment')
+assert(conceptLabel.points[2][4] > -142, 'name did not reclaim empty compartment')
+symbol:SetShown(true)
+first:SetIcon(999)
+assert(b:GetWidth() == fixedWidth and conceptTimer.points[1][4] == fixedTimer and f.regions[6].shown, 'new indicator did not restore its compartment')
 DBT.Options.JournalIcons = 2; first:ApplyStyle()
 assert(symbol.w < 25, 'multiple symbols must fit without overlap')
 -- Text bands center mixed-height inline artwork without changing native text.
@@ -294,7 +301,8 @@ PixelUtil = nil; GetPhysicalScreenSize = function() return 1820, 1024 end
 first:ApplyStyle(); assert(f.regions[2].h == 0.5, 'physical-screen fallback lost pixel conversion')
 GetPhysicalScreenSize = nil; f.scale = 1
 DBT.Options.JournalIcons = 0; first:ApplyStyle()
-assert(not f.regions[6].shown and conceptTimer.points[1][4] == -70, 'optional mechanic compartment moved the countdown')
+assert(not f.regions[6].shown and conceptTimer.points[1][4] == -12, 'empty mechanic compartment should move the countdown right')
+assert(math.abs(b:GetWidth() - 375) <= 1, 'empty mechanic compartment should widen the strip')
 DBT.Options.JournalIcons, DBT.Options.HugeHeight = 2, 28
 f:SetSize(195, 20)
 DBT.Options.IconRight = true; first:ApplyStyle()
@@ -443,6 +451,19 @@ first.enlarged = true; first:ApplyStyle()
 assert(f.regions[2].fillColor[1] == 0.35 and f.children[#f.children - 1].regions[1].fillColor[1] == 0.35, 'huge timer ignored Blizzard Skins+ accent')
 first.enlarged = false; first:ApplyStyle()
 assert(b.fill.color[1] == fillR and b.fill.color[2] == fillG and b.fill.color[3] == fillB, 'custom border accent recolored semantic fill')
+-- Accent visibility affects timer outlines, not backgrounds or fill.
+EllesmereUIDB.blizzWinAccentBar.enabled = false
+for _, fn in ipairs(looks) do fn() end; flush()
+for i = 2, 5 do assert(not f.regions[i].shown, 'small timer accent outline remained visible') end
+assert(not f.children[#f.children - 1].regions[1].shown and panel.shown and b.fill.shown)
+first.enlarged = true; first:ApplyStyle()
+for i = 2, 5 do assert(not f.regions[i].shown, 'huge timer accent outline remained visible') end
+assert(not f.children[#f.children - 1].regions[1].shown)
+EllesmereUIDB.blizzWinAccentBar.enabled = true
+for _, fn in ipairs(looks) do fn() end; flush()
+for i = 2, 5 do assert(f.regions[i].shown, 'accent toggle did not restore timer outline') end
+assert(f.children[#f.children - 1].regions[1].shown)
+first.enlarged = false; first:ApplyStyle()
 EllesmereUIDB.blizzWinAccentBar.useCustom = false
 accent = 0.8; for _, fn in ipairs(looks) do fn() end; flush()
 assert(f.regions[2].fillColor[1] == accent and preview.Border.borderColor[1] == accent)

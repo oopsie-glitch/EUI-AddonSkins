@@ -200,7 +200,15 @@ ItemRackLogFrame = frame('Frame', 'ItemRackLogFrame'); modules.ItemRack.refresh(
 combat = false
 for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.scripts.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
 flush(); assert(ItemRackLogFrame.shell)
+-- Scoped roots: a hidden root is not walked again until shown; showing it styles what changed.
+function BugSackFrame:IsVisible() return self.shown end
+BugSackFrame.shown = false
+local hiddenInput = frame('EditBox', nil, BugSackFrame)
+modules.BugSack.refresh(); flush(); assert(not hiddenInput.padded, 'hidden scoped root walked again')
+BugSackFrame.shown = true; BugSackFrame.hooks.OnShow(); flush(); assert(hiddenInput.padded, 'shown scoped root not styled')
+local visibleInput = frame('EditBox', nil, BugSackFrame)
+modules.BugSack.refresh(); flush(); assert(visibleInput.padded, 'visible scoped root not walked')
 enabled = false
 ItemRackLogFrame = frame('Frame', 'ItemRackLogFrame'); modules.ItemRack.refresh(); flush(); assert(not ItemRackLogFrame.shell)
 assert(#errors == 0, table.concat(errors, '\n'))
-print('PASS: seven optional adapters, lazy/pooled controls, accents/AceGUI checks, multiline output, semantic icons/rows, native tabs, protected gear/map/graph, combat and disabled skins')
+print('PASS: seven optional adapters, lazy/pooled controls, accents/AceGUI checks, multiline output, semantic icons/rows, native tabs, protected gear/map/graph, visible-only scoped roots, combat and disabled skins')

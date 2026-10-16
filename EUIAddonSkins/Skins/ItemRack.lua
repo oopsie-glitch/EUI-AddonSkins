@@ -23,7 +23,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         if not C.Clear then
             local H, S = C.H, C.S
             local cleared, icons, borders, controls, tabLabels = {}, {}, {}, {}, {}
-            local visuals = {}
+            local visuals, inputLayouts = {}, {}
             C.Primitive = function(f, key, method, ...)
                 local entry = visuals[f]
                 if not entry then entry = {}; visuals[f] = entry end
@@ -76,6 +76,16 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
                     end
                 end
             end
+            C.InputLayout = function(f, inset, numeric)
+                if inputLayouts[f] then return end
+                inputLayouts[f] = true
+                if numeric then
+                    f:SetSize(32, 18)
+                    if f.SetJustifyH then f:SetJustifyH("CENTER") end
+                    if f.SetJustifyV then f:SetJustifyV("MIDDLE") end
+                end
+                if f.SetTextInsets then f:SetTextInsets(inset, inset, 0, 0) end
+            end
             C.RemoveArt = function(texture)
                 if not H.Texture(texture) then return end
                 H.Fade(texture)
@@ -106,6 +116,21 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
             end
             C.SettingsFont = function(text, size, r, g, b)
                 if not H.Allowed(text) or not text.GetFont or not text.SetFont then return end
+                -- EditBox font/layout writes can fire OnTextChanged even when
+                -- the text is unchanged. ItemRack validates set buttons there
+                -- and resets spec checkboxes: never repeat those writes during
+                -- an ordinary skin refresh (including the refresh after a click).
+                if text:GetObjectType() == "EditBox" and S.GetFont then
+                    local path, flag = S.GetFont()
+                    local current, height, flags = text:GetFont()
+                    if current == path and height == size and (flags or "") == (flag or "") then
+                        if r and text.SetTextColor then
+                            local cr, cg, cb = text:GetTextColor()
+                            if cr ~= r or cg ~= g or cb ~= b then text:SetTextColor(r, g, b) end
+                        end
+                        return
+                    end
+                end
                 S.Font(text, r, g, b)
                 local font, _, flags = text:GetFont()
                 if font then text:SetFont(font, size, flags or "") end
@@ -387,7 +412,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         local H, S = C.H, C.S
         -- ItemRack's labels are frequently BACKGROUND regions; keep them above
         -- newly painted button/checkbox fills without moving their anchors.
-        for _, region in ipairs({f:GetRegions()}) do
+        for _, region in ipairs(kind ~= "EditBox" and H.Regions(f) or {}) do
             if region:GetObjectType() == "FontString" then
                 if region.SetDrawLayer then region:SetDrawLayer("OVERLAY") end
                 C.H.Font(region)
@@ -506,7 +531,7 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
         if kind == "EditBox" and name == "ItemRackOptSetsName" then
             C.Input(f)
             C.SettingsFont(f, 11, 0.9, 0.9, 0.92)
-            if f.SetTextInsets then f:SetTextInsets(4, 4, 0, 0) end
+            C.InputLayout(f, 4)
             return true
         end
         if kind == "EditBox" and name:match("^ItemRackOpt") and _G[name .. "Slider"] then
@@ -514,10 +539,18 @@ ns.RegisterScopedSkin("ItemRack", "ItemRack", {
             -- have their own right-aligned layout and symmetric text insets.
             C.Input(f)
             C.SettingsFont(f, 10, 0.9, 0.9, 0.92)
-            f:SetSize(32, 18)
-            if f.SetJustifyH then f:SetJustifyH("CENTER") end
-            if f.SetJustifyV then f:SetJustifyV("MIDDLE") end
-            if f.SetTextInsets then f:SetTextInsets(2, 2, 0, 0) end
+            C.InputLayout(f, 2, true)
+            return true
+        end
+        if kind == "EditBox" then
+            -- Event scripts, delays and other native fields also have text
+            -- callbacks. Keep their geometry and avoid the generic padInput
+            -- path or repeated writes to their internal text FontString.
+            C.Input(f)
+            if f.GetFont then
+                local _, size = f:GetFont()
+                C.SettingsFont(f, size or 12)
+            end
             return true
         end
         -- Equipment/action buttons outside options are protected and stay intact.

@@ -356,7 +356,8 @@ end
 do
     assert(loadfile('EUIAddonSkins/Skins/ItemRack.lua'))('EUIAddonSkins', ns)
     local checkbox, inset, getFFD, pageButton = S.Checkbox, S.Inset, S.GetFFD, S.PageButton
-    local tabPrimitive, tabSelection, dropdownPrimitive, inputPrimitive, shellPrimitive = S.Tab, S.SetTabSelection, S.Dropdown, S.EditBox, S.Shell
+    local tabPrimitive, tabSelection, dropdownPrimitive, inputPrimitive, shellPrimitive, getFont = S.Tab, S.SetTabSelection, S.Dropdown, S.EditBox, S.Shell, S.GetFont
+    S.GetFont = function() return 'eui', '' end
     -- The public EUI facade deliberately does not expose its internal FFD.
     S.GetFFD = nil
     S.Checkbox = function(f, opts) f.checkOptions = opts; checkbox(f) end
@@ -669,6 +670,90 @@ do
     flush(); assert(ItemRackOptSortList1Highlight.color[4] == 0.13)
     enabled = false; ItemRackOpt.SortListScrollFrameUpdate(); assert(ItemRackOptSortList1Highlight.color[4] == 1)
     enabled = true
+    -- EditBox formatting can dispatch OnTextChanged without a user edit. The
+    -- set-name handler validates buttons and resets spec ticks; a repaint must
+    -- not re-enter it after a click or between mouse-down and mouse-up.
+    local validations, saves, deletes, bindings = 0, 0, 0, 0
+    local save = frame('Button', 'ItemRackOptSetsSaveButton', sets)
+    save.label = save:CreateFontString(nil, nil, 'native')
+    local bind = frame('Button', 'ItemRackOptSetsBindButton', sets)
+    bind.label = bind:CreateFontString(nil, nil, 'native')
+    local delete = frame('Button', 'ItemRackOptSetsDeleteButton', sets)
+    delete.label = delete:CreateFontString(nil, nil, 'native')
+    local spec = frame('CheckButton', 'ItemRackOptSpec1', sets)
+    local secondary = frame('CheckButton', 'ItemRackOptSpec2', sets)
+    local saved, selected, dirty = {}, true, false
+    setName.GetText = function(self) return self.text end
+    setName.hooks.OnTextChanged = function()
+        validations = validations + 1
+        spec:SetChecked(false); secondary:SetChecked(false)
+        save:Disable(); bind:Disable(); delete:Disable()
+        if setName.text ~= '' and selected then save:Enable() end
+        if saved[setName.text] then
+            bind:Enable(); delete:Enable()
+            if not dirty then spec:SetChecked(saved[setName.text].spec == 1) end
+        end
+    end
+    setName.SetText = function(self, text) self.text = text; self.hooks.OnTextChanged(self) end
+    local editFont, editInsets = setName.SetFont, setName.SetTextInsets
+    setName.SetFont = function(self, ...)
+        editFont(self, ...); self.hooks.OnTextChanged(self)
+    end
+    setName.SetTextInsets = function(self, ...)
+        editInsets(self, ...); self.hooks.OnTextChanged(self)
+    end
+    local internalText = setName:CreateFontString(nil, nil, 'native')
+    internalText.SetFont = function(self, ...)
+        editFont(self, ...); setName.hooks.OnTextChanged(setName)
+    end
+    spec.hooks.OnClick = function()
+        secondary:SetChecked(false); dirty = true; save:Enable()
+    end
+    save.hooks.OnClick = function()
+        saved[setName.text] = {spec = spec:GetChecked() and 1 or nil, selected = selected}
+        saves = saves + 1; dirty = false; setName.hooks.OnTextChanged(setName)
+    end
+    bind.hooks.OnClick = function() bindings = bindings + 1 end
+    delete.hooks.OnClick = function() saved[setName.text] = nil; deletes = deletes + 1; setName.hooks.OnTextChanged(setName) end
+    local function Click(button)
+        assert(button:IsEnabled(), 'native control was disabled')
+        if button.kind == 'CheckButton' then button:SetChecked(not button:GetChecked()) end
+        button.hooks.OnClick(button); flush()
+    end
+    modules.ItemRack.refresh(); flush() -- first-time native control discovery
+    setName:SetText('New rogue set')
+    local before = validations
+    for _ = 1, 20 do modules.ItemRack.refresh(); flush() end
+    assert(validations == before and save:IsEnabled(), 'skin repaint re-entered set validation')
+    Click(spec)
+    before = validations
+    for _ = 1, 20 do modules.ItemRack.refresh(); flush() end
+    assert(validations == before and spec:GetChecked() and dirty, 'skin reset the unsaved Rogue/spec selection')
+    Click(save)
+    assert(saves == 1 and saved['New rogue set'].spec == 1 and saved['New rogue set'].selected)
+    Click(bind); assert(bindings == 1)
+    setName:SetText('Second set'); Click(save); assert(saves == 2 and saved['Second set'])
+    setName:SetText('New rogue set'); assert(spec:GetChecked(), 'saved-set selection lost specialization')
+    Click(delete); assert(deletes == 1 and not saved['New rogue set'] and saved['Second set'])
+    assert(not bind:IsEnabled() and not delete:IsEnabled(), 'skin enabled native unavailable actions')
+    selected = false; setName:SetText('No items'); assert(not save:IsEnabled())
+    before = validations; modules.ItemRack.refresh(); flush()
+    assert(validations == before and not save:IsEnabled(), 'skin changed native empty-set validation')
+    local scriptInput = frame('EditBox', 'ItemRackOptEventEditScriptEditBox', root)
+    scriptInput.GetFont, scriptInput.SetFont = number.GetFont, number.SetFont
+    scriptInput.GetTextColor, scriptInput.SetTextColor = number.GetTextColor, number.SetTextColor
+    scriptInput.font, scriptInput.fontSize, scriptInput.text = 'native', 13, 'return true'
+    scriptInput.IsMultiLine = function() return true end
+    scriptInput:SetPoint('LEFT', root, 'LEFT', 10, 0)
+    scriptInput.hooks.OnTextChanged = function() return 'script-native' end
+    modules.ItemRack.refresh(); flush()
+    local nameWrites, numberWrites, scriptWrites = setName.fontWrites, number.fontWrites, scriptInput.fontWrites
+    for _ = 1, 20 do modules.ItemRack.refresh(); flush() end
+    assert(setName.fontWrites == nameWrites and number.fontWrites == numberWrites and scriptInput.fontWrites == scriptWrites,
+        'warm refresh rewrote a native editing field font')
+    assert(not scriptInput.inputOptions.padInput and scriptInput.fontSize == 13 and scriptInput.text == 'return true'
+        and scriptInput.points[1][4] == 10 and scriptInput.hooks.OnTextChanged() == 'script-native',
+        'event script styling changed native text, geometry or callbacks')
     -- Detached secure equipment buttons get cosmetics only, outside combat.
     local oldQuality, oldInventoryQuality = GetItemQualityColor, GetInventoryItemQuality
     GetItemQualityColor = function(q) if q == 3 then return 0, 0.44, 0.87 else return 0.12, 1, 0 end end
@@ -789,7 +874,7 @@ do
     C_Item, ITEM_QUALITY_COLORS, ItemRack.GetID = oldCItem, oldColors, oldGetID
     GetItemQualityColor, GetInventoryItemQuality = oldQuality, oldInventoryQuality
     S.Checkbox, S.Inset, S.GetFFD, S.PageButton = checkbox, inset, getFFD, pageButton
-    S.Tab, S.SetTabSelection, S.Dropdown, S.EditBox, S.Shell = tabPrimitive, tabSelection, dropdownPrimitive, inputPrimitive, shellPrimitive
+    S.Tab, S.SetTabSelection, S.Dropdown, S.EditBox, S.Shell, S.GetFont = tabPrimitive, tabSelection, dropdownPrimitive, inputPrimitive, shellPrimitive, getFont
 end
 
 assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)

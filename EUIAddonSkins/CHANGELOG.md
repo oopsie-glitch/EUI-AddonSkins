@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.1 — Auctionator and Performance Improvements
+
+- Themed Auctionator’s crafting and enchanting price controls, Search buttons and quantity-search popup.
+- Reduced unnecessary skin refresh work for hidden addon windows.
+
 ## 1.4.0 — BtWQuests, ItemRack and Other Skin Improvements
 
 ### BtWQuests — New Skin

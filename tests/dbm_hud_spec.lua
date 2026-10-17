@@ -268,11 +268,13 @@ assert(b.points[2][4] < timer.points[1][4] - timer.w, 'huge fill must stop befor
 local symbol = _G[f.name .. 'BarIJIcons']
 assert(symbol.alpha == 1 and symbol.h == 17, 'huge mechanic icons should occupy about 60% of height')
 local twoWidth, twoTimer = b:GetWidth(), timer.points[1][4]
+local hugeLeft, hugeRight, hugeLabelRight = b.points[1][4], b.points[2][4], label.points[2][4]
+assert(symbol.points[1][3] == 'LEFT' and symbol.points[1][4] + symbol.w / 2 < 0, 'mechanic must sit before the left spell icon')
 _G[f.name .. 'BarIJIcons2']:Hide(); first:SetIcon(999)
-assert(b:GetWidth() > twoWidth and timer.points[1][4] > twoTimer, 'single mechanic did not reclaim unused width')
+assert(b:GetWidth() == twoWidth and timer.points[1][4] == twoTimer, 'single mechanic changed track/countdown alignment')
 local singleWidth = b:GetWidth()
 symbol:Hide(); first:SetIcon(999)
-assert(b:GetWidth() > singleWidth and timer.points[1][4] == -4, 'empty indicators left unused space')
+assert(b:GetWidth() == singleWidth and timer.points[1][4] == -4, 'absent indicators changed track/countdown alignment')
 symbol:SetShown(true); first:SetIcon(999)
 assert(b:GetWidth() == singleWidth, 'reappearing symbol did not restore its space')
 DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 2, 3
@@ -280,7 +282,12 @@ first:ApplyStyle()
 assert(label.points[1][4] == 32 and label.points[1][5] == 3 and timer.points[1][5] == 3, 'native text offsets lost')
 DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 0, 0
 DBT.Options.JournalIcons = 4; first:ApplyStyle()
-assert(symbol.h == 11 and _G[f.name .. 'BarIJIcons3'].points[1][5] < symbol.points[1][5], 'four-symbol grid must fit inside row')
+assert(symbol.h == 11 and _G[f.name .. 'BarIJIcons3'].points[1][5] < symbol.points[1][5], 'four-symbol grid must fit within row height')
+assert(b.points[1][4] == hugeLeft and b.points[2][4] == hugeRight and label.points[2][4] == hugeLabelRight and timer.points[1][4] == twoTimer)
+for i = 1, 4 do
+    local icon = _G[f.name .. 'BarIJIcons' .. (i == 1 and '' or i)]
+    assert(icon.points[1][4] + icon.w / 2 < 0, 'mechanic grid overlaps the row')
+end
 -- Sparse slots use a full-size centered symbol, not a four-slot size limit.
 for i = 1, 4 do _G[f.name .. 'BarIJIcons' .. (i == 1 and '' or i)]:SetShown(i == 3) end
 first:SetIcon(999)
@@ -310,7 +317,7 @@ for i = 1, 4 do _G[f.name .. 'BarIJIcons' .. (i == 1 and '' or i)]:SetShown(i ==
 first:SetIcon(999)
 local occupiedWidth = b:GetWidth()
 mechanic:SetTexture(nil); first:SetIcon(999)
-assert(b:GetWidth() > occupiedWidth and mechanic.path == nil, 'empty configured slots reserve blank space')
+assert(b:GetWidth() == occupiedWidth and mechanic.path == nil, 'empty configured slots changed track length')
 mechanic:SetTexture('Interface\\Journal\\sheet.blp'); mechanic:SetTexCoord(32/256,64/256,0,32/64)
 mechanic.masked = true; first:SetIcon(999)
 assert(mechanic.path ~= glyphAtlas, 'masked mechanic artwork changed')
@@ -336,6 +343,50 @@ for i = 1, 8 do
     first:SetIcon(999)
     assert(mechanic.path == glyphAtlas and mechanic.crop[1] == (i-1)/8 and mechanic.crop[2] == i/8, 'wrong glyph for native mechanic '..i)
 end
+-- Installed EUI modules supply matching artwork without bundling/loading them.
+-- Their absence and late arrival must retain the exact semantic fallback.
+local previousAddOns, previousFileID = C_AddOns, GetFileIDFromPath
+local loadedEUI = {}
+C_AddOns = {IsAddOnLoaded = function(name) return loadedEUI[name] end}
+local expectedEUI = {
+    [1] = 'Interface\\AddOns\\EllesmereUIRaidFrames\\Media\\tank.png',
+    [2] = 'Interface\\AddOns\\EllesmereUIRaidFrames\\Media\\dps.png',
+    [3] = 'Interface\\AddOns\\EllesmereUIRaidFrames\\Media\\healer.png',
+    [4] = 'Interface\\AddOns\\EllesmereUIDamageMeters\\Media\\dm_home_interrupt.png',
+    [8] = 'Interface\\AddOns\\EllesmereUIDamageMeters\\Media\\dm_home_deaths.png',
+}
+loadedEUI.EllesmereUIRaidFrames, loadedEUI.EllesmereUIDamageMeters = true, true
+local euiObjects, euiHooks = created, hooks
+for i = 1, 8 do
+    mechanic:SetTexture('Interface\\Journal\\all.blp'); mechanic:SetTexCoord((i-1)/8,i/8,0,1)
+    first:SetIcon(999)
+    assert(mechanic.path == (expectedEUI[i] or glyphAtlas), 'incorrect EUI semantic mapping '..i)
+    if expectedEUI[i] then assert(mechanic.crop[1] == 0 and mechanic.crop[2] == 1) end
+    first:ApplyStyle()
+    assert(mechanic.path == (expectedEUI[i] or glyphAtlas), 'EUI glyph lost on warm styling')
+end
+assert(created == euiObjects and hooks == euiHooks, 'EUI glyph selection allocated UI objects/hooks')
+loadedEUI.EllesmereUIDamageMeters = nil; first:ApplyStyle()
+assert(mechanic.path == glyphAtlas and mechanic.crop[1] == 7/8, 'missing EUI module did not fall back')
+loadedEUI.EllesmereUIDamageMeters = true; first:ApplyStyle()
+assert(mechanic.path == expectedEUI[8], 'late EUI module did not upgrade the cached fallback')
+-- Numeric Retail texture IDs match resolved native paths even without a
+-- GetTextureFilePath accessor. Resolve the sheet once, never on countdowns.
+local resolutions = 0
+GetFileIDFromPath = function(path)
+    resolutions = resolutions + 1
+    if path == 'Interface\\Journal\\all.blp' then return 98765 end
+end
+local oldCommon = DBM_COMMON_L; DBM_COMMON_L = {}
+for field, value in pairs(oldCommon) do DBM_COMMON_L[field] = value end
+mechanic.GetTextureFilePath = nil; mechanic:SetTexture(98765); mechanic:SetTexCoord(2/8,3/8,0,1)
+first:SetIcon(999)
+assert(mechanic.path == expectedEUI[3], 'Retail file-ID healer symbol stayed native')
+local resolvedOnce = resolutions
+for _ = 1, 10 do first:ApplyStyle() end
+assert(resolutions == resolvedOnce and mechanic.path == expectedEUI[3], 'warm styling repeated native file-ID lookups')
+mechanic.GetTextureFilePath = nativePathGetter
+C_AddOns, GetFileIDFromPath = previousAddOns, previousFileID
 local nativeCoords = mechanic.GetTexCoord
 mechanic.GetTexCoord = function() return 0,1/8,0,1 end
 mechanic:SetTexture('Interface\\Journal\\all.blp'); first:SetIcon(999)

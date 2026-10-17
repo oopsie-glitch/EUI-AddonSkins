@@ -113,20 +113,41 @@ local function HUD(C)
     local function Snap(value, pixel) return math.floor(value / pixel + 0.5) * pixel end
     local GLYPHS = "Interface\\AddOns\\EUIAddonSkins\\Media\\DBMMechanics.tga"
     local glyphNames = {"TANK_ICON", "DAMAGE_ICON", "HEALER_ICON", "INTERRUPT_ICON", "IMPORTANT_ICON", "MAGIC_ICON", "BLEED_ICON", "DEADLY_ICON"}
+    -- Reference installed EUI artwork; never bundle optional module assets.
+    -- Its plain role variants keep every indicator a clean monochrome glyph.
+    local euiGlyphs = {
+        [1] = {"EllesmereUIRaidFrames", "tank.png"},
+        [2] = {"EllesmereUIRaidFrames", "dps.png"},
+        [3] = {"EllesmereUIRaidFrames", "healer.png"},
+        [4] = {"EllesmereUIDamageMeters", "dm_home_interrupt.png"},
+        [8] = {"EllesmereUIDamageMeters", "dm_home_deaths.png"},
+    }
+    local function GlyphTexture(index)
+        local asset = euiGlyphs[index]
+        local loaded = C_AddOns and C_AddOns.IsAddOnLoaded or IsAddOnLoaded
+        if asset and loaded and loaded(asset[1]) then
+            return "Interface\\AddOns\\" .. asset[1] .. "\\Media\\" .. asset[2], 0, 1
+        end
+        return GLYPHS, (index - 1) / 8, index / 8
+    end
     local glyphSource, glyphKeys
     local function GlyphKey(path, left, right, top, bottom)
         if (issecretvalue and (issecretvalue(path) or issecretvalue(left) or issecretvalue(right) or issecretvalue(top) or issecretvalue(bottom))) then return end
-        if type(path) ~= "string" or type(left) ~= "number" or type(right) ~= "number" or type(top) ~= "number" or type(bottom) ~= "number" then return end
-        path = path:lower():gsub("/", "\\"):gsub("%.blp$", ""):gsub("%.tga$", "")
+        if (type(path) ~= "string" and type(path) ~= "number") or type(left) ~= "number" or type(right) ~= "number" or type(top) ~= "number" or type(bottom) ~= "number" then return end
+        path = tostring(path):lower():gsub("/", "\\"):gsub("%.blp$", ""):gsub("%.tga$", "")
         return path .. ":" .. math.floor(left * 4096 + 0.5) .. ":" .. math.floor(right * 4096 + 0.5) .. ":" .. math.floor(top * 4096 + 0.5) .. ":" .. math.floor(bottom * 4096 + 0.5)
     end
     local function MechanicGlyph(icon, d)
         if not H.Texture(icon) or not Allowed(icon) or not icon.GetTexCoord then return end
         if icon.GetNumMaskTextures and icon:GetNumMaskTextures() > 0 then return end
-        local path = icon.GetTextureFilePath and icon:GetTextureFilePath() or icon:GetTexture()
-        if (issecretvalue and issecretvalue(path)) or path == nil then return end
-        local ownPath = type(path) == "string" and path:lower():gsub("/", "\\"):gsub("%.tga$", "")
-        if ownPath == GLYPHS:lower():gsub("%.tga$", "") then return end
+        local rawPath = icon:GetTexture()
+        local path = icon.GetTextureFilePath and icon:GetTextureFilePath() or rawPath
+        if (issecretvalue and (issecretvalue(path) or issecretvalue(rawPath))) or path == nil then return end
+        d.mechanicGlyphs = d.mechanicGlyphs or {}
+        local old = d.mechanicGlyphs[icon]
+        -- Reuse identity only while our exact texture remains assigned. Native
+        -- SetIcon resets it on pooling; late EUI modules can upgrade our fallback.
+        local styled = old and rawPath == old.texture
         local source = _G.DBM_COMMON_L
         if type(source) ~= "table" then return end
         if source ~= glyphSource then
@@ -137,30 +158,43 @@ local function HUD(C)
                     local p, w, h, l, r, t, b = tag:match("|T([^:|]+):%d+:%d+:[^|]-:(%d+):(%d+):(%d+):(%d+):(%d+):(%d+)|t")
                     w, h = tonumber(w), tonumber(h)
                     if p and w and h and w > 0 and h > 0 then
-                        glyphKeys[GlyphKey(p, tonumber(l) / w, tonumber(r) / w, tonumber(t) / h, tonumber(b) / h)] = index
+                        local left, right, top, bottom = tonumber(l) / w, tonumber(r) / w, tonumber(t) / h, tonumber(b) / h
+                        glyphKeys[GlyphKey(p, left, right, top, bottom)] = index
+                        -- Retail may expose a file ID instead of a texture path.
+                        -- Resolve aliases once per locale table, outside updates.
+                        if type(GetFileIDFromPath) == "function" then
+                            local id = GetFileIDFromPath(p)
+                            if not (issecretvalue and issecretvalue(id)) and type(id) == "number" and id > 0 then
+                                glyphKeys[GlyphKey(id, left, right, top, bottom)] = index
+                            end
+                        end
                     end
                 end
             end
         end
         local ulX, ulY, llX, llY, urX, urY, lrX, lrY = icon:GetTexCoord()
         if issecretvalue and (issecretvalue(ulX) or issecretvalue(ulY) or issecretvalue(llX) or issecretvalue(llY) or issecretvalue(urX) or issecretvalue(urY) or issecretvalue(lrX) or issecretvalue(lrY)) then return end
-        local key
+        local key, rawKey
         if urX ~= nil then
             -- WoW returns eight corner coordinates; older mocks/clients may
             -- expose four. Leave rotated/skewed custom artwork untouched.
-            if llX == ulX and urY == ulY and lrX == urX and lrY == llY then key = GlyphKey(path, ulX, urX, ulY, llY) end
-        else key = GlyphKey(path, ulX, ulY, llX, llY) end
-        local index = key and glyphKeys[key]
-        d.mechanicGlyphs = d.mechanicGlyphs or {}
-        local old = d.mechanicGlyphs[icon]
+            if llX == ulX and urY == ulY and lrX == urX and lrY == llY then
+                key = GlyphKey(path, ulX, urX, ulY, llY); rawKey = GlyphKey(rawPath, ulX, urX, ulY, llY)
+            end
+        else key = GlyphKey(path, ulX, ulY, llX, llY); rawKey = GlyphKey(rawPath, ulX, ulY, llX, llY) end
+        local index = styled and old.index or key and (glyphKeys[key] or glyphKeys[rawKey])
         if index then
             if not old then
                 local r, g, b, alpha = icon:GetVertexColor()
                 if issecretvalue and (issecretvalue(r) or issecretvalue(g) or issecretvalue(b) or issecretvalue(alpha)) then return end
-                d.mechanicGlyphs[icon] = {r, g, b, alpha}
+                old = {r, g, b, alpha}; d.mechanicGlyphs[icon] = old
             end
-            icon:SetTexture(GLYPHS)
-            icon:SetTexCoord((index - 1) / 8, index / 8, 0, 1)
+            local target, left, right = GlyphTexture(index)
+            if styled and target == old.path then return end
+            old.index, old.path = index, target
+            icon:SetTexture(target)
+            old.texture = icon:GetTexture()
+            icon:SetTexCoord(left, right, 0, 1)
             icon:SetVertexColor(0.92, 0.94, 0.96, 1)
         elseif old then
             icon:SetVertexColor(old[1], old[2], old[3], old[4]); d.mechanicGlyphs[icon] = nil
@@ -191,8 +225,8 @@ local function HUD(C)
                 icon:SetPoint(i == 1 and "LEFT" or "RIGHT", frame, i == 1 and "LEFT" or "RIGHT", i == 1 and pad or -pad, 0)
             end
         end
-        -- Only Huge Bars display mechanic symbols. Reserve space for actual
-        -- symbols, so empty slots never leave a blank compartment.
+        -- Huge Bar indicators live outside the left edge, before the spell icon.
+        -- Their presence never changes track length, text or countdown anchors.
         d.mechanicAlpha = d.mechanicAlpha or {}
         local count = 0
         for i = 1, 4 do
@@ -205,20 +239,19 @@ local function HUD(C)
         end
         local columns, rows = count > 1 and 2 or 1, count > 2 and 2 or 1
         local symbolSize = math.max(pixel, Snap(math.min(height * (rows == 2 and 0.4 or 0.6), width * 0.1), pixel))
-        local mechanicSpace = count > 0 and columns * (symbolSize + pixel) + pixel or 0
         local slot = 0
         for i = 1, 4 do
             local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
             if H.Texture(icon) and obj.enlarged and icon:IsShown() and icon:GetTexture() ~= nil then
                 local column, row = slot % columns, math.floor(slot / columns)
                 icon:SetSize(symbolSize, symbolSize); icon:ClearAllPoints()
-                icon:SetPoint("CENTER", frame, "RIGHT", -pad - rightSpace - mechanicSpace / 2 + (column - (columns - 1) / 2) * (symbolSize + pixel),
+                icon:SetPoint("CENTER", frame, "LEFT", -gap - symbolSize / 2 - column * (symbolSize + pixel),
                     ((rows - 1) / 2 - row) * (symbolSize + pixel))
                 MechanicGlyph(icon, d)
                 slot = slot + 1
             end
         end
-        local contentX, contentRight = pad + leftSpace, pad + rightSpace + mechanicSpace
+        local contentX, contentRight = pad + leftSpace, pad + rightSpace
         Panel(frame, d)
         d.panel:ClearAllPoints()
         d.panel:SetPoint("TOPLEFT", frame, "LEFT", 0, Snap(height / 2, pixel))

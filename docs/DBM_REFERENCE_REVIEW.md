@@ -6,8 +6,8 @@ Reviewed on 2026-10-17 while HUD alpha.7 was being evaluated. No reference imple
 
 The user requested a reminder before this DBM alpha is prepared for release if useful follow-ups remain unfinished. Check implementation and tests, update this list, and bring up outstanding items before release packaging/publication. Iterative alpha test ZIPs do not consume this reminder.
 
-- [ ] Theme current DBM range/radar windows through EllesmereUI, after verifying current frame/API behavior.
-- [ ] Theme the current DBM information window, using targeted lifecycle hooks and reusable styling.
+- [x] Theme current DBM range/radar windows through EllesmereUI; alpha.31 follows current Show/frame lifecycles and preserves native warning artwork and interactions.
+- [x] Theme the current DBM information window; alpha.31 covers legacy and direct-mode rows with reusable shells/fonts and guarded region-count discovery.
 - [x] Separate ordinary GUI navigation/control refreshes from HUD repaints, retaining theme/accent updates, late loading, manual refreshes and enable transitions; covered by alpha.23 regressions.
 - [x] Reuse timer skin objects and install per-object lifecycle hooks once.
 - [x] Discover new timers directly instead of scanning the whole active pool on creation; protect with a creation-burst regression.
@@ -47,3 +47,5 @@ A separate candidate remains in our implementation: the scoped GUI hooks call th
 Completed in alpha.23: navigation and control callbacks now repaint the selected page/sidebar without entering the full GUI/HUD refresh. Full/manual/theme/load refreshes still run HUD discovery; hidden pages style when shown. The new simulated navigation regression checks 100 callbacks with zero active timer-pool walks or font writes. See [DBM GUI performance](DBM_GUI_PERFORMANCE.md) for scope, baseline counts and limitations. Range/radar and information-window styling remain pending.
 
 Azilroka's custom license restricts modifications and reserves other rights. The older repository does not establish permission to transplant its code merely by being public. This review retains implementation ideas and API observations only; project licensing is unchanged.
+
+Alpha.31 completes the two remaining window-styling follow-ups against current DBM source: DBMRangeCheck, DBMRangeCheckRadar and DBMInfoFrame. Mock regressions preserve native warning colours, markers, data, returns, geometry, dragging and menu owners; cover late creation, dynamic/direct rows, combat deferral, native-font restoration and theme refreshes; and run 2,000 warm row setters without additional objects, hooks, font writes or region enumeration. There are no added range/info Update or OnUpdate hooks. This establishes automated coverage, not live-client rendering or CPU/FPS measurements. The pinned implementation checklist is complete; normal release integration/version/changelog and combined validation remain required.

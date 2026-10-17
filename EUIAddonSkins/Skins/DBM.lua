@@ -2,7 +2,7 @@ local ADDON, ns = ...
 local function DefineSkin()
 
 local function Window() return _G.DBM_GUI_OptionsFrame end
-local Control
+local Control, PanelColor
 -- HUD work is independent of the load-on-demand options window. Hooks follow
 -- DBT's object lifecycle, never its countdown Update/OnUpdate hot path.
 local function HUD(C)
@@ -1138,10 +1138,145 @@ local function HUD(C)
             end)
         end
     end
+    -- Small encounter windows have their own lifecycle. Never scan their
+    -- children or attach work to radar/encounter Update or OnUpdate paths.
+    local auxiliary = {}
+    local function AuxEnabled()
+        if not ns.IsEnabled(C.module) then return false end
+        if InCombatLockdown and InCombatLockdown() then pending = true; return false end
+        return true
+    end
+    local function AuxFont(text, d)
+        if not Allowed(d.frame) or not Allowed(text) or not text.GetFont then return end
+        local state = d.fonts[text]
+        if not state then
+            state = {font = {text:GetFont()}, object = text.GetFontObject and text:GetFontObject()}
+            d.fonts[text] = state
+        end
+        local function PaintFont()
+            if d.paintingFont or not Allowed(d.frame) or not Allowed(text) or not AuxEnabled() then return end
+            d.paintingFont = true
+            local ok, err = pcall(S.Font, text)
+            d.paintingFont = false
+            if not ok then error(err) end
+        end
+        if not d.fontHooks[text] then
+            d.fontHooks[text] = true
+            H.Hook(text, "SetFont", function(_, path, size, flags)
+                if d.paintingFont then return end
+                local native = d.fonts[text]
+                if native then native.font[1], native.font[2], native.font[3] = path, size, flags end
+                PaintFont()
+            end)
+            H.Hook(text, "SetFontObject", function(_, object)
+                if d.paintingFont then return end
+                local native = d.fonts[text]
+                if native then
+                    native.object = object
+                    native.font[1], native.font[2], native.font[3] = text:GetFont()
+                end
+                PaintFont()
+            end)
+        end
+        PaintFont() -- Keep native sizes, colours and column anchors.
+    end
+    local function DiscoverAux(f, d, force)
+        local count = f.GetNumRegions and f:GetNumRegions()
+        if not force and count and d.regionCount == count then return end
+        d.regionCount = count
+        for _, region in ipairs(H.Regions(f)) do
+            if region:GetObjectType() == "FontString" then AuxFont(region, d) end
+        end
+    end
+    local function PaintAux(f, kind, force)
+        if not Allowed(f) or not AuxEnabled() or not S.Shell then return end
+        local d = auxiliary[f]
+        if not d then
+            d = {fonts = {}, fontHooks = {}, frame = f}; auxiliary[f] = d
+            local layer = CreateFrame("Frame", nil, f)
+            layer:EnableMouse(false)
+            if layer.SetFrameLevel and f.GetFrameLevel then layer:SetFrameLevel(math.max(0, f:GetFrameLevel() - 1)) end
+            layer:SetPoint("TOPLEFT", f, "TOPLEFT", -6, 22)
+            layer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 6, kind == "info" and -6 or -20)
+            S.Shell(layer, {noAccent = true, noTopBar = true})
+            d.layer = layer
+            d.fill = layer:CreateTexture(nil, "BACKGROUND", nil, 7); d.fill:SetAllPoints(layer)
+            if f.GetBackdrop then d.backdrop = f:GetBackdrop() end
+            if kind == "radar" and H.Texture(f.background) then
+                d.background = f.background; d.backgroundAlpha = f.background:GetAlpha()
+            end
+            H.Script(f, "OnShow", function() PaintAux(f, kind, true) end)
+            H.Hook(f, "SetBackdrop", function(_, value)
+                if d.settingBackdrop then return end
+                d.backdrop = value
+                if Allowed(f) and AuxEnabled() then
+                    d.settingBackdrop = true; f:SetBackdrop(nil); d.settingBackdrop = nil
+                end
+            end)
+            if ns.BindPopupOwner then ns.BindPopupOwner(S, C.module, f) end
+        end
+        d.styled = true
+        if f.SetBackdrop then
+            d.settingBackdrop = true; f:SetBackdrop(nil); d.settingBackdrop = nil
+        end
+        if d.background then d.background:SetAlpha(0) end
+        local r, g, b, alpha = PanelColor(S)
+        d.fill:SetColorTexture(r, g, b, alpha)
+        d.layer:Show()
+        DiscoverAux(f, d, force)
+    end
+    local function RestoreAux()
+        for f, d in pairs(auxiliary) do
+            if d.styled and Allowed(f) then
+                d.styled = false; d.layer:Hide()
+                if f.SetBackdrop then
+                    d.settingBackdrop = true; f:SetBackdrop(d.backdrop); d.settingBackdrop = nil
+                end
+                if d.background then d.background:SetAlpha(d.backgroundAlpha) end
+                -- Restore fonts only: DBM may have resized/reanchored rows or
+                -- changed semantic colours since their first appearance.
+                for text, state in pairs(d.fonts) do
+                    if Allowed(text) then
+                        local r, g, b, a = text:GetTextColor()
+                        if state.object and text.SetFontObject then text:SetFontObject(state.object) end
+                        if state.font[1] then text:SetFont(unpack(state.font)) end
+                        text:SetTextColor(r, g, b, a)
+                    end
+                end
+                d.fonts, d.regionCount = {}, nil
+            end
+        end
+    end
+    local function RefreshAux()
+        if not ns.IsEnabled(C.module) then RestoreAux(); return end
+        PaintAux(_G.DBMRangeCheck, "range", true)
+        PaintAux(_G.DBMRangeCheckRadar, "radar", true)
+        PaintAux(_G.DBMInfoFrame, "info", true)
+    end
+    local function NewInfoRegions()
+        local f = _G.DBMInfoFrame
+        if not Allowed(f) or not AuxEnabled() then return end
+        local d = auxiliary[f]
+        if not d then PaintAux(f, "info", true)
+        else DiscoverAux(f, d, false) end
+    end
+    local function BindAux()
+        local dbm = _G.DBM
+        H.Hook(dbm and dbm.RangeCheck, "Show", RefreshAux)
+        local info = dbm and dbm.InfoFrame
+        for _, method in ipairs({"Show", "ShowDirect", "UpdateStyle"}) do H.Hook(info, method, RefreshAux) end
+        -- These setters can allocate new row/header FontStrings. A region-count
+        -- guard makes ordinary value updates constant work without text reads.
+        for _, method in ipairs({"SetLine", "SetHeader", "SetDirectLine", "UpdateDirect", "SetDirectHeader"}) do
+            H.Hook(info, method, NewInfoRegions)
+        end
+        RefreshAux()
+    end
     local function Refresh()
-        if not ns.IsEnabled(C.module) then return end
+        if not ns.IsEnabled(C.module) then RestoreAux(); return end
         if InCombatLockdown and InCombatLockdown() then pending = true; return end
         pending = false
+        BindAux()
         local dbt = _G.DBT
         if type(dbt) == "table" then
             H.Hook(dbt, "CreateBar", function(self, _, id)
@@ -1224,7 +1359,7 @@ local function PaintTone(text, html)
         if html then text:SetTextColor("p", value, value, value, 1) else text:SetTextColor(value, value, value, 1) end
     end
 end
-local function PanelColor(S)
+PanelColor = function(S)
     if S.GetPanelColor then return S.GetPanelColor() end
     return 0.055, 0.055, 0.06, 0.98
 end

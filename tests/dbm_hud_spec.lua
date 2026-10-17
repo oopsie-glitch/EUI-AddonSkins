@@ -67,7 +67,12 @@ local function object(kind, name, parent)
     function o:GetThumbTexture() return self.thumb end
     function o:SetValue(v) self.value = v; if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self,v) end end
     function o:Hide() self.shown = false end
+    function o:Show() self.shown = true end
     function o:SetBackdrop(v) self.backdrop = v end
+    function o:GetBackdrop() return self.backdrop end
+    function o:GetFrameLevel() return self.level or 5 end
+    function o:SetFrameLevel(v) self.level = v end
+    function o:GetNumRegions() return #self.regions end
     function o:SetShadowColor(...) self.shadow = {...} end
     function o:SetShadowOffset(...) self.shadowOffset = {...} end
     function o:SetWidth(v) self.w = v end
@@ -1241,6 +1246,113 @@ do
     modules.DBM.refresh(); flush()
     assert(title.color[1] == accent and sideButton:GetFontString().color[1] == accent)
     print('PASS: former 125% rebased to 100%, one-time migration, draggable detached Options panel, session-only position/reset on DBM reopen, accent labels and larger anchored footer')
+end
+-- Range/radar/info use targeted lazy discovery, preserving DBM geometry/data.
+do
+    local owners, regionWalks = {}, 0
+    ns.BindPopupOwner = function(_, module, owner) assert(module == modules.DBM); owners[owner] = true end
+    local function makeWindow(name, kind)
+        local f = CreateFrame('Frame', name, UIParent)
+        f:SetSize(kind == 'radar' and 128 or 170, kind == 'radar' and 128 or 65)
+        f:SetPoint('CENTER', UIParent, 'CENTER', 40, -20)
+        f.backdrop = {bgFile = 'native-background'}
+        f.header = f:CreateFontString(); f.header:SetPoint('BOTTOMLEFT',f,'TOPLEFT',2,2)
+        f.header:SetText('Native header')
+        f.lines = {}
+        f.scripts.OnShow = function() f.nativeShown = true end
+        f.scripts.OnDragStart = function() f.nativeDragged = true end
+        f.scripts.OnMouseDown = function(_, button) f.nativeMenu = button end
+        local getRegions = f.GetRegions
+        f.GetRegions = function(self) regionWalks = regionWalks + 1; return getRegions(self) end
+        if kind == 'radar' then
+            f.background = f:CreateTexture(); f.background:SetAlpha(0.3)
+            f.circle = f:CreateTexture(); f.circle:SetVertexColor(0,1,0,1)
+            f.dot = f:CreateTexture(); f.dot:SetTexture('native-player-dot')
+        end
+        return f
+    end
+    local function addLine(f,row)
+        if not f.lines[row*2-1] then
+            for i=row*2-1,row*2 do
+                f.lines[i] = f:CreateFontString(); f.lines[i]:SetFont('native',12)
+                f.lines[i]:SetPoint('TOPLEFT',f,'TOPLEFT',i*8,-row*12)
+                f.lines[i]:SetTextColor(1,0.8,0,1)
+            end
+        end
+        f.lines[row*2-1]:SetText('Player '..row); f.lines[row*2]:SetText(row)
+    end
+    DBM.RangeCheck = {Show = function()
+        if not DBMRangeCheck then makeWindow('DBMRangeCheck','range') end
+        if not DBMRangeCheckRadar then makeWindow('DBMRangeCheckRadar','radar') end
+        return 'native-range'
+    end}
+    DBM.InfoFrame = {
+        Show = function() if not DBMInfoFrame then makeWindow('DBMInfoFrame','info'); addLine(DBMInfoFrame,1) end; return 'native-info' end,
+        SetLine = function(_,row) addLine(DBMInfoFrame,row); return 'native-line' end,
+        UpdateStyle = function() for _,text in ipairs(DBMInfoFrame.lines) do text:SetFont('native',12) end end,
+        SetHeader = function() DBMInfoFrame.header:SetText('Updated header') end,
+        ShowDirect = function() return 'direct' end,
+        SetDirectLine = function(_,row) addLine(DBMInfoFrame,row); return true end,
+        UpdateDirect = function() addLine(DBMInfoFrame,4); return true end,
+        SetDirectHeader = function() DBMInfoFrame.directHeader = DBMInfoFrame:CreateFontString(); return true end,
+    }
+    modules.DBM.refresh(); flush()
+    assert(not DBMRangeCheck and not DBMInfoFrame, 'skin forced auxiliary windows to initialize')
+    assert(DBM.RangeCheck:Show() == 'native-range' and DBM.InfoFrame:Show() == 'native-info')
+    local radar,info,range = DBMRangeCheckRadar,DBMInfoFrame,DBMRangeCheck
+    for _,f in ipairs({radar,info,range}) do
+        assert(f.header.font == 'eui' and f.header.points[1][1] == 'BOTTOMLEFT' and f.header.text == 'Native header', f.name..':'..f.header.font..':'..table.concat(errors,';'))
+        assert(f.points[1][4] == 40 and f.points[1][5] == -20 and f:GetWidth() == (f == radar and 128 or 170), 'auxiliary skin changed native geometry')
+        assert(f.children[1].shellStyled and f.children[1].mouse == false and f.children[1].level < f:GetFrameLevel())
+        assert(f.children[1].points[1][5] == 22 and f.children[1].regions[1].fillColor[1] == 0.055, 'matte shell does not contain native header')
+        assert(not f.backdrop and owners[f])
+        f.scripts.OnDragStart(); f.scripts.OnMouseDown(f,'RightButton')
+        assert(f.nativeDragged and f.nativeMenu == 'RightButton', 'native drag/menu action overwritten')
+    end
+    assert(radar.background.alpha == 0 and radar.circle.color[2] == 1 and radar.dot.path == 'native-player-dot')
+    radar.scripts.OnShow(radar); assert(radar.nativeShown, 'native OnShow callback overwritten')
+    local oldPanelColour = S.GetPanelColor
+    S.GetPanelColor = function() return 0.08,0.09,0.10,0.95 end
+    for _,fn in ipairs(looks) do fn() end; flush()
+    assert(radar.children[1].regions[1].fillColor[2] == 0.09, 'auxiliary background missed theme refresh')
+    S.GetPanelColor = oldPanelColour
+    for _,fn in ipairs(looks) do fn() end; flush()
+    local first = info.lines[1]
+    assert(first.font == 'eui' and first.size == 12 and first.color[2] == 0.8 and first.points[1][4] == 8)
+    assert(DBM.InfoFrame:SetLine(2) == 'native-line' and info.lines[3].font == 'eui', 'dynamic info rows missed styling')
+    assert(DBM.InfoFrame:SetDirectLine(3) and info.lines[5].font == 'eui')
+    assert(DBM.InfoFrame:UpdateDirect() and info.lines[7].font == 'eui')
+    assert(DBM.InfoFrame:SetDirectHeader() and info.directHeader.font == 'eui')
+    DBM.InfoFrame:UpdateStyle(); assert(first.font == 'eui' and first.color[2] == 0.8)
+    local objectsBefore,hooksBefore,fontsBefore,walksBefore = created,hooks,fontWrites,regionWalks
+    for i=1,1000 do DBM.InfoFrame:SetLine(1); DBM.InfoFrame:SetDirectLine(2) end
+    assert(created == objectsBefore and hooks == hooksBefore and fontWrites == fontsBefore and regionWalks == walksBefore, 'warm info updates allocate, hook, re-font or enumerate regions')
+    for i=1,5 do DBM.RangeCheck:Show(); DBM.InfoFrame:Show(); modules.DBM.refresh(); flush() end
+    assert(created == objectsBefore and hooks == hooksBefore, 'auxiliary refresh recreated objects or hooks')
+    info:SetBackdrop({bgFile = 'updated-native'}); assert(not info.backdrop)
+    combat = true
+    DBM.InfoFrame:SetLine(5); assert(info.lines[9].font == 'native', 'new auxiliary styling ran during combat')
+    combat = false; event('PLAYER_REGEN_ENABLED'); assert(info.lines[9].font == 'eui')
+    first:SetTextColor(0.4,0.9,0.2,1); first:SetSize(123,18)
+    first:ClearAllPoints(); first:SetPoint('LEFT',info,'LEFT',19,2)
+    first:SetFont('new-native',18)
+    enabled = false
+    for _,fn in ipairs(looks) do fn() end; flush()
+    assert(not info.children[1]:IsShown() and info.backdrop.bgFile == 'updated-native' and radar.background.alpha == 0.3)
+    assert(first.font == 'new-native' and first.size == 18 and first.w == 123 and first.points[1][4] == 19 and first.color[2] == 0.9, 'auxiliary disable lost native font/updated geometry/colours')
+    local disabledObjects,disabledFonts = created,fontWrites
+    DBM.InfoFrame:SetLine(1)
+    assert(created == disabledObjects and fontWrites == disabledFonts, 'disabled auxiliary callback styled content')
+    enabled = true; modules.DBM.refresh(); flush()
+    assert(first.font == 'eui' and info.children[1]:IsShown())
+    radar.protected = true
+    local protectedFonts = fontWrites; radar.header:SetFont('native',16)
+    DBM.RangeCheck:Show(); assert(radar.header.font == 'native', 'protected radar touched')
+    radar.protected = false; modules.DBM.refresh(); flush()
+    ns.BindPopupOwner = nil
+    DBM.RangeCheck,DBM.InfoFrame = nil,nil
+    DBMRangeCheck,DBMRangeCheckRadar,DBMInfoFrame = nil,nil,nil
+    print('PASS: lazy range/radar/info shells, native markers/colour/data/geometry/actions, dynamic/direct rows, warm-update reuse, theme/disable restoration and combat deferral')
 end
 -- Disabled skins can save preferences without repainting anything.
 enabled = false

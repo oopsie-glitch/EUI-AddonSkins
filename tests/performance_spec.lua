@@ -80,3 +80,58 @@ assert(writes == 1 and hooks == fadeHooks, 'warm fade rewrote texture or duplica
 texture:SetAlpha(0.8)
 assert(texture.alpha == 0 and writes == 3, 'native redraw suppression lost')
 print('PASS: scoped/coalesced scrolling, dynamic replacement, exclusions/protected/toggles, idempotent fade and native redraw')
+
+-- Scoped adapters can explicitly route control callbacks to their own roots.
+-- The default path remains a coalesced full refresh for every existing caller.
+do
+    local previousCreate, previousCombat = CreateFrame, InCombatLockdown
+    local createdFrames, registrations, inCombat = {}, {}, false
+    CreateFrame = function(kind)
+        local f = frame(kind)
+        function f:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
+        function f:SetScript(key, fn) self.scripts[key] = fn end
+        createdFrames[#createdFrames + 1] = f; return f
+    end
+    InCombatLockdown = function() return inCombat end
+    ns.RegisterModule = function(id, _, _, install) registrations[id] = {install = install} end
+    assert(loadfile('EUIAddonSkins/Scoped.lua'))('EUIAddonSkins', ns)
+    local root, button = frame(), frame('Button'); root.children = {button}
+    local context, full, routed, visited = nil, 0, 0, {}
+    ns.RegisterScopedSkin('Routed', 'Routed', {
+        roots = function() return {{frame = root, mode = 'controls'}} end,
+        hooks = function(C) context = C; full = full + 1 end,
+        visit = function(_, f) visited[f] = (visited[f] or 0) + 1 end,
+        controlRefresh = function(_, owner, source)
+            assert(owner == root and source == button); routed = routed + 1
+        end,
+    })
+    registrations.Routed.install(S, registrations.Routed); flush()
+    assert(full == 1)
+    local installedHooks = hooks
+    for _ = 1,100 do button.scripts.OnClick(button) end
+    flush(); assert(routed == 100 and full == 1 and hooks == installedHooks)
+    local previousVisits = visited[button]
+    context.RefreshControlsNow(root, {[button] = true})
+    assert(visited[button] == previousVisits, 'targeted exclusion was ignored')
+    context.RefreshControlsNow(root); assert(visited[button] == previousVisits + 1)
+    inCombat = true; previousVisits = visited[button]
+    context.RefreshControlsNow(root); assert(visited[button] == previousVisits)
+    inCombat = false
+    for _, eventFrame in ipairs(createdFrames) do
+        if eventFrame.events and eventFrame.events.PLAYER_REGEN_ENABLED then eventFrame.scripts.OnEvent(eventFrame, 'PLAYER_REGEN_ENABLED') end
+    end
+    flush(); assert(visited[button] == previousVisits + 1, 'targeted combat deferral lost')
+    enabled = false; button.scripts.OnClick(button); flush(); assert(routed == 100)
+    enabled = true
+    local normalRoot, normalButton, normalFull = frame(), frame('Button'), 0
+    normalRoot.children = {normalButton}
+    ns.RegisterScopedSkin('Default', 'Default', {
+        roots = function() return {{frame = normalRoot, mode = 'controls'}} end,
+        hooks = function() normalFull = normalFull + 1 end,
+    })
+    registrations.Default.install(S, registrations.Default); flush(); assert(normalFull == 1)
+    for _ = 1,100 do normalButton.scripts.OnClick(normalButton) end
+    flush(); assert(normalFull == 2, 'default control refresh no longer coalesces')
+    CreateFrame, InCombatLockdown = previousCreate, previousCombat
+end
+print('PASS: opt-in scoped control routing/exclusions, default coalescing, combat deferral and disabled gating')

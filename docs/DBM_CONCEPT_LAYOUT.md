@@ -1,6 +1,6 @@
 # DBM measured concept layout
 
-Applied in HUD alpha.9, refined in alpha.10–12 to native **Huge Bars**. The user's Blizzard Skins+ accent-bar color (custom or linked to the overall EUI accent) replaces the concept's fixed teal and mechanic-colored spell-icon borders. DBM retains control of positions, row spacing, normal/huge dimensions, scale, timer values, priorities and number formatting. No profiles or saved settings are rewritten.
+Applied in HUD alpha.9, refined in alpha.10–13 to native **Huge Bars**. The user's Blizzard Skins+ accent-bar color (custom or linked to the overall EUI accent) replaces the concept's fixed teal and mechanic-colored spell-icon borders. DBM retains control of positions, row spacing, normal/huge dimensions, scale, timer values, priorities and number formatting. No profiles or saved settings are rewritten.
 
 The supplied 754x88 screenshot measurements define proportions, not fixed live dimensions. For a configured native row width W and height H:
 
@@ -26,3 +26,5 @@ Small Bars omit mechanic symbols. Their two-line progress strip now uses 25% of 
 Legibility floors are 6 UI units for names and 8 for countdowns. Long names use a constrained, non-wrapping native FontString; actual glyph clipping/ellipsis and live animations require client rendering and are not proven by mocks. DBM's own decimal/variance prefixes are preserved rather than formatting timer text on every update.
 
 Validation covers exact reference geometry, 75% scaling, physical-pixel snapping, fixed countdown position without mechanic icons, square spell icons, normal/huge transitions, native return values, pooled reuse and the existing no-countdown-work checks. This is an untagged test build; no platform publication.
+
+Alpha.13 follows the user's later border sketch instead of the original closed rectangle: full left and bottom edges, short top-left horizontal return (45% of panel height, capped at 10% width), and bottom-right vertical return (28% height). Thickness and color/visibility are retained. Spell-icon frames remain complete squares. The four existing panel-edge textures are reused.

@@ -170,9 +170,12 @@ local function Routing(C)
             if H.Allowed(roller.Window) then G.windows[roller.Window] = true end
             G.Completed(roller)
         end)
-        for _, method in ipairs({"reopen", "refreshExpandedRows", "refreshRollTracker", "showRollAcceptedNotification"}) do
+        for _, method in ipairs({"reopen", "refreshExpandedRows", "refreshRollTracker"}) do
             H.Hook(roller, method, function() G.Queue(roller.Window) end)
         end
+        H.Hook(roller, "showRollAcceptedNotification", function()
+            if G.Notice then G.Notice(roller.RollAcceptedNotification) end
+        end)
         G.Remember(_G.Gargul.MasterLooterUI)
     end
     G.Discover()
@@ -254,6 +257,7 @@ local function FlatControl(C, f, method, keep)
                 if r.GetDrawLayer and r:GetDrawLayer() == "BACKGROUND" then d.fill = r end
                 if r.GetDrawLayer and r:GetDrawLayer() == "HIGHLIGHT" then d.hover = r end
                 if method == "Dropdown" and r.GetAtlas and r:GetAtlas() == "Azerite-PointingArrow" then
+                    d.arrow = r
                     r:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
                     r:SetVertexColor(0.8, 0.8, 0.8, 1)
                 end
@@ -277,6 +281,61 @@ local function FlatControl(C, f, method, keep)
     end
     Tone(C, (f.GetFontString and f:GetFontString()) or f.Text or f.text, f)
 end
+local function StripArrow(C, button)
+    if not C.H.Allowed(button) then return end
+    for _, region in ipairs(C.H.Regions(button)) do if C.H.Texture(region) then C.H.Fade(region) end end
+end
+local function Dropdown(C, f, widget)
+    local H, G = C.H, C.gargul
+    G.dropdownParts = G.dropdownParts or setmetatable({}, {__mode = "k"})
+    if widget then
+        -- Ace's decorative dropdown extends -15/+17 beyond the widget. Its
+        -- transparent cover already owns the full clickable body and handler.
+        local target = H.Allowed(widget.button_cover) and widget.button_cover or widget.dropdown
+        if not H.Allowed(target) then target = f end
+        FlatControl(C, target, "Dropdown")
+        if H.Allowed(widget.dropdown) and target ~= widget.dropdown then
+            for _, region in ipairs(H.Regions(widget.dropdown)) do if H.Texture(region) then H.Fade(region) end end
+            G.dropdownParts[widget.dropdown] = true
+        end
+        StripArrow(C, widget.button)
+        if H.Allowed(widget.button) then G.dropdownParts[widget.button] = true end
+        if H.Allowed(target) then G.dropdownParts[target] = true end
+        local d = G.controls[target]
+        if target == widget.dropdown and d and d.arrow and H.Allowed(widget.button) then
+            d.arrow:ClearAllPoints(); d.arrow:SetPoint("CENTER", widget.button, "CENTER")
+        end
+        Tone(C, widget.text, widget.frame); Tone(C, widget.label, widget.frame)
+        return
+    end
+    -- Legacy/LibDD selectors retain their actual arrow button and its handler.
+    -- Align our arrow with that button instead of the oversized template edge.
+    C.MenuOwner(f); FlatControl(C, f, "Dropdown")
+    local name = f.GetName and f:GetName()
+    local button = f.Button or (name and _G[name .. "Button"])
+    if not H.Allowed(button) then return end
+    StripArrow(C, button); G.dropdownParts[button] = true
+    local d = G.controls[f]
+    if d and d.arrow then d.arrow:ClearAllPoints(); d.arrow:SetPoint("CENTER", button, "CENTER") end
+    for _, region in pairs({d and d.fill, d and d.hover}) do
+        region:ClearAllPoints(); region:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -2)
+        region:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
+    end
+end
+local function InputText(C, f)
+    -- Remove InputBoxTemplate's vertical 3+3 padding, which clips/tops the
+    -- preserved native font in short fields. Keep horizontal alignment (slider
+    -- numbers are centered) and all anchors, validation and commit callbacks.
+    if f.SetTextInsets then
+        local left, right, top, bottom = 8, 8, 0, 0
+        if f.GetTextInsets then
+            local l, r, t, b = f:GetTextInsets()
+            if l ~= left or r ~= right or t ~= top or b ~= bottom then f:SetTextInsets(left, right, top, bottom) end
+        else f:SetTextInsets(left, right, top, bottom) end
+    end
+    if f.SetJustifyV and (not f.GetJustifyV or f:GetJustifyV() ~= "MIDDLE") then f:SetJustifyV("MIDDLE") end
+end
+
 -- lib-st's narrow/blank columns carry hidden sort data and equipment actions.
 -- Their header buttons must remain live, but must not become individual boxes.
 local function Organizer(C, root)
@@ -332,6 +391,10 @@ local function Utility(C, f)
         end
     end
     FlatControl(C, f, "Button", keys)
+    for _, key in ipairs(keys) do
+        local texture = f[key]
+        if key ~= "euiGargulHighlight" and texture.SetDrawLayer then texture:SetDrawLayer("ARTWORK", 7) end
+    end
     return true
 end
 local function CandyBar(C, f)
@@ -526,6 +589,61 @@ local function Pullout(C, widget)
     if C.S.OnLooksChanged then C.S.OnLooksChanged(function() if d.active then Paint() end end) end
 end
 
+-- The accepted-roll notification is a pooled InlineGroup on UIParent, not a
+-- child of the roller. Style only its border with our own non-interactive layer
+-- and restore native visuals before AceGUI can reuse it in another addon.
+local function Notice(C, widget)
+    local H, G = C.H, C.gargul
+    local frame = Frame(widget)
+    if not H.Allowed(frame) then return end
+    G.notices = G.notices or setmetatable({}, {__mode = "k"})
+    local d = G.notices[widget]
+    if not d then
+        local border = widget.content and widget.content:GetParent() or frame
+        if not H.Allowed(border) then return end
+        d = {border = border}; G.notices[widget] = d
+        local function Restore()
+            if not d.active then return end
+            d.active = false; d.layer:SetAlpha(0)
+            if border.SetBackdrop then border:SetBackdrop(d.backdrop) end
+            if d.bg and border.SetBackdropColor then border:SetBackdropColor(unpack(d.bg)) end
+            if d.edge and border.SetBackdropBorderColor then border:SetBackdropBorderColor(unpack(d.edge)) end
+            for text, state in pairs(d.fonts or {}) do
+                if state[1] then text:SetFont(state[1], state[2], state[3]) end
+                text:SetTextColor(unpack(state.color))
+            end
+            d.fonts = nil
+        end
+        d.Restore = Restore
+        frame:HookScript("OnHide", Restore)
+        if C.S.OnLooksChanged then C.S.OnLooksChanged(function() if d.active then Notice(C, widget) end end) end
+    end
+    local roller = _G.Gargul.RollerUI
+    if not ns.IsEnabled(C.module) or not roller or roller.RollAcceptedNotification ~= widget then d.Restore(); return end
+    if InCombatLockdown and InCombatLockdown() then C.module.refresh(); return end
+    if not d.active then
+        d.active, d.fonts = true, {}
+        d.backdrop = d.border.GetBackdrop and d.border:GetBackdrop()
+        if d.border.GetBackdropColor then d.bg = {d.border:GetBackdropColor()} end
+        if d.border.GetBackdropBorderColor then d.edge = {d.border:GetBackdropBorderColor()} end
+    end
+    if not d.layer then
+        d.layer = CreateFrame("Frame", nil, d.border)
+        d.layer:SetAllPoints(d.border); d.layer:EnableMouse(false)
+        if d.layer.SetFrameLevel and d.border.GetFrameLevel then d.layer:SetFrameLevel(math.max(0, d.border:GetFrameLevel() - 1)) end
+        C.S.Panel(d.layer, {noBorder = true})
+    end
+    d.layer:SetAlpha(1)
+    if d.border.SetBackdrop then d.border:SetBackdrop(nil) end
+    for _, child in ipairs(widget.children or {}) do
+        local text = child.label or child.text
+        if H.Allowed(text) then
+            if not d.fonts[text] then d.fonts[text] = {text:GetFont()}; d.fonts[text].color = {text:GetTextColor()} end
+            H.Font(text)
+        end
+    end
+end
+
 ns.RegisterScopedSkin("Gargul", "Gargul", {
     softBorders = true,
     borderlessButtons = function() return true end,
@@ -591,11 +709,17 @@ ns.RegisterScopedSkin("Gargul", "Gargul", {
         C.gargul.Navigation = function() Navigation(C) end
         C.gargul.Prepare = function(root) Organizer(C, root) end
         Organizer(C)
+        C.gargul.Notice = function(widget) Notice(C, widget) end
+        local roller = _G.Gargul.RollerUI
+        local notice = roller and roller.RollAcceptedNotification
+        local noticeFrame = Frame(notice)
+        if C.H.Allowed(noticeFrame) and noticeFrame.IsShown and noticeFrame:IsShown() then Notice(C, notice) end
         C.gargul.Discover() -- Only full load/theme refreshes rediscover adapters.
     end,
     visit = function(C, f, kind, refresh)
         local H, S = C.H, C.S
         if C.gargul.windows[f] then Matte(C, f) end
+        if C.gargul.dropdownParts and C.gargul.dropdownParts[f] then return true end
         if C.navigation[f:GetParent()] then C.navigation[f] = true end
         if C.navigation[f] then
             for _, region in ipairs(H.Regions(f)) do
@@ -644,23 +768,21 @@ ns.RegisterScopedSkin("Gargul", "Gargul", {
             end
             -- AceGUI already positions these fields inside its layout. EUI's
             -- optional six-pixel widening makes adjacent fields/buttons overlap.
-            if not (f.IsMultiLine and f:IsMultiLine()) then FlatControl(C, f, "EditBox", {padInput = false}) end
+            if not (f.IsMultiLine and f:IsMultiLine()) then
+                FlatControl(C, f, "EditBox", {padInput = false}); InputText(C, f)
+            end
             return true
         end
-        if type(f.initialize) == "function" then C.MenuOwner(f); FlatControl(C, f, "Dropdown") end
+        if type(f.initialize) == "function" and not (f.obj and f.obj.type == "Dropdown") then Dropdown(C, f) end
         local widget = f.obj
         if widget and widget.frame == f then
             Tone(C, widget.titletext, f)
             if widget.type == "CheckBox" and widget.checkbg and widget.check then Check(C, widget); return true end
             if widget.type == "Dropdown" then
-                FlatControl(C, H.Allowed(widget.dropdown) and widget.dropdown or f, "Dropdown")
-                if H.Allowed(widget.button) then
-                    for _, r in ipairs(H.Regions(widget.button)) do if H.Texture(r) then H.Fade(r) end end
-                end
-                Tone(C, widget.text, widget.frame); Tone(C, widget.label, widget.frame)
-                Pullout(C, widget)
+                Dropdown(C, f, widget); Pullout(C, widget)
                 return true
             end
+            if widget.type == "EditBox" then Tone(C, widget.label, widget.frame) end
             if widget.type == "Button" then FlatControl(C, f, "Button"); return true end
             if widget.closebtn and H.Allowed(widget.closebtn) then H.Action(widget.closebtn) end
             if widget.sizer_se then H.Resize(widget.sizer_se, true) end

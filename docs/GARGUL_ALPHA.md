@@ -27,6 +27,13 @@ Gargul v8.0.1, commit `7cc1fc1713ca74375398c36fb48d4dca2c7d32a6`, matching the s
 - Roll-window button borders are removed. Countdown text has a dedicated padded right region and the item label reserves that space, including after CandyBar pool reuse. A subtle separator distinguishes the two rows.
 - Countdown fill texture alpha is multiplied by 0.65 to soften the visible colour. Native green/yellow/red values and alpha are preserved: there is no colour-setter or timer-update hook. The native branding panel is retained.
 
+## Dropdown, input and confirmation follow-up
+
+- Style AceGUI dropdowns on their existing clickable `button_cover`, not the decorative frame that extends beyond it. Keep both native cover and arrow handlers and native disabled state. Legacy/LibDD arrows are aligned to their original buttons; native gold arrow art is hidden.
+- Keep profile/utility normal, disabled and pressed artwork in ARTWORK above the public button fill, preserving its original state visibility. This fixes transparent-looking toolbar squares without replacing their actions.
+- Align single-line input text using symmetric 8-unit horizontal insets, zero vertical template insets and vertical centering. Native field anchors, dimensions, horizontal alignment, values and validation remain unchanged.
+- Style the independent two-second accepted-roll notification immediately after its native creation, with no settings/roller scan. Its pooled InlineGroup backdrop/fonts are restored on hide or disable, and new combat notifications defer styling. Native text, timer and anchoring are preserved.
+
 ## Automated evidence
 
 Expanded `tests/legacy_controls_spec.lua` uses the real skin/Scoped/Widgets code and mocked native frames:

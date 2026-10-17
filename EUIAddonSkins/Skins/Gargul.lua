@@ -272,7 +272,7 @@ local function Scroll(C, f)
     C.H.LegacySlider(f)
     local thumb = f.GetThumbTexture and f:GetThumbTexture()
     if thumb then
-        if f.GetOrientation and f:GetOrientation() == "HORIZONTAL" then thumb:SetSize(12, 16)
+        if f.GetOrientation and f:GetOrientation() == "HORIZONTAL" then thumb:SetSize(8, 12)
         else thumb:SetWidth(5) end -- Retain proportional height, hit area and range.
     end
 end

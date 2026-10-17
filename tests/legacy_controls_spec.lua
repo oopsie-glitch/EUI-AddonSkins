@@ -1870,6 +1870,10 @@ do
     gs.slider.GetThumbTexture = function() return gs.thumb end
     gs.slider.GetOrientation = function() return 'VERTICAL' end
     gs.thumb:SetSize(20,24)
+    gs.horizontal = frame('Slider',nil,gargulPage);gs.horizontalThumb=gs.horizontal:CreateTexture()
+    gs.horizontal.GetThumbTexture=function()return gs.horizontalThumb end
+    gs.horizontal.GetOrientation=function()return 'HORIZONTAL' end
+    gs.horizontal:SetSize(400,15);gs.horizontal.hitInsets={0,0,-10,0}
     gs.check = {type='CheckBox',frame=frame('Button',nil,gargulPage)}
     local w = gs.check; w.frame.obj = w
     w.checkbg, w.check, w.highlight = w.frame:CreateTexture(),w.frame:CreateTexture(),w.frame:CreateTexture()
@@ -1996,6 +2000,9 @@ do
     assert(gs.background.alpha==0 and gargulRoot.shellOptions.noAccent and gargulRoot.shellOptions.noTopBar,
         'Gargul stone/header/accent background was not replaced')
     assert(gs.thumb.width==5 and gs.thumb.height==24,'Gargul scrollbar changed proportional height or kept a bulky thumb')
+    assert(gs.horizontalThumb.width==8 and gs.horizontalThumb.height==12 and gs.horizontal.width==400
+        and gs.horizontal.height==15 and gs.horizontal.hitInsets[3]==-10,
+        'Gargul horizontal slider kept an oversized grip or changed the native hit area')
     assert(gs.check.checkbg.width==16 and gs.check.check.width==8 and gs.check.checked and gs.check.check.shown,
         'Gargul checkbox styling changed value/visibility or missed its flat inset mark')
     assert(gs.check.text.textColor[1]==0.9 and gs.dropdown.arrow.alpha==0,'Gargul settings labels or native dropdown arrow remain unstyled')

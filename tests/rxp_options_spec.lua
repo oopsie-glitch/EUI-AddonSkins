@@ -253,6 +253,27 @@ local v2Ui={ApplyFrameBackdrop=function(_,f,_,bg)f.backdrop={bgFile='native'};f.
 RXP={v2={state={},GetTheme=function()return {}end,GetGuideWindow=function(self)return self.state.guideWindow,nil,'getter-tail'end},targeting=targetApi,ui={v2=v2Ui},title='RestedXP Guides',LoadActiveTheme=function()return {font='original',background={.1,.1,.1,1}}end}
 assert(loadfile('EUIAddonSkins/Skins/RXPGuides.lua'))('EUIAddonSkins',ns)
 local m=modules.RXPGuides
+local arrow=frame('Frame',nil,UIParent);arrow:SetSize(32,32);arrow:SetPoint('TOP',UIParent,'TOP',0,-20)
+arrow.texture=art(arrow);arrow.text=label(arrow,'Step 2\n(71yd)')
+local textureWrites,rotations=0,0
+local nativeSetTexture=arrow.texture.SetTexture
+arrow.texture.SetTexture=function(self,value)textureWrites=textureWrites+1;nativeSetTexture(self,value)end
+arrow.texture.GetTexCoord=function(self)return table.unpack(self.crop or {0,1,0,1})end
+arrow.texture.SetRotation=function(self,value)self.rotation=value;rotations=rotations+1 end
+arrow.texture:SetRotation(.75)
+arrow.UpdateVisuals=function(self)self.texture:SetTexture('native-arrow');return 'visual-native'end
+RXP.arrowFrame=arrow
+RXP.DrawArrow=function(self)
+    self.texture:SetRotation(.5);self.text:SetText('Step 3\n(32yd)');self.distance=32
+    return 'direction-native'
+end
+RXP.SetupArrow=function()
+    arrow:UpdateVisuals();arrow.text:SetFont('native-font');arrow.hooks.OnUpdate=RXP.DrawArrow
+    return 'setup-native',nil,'setup-tail'
+end
+arrow.hooks.OnMouseDown=function()return 'drag-native'end
+arrow.hooks.OnUpdate=RXP.DrawArrow
+local nativeDraw=RXP.DrawArrow
 local baseScan=ns.CreateSkinHelper
 ns.CreateSkinHelper=function(...)
     local h=baseScan(...);local scan=h.Scan
@@ -260,6 +281,21 @@ ns.CreateSkinHelper=function(...)
     return h
 end
 m.install(S,m);flush()
+local arrowPath='Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-up3.png'
+assert(arrow.texture.path==arrowPath and arrow.texture.color[1]==accent and arrow.texture.rotation==.75,
+    'arrow artwork/accent changed its bearing')
+assert(arrow.text.font=='eui' and arrow.text.text=='Step 2\n(71yd)' and arrow.width==32 and arrow.height==32,
+    'arrow changed label content, size or positioning')
+assert(arrow.hooks.OnMouseDown()=='drag-native' and arrow.hooks.OnUpdate==nativeDraw and RXP.DrawArrow==nativeDraw,
+    'arrow skin replaced native movement or per-frame callbacks')
+local aw,ar,ao,af=textureWrites,rotations,objects,writes
+for i=1,100 do assert(arrow.hooks.OnUpdate(arrow)=='direction-native')end
+assert(textureWrites==aw and rotations==ar+100 and objects==ao and writes==af and #timers==0,
+    'native direction updates trigger skin work')
+assert(arrow.text.text=='Step 3\n(32yd)' and arrow.distance==32)
+local setup,empty,tail=RXP.SetupArrow()
+assert(setup=='setup-native' and empty==nil and tail=='setup-tail' and arrow.texture.path==arrowPath and arrow.text.font=='eui')
+assert(arrow:UpdateVisuals()=='visual-native' and arrow.texture.path==arrowPath,'native theme reset lost arrow styling')
 assert(targetPerf.title.width==#'Active Targets'*8+12 and targetPerf.title.text.text=='Active Targets'
     and targetPerf.width>=targetPerf.title.width+10,'initial target title clipped before first click')
 assert(root.frame.icon.alpha==1 and root.frame.icon.path=='RXP logo','branding changed')
@@ -309,10 +345,18 @@ combat=false
 for _,f in ipairs(events)do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f,'PLAYER_REGEN_ENABLED')end end
 flush();assert(late.native.alpha==0,'combat-deferred options lost')
 accent=.8;for _,fn in ipairs(looks)do fn()end;flush()
-assert(tab.Text.textColor[1]==.8,'theme refresh lost selected accent')
+assert(tab.Text.textColor[1]==.8 and arrow.texture.color[1]==.8,'theme refresh lost selected accent/arrow tint')
+arrow:SetSize(48,48);arrow:UpdateVisuals()
+assert(arrow.width==48 and arrow.height==48,'arrow skin overrode native scale setting')
+combat=true
+arrow:UpdateVisuals();assert(arrow.texture.path=='native-arrow','arrow themed during combat')
+combat=false
+for _,f in ipairs(events)do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f,'PLAYER_REGEN_ENABLED')end end
+flush();assert(arrow.texture.path==arrowPath,'combat-deferred arrow styling lost')
 enabled=false;for _,fn in ipairs(looks)do fn()end;flush()
 assert(button.native.alpha==1 and slider.slider.thumb.alpha==1 and slider.editbox.insets[3]==3,'disable did not restore native pooled controls')
 assert(button.frame.hooks.OnClick()=='button-native' and checkbox:SetValue(false)=='check-native')
+arrow:UpdateVisuals();assert(arrow.texture.path=='native-arrow','disabled skin still restyled arrow')
 -- Known guide/item visuals remain local and never enroll secure action frames.
 enabled=true
 local guide=frame('Frame',nil,UIParent);guide.backdrop={edge={},guideName={},bottom={}}

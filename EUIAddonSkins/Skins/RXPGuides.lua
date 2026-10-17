@@ -714,6 +714,29 @@ end, function(S, module)
         end)
     end
     for _, name in ipairs({"CreateActiveItemFrame", "UpdateItemFrame"}) do H.Hook(addon, name, QueueItems) end
+    local arrowTextureSeen
+    local function ApplyArrow()
+        local frame = addon.arrowFrame
+        if not H.Allowed(frame) then return end
+        if CombatLocked() then applyWaiting = true; return end
+        local texture = H.Texture(frame.texture)
+        if texture then
+            local path = "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-up3.png"
+            if texture:GetTexture() ~= path or arrowTextureSeen ~= texture then
+                texture:SetTexture(path)
+                -- Centered square crop retains the native north-up orientation.
+                -- RXP's SetRotation remains the only direction driver.
+                texture:SetTexCoord(0.1, 0.9, 0.1, 0.9)
+                arrowTextureSeen = texture
+            end
+            local r, g, b = S.GetAccentColor()
+            local cr, cg, cb, ca = texture:GetVertexColor()
+            if cr ~= r or cg ~= g or cb ~= b or ca ~= 1 then texture:SetVertexColor(r, g, b, 1) end
+        end
+        Font(frame.text, 0.9, 0.9, 0.92)
+        H.Hook(frame, "UpdateVisuals", ApplyArrow)
+    end
+    H.Hook(addon, "SetupArrow", ApplyArrow)
     local guideWindowSeen
     local function V2Chrome(window)
         if not window then return end
@@ -792,6 +815,7 @@ end, function(S, module)
         if party then ThemeShell(party.frame) end
         ApplyTargets()
         ApplyItems()
+        ApplyArrow()
         local importer = addon.guideImporter
         if importer then
             for _, widget in pairs(importer.widgets or {}) do

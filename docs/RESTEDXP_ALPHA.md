@@ -50,3 +50,10 @@ The same mock harness was run against the preceding alpha (`91eb2c8`) and this f
 Additional regression checks verify 100 target-background callbacks perform zero guide scans, allocate no new layers and rewrite/remeasure no unchanged title fonts. Reading the existing V2 window 100 times performs zero scans; 100 layout callbacks coalesce to one V2-window scan. Newly created V2 controls retain one discovery pass. All existing optional/loading/theme/opacity, pooled ownership, native action and combat checks continue passing.
 
 These are traversal/write/allocation counts from mocks. They do not establish actual WoW CPU time, memory consumption, FPS or live first-login font rendering. Full guide reconstruction remains event driven and may still incur RestedXP's own native layout cost.
+
+## Navigation arrow
+
+- Use installed EllesmereUI `media/icons/eui-arrow-up3.png` as a flat accent-coloured chevron, with a centered square crop. No artwork is copied or bundled.
+- Use the public font preference for the existing step/distance label, preserving native text, inline quest colours and configured font size. No background panel or extra arrow frames/textures are created.
+- Reapply after native `arrowFrame:UpdateVisuals` and `SetupArrow`, or a full theme refresh; defer combat work through the existing dirty flag. RestedXP retains its direction/rotation, distance, wrong-continent/visibility logic, size, position, dragging and OnUpdate callback. No setter hooks are added to rotation or distance updates.
+- Regression checks cover native setup return values, rotation and text ownership, native scale/drag actions, theme restoration/accent changes, disabled styling and combat deferral. One hundred mocked direction ticks perform no additional texture/font writes, allocate no visuals and queue no skin refresh.

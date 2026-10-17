@@ -40,6 +40,24 @@ local function object(kind, name, parent)
     function o:SetHeight(v) self.h = v end
     function o:SetSize(w, h) self.w, self.h = w, h end
     function o:ClearAllPoints() self.points = {} end
+    function o:GetNumPoints() return #self.points end
+    function o:GetPoint(i) return table.unpack(self.points[i]) end
+    function o:GetBlendMode() return self.blend or 'BLEND' end
+    function o:GetShadowColor() return table.unpack(self.shadow or {0,0,0,1}) end
+    function o:GetShadowOffset() return table.unpack(self.shadowOffset or {0,0}) end
+    function o:GetJustifyH() return self.justifyH or 'LEFT' end
+    function o:GetJustifyV() return self.justifyV or 'MIDDLE' end
+    function o:CanWordWrap() return self.wordWrap ~= false end
+    function o:CanNonSpaceWrap() return self.nonSpaceWrap ~= false end
+    function o:SetChecked(v) self.checked = v end
+    function o:GetChecked() return self.checked end
+    function o:SetOrientation(v) self.orientation = v end
+    function o:GetOrientation() return self.orientation end
+    function o:SetMinMaxValues(a,b) self.minValue, self.maxValue = a,b end
+    function o:SetValueStep(v) self.step = v end
+    function o:SetThumbTexture(path) self.thumb = self:CreateTexture(); self.thumb:SetTexture(path) end
+    function o:GetThumbTexture() return self.thumb end
+    function o:SetValue(v) self.value = v; if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self,v) end end
     function o:Hide() self.shown = false end
     function o:SetBackdrop(v) self.backdrop = v end
     function o:SetShadowColor(...) self.shadow = {...} end
@@ -72,6 +90,7 @@ local function object(kind, name, parent)
     function o:GetTexCoord()
         if self.privateCoords then return table.unpack(self.privateCoords) end
         local c = self.crop or {0,1,0,1}
+        if #c == 8 then return table.unpack(c) end
         return c[1],c[3],c[1],c[4],c[2],c[3],c[2],c[4]
     end
     function o:SetShown(v) self.shown = v end
@@ -84,7 +103,8 @@ local function object(kind, name, parent)
         if self.kind == 'Button' and not self.label then self.label = self:CreateFontString() end
         if self.kind == 'Button' then self.label.text = v end
     end
-    function o:SetFontObject(v) self.font = v end
+    function o:SetFontObject(v) self.font, self.fontObject = v, v end
+    function o:GetFontObject() return self.fontObject or 'native-object' end
     function o:SetWordWrap(v) self.wordWrap = v end
     function o:SetNonSpaceWrap(v) self.nonSpaceWrap = v end
     function o:SetJustifyH(v) self.justifyH = v end
@@ -635,6 +655,7 @@ function prototypes:CreateDropdown(title, values, binding, key, selectValue, wid
     control:CreateFontString():SetText(title)
     control:SetScript('OnShow', function() control.value = binding.Options[key] end)
     control.selectValue = function(value) control.value = value; selectValue(value) end
+    control.SetSelectedValue = function(self, value) self.value = value; selectValue(value) end
     dropdowns[key] = control
     return control
 end
@@ -647,6 +668,7 @@ end
 function prototypes:CreateText(value, width)
     local text = self.frame:CreateFontString(); text:SetText(value); text:SetWidth(width); return text
 end
+S.Checkbox = function(frame) frame.checkboxStyled = true end
 S.Panel = function(frame) frame.panelStyled = true end
 S.Shell = function(frame) frame.shellStyled = true end
 S.Dropdown = function(frame) frame.dropdownStyled = true end
@@ -673,9 +695,21 @@ DBM_GUI_OptionsFrame.ShowTab = function(self, tab)
 end
 event('ADDON_LOADED')
 local sidePreview = DBM_GUI_OptionsFrame.children[1]
-assert(sidePreview and sidePreview.text == 'Preview DBM bars' and sidePreview.buttonStyled and sidePreview.enabled)
+assert(sidePreview and sidePreview.text == 'EUI Bar Styling' and sidePreview.buttonStyled and sidePreview.enabled)
 assert(sidePreview:GetParent() == DBM_GUI_OptionsFrame and sidePreview.points[1][3] == 'TOPRIGHT', 'preview must attach outside the main window')
 assert(pageCount == 0, 'side preview must not require the timer-category APIs')
+local sideButton = sidePreview
+sideButton.scripts.OnClick(); assert(nativeDemoCalls == 0, 'opening styling panel started demo bars')
+local sidePanel
+for _, child in ipairs(DBM_GUI_OptionsFrame.children) do if child.w == 330 then sidePanel = child end end
+assert(sidePanel and sidePanel:IsShown(), 'side styling panel missing')
+local function sideControl(text)
+    for _, child in ipairs(sidePanel.children) do
+        if child.text == text or child.Text and child.Text.text == text then return child end
+    end
+    error('Missing side control: ' .. text)
+end
+sidePreview = sideControl('Preview DBM bars')
 sidePreview.scripts.OnClick(); assert(nativeDemoCalls == 1)
 nativeDemoCalls = 0
 DBM_GUI.Cat_Timers = group(CreateFrame('Frame'))
@@ -751,6 +785,122 @@ dropdowns.smallLayout.selectValue('strip'); assert(b.h == 5)
 for key,value in pairs(DBT.Options) do assert(dbtOptions[key] == value, 'native DBM options changed: '..key) end
 for key,value in pairs(dbtOptions) do assert(DBT.Options[key] == value) end
 assert(DBT.DefaultOptions == nativeDefaults and nativeDefaults.saved and EUIAddonSkinsDB.extraSettings.keep)
+-- End-user side controls: independent styling, native restoration and warm reuse.
+do
+    local smallTab, hugeTab = sideControl('Small Bars'), sideControl('Huge Bars')
+    local style = sideControl('Apply EUI styling')
+    local border = sideControl('Accent border (follows EUI visibility)')
+    local glyphs = sideControl('Use EUI mechanic artwork')
+    local reset = sideControl('Reset EUI styling')
+    local opacity
+    for _, child in ipairs(sidePanel.children) do if child.kind == 'Slider' then opacity = child end end
+    local function checked(control, value) control:SetChecked(value); control.scripts.OnClick(control) end
+    smallTab.scripts.OnClick()
+    assert(style.checkboxStyled and style.checked and not glyphs:IsShown())
+    assert(opacity.mouse == true and opacity.minValue == 0 and opacity.maxValue == 100 and opacity.step == 1 and opacity.thumb.w == 10 and opacity.thumb.h == 14)
+    local oldHugeOpacity = EUIAddonSkinsDB.dbm.hugeOpacity
+    local walks = iteratorCalls
+    for i = 1, 40 do opacity:SetValue(i) end
+    assert(iteratorCalls == walks, 'opacity drag refreshed the timer pool synchronously for every callback')
+    flush()
+    assert(iteratorCalls == walks + 1 and panel.fillColor[4] == 0.4 and EUIAddonSkinsDB.dbm.hugeOpacity == oldHugeOpacity)
+    walks = iteratorCalls; for _ = 1, 30 do opacity:SetValue(40) end; flush()
+    assert(iteratorCalls == walks, 'unchanged opacity repainted timers')
+    checked(border, false); assert(not f.regions[2]:IsShown(), 'per-type border override ignored')
+    hugeTab.scripts.OnClick(); first.enlarged = true; first:ApplyStyle()
+    assert(f.regions[2]:IsShown() and glyphs:IsShown(), 'small border override leaked into Huge Bars')
+    first.enlarged = false; first:ApplyStyle(); smallTab.scripts.OnClick()
+    checked(border, true)
+    local progress = sideControl('Progress: DBM category colours')
+    local nativeRGB = {b.fill:GetVertexColor()}
+    progress.scripts.OnClick()
+    assert(EUIAddonSkinsDB.dbm.smallColour == 'accent' and EUIAddonSkinsDB.dbm.hugeColour == 'category')
+    assert(tint.fillColor[1] == accent and tint.fillColor[4] == 1 and tint.all == b.fill)
+    b.fill:SetVertexColor(0.2, 0.3, 0.4, 0.8)
+    assert(tint.fillColor[1] == accent, 'native urgency recolour replaced accent overlay')
+    EllesmereUIDB.blizzWinAccentBar.useCustom = true
+    EllesmereUIDB.blizzWinAccentBar.color = {r = 0.23, g = 0.34, b = 0.45}
+    EllesmereUIDB.blizzWinAccentBar.enabled = false
+    for _, fn in ipairs(looks) do fn() end; flush()
+    assert(tint.fillColor[1] == 0.23 and not f.regions[2]:IsShown(), 'progress colour/theme or global border visibility ignored')
+    EllesmereUIDB.blizzWinAccentBar.useCustom, EllesmereUIDB.blizzWinAccentBar.enabled = false, true
+    for _, fn in ipairs(looks) do fn() end; flush()
+    assert(tint.fillColor[1] == accent and f.regions[2]:IsShown())
+    progress.scripts.OnClick()
+    assert(b.fill.color[1] == 0.2 and tint.fillColor[4] == 0.2, 'category colours were written back into native data')
+    b.fill:SetVertexColor(table.unpack(nativeRGB))
+    -- Use a fresh native bar so every restored property has a known baseline.
+    local restored = bar('restore-settings')
+    local rf, rb = restored.frame, _G[restored.frame.name .. 'Bar']
+    local ri, rn = _G[rf.name .. 'BarIcon1'], _G[rf.name .. 'BarName']
+    rb:SetPoint('TOPLEFT', rf, 'TOPLEFT', 0, 0); rb:SetPoint('BOTTOMRIGHT', rf, 'BOTTOMRIGHT', 0, 0)
+    ri:SetPoint('RIGHT', rf, 'LEFT', -2, 0); ri:SetSize(20,20); ri:SetTexCoord(0,1,0,1)
+    rn:SetPoint('LEFT', rb, 'LEFT', 3, 0); rn:SetFont('native',14)
+    rn:SetWordWrap(true); rn:SetShadowOffset(0,0); rn.fontObject = 'native-shadow'
+    restored:ApplyStyle()
+    DBT:CreateBar(20, 'restore-settings')
+    assert(rb.fill.path == 'Interface\\Buttons\\WHITE8X8' and rn.font == 'eui')
+    -- Border textures can be created lazily after the original native snapshot.
+    local lateBorder = rb:CreateTexture(rf.name .. 'BarBorderRight'); lateBorder:SetAlpha(0.7)
+    restored:ApplyStyle(); assert(lateBorder.alpha == 0)
+    rn.fontObject = 'eui-shadow'
+    restored:SetText('Restore |Tknown:40:40|t')
+    local appliedObjects, appliedHooks = created, hooks
+    checked(style, false)
+    assert(rb.fill.path == 'dbm-gloss' and rb.h == DBT.Options.Height and rn.font == 'native' and rn.fontObject == 'native-shadow', 'native style did not return')
+    assert(rb.points[1][2] == rf and rb.points[1][4] == 0 and ri.points[1][3] == 'LEFT' and ri.w == 20)
+    local ulx, uly, _, _, urx = ri:GetTexCoord()
+    assert(ulx == 0 and uly == 0 and urx == 1 and rn.wordWrap and rn.shadowOffset[1] == 0)
+    assert(rn.text == 'Restore |Tknown:40:40|t', 'original inline text was not restored')
+    assert(_G[rf.name .. 'BarBackground'].alpha == 1 and lateBorder.alpha == 0.7, 'native alpha remained locked')
+    assert(not panel:IsShown() and not tint:IsShown() and not endpoint:IsShown() and not trackEnd:IsShown())
+    assert(not opacity.enabled and not border.enabled and not progress.enabled and style.enabled)
+    _G[rf.name .. 'BarBackground']:SetAlpha(0.6); assert(_G[rf.name .. 'BarBackground'].alpha == 0.6)
+    restored:SetVariance(); assert(_G[rf.name .. 'BarVariance'].path == 'native-gradient')
+    local unstyled = DBT:CreateBar(12, 'disabled-small-type')
+    assert(_G[unstyled.frame.name .. 'Bar'].fill.path == 'dbm-gloss', 'disabled type styled a new timer')
+    restored.enlarged = true; restored:ApplyStyle()
+    assert(rb.fill.path == 'Interface\\Buttons\\WHITE8X8', 'disabled Small setting blocked Huge Bars')
+    restored.enlarged = false; restored:ApplyStyle(); assert(rb.fill.path == 'dbm-gloss')
+    checked(style, true)
+    assert(rb.fill.path == 'Interface\\Buttons\\WHITE8X8' and panel:IsShown() and tint:IsShown())
+    checked(style, false)
+    assert(_G[rf.name .. 'BarBackground'].alpha == 0.6, 'second session restored stale native alpha')
+    checked(style, true)
+    local warmObjects, warmHooks = created, hooks
+    for _ = 1, 5 do checked(style, false); checked(style, true) end
+    assert(created == warmObjects and hooks == warmHooks, 'type toggles duplicated textures or hooks')
+    assert(appliedObjects <= created and appliedHooks <= hooks)
+    hugeTab.scripts.OnClick(); restored.enlarged = true; restored:ApplyStyle()
+    local rm = _G[rf.name .. 'BarIJIcons']
+    DBM_COMMON_L = {TANK_ICON = '|TInterface\\Journal\\sheet.blp:20:20:0:0:256:64:0:32:0:32|t'}
+    rm:SetShown(true); rm:SetTexture('Interface\\Journal\\sheet.blp'); rm:SetTexCoord(0,32/256,0,32/64)
+    rm:SetVertexColor(0.7,0.8,0.9,0.6); restored:SetIcon(123)
+    assert(rm.path ~= 'Interface\\Journal\\sheet.blp')
+    checked(glyphs, false)
+    assert(rm.path == 'Interface\\Journal\\sheet.blp' and rm.color[1] == 0.7 and rm.color[4] == 0.6, 'native mechanic artwork/tint not restored')
+    local gx, gy, _, _, gr = rm:GetTexCoord(); assert(gx == 0 and gy == 0 and gr == 32/256)
+    checked(glyphs, true); assert(rm.path ~= 'Interface\\Journal\\sheet.blp')
+    checked(style, false); assert(rm.path == 'Interface\\Journal\\sheet.blp' and rb.fill.path == 'dbm-gloss')
+    checked(style, true)
+    -- Combat stores preferences and catches up once it is safe.
+    combat = true; event('PLAYER_REGEN_DISABLED')
+    local previous = rb.fill.path
+    checked(style, false); assert(rb.fill.path == previous and not sidePreview.enabled)
+    combat = false; event('PLAYER_REGEN_ENABLED'); assert(rb.fill.path == 'dbm-gloss' and sidePreview.enabled)
+    EUIAddonSkinsDB.dbm.futureOption = 'keep'
+    reset.scripts.OnClick()
+    assert(EUIAddonSkinsDB.dbm.smallEnabled and EUIAddonSkinsDB.dbm.hugeEnabled and EUIAddonSkinsDB.dbm.hugeGlyphs)
+    assert(EUIAddonSkinsDB.dbm.smallOpacity == 0.65 and EUIAddonSkinsDB.dbm.hugeOpacity == 0.65 and EUIAddonSkinsDB.dbm.futureOption == 'keep')
+    assert(EUIAddonSkinsDB.dbm.smallLayout == 'strip' and EUIAddonSkinsDB.dbm.hugeLayout == 'fill')
+    assert(dropdowns.smallLayout.value == 'strip' and dropdowns.hugeLayout.value == 'fill', 'reset left the native layout page stale')
+    assert(rb.fill.path == 'Interface\\Buttons\\WHITE8X8' and b.h == 5)
+    local panelObjects, panelHooks, panelWalks = created, hooks, iteratorCalls
+    for _ = 1, 20 do sideButton.scripts.OnClick(); sideButton.scripts.OnClick(); smallTab.scripts.OnClick(); hugeTab.scripts.OnClick() end
+    assert(created == panelObjects and hooks == panelHooks and iteratorCalls == panelWalks, 'opening/switching the panel rebuilt UI or scanned timers')
+    for key,value in pairs(DBT.Options) do assert(dbtOptions[key] == value, 'styling changed DBT profile '..key) end
+    print('PASS: DBM side options, independent types, native restore/re-enable, lazy border alpha, glyph restore, coalesced opacity, combat, profile preservation and panel reuse')
+end
 -- Disabled skins can save preferences without repainting anything.
 enabled = false
 sidePreview.scripts.OnShow(); assert(not sidePreview.enabled)

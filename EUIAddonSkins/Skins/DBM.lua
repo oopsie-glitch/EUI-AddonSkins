@@ -11,17 +11,132 @@ local function HUD(C)
     local WHITE = "Interface\\Buttons\\WHITE8X8"
     local bars, icons = {}, {}
     local active, pending = false, false
+    local defaults = {smallEnabled = true, hugeEnabled = true, smallLayout = "strip", hugeLayout = "fill",
+        smallOpacity = 0.65, hugeOpacity = 0.65, smallColour = "category", hugeColour = "category",
+        smallBorder = true, hugeBorder = true, hugeGlyphs = true}
+    local normalized
     local function Settings()
         EUIAddonSkinsDB = EUIAddonSkinsDB or {}
         local db = EUIAddonSkinsDB
         if type(db.dbm) ~= "table" then db.dbm = {} end
         local settings = db.dbm
-        if settings.smallLayout ~= "strip" and settings.smallLayout ~= "fill" then settings.smallLayout = "strip" end
-        if settings.hugeLayout ~= "strip" and settings.hugeLayout ~= "fill" then settings.hugeLayout = "fill" end
+        if settings == normalized then return settings end
+        for key, value in pairs(defaults) do
+            local current = settings[key]
+            local valid = type(current) == type(value)
+            if key:match("Layout$") then valid = current == "strip" or current == "fill"
+            elseif key:match("Colour$") then valid = current == "category" or current == "accent"
+            elseif type(value) == "number" then valid = valid and current == current and current >= 0 and current <= 1 end
+            if not valid then settings[key] = value end
+        end
+        normalized = settings
         return settings
     end
     local function Allowed(f)
         return H.Allowed(f) and not (f.IsProtected and f:IsProtected())
+    end
+    local function Styled(obj)
+        return Settings()[obj.enlarged and "hugeEnabled" or "smallEnabled"]
+    end
+    local function BorderShown(obj)
+        return ns.AccentBarShown() and Settings()[obj.enlarged and "hugeBorder" or "smallBorder"]
+    end
+    -- Native ApplyStyle restores current profile values. These snapshots supply
+    -- the XML anchors, crops and text properties that DBT does not reset.
+    local properties = {
+        {"GetFontObject", "SetFontObject"}, {"GetFont", "SetFont"}, {"GetTextColor", "SetTextColor"},
+        {"GetShadowColor", "SetShadowColor"}, {"GetShadowOffset", "SetShadowOffset"},
+        {"GetJustifyH", "SetJustifyH"}, {"GetJustifyV", "SetJustifyV"},
+        {"CanWordWrap", "SetWordWrap"}, {"CanNonSpaceWrap", "SetNonSpaceWrap"},
+        {"GetTexCoord", "SetTexCoord"}, {"GetVertexColor", "SetVertexColor"},
+        {"GetBlendMode", "SetBlendMode"}, {"GetAlpha", "SetAlpha"},
+    }
+    local unpack = unpack or table.unpack
+    local function Capture(region)
+        if not Allowed(region) then return end
+        local state = {region = region, width = region:GetWidth(), height = region:GetHeight(), points = {}}
+        if region.GetNumPoints then
+            for i = 1, region:GetNumPoints() do state.points[i] = {region:GetPoint(i)} end
+        end
+        for i, property in ipairs(properties) do
+            if region[property[1]] and region[property[2]]
+                and not (property[1] == "GetTexCoord" and region.GetNumMaskTextures and region:GetNumMaskTextures() > 0) then
+                local values = {region[property[1]](region)}
+                local public = true
+                if issecretvalue then for _, value in ipairs(values) do if issecretvalue(value) then public = false; break end end end
+                if public then state[i] = values end
+            end
+        end
+        return state
+    end
+    local function RestoreRegion(state)
+        local region = state.region
+        if not Allowed(region) then return end
+        region:ClearAllPoints()
+        for _, point in ipairs(state.points) do region:SetPoint(unpack(point)) end
+        region:SetSize(state.width, state.height)
+        for i, property in ipairs(properties) do
+            if state[i] and state[i][1] ~= nil then region[property[2]](region, unpack(state[i])) end
+        end
+    end
+    local function NativeGlyph(icon, d)
+        local old = d.mechanicGlyphs and d.mechanicGlyphs[icon]
+        if old and icon:GetTexture() == old.texture then
+            icon:SetTexture(old.nativeTexture)
+            icon:SetTexCoord(unpack(old.nativeCrop))
+            icon:SetVertexColor(old[1], old[2], old[3], old[4])
+        end
+        if old then d.mechanicGlyphs[icon] = nil end
+    end
+    local function RestoreBar(obj, d, name, bar)
+        if not d.styled then return end
+        d.styled = false
+        for _, state in ipairs(d.native) do RestoreRegion(state) end
+        for texture, alpha in pairs(d.hidden or {}) do if H.Texture(texture) then texture:SetAlpha(alpha) end end
+        for i = 1, 4 do
+            local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
+            if H.Texture(icon) then NativeGlyph(icon, d) end
+        end
+        if d.inlineSource and _G[name .. "BarName"]:GetText() == d.inlineOutput then
+            _G[name .. "BarName"]:SetText(d.inlineSource)
+        end
+        d.inlineSource, d.inlineOutput, d.inlineLastSource, d.inlineSize, d.labelSize = nil, nil, nil, nil, nil
+        for _, texture in ipairs({d.panel, d.tint, d.endpoint, d.trackEnd}) do if texture then texture:Hide() end end
+        for _, edge in ipairs(d.edges or {}) do edge:Hide() end
+        for i = 1, 2 do
+            local icon = _G[name .. "BarIcon" .. i]
+            if icons[icon] then icons[icon].layer:Hide() end
+        end
+        bar:SetStatusBarTexture(d.nativeFill)
+        local variance = _G[name .. "BarVariance"]
+        if H.Texture(variance) then variance:SetTexture(d.nativeVariance) end
+        d.native, d.mechanicAlpha = nil, nil
+        if type(obj.ApplyStyle) == "function" then obj:ApplyStyle() end
+    end
+    local function RememberBar(obj, d, name, bar)
+        if d.styled then return end
+        d.native, d.hidden, d.nativeFill = {}, {}, bar:GetStatusBarTexture():GetTexture()
+        local suffixes = {"Bar", "BarName", "BarTimer", "BarIcon1", "BarIcon2", "BarBackground", "BarSpark",
+            "BarVariance", "BarVarianceBorder", "BarBorderTop", "BarBorderBottom", "BarBorderLeft", "BarBorderRight",
+            "BarIJIcons", "BarIJIcons2", "BarIJIcons3", "BarIJIcons4"}
+        for _, suffix in ipairs(suffixes) do
+            local state = Capture(_G[name .. suffix])
+            if state then d.native[#d.native + 1] = state end
+        end
+        local variance = _G[name .. "BarVariance"]
+        d.nativeVariance = H.Texture(variance) and variance:GetTexture() or nil
+        d.styled = true
+    end
+    local function HideNative(texture, d)
+        if not H.Texture(texture) then return end
+        if not d.hidden then d.hidden = {} end
+        if d.hidden[texture] == nil then
+            d.hidden[texture] = texture:GetAlpha()
+            H.Hook(texture, "SetAlpha", function(_, alpha)
+                if d.styled and alpha ~= 0 then texture:SetAlpha(0) end
+            end)
+        end
+        texture:SetAlpha(0)
     end
     local function Font(text)
         if Allowed(text) and text.GetFont then S.Font(text) end
@@ -78,7 +193,7 @@ local function HUD(C)
         return d
     end
     local function PaintVariance(obj)
-        if type(obj) ~= "table" or obj.isSecret or not Allowed(obj.frame) then return end
+        if type(obj) ~= "table" or obj.isSecret or not Allowed(obj.frame) or not Styled(obj) then return end
         local name = obj.frame:GetName()
         if not name then return end
         local variance, boundary = _G[name .. "BarVariance"], _G[name .. "BarVarianceBorder"]
@@ -144,6 +259,7 @@ local function HUD(C)
         local rawPath = icon:GetTexture()
         local path = icon.GetTextureFilePath and icon:GetTextureFilePath() or rawPath
         if (issecretvalue and (issecretvalue(path) or issecretvalue(rawPath))) or path == nil then return end
+        if not Settings().hugeGlyphs then NativeGlyph(icon, d); return end
         d.mechanicGlyphs = d.mechanicGlyphs or {}
         local old = d.mechanicGlyphs[icon]
         -- Reuse identity only while our exact texture remains assigned. Native
@@ -189,6 +305,9 @@ local function HUD(C)
                 local r, g, b, alpha = icon:GetVertexColor()
                 if issecretvalue and (issecretvalue(r) or issecretvalue(g) or issecretvalue(b) or issecretvalue(alpha)) then return end
                 old = {r, g, b, alpha}; d.mechanicGlyphs[icon] = old
+            end
+            if not styled then
+                old.nativeTexture, old.nativeCrop = rawPath, {icon:GetTexCoord()}
             end
             local target, left, right = GlyphTexture(index)
             if styled and target == old.path then return end
@@ -257,13 +376,14 @@ local function HUD(C)
         d.panel:ClearAllPoints()
         d.panel:SetPoint("TOPLEFT", frame, "LEFT", 0, Snap(height / 2, pixel))
         d.panel:SetPoint("BOTTOMRIGHT", frame, "RIGHT", 0, Snap(-height / 2, pixel))
-        d.panel:SetColorTexture(0.13, 0.135, 0.14, 0.65)
+        d.panel:SetColorTexture(0.13, 0.135, 0.14, Settings()[obj.enlarged and "hugeOpacity" or "smallOpacity"])
+        d.panel:SetShown(true)
         d.borderPixel = pixel
         local r, g, b = ns.AccentBarColor(S)
         for i, edge in ipairs(d.edges) do
             if i <= 2 then edge:SetHeight(pixel) else edge:SetWidth(pixel) end
             edge:SetColorTexture(r, g, b, 0.35)
-            edge:SetShown(ns.AccentBarShown())
+            edge:SetShown(BorderShown(obj))
         end
         local label, timer = _G[name .. "BarName"], _G[name .. "BarTimer"]
         local path, flags = S.GetFont()
@@ -313,7 +433,7 @@ local function HUD(C)
         local d = bars[obj]
         local name = obj.frame:GetName()
         local label = name and _G[name .. "BarName"]
-        if not d or d.inlineBusy or not d.labelSize or not Allowed(label) or not label.GetText then return end
+        if not d or not d.styled or not Styled(obj) or d.inlineBusy or not d.labelSize or not Allowed(label) or not label.GetText then return end
         local text = label:GetText()
         if (issecretvalue and issecretvalue(text)) or type(text) ~= "string" then return end
         if text ~= d.inlineOutput then d.inlineSource = text end
@@ -349,6 +469,9 @@ local function HUD(C)
         if not Allowed(bar) or not bar.GetStatusBarTexture then return end
         active = true
         H.Safe(function()
+            local d = bars[obj]
+            if not Styled(obj) then RestoreBar(obj, d, name, bar); return end
+            RememberBar(obj, d, name, bar)
             -- ApplyBarFill registers a permanent accent recolor in EUI; DBM
             -- fills instead retain native mechanic colors and urgency changes.
             local fill = bar:GetStatusBarTexture()
@@ -360,15 +483,14 @@ local function HUD(C)
                 end
             end
             local bg = _G[name .. "BarBackground"]
-            if H.Texture(bg) then H.Fade(bg) end
+            HideNative(bg, d)
             local spark = _G[name .. "BarSpark"]
-            if H.Texture(spark) then H.Fade(spark) end
+            HideNative(spark, d)
             for _, side in ipairs({"Top", "Bottom", "Left", "Right"}) do
                 local border = _G[name .. "BarBorder" .. side]
-                if H.Texture(border) then H.Fade(border) end
+                HideNative(border, d)
             end
             Font(_G[name .. "BarName"]); Font(_G[name .. "BarTimer"])
-            local d = bars[obj]
             BarLayout(obj, bar, d, name)
             FitInlineIcons(obj)
             PaintVariance(obj)
@@ -380,7 +502,7 @@ local function HUD(C)
                     if border then
                         for j, edge in ipairs(border.edge) do
                             if j <= 2 then edge:SetHeight(d.borderPixel) else edge:SetWidth(d.borderPixel) end
-                            edge:SetShown(ns.AccentBarShown())
+                            edge:SetShown(BorderShown(obj))
                         end
                     end
                 end
@@ -391,19 +513,27 @@ local function HUD(C)
             if H.Texture(fill) then
                 if not d.tint then d.tint = bar:CreateTexture(nil, "ARTWORK", nil, 2) end
                 d.tint:SetAllPoints(fill)
-                d.tint:SetColorTexture(obj.enlarged and 0.08 or 0.14, obj.enlarged and 0.08 or 0.14, obj.enlarged and 0.08 or 0.14, obj.enlarged and 0.4 or 0.2)
+                if Settings()[obj.enlarged and "hugeColour" or "smallColour"] == "accent" then
+                    local ar, ag, ab = ns.AccentBarColor(S)
+                    d.tint:SetColorTexture(ar, ag, ab, 1)
+                else
+                    d.tint:SetColorTexture(obj.enlarged and 0.08 or 0.14, obj.enlarged and 0.08 or 0.14, obj.enlarged and 0.08 or 0.14, obj.enlarged and 0.4 or 0.2)
+                end
+                d.tint:SetShown(true)
                 if not d.endpoint then d.endpoint = bar:CreateTexture(nil, "ARTWORK", nil, 3) end
                 d.endpoint:ClearAllPoints()
                 d.endpoint:SetPoint("TOPRIGHT", fill, "TOPRIGHT")
                 d.endpoint:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT")
                 d.endpoint:SetWidth(d.borderPixel)
                 d.endpoint:SetColorTexture(0.6, 0.62, 0.64, 0.55)
+                d.endpoint:SetShown(true)
                 if not d.trackEnd then d.trackEnd = bar:CreateTexture(nil, "ARTWORK", nil, 4) end
                 d.trackEnd:ClearAllPoints()
                 d.trackEnd:SetPoint("TOPRIGHT", bar, "TOPRIGHT")
                 d.trackEnd:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
                 d.trackEnd:SetWidth(d.borderPixel)
                 d.trackEnd:SetColorTexture(0.42, 0.44, 0.46, 0.55)
+                d.trackEnd:SetShown(true)
             end
         end)
         active = false
@@ -550,8 +680,9 @@ local function HUD(C)
         local inCombat = InCombatLockdown and InCombatLockdown()
         local available = ns.IsEnabled(C.module) and type(dbm) == "table" and type(dbm.DemoMode) == "function"
         if state.preview.SetEnabled then state.preview:SetEnabled(available and not inCombat) end
+        if state.button then state.button:SetEnabled(ns.IsEnabled(C.module) and (not inCombat or state.frame ~= nil)) end
         if not state.notice then return end
-        if inCombat then state.notice:SetText("Layout changes apply after combat. Preview is unavailable during combat.")
+        if inCombat then state.notice:SetText("Styling changes apply after combat. Preview is unavailable during combat.")
         elseif not available then state.notice:SetText("Bar preview is unavailable in this DBM version.")
         else state.notice:SetText("Changes apply immediately. Size, position and spacing remain controlled by DBM.") end
     end
@@ -564,25 +695,164 @@ local function HUD(C)
             gui:CollapseForPreview(duration)
         end
     end
+    local UpdateSide, OpenSide
+    local function SyncLayoutControls()
+        local page, db = C.dbmSettings, Settings()
+        if not page then return end
+        for _, entry in ipairs({{page.small, "smallLayout"}, {page.huge, "hugeLayout"}}) do
+            if entry[1].SetSelectedValue and entry[1].value ~= db[entry[2]] then entry[1]:SetSelectedValue(db[entry[2]]) end
+        end
+    end
+    local function ChangeSetting(key, value, coalesce)
+        local db = Settings()
+        if db[key] == value then return end
+        db[key] = value
+        if coalesce then H.Queue(C.dbmPreview, RefreshBars) else RefreshBars() end
+        if UpdateSide then UpdateSide() end
+        SyncLayoutControls()
+    end
+    UpdateSide = function()
+        local state = C.dbmPreview
+        if not state or not state.frame then return end
+        local db, prefix = Settings(), state.selected
+        state.updating = true
+        state.enabled:SetChecked(db[prefix .. "Enabled"])
+        state.border:SetChecked(db[prefix .. "Border"])
+        state.glyphs:SetChecked(db.hugeGlyphs)
+        state.glyphs:SetShown(prefix == "huge")
+        state.layout:SetText("Layout: " .. (db[prefix .. "Layout"] == "strip" and "Name above progress" or "Name over progress"))
+        state.colour:SetText("Progress: " .. (db[prefix .. "Colour"] == "accent" and "EUI accent colour" or "DBM category colours"))
+        state.opacity:SetValue(db[prefix .. "Opacity"] * 100)
+        state.opacityText:SetText("Background opacity: " .. math.floor(db[prefix .. "Opacity"] * 100 + 0.5) .. "%")
+        local available = ns.IsEnabled(C.module) and db[prefix .. "Enabled"]
+        for _, control in ipairs({state.layout, state.colour, state.opacity, state.border, state.glyphs}) do control:SetEnabled(available) end
+        state.enabled:SetEnabled(ns.IsEnabled(C.module))
+        state.reset:SetEnabled(ns.IsEnabled(C.module))
+        local r, g, b = ns.AccentBarColor(S)
+        for key, button in pairs(state.tabs) do
+            local label = button:GetFontString()
+            if label then
+                if key == prefix then label:SetTextColor(r, g, b, 1) else label:SetTextColor(0.8, 0.8, 0.8, 1) end
+            end
+        end
+        state.updating = false
+        PreviewState(state)
+    end
+    OpenSide = function()
+        local state = C.dbmPreview
+        if not state or not ns.IsEnabled(C.module) then return end
+        if not state.frame then
+            if InCombatLockdown and InCombatLockdown() then return end
+            -- Created on first use, independent of DBM's timer-category APIs.
+            local panel = CreateFrame("Frame", nil, Window())
+            panel:SetSize(330, 438)
+            panel:SetPoint("TOPLEFT", state.button, "BOTTOMLEFT", 0, -6)
+            if panel.SetClampedToScreen then panel:SetClampedToScreen(true) end
+            if panel.SetFrameStrata then panel:SetFrameStrata("DIALOG") end
+            panel:EnableMouse(true)
+            state.frame, state.selected, state.controls, state.labels = panel, "small", {}, {}
+            local function Text(value, y, size)
+                local label = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                label:SetPoint("TOPLEFT", panel, "TOPLEFT", 14, y)
+                label:SetWidth(302); label:SetJustifyH("LEFT"); label:SetText(value)
+                if size then local path, flags = S.GetFont(); label:SetFont(path, size, flags or "") end
+                state.labels[#state.labels + 1] = label
+                return label
+            end
+            local function Button(text, x, y, width, click)
+                local button = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+                button:SetSize(width, 26); button:SetPoint("TOPLEFT", panel, "TOPLEFT", x, y)
+                button:SetText(text); button:SetScript("OnClick", click)
+                state.controls[#state.controls + 1] = {button, "Button"}
+                return button
+            end
+            local function Check(text, key, y)
+                local button = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+                button:SetSize(26, 26); button:SetPoint("TOPLEFT", panel, "TOPLEFT", 12, y)
+                button.Text = button.Text or button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                button.Text:ClearAllPoints(); button.Text:SetPoint("LEFT", button, "RIGHT", 4, 0)
+                button.Text:SetWidth(270); button.Text:SetJustifyH("LEFT"); button.Text:SetText(text)
+                button:SetScript("OnClick", function(self)
+                    ChangeSetting(key == "hugeGlyphs" and key or state.selected .. key, not not self:GetChecked())
+                end)
+                state.controls[#state.controls + 1] = {button, "Checkbox"}
+                return button
+            end
+            Text("EUI Bar Styling", -14, 14)
+            state.close = Button("X", 292, -8, 26, function() panel:Hide() end)
+            state.tabs = {
+                small = Button("Small Bars", 14, -44, 147, function() state.selected = "small"; UpdateSide() end),
+                huge = Button("Huge Bars", 169, -44, 147, function() state.selected = "huge"; UpdateSide() end),
+            }
+            state.enabled = Check("Apply EUI styling", "Enabled", -80)
+            state.layout = Button("", 14, -116, 302, function()
+                local key = state.selected .. "Layout"
+                ChangeSetting(key, Settings()[key] == "strip" and "fill" or "strip")
+            end)
+            state.colour = Button("", 14, -150, 302, function()
+                local key = state.selected .. "Colour"
+                ChangeSetting(key, Settings()[key] == "category" and "accent" or "category")
+            end)
+            state.opacityText = Text("", -190)
+            state.opacity = CreateFrame("Slider", nil, panel)
+            state.opacity:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -211); state.opacity:SetSize(294, 18)
+            state.opacity:EnableMouse(true)
+            state.opacity:SetOrientation("HORIZONTAL"); state.opacity:SetMinMaxValues(0, 100)
+            state.opacity:SetValueStep(1)
+            if state.opacity.SetObeyStepOnDrag then state.opacity:SetObeyStepOnDrag(true) end
+            state.opacity:SetThumbTexture(WHITE)
+            state.opacity:SetScript("OnValueChanged", function(_, value)
+                if state.updating or not ns.IsEnabled(C.module) then return end
+                ChangeSetting(state.selected .. "Opacity", math.floor(math.max(0, math.min(100, value)) + 0.5) / 100, true)
+            end)
+            state.border = Check("Accent border (follows EUI visibility)", "Border", -239)
+            state.glyphs = Check("Use EUI mechanic artwork", "hugeGlyphs", -271)
+            state.preview = Button("Preview DBM bars", 14, -310, 147, RunPreview)
+            state.preview:SetScript("OnShow", function() PreviewState(state) end)
+            state.reset = Button("Reset EUI styling", 169, -310, 147, function()
+                if not ns.IsEnabled(C.module) then return end
+                local db = Settings()
+                for key, value in pairs(defaults) do db[key] = value end
+                RefreshBars(); UpdateSide(); SyncLayoutControls()
+            end)
+            state.notice = Text("", -348)
+            state.notice:SetHeight(72); state.notice:SetWordWrap(true)
+            panel:SetScript("OnShow", UpdateSide)
+            S.Shell(panel, {noAccent = true, noTopBar = true})
+        else state.frame:SetShown(not state.frame:IsShown()) end
+        UpdateSide()
+        -- Style owned controls explicitly; the generic scanner never enters here.
+        for _, entry in ipairs(state.controls) do Control(C, entry[1], entry[2]); Font(entry[1].Text or entry[1]:GetFontString()) end
+        for _, label in ipairs(state.labels) do Font(label) end
+        H.LegacySlider(state.opacity)
+        local thumb = state.opacity:GetThumbTexture()
+        if thumb then thumb:SetSize(10, 14) end
+        UpdateSide()
+    end
     local function PreviewButton()
         local frame = Window()
         if not Allowed(frame) then return end
         local state = C.dbmPreview
         if not state then
-            -- Independent of timer-category APIs: older GUI versions can still
-            -- preview real DBT bars. Parenting follows the window's visibility.
             local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
             button:SetSize(160, 26)
             button:SetPoint("TOPLEFT", frame, "TOPRIGHT", 8, -76)
-            button:SetText("Preview DBM bars")
-            button:SetScript("OnClick", RunPreview)
-            state = {preview = button}
-            C.dbmPreview = state
-            button:SetScript("OnShow", function() PreviewState(state) end)
+            button:SetText("EUI Bar Styling")
+            button:SetScript("OnClick", OpenSide)
+            state = {button = button}; C.dbmPreview = state
+            button:SetScript("OnShow", function() button:SetEnabled(ns.IsEnabled(C.module)); UpdateSide() end)
             S.Button(button)
         end
-        Font(state.preview:GetFontString())
-        PreviewState(state)
+        state.button:SetEnabled(ns.IsEnabled(C.module))
+        Font(state.button:GetFontString())
+        if state.frame then
+            for _, entry in ipairs(state.controls) do Control(C, entry[1], entry[2]); Font(entry[1].Text or entry[1]:GetFontString()) end
+            for _, label in ipairs(state.labels) do Font(label) end
+            H.LegacySlider(state.opacity)
+            local thumb = state.opacity:GetThumbTexture()
+            if thumb then thumb:SetSize(10, 14) end
+            UpdateSide()
+        end
     end
     local function SettingsPanel()
         local gui = _G.DBM_GUI
@@ -607,6 +877,7 @@ local function HUD(C)
                     db[key] = value
                     RefreshBars()
                     PreviewState(state)
+                    UpdateSide()
                 end, 220)
                 control:SetPoint("TOPLEFT", area.frame, "TOPLEFT", 20, y)
                 control.myheight = 78
@@ -877,7 +1148,10 @@ local function GUIExclude(C)
     local f = Window()
     if f and f.searchHighlightFrame then C.dbmExclude[f.searchHighlightFrame] = true end
     if C.dbmSettings then C.dbmExclude[C.dbmSettings.frame] = true end
-    if C.dbmPreview then C.dbmExclude[C.dbmPreview.preview] = true end
+    if C.dbmPreview then
+        C.dbmExclude[C.dbmPreview.button] = true
+        if C.dbmPreview.frame then C.dbmExclude[C.dbmPreview.frame] = true end
+    end
     if C.dbmMatte then C.dbmExclude[C.dbmMatte] = true end
     return C.dbmExclude
 end

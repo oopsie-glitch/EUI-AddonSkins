@@ -2,16 +2,25 @@
 
 Branch: `skin/dbm-refinement`. This untagged test build does not publish to CurseForge or Wago. TOC/Core versions remain at the stable base, `1.4.2`; identify the build by its branch and commit.
 
-## Layout controls
+## Bar styling controls
 
-Open **DBM > Timers > EUI AddonSkins**. Small Bars and Huge Bars each offer **Name above progress** or **Name over progress**. Defaults retain alpha.19's appearance: above for Small Bars, over for Huge Bars. Choices save in EUI AddonSkins and repaint existing bars immediately outside combat. Very short/narrow rows retain their readable fallback.
+Open DBM options and click **EUI Bar Styling** on the right side of the window. The panel is created on first use and offers separate **Small Bars** and **Huge Bars** settings:
 
-**Preview DBM bars** launches the native DBM demo on Retail and Forever. It leaves DBM's existing Test Bars button unchanged. Preview is disabled during combat or when the native demo API is unavailable. Position, size, scale, spacing and native profiles remain controlled by DBM.
+- Apply EUI styling, with live restoration of native DBM appearance when disabled.
+- Layout: name above progress or name over progress. Click the layout button to switch.
+- Progress: native DBM category colours or the EUI Blizzard Skins+ accent colour. Click to switch.
+- Background opacity, from 0% to 100%.
+- Accent border: follows **Show accent bar** in Blizzard Skins+ unless hidden for that bar type.
+- Huge Bars only: EUI or native mechanic artwork, retaining the external left gutter.
+
+**Preview DBM bars** runs the real DBT demo, including on Retail, without replacing DBM's native Test Bars action. **Reset EUI styling** restores both types' EUI defaults and preserves unrelated saved settings. Defaults retain the previous alpha's appearance. Existing choices in **DBM > Timers > EUI AddonSkins** remain available and share the same saved layouts.
+
+Choices save in EUI AddonSkins, independently of DBM profiles. Changes apply outside combat; combat changes are stored and applied afterward with an on-panel notice. Preview is unavailable in combat or when DBM's demo API is absent. DBM still owns size, position, scale, spacing, timing, categories and icon visibility. Very short/narrow rows retain their readable fallback.
 
 ## Included
 
 - Translucent dark timer panels with one-pixel EUI accent outlines and inset, accent-bordered square spell icons.
-- Small Bars keep names above thin progress strips. Huge Bars use a single-row name-over-fill layout, with a separate countdown and optional mechanic symbols on the right. Native mechanic colors and urgency updates remain intact.
+- Small Bars keep names above thin progress strips. Huge Bars use a single-row name-over-fill layout, with a separate countdown and optional mechanic symbols in an external left gutter. Native mechanic colors and urgency updates remain intact.
 - Native stack anchors, configured sizes, icon visibility and countdown behavior; rendered rows have a small visual inset.
 - Move-mode aura previews with thin dispel-colored edges, EUI text and an accent selection outline.
 - Retail AuraUtil color support removes the remaining ornate preview borders. Standalone native dispel glyphs sit inside the top-right corner; colorblind abbreviations remain intact.
@@ -111,3 +120,8 @@ Alpha.24 applies the interface styling pass. A reusable non-interactive matte su
 Ordinary checkbox/selector labels use soft white, including DBM's SimpleHTML labels; disabled controls remain muted. The title is neutral and the support footer is quieter, retaining its text, embedded link colors and update warnings. Semantic warning text, color swatches and previews keep their original colors. EUI button/dropdown/input primitives receive subtly lighter control fills. Dropdowns and scrollbar steppers use EUI's white arrow assets through the installed dependency. Checkbox checked/disabled regions become inset accent/grey squares, matching EUI's options styling, while native checked state and clicks remain intact. Horizontal slider handles are 10x14 UI units and vertical scrollbar thumbs 5x22, without changing native values, range, drag handlers or widget positions. Centered numeric input padding is preserved. Our own timer-layout page uses the same control styling.
 
 All changes are inside the DBM adapter, with cached objects/styles and no new polling. The alpha.23 navigation benchmarks remain zero full-window scans, zero hidden-control visits and zero unchanged-label font writes; 100 navigation callbacks still add no HUD pool walks or font writes. Added regressions cover pooled blank rows, matte reuse, theme colors, checkbox actions/disabled states, HTML recoloring, preserved warning/link/update markup, chevrons, thumb geometry and centered numeric fields. All 19 suites, Lua syntax and 37-file installation packaging checks pass. Bar appearance and positioning remain unchanged. In-game rendering is unverified; this alpha remains untagged and publishes to neither CurseForge nor Wago.
+
+
+Alpha.25 replaces the side preview button with the lazy **EUI Bar Styling** panel described above. Native restoration snapshots only adapter-modified region properties at the start of each styling session, then reapplies DBT's current style when a type is disabled. Conditional native-art hiding replaces permanent fades for timer backgrounds, sparks and borders, including lazily created borders. Spell crops, text/FontObject state, inline texture sizes, variance artwork and mechanic artwork can be restored. Re-enabling reuses existing skin textures and hooks. Native category colours remain untouched; optional accent colour uses the existing overlay bound to the live fill, with no countdown hook.
+
+Regression tests cover independent types, promotion between Small/Huge Bars, new timers while a type is disabled, repeated restore/re-enable, native geometry/crops/alpha/fonts/inline text, late native borders, glyph restoration, custom accent colour and visibility, shared layout controls, reset/preserved unknown settings, disabled controls, combat catch-up and lazy panel reuse. Forty simulated opacity callbacks coalesce into one timer-pool walk; repeated unchanged values add none. Existing navigation and countdown operation counts remain unchanged. All 19 suites, Lua syntax and the 37-file single-folder package pass outside WoW. Actual rendering remains unverified. This alpha is untagged and does not publish to CurseForge or Wago.

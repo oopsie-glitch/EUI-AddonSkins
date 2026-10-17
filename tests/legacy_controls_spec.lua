@@ -1901,6 +1901,50 @@ do
     item.check.IsDesaturated=function(self)return self.desaturated or false end
     item.highlight=item.frame:CreateTexture();item.highlight:SetVertexColor(1,0.9,0,1)
     item.sub=item.frame:CreateTexture()
+    gs.methods={Button=S.Button,EditBox=S.EditBox,Panel=S.Panel}
+    local function Surface(f, withHover)
+        if not f.gargulSurface or f.testFill then return end
+        f.testFill=f:CreateTexture();f.testFill.layer='BACKGROUND'
+        if withHover then f.testHover=f:CreateTexture();f.testHover.layer='HIGHLIGHT' end
+    end
+    S.Button=function(f,keys)gs.methods.Button(f,keys);Surface(f,true)end
+    S.EditBox=function(f,options)
+        if f.gargulSurface and options and options.padInput then
+            f.points[1][4]=f.points[1][4]-6;f.inputWasWidened=true
+        end
+        gs.methods.EditBox(f,options);Surface(f)
+    end
+    S.Panel=function(f,options)gs.methods.Panel(f,options);Surface(f)end
+    gs.organizer=frame('Frame','GargulOrganizer',UIParent)
+    gs.organizerHead=frame('Frame',nil,gs.organizer);gs.organizerHead.cols={};gs.organizerHead.gargulSurface=true
+    gs.players={frame=frame('Frame',nil,gs.organizer),head=gs.organizerHead,cols={}}
+    for i=1,10 do
+        local col=frame('Button',nil,gs.organizerHead);gs.organizerHead.cols[i]=col
+        col.label=col:CreateFontString(nil,'OVERLAY','GameFontNormal');col.label:SetText(i<=5 and 'Column'..i or '')
+        col.width=i==6 and 1 or 20;col.gargulSurface=true
+        col:SetScript('OnClick',function()gs.headerClicks=(gs.headerClicks or 0)+1 end)
+        gs.players.cols[i]={name=col.label.text,width=col.width,sortnext=2}
+    end
+    gs.players.SetDisplayCols=function(self) return 'columns-native' end
+    Gargul.MasterLooterUI={InterfaceItems={Frame={Window={frame=gs.organizer,type='Frame'}},Table={Players=gs.players}}}
+    gs.utility=frame('Button',nil,gs.organizer);gs.utility.gargulSurface=true
+    gs.utility:SetPoint('TOPLEFT',gs.organizer,'TOPLEFT',1,-1)
+    gs.utility.label=gs.utility:CreateFontString(nil,'ARTWORK','GameFontNormal');gs.utility.label:SetText('')
+    gs.utility.normal=gs.utility:CreateTexture();gs.utility.normal:SetTexture('Interface/AddOns/Gargul/Assets/Buttons/award')
+    gs.utility.disabledArt=gs.utility:CreateTexture();gs.utility.disabledArt:SetTexture('Interface/AddOns/Gargul/Assets/Buttons/award-disabled')
+    gs.utility.GetDisabledTexture=function(self)return self.disabledArt end
+    gs.utility:SetScript('OnClick',function()gs.utilityClicks=(gs.utilityClicks or 0)+1 end)
+    gs.cog=frame('Button',nil,gs.organizer);gs.cog.texture=gs.cog:CreateTexture()
+    gs.cog.texture:SetTexture('interface/cursor/unableinteract')
+    gs.cog:SetScript('OnClick',function()gs.cogClicks=(gs.cogClicks or 0)+1 end)
+    Gargul.MasterLooterUI.SettingsButton=gs.cog
+    gs.organizerInput=frame('EditBox',nil,gs.organizer);gs.organizerInput.gargulSurface=true
+    gs.organizerInput:SetPoint('TOPLEFT',gs.organizer,'TOPLEFT',6,-20)
+    gs.organizerInput.GetFont=function()return 'native',12 end
+    gs.organizerInput.SetFont=function(self,path)self.font=path end
+    gs.organizerInput.SetTextColor=function(self,...)self.textColor={...}end
+    gs.organizerInput.GetTextColor=function(self)return table.unpack(self.textColor or {1,1,1,1})end
+
     gs.looks={};S.OnLooksChanged=function(fn) gs.looks[#gs.looks+1]=fn end
     Gargul.RollerUI={}
     Gargul.RollerUI.draw=function(self)
@@ -1921,6 +1965,9 @@ do
         self.TimerBar.candyBarBar.fill=self.TimerBar.candyBarBar:CreateTexture()
         self.TimerBar.candyBarBar.SetStatusBarTexture=function(self,path)self.fill:SetTexture(path) end
         self.TimerBar.candyBarBar.GetStatusBarTexture=function(self)return self.fill end
+        self.TimerBar.candyBarBar.SetStatusBarColor=function(self,...)self.nativeColor={...} end
+        self.TimerBar.SetColor=function(self,...)self.nativeColor={...};self.candyBarBar:SetStatusBarColor(...)end
+        self.TimerBar:SetColor(0,1,0,0.3)
         self.TimerBar:SetScript('OnMouseDown',function()return 'native-link/right-click' end)
         return 'roller-native'
     end
@@ -1997,6 +2044,28 @@ flush(); assert(combatRoot.shell)
 enabled = false; local disabledRoot = iface:createWindow({name = 'GargulDisabled'}); flush(); assert(not disabledRoot.shell)
 enabled = true
 do
+    assert(not gs.organizerInput.inputWasWidened and gs.organizerInput.points[1][4]==6
+        and gs.organizerInput.inputOptions.padInput==false,'Gargul input padding expanded into adjacent controls')
+    assert(gs.organizerInput.testFill.color[1]>0.02 and gs.organizerInput.testFill.points[1][4]==1,
+        'organizer input fill was not lifted/inset')
+    assert(gs.utility.normal.alpha==1 and gs.utility.disabledArt.alpha==1 and gs.utility.euiGargulNormal==gs.utility.normal
+        and gs.utility.euiGargulDisabled==gs.utility.disabledArt,'Gargul utility state artwork was stripped')
+    assert(gs.utility.testFill.points[1][4]==1 and gs.utility.testFill.points[2][4]==-1
+        and gs.utility.points[1][4]==1,'Gargul button surface spacing changed native button anchors')
+    gs.utility.hooks.OnClick(gs.utility);assert(gs.utilityClicks==1)
+    assert(gs.cog.euiGargulCog and gs.cog.texture.alpha==0)
+    gs.cog.hooks.OnClick(gs.cog);assert(gs.cogClicks==1)
+    assert(gs.organizerHead.panel and gs.organizerHead.testFill and gs.organizerHead.panelOptions.noBorder)
+    for i,col in ipairs(gs.organizerHead.cols)do
+        assert(not col.button and not col.testFill,'lib-st header columns were styled as separate action boxes')
+        assert(gs.players.cols[i].sortnext==2 and gs.players.cols[i].width==col.width,'table metadata was changed')
+    end
+    gs.organizerHead.cols[10].hooks.OnClick();assert(gs.headerClicks==1);flush()
+    auditScans[gs.organizer],auditScans[gs.organizerHead],auditScans[gargulRoot]=0,0,0
+    for i=1,100 do assert(gs.players:SetDisplayCols()=='columns-native')end
+    flush();assert(auditScans[gs.organizer]==0 and auditScans[gs.organizerHead]==1 and auditScans[gargulRoot]==0,
+        'organizer column refresh burst escaped its own header')
+
     assert(gs.background.alpha==0 and gargulRoot.shellOptions.noAccent and gargulRoot.shellOptions.noTopBar,
         'Gargul stone/header/accent background was not replaced')
     assert(gs.thumb.width==5 and gs.thumb.height==24,'Gargul scrollbar changed proportional height or kept a bulky thumb')
@@ -2045,6 +2114,9 @@ do
     r.RollButtons[1].hooks.OnClick()
     assert(r.RollButtons[1].button and gs.rollActions==1 and r.RollButtons[1].label.text=='MS',
         'Gargul roll button action or label changed')
+    assert(r.TimerBar.candyBarBar.fill.alpha==0.65 and r.TimerBar.candyBarDuration.width==48
+        and r.TimerBar.candyBarDuration.points[1][4]==-6 and r.TimerBar.candyBarLabel.points[2][4]==-60,
+        'roller countdown/name padding or muted render alpha was lost')
     assert(r.TimerBar.value==17 and r.TimerBar.nativeColor[2]==1 and r.TimerBar.nativeColor[4]==0.3 and fills==0,
         'Gargul countdown timing/threshold colour was replaced')
     assert(r.TimerBar.candyBarIconFrame.crop and r.TimerBar.candyBarLabel.font=='eui'
@@ -2055,10 +2127,25 @@ do
     for i=1,100 do assert(r:refreshRollTracker()=='tracker-native')end
     flush();assert(auditScans[r.Window]==1 and auditScans[gargulRoot]==0 and #r.Window.children==rollChildren
         and callback==r.refreshRollTracker,'Gargul roll update burst escaped its own window or allocated objects')
+    local colorSetter=r.TimerBar.candyBarBar.SetStatusBarColor
+    local beforeNative=auditScans[r.Window]
+    for i=1,100 do r.TimerBar:SetColor(1,1,0,0.3);r.TimerBar:SetColor(1,0,0,0.3)end
+    assert(r.TimerBar.nativeColor[1]==1 and r.TimerBar.nativeColor[2]==0 and r.TimerBar.nativeColor[4]==0.3
+        and r.TimerBar.candyBarBar.SetStatusBarColor==colorSetter and auditScans[r.Window]==beforeNative
+        and r.TimerBar.candyBarBar.fill.alpha==0.65,'native countdown colour thresholds were replaced or hooked into scans')
     local previousRoll=r.Window;previousRoll:Hide();auditScans[previousRoll]=0
+    local recycled=r.TimerBar
     r:draw();flush()
     assert(auditScans[previousRoll]==0,'new Gargul roll revisited historical roll frames')
+    -- The real CandyBar library resets anchors when it reacquires a bar.
+    recycled.parent=r.Window;r.Window.children[#r.Window.children+1]=recycled
+    recycled.candyBarLabel:ClearAllPoints();recycled.candyBarLabel:SetPoint('TOPLEFT',recycled.candyBarBar,'TOPLEFT',2,0)
+    recycled.candyBarDuration:ClearAllPoints();recycled.candyBarDuration:SetPoint('TOPLEFT',recycled.candyBarBar,'TOPLEFT',2,0)
+    r:refreshRollTracker();flush()
+    assert(recycled.candyBarDuration.points[1][4]==-6 and recycled.candyBarLabel.points[2][4]==-60,
+        'pooled CandyBar reacquisition lost separate timer/name padding')
     print('PASS: Gargul matte surfaces, flat checks/scrollbars/sidebar, pooled popup restoration/foreign reuse, live themes and independent native roller actions/countdowns')
+    S.Button,S.EditBox,S.Panel=gs.methods.Button,gs.methods.EditBox,gs.methods.Panel
     S.OnLooksChanged=nil
 end
 

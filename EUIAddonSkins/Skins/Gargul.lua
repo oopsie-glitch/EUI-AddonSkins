@@ -62,6 +62,7 @@ local function Routing(C)
         G.dirty[root] = nil
         if InCombatLockdown and InCombatLockdown() then C.module.refresh(); return end
         if G.windows[root] and not G.registered[root] then C.RefreshNow(); return end
+        if G.Prepare then G.Prepare(root) end
         C.RefreshControlsNow(root, G.Exclude(root))
         local _, _, nav = G.Settings()
         if root == nav and G.Navigation then G.Navigation() end
@@ -251,6 +252,7 @@ local function FlatControl(C, f, method, keep)
         for _, r in ipairs(C.H.Regions(f)) do
             if not before[r] and C.H.Texture(r) then
                 if r.GetDrawLayer and r:GetDrawLayer() == "BACKGROUND" then d.fill = r end
+                if r.GetDrawLayer and r:GetDrawLayer() == "HIGHLIGHT" then d.hover = r end
                 if method == "Dropdown" and r.GetAtlas and r:GetAtlas() == "Azerite-PointingArrow" then
                     r:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
                     r:SetVertexColor(0.8, 0.8, 0.8, 1)
@@ -266,8 +268,112 @@ local function FlatControl(C, f, method, keep)
         local r, g, b = C.S.GetPanelColor()
         d.fill:SetColorTexture(math.min(r + 0.035, 1), math.min(g + 0.035, 1), math.min(b + 0.035, 1), 1)
     end
+    if method == "Button" or method == "EditBox" then
+        for _, region in pairs({d.fill, d.hover}) do
+            region:ClearAllPoints()
+            region:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+            region:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+        end
+    end
     Tone(C, (f.GetFontString and f:GetFontString()) or f.Text or f.text, f)
 end
+-- lib-st's narrow/blank columns carry hidden sort data and equipment actions.
+-- Their header buttons must remain live, but must not become individual boxes.
+local function Organizer(C, root)
+    local G, H = C.gargul, C.H
+    local ui = _G.Gargul.MasterLooterUI
+    local items = ui and ui.InterfaceItems
+    local players = items and items.Table and items.Table.Players
+    if root and root ~= Frame(items and items.Frame and items.Frame.Window) and root ~= (players and players.head) then return end
+    G.headerCells = G.headerCells or setmetatable({}, {__mode = "k"})
+    G.headerRows = G.headerRows or setmetatable({}, {__mode = "k"})
+    if players and H.Allowed(players.head) then
+        G.headerRows[players.head] = true
+        for _, cell in ipairs(players.head.cols or {}) do if H.Allowed(cell) then G.headerCells[cell] = true end end
+        H.Hook(players, "SetDisplayCols", function()
+            Organizer(C)
+            G.Queue(players.head)
+        end)
+    end
+    G.cogs = G.cogs or setmetatable({}, {__mode = "k"})
+    if ui then
+        for _, button in pairs({ui.SettingsButton, ui.RollTrackingSettingsButton}) do
+            if H.Allowed(button) then G.cogs[button] = true end
+        end
+    end
+end
+local function Utility(C, f)
+    local H, G = C.H, C.gargul
+    if G.cogs and G.cogs[f] then
+        if not f.euiGargulCog then
+            local icon = f:CreateTexture(nil, "OVERLAY", nil, 6)
+            icon:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\cogs-3.png")
+            local size = math.min(12, f:GetWidth(), f:GetHeight())
+            icon:SetSize(size, size); icon:SetPoint("CENTER", f, "CENTER")
+            icon:SetVertexColor(0.8, 0.8, 0.8, 1); f.euiGargulCog = icon
+            H.Fade(f.texture)
+        end
+        FlatControl(C, f, "Button", {"euiGargulCog"})
+        return true
+    end
+    local normal = f.GetNormalTexture and H.Texture(f:GetNormalTexture())
+    local path = normal and normal:GetTexture()
+    if type(path) ~= "string" or not path:lower():find("gargul[/\\]assets[/\\]buttons[/\\]") then return false end
+    -- Keep the native state textures rather than copying the currently visible
+    -- one: enabled, disabled, hover and pressed states continue to work.
+    local keys = {}
+    for _, state in ipairs({"Normal", "Disabled", "Pushed", "Highlight"}) do
+        local getter = f["Get" .. state .. "Texture"]
+        local texture = getter and H.Texture(getter(f))
+        local asset = texture and texture:GetTexture()
+        if type(asset) == "string" and asset:lower():find("gargul[/\\]assets[/\\]buttons[/\\]") then
+            local key = "euiGargul" .. state
+            f[key] = texture; keys[#keys + 1] = key
+        end
+    end
+    FlatControl(C, f, "Button", keys)
+    return true
+end
+local function CandyBar(C, f)
+    local H, S, G = C.H, C.S, C.gargul
+    H.Font(f.candyBarLabel); H.Font(f.candyBarDuration)
+    local bar, path = f.candyBarBar, "Interface\\Buttons\\WHITE8X8"
+    local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    if bar.SetStatusBarTexture and (not fill or not fill.GetTexture or fill:GetTexture() ~= path) then
+        bar:SetStatusBarTexture(path)
+        fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+    end
+    -- A separate texture alpha mutes the rendering without replacing native
+    -- SetColor thresholds/alpha or running another callback on every tick.
+    if H.Texture(fill) and fill:GetAlpha() ~= 0.65 then fill:SetAlpha(0.65) end
+    local background = H.Texture(f.candyBarBackground)
+    if background and background:GetTexture() ~= path then background:SetTexture(path) end
+    if H.Texture(f.candyBarIconFrame) then S.SquareIcon(f.candyBarIconFrame) end
+    G.timers = G.timers or setmetatable({}, {__mode = "k"})
+    local d = G.timers[f]
+    if not d then
+        local separator = f:CreateTexture(nil, "OVERLAY", nil, 5)
+        separator:SetPoint("TOPLEFT", f, "TOPLEFT"); separator:SetPoint("TOPRIGHT", f, "TOPRIGHT")
+        separator:SetHeight(1); separator:SetColorTexture(1, 1, 1, 0.08)
+        d = {separator = separator}; G.timers[f] = d
+    end
+    local _, size = f.candyBarDuration:GetFont()
+    local width = math.max(40, (size or 12) * 4)
+    local owner = f.GetParent and f:GetParent()
+    if d.width ~= width or d.bar ~= bar or d.owner ~= owner then
+        local timer, label = f.candyBarDuration, f.candyBarLabel
+        timer:ClearAllPoints()
+        timer:SetPoint("TOPRIGHT", bar, "TOPRIGHT", -6, -1)
+        timer:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -6, 1)
+        timer:SetWidth(width)
+        label:ClearAllPoints()
+        label:SetPoint("TOPLEFT", bar, "TOPLEFT", 6, -1)
+        label:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -(width + 12), 1)
+        if label.SetWordWrap then label:SetWordWrap(false) end
+        d.width, d.bar, d.owner = width, bar, owner
+    end
+end
+
 local function Scroll(C, f)
     C.H.LegacySlider(f)
     local thumb = f.GetThumbTexture and f:GetThumbTexture()
@@ -422,6 +528,7 @@ end
 
 ns.RegisterScopedSkin("Gargul", "Gargul", {
     softBorders = true,
+    borderlessButtons = function() return true end,
     available = function() return type(_G.Gargul) == "table" and type(_G.Gargul.Interface) == "table" end,
     immediateShow = true,
     font = function(S, text, r, g, b)
@@ -482,6 +589,8 @@ ns.RegisterScopedSkin("Gargul", "Gargul", {
         fontGeneration = fontGeneration + 1
         Routing(C)
         C.gargul.Navigation = function() Navigation(C) end
+        C.gargul.Prepare = function(root) Organizer(C, root) end
+        Organizer(C)
         C.gargul.Discover() -- Only full load/theme refreshes rediscover adapters.
     end,
     visit = function(C, f, kind, refresh)
@@ -515,28 +624,27 @@ ns.RegisterScopedSkin("Gargul", "Gargul", {
                 end)
             end
         end
-        if f.candyBarBar and f.candyBarLabel then
-            -- LibCandyBarGargul's owner is a Frame; its fill is a child
-            -- StatusBar and its icon is candyBarIconFrame (a Texture).
-            H.Font(f.candyBarLabel); H.Font(f.candyBarDuration)
-            local bar, path = f.candyBarBar, "Interface\\Buttons\\WHITE8X8"
-            local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
-            if bar.SetStatusBarTexture and (not fill or not fill.GetTexture or fill:GetTexture() ~= path) then
-                bar:SetStatusBarTexture(path)
-            end
-            local background = H.Texture(f.candyBarBackground)
-            if background and background:GetTexture() ~= path then background:SetTexture(path) end
-            if H.Texture(f.candyBarIconFrame) then S.SquareIcon(f.candyBarIconFrame) end
+        if C.gargul.headerCells and C.gargul.headerCells[f] then
+            Tone(C, f.GetFontString and f:GetFontString(), f)
             return true
         end
+        if C.gargul.headerRows and C.gargul.headerRows[f] then
+            FlatControl(C, f, "Panel", {noBorder = true})
+            return true
+        end
+        if f.candyBarBar and f.candyBarLabel then CandyBar(C, f); return true end
         if kind == "StatusBar" then return true end -- Keep native timing/threshold colours.
         if kind == "Slider" then Scroll(C, f); return true end
-        if kind == "EditBox" and type(f._SetFont) == "function" then
+        if kind == "EditBox" then
             S.Font(f)
-            H.Hook(f, "SetFont", function()
-                if InCombatLockdown and InCombatLockdown() then C.module.refresh() else S.Font(f) end
-            end)
-            if not (f.IsMultiLine and f:IsMultiLine()) then S.EditBox(f, {padInput = true}) end
+            if type(f._SetFont) == "function" then
+                H.Hook(f, "SetFont", function()
+                    if InCombatLockdown and InCombatLockdown() then C.module.refresh() else S.Font(f) end
+                end)
+            end
+            -- AceGUI already positions these fields inside its layout. EUI's
+            -- optional six-pixel widening makes adjacent fields/buttons overlap.
+            if not (f.IsMultiLine and f:IsMultiLine()) then FlatControl(C, f, "EditBox", {padInput = false}) end
             return true
         end
         if type(f.initialize) == "function" then C.MenuOwner(f); FlatControl(C, f, "Dropdown") end
@@ -563,6 +671,7 @@ ns.RegisterScopedSkin("Gargul", "Gargul", {
             end
         end
         if kind == "Button" then
+            if Utility(C, f) then return true end
             if H.Allowed(f.MinimizeButton) then H.Toggle(f.MinimizeButton, true) end
             if H.Allowed(f.MaximizeButton) then H.Toggle(f.MaximizeButton, false) end
             H.Resize(f)

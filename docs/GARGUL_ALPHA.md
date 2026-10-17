@@ -19,6 +19,14 @@ Gargul v8.0.1, commit `7cc1fc1713ca74375398c36fb48d4dca2c7d32a6`, matching the s
 - https://github.com/papa-smurf/Gargul/blob/v8.0.1/Interface/Interface.lua
 - https://github.com/papa-smurf/Gargul/blob/v8.0.1/Classes/RollerUI.lua
 
+## Organizer and roll-window follow-up
+
+- Disable EUI's optional six-pixel input widening for Gargul-owned fields. Native AceGUI anchors/hit areas stay unchanged; inset visual button/input fills separate adjacent controls without moving their actions.
+- Preserve native Gargul utility textures in all enabled/disabled/pressed/hover states. Settings controls use installed EllesmereUI cog artwork at a size contained by their native hit rectangles.
+- Render the roll organizer's lib-st header as one neutral strip. Blank equipment/sort header cells receive no action-button backgrounds; columns, widths, data, sorting and equipment-click behavior remain native. Column rebuild bursts refresh only that header.
+- Roll-window button borders are removed. Countdown text has a dedicated padded right region and the item label reserves that space, including after CandyBar pool reuse. A subtle separator distinguishes the two rows.
+- Countdown fill texture alpha is multiplied by 0.65 to soften the visible colour. Native green/yellow/red values and alpha are preserved: there is no colour-setter or timer-update hook. The native branding panel is retained.
+
 ## Automated evidence
 
 Expanded `tests/legacy_controls_spec.lua` uses the real skin/Scoped/Widgets code and mocked native frames:

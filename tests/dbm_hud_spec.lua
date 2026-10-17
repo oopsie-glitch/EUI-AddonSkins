@@ -242,7 +242,11 @@ assert(label.font == 'eui' and label.size == 9)
 assert(first:SetIcon(999) == 'native-icon' and spellIcon.path == 999)
 assert(b.h == 5, 'repeated paint cumulatively resized strip')
 first.enlarged = true; first:ApplyStyle()
-assert(b.h == 7 and spellIcon.h == 24 and timer.size == 11, 'huge row must follow native configured height')
+assert(b.h == 24 and spellIcon.h == 24 and timer.size == 11, 'huge row must follow native configured height')
+assert(label.points[1][5] == 0 and timer.points[1][5] == 0 and label.h == b.h, 'huge text/countdown must share one centerline')
+assert(label.points[1][4] >= b.points[1][4] and label.points[2][4] == b.points[2][4], 'huge name must overlay the fill with its own padding')
+assert(b.points[2][4] < timer.points[1][4] - timer.w, 'huge fill must stop before the right-hand countdown')
+
 local symbol = _G[f.name .. 'BarIJIcons']
 assert(symbol.alpha == 1 and symbol.h == 17, 'huge mechanic icons should occupy about 60% of height')
 local twoWidth, twoTimer = b:GetWidth(), timer.points[1][4]
@@ -255,7 +259,7 @@ symbol:SetShown(true); first:SetIcon(999)
 assert(b:GetWidth() == singleWidth, 'reappearing symbol did not restore its space')
 DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 2, 3
 first:ApplyStyle()
-assert(label.points[1][4] == 32 and label.points[1][5] == 7 and timer.points[1][5] == 3, 'native text offsets lost')
+assert(label.points[1][4] == 32 and label.points[1][5] == 3 and timer.points[1][5] == 3, 'native text offsets lost')
 DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 0, 0
 DBT.Options.JournalIcons = 4; first:ApplyStyle()
 assert(symbol.h == 11 and _G[f.name .. 'BarIJIcons3'].points[1][5] < symbol.points[1][5], 'four-symbol grid must fit inside row')
@@ -268,10 +272,10 @@ local beforeWidth = b:GetWidth()
 f:SetSize(230, 28); b:SetWidth(230)
 assert(b:GetWidth() == beforeWidth + 35 and b:GetWidth() < f:GetWidth())
 f:SetSize(195, 20)
--- Two-row layout preserves inline text and uses configured dimensions.
+-- Huge single-row layout preserves fitted inline text and configured dimensions.
 label:SetText('|Twarning:20:20|t Custom User Bar')
 DBT.Options.HugeHeight = 40; first:ApplyStyle()
-assert(b.h == 10 and label.h == 25 and spellIcon.h == 27, 'row/icon geometry must scale without overflowing narrow rows')
+assert(b.h == 36 and label.h == 36 and spellIcon.h == 27, 'row/icon geometry must scale without overflowing narrow rows')
 assert(label.text == '|Twarning:13:13|t Custom User Bar' and label.justifyV == 'MIDDLE')
 f:SetSize(400, 40); first:ApplyStyle()
 assert(spellIcon.h == 36 and _G[f.name .. 'BarIJIcons'].h == 16)
@@ -292,6 +296,15 @@ assert(rightIcon.shown and rightIcon.points[1][1] == 'RIGHT' and rightIcon.point
 assert(b.points[2][4] < -rightIcon.w and label.points[2][4] < timer.points[1][4] - timer.w, 'right spell icon overlaps content')
 DBT.Options.IconRight = false; first.enlarged = false; first:ApplyStyle()
 assert(symbol.alpha == 0 and b.h == 5 and panel.points[1][4] == 0)
+assert(label.size == 9 and label.h == 10 and label.points[1][5] == 3 and b:GetWidth() == 137, 'small layout changed after huge transition')
+local smallHeight, smallWidth, smallY, smallFont = b.h, b:GetWidth(), label.points[1][5], label.size
+for _ = 1, 10 do
+    first.enlarged = true; first:ApplyStyle()
+    assert(b.h == 24 and label.points[1][5] == 0 and label.h == 24)
+    first.enlarged = false; first:ApplyStyle()
+    assert(b.h == smallHeight and b:GetWidth() == smallWidth and label.points[1][5] == smallY and label.size == smallFont, 'pooled size transition lost small layout')
+end
+
 DBT.Options.IconLeft = false; first:ApplyStyle()
 assert(b.points[1][4] == 4 and not spellIcon.shown, 'absent spell icon left blank space')
 DBT.Options.IconLeft = true

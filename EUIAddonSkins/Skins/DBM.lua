@@ -169,7 +169,9 @@ local function HUD(C)
         local label, timer = _G[name .. "BarName"], _G[name .. "BarTimer"]
         local path, flags = S.GetFont()
         local nativeSize = options.FontSize or 10
-        local twoRow = height >= 18 and width >= 150
+        -- Small Bars keep the name-above-strip design; Huge Bars use
+        -- the requested single-row name-over-fill layout.
+        local twoRow = not obj.enlarged and height >= 18 and width >= 150
         local fillHeight = twoRow and math.max(pixel, Snap(height * 0.25, pixel)) or math.max(pixel, Snap(height - pad * 2, pixel))
         local labelHeight = twoRow and math.max(pixel, height - pad * 2 - fillHeight - pixel) or height - pad * 2
         d.labelSize = math.max(6, math.min(nativeSize * (obj.enlarged and 1.1 or 1), twoRow and labelHeight * 0.9 or height * 0.55))
@@ -178,7 +180,7 @@ local function HUD(C)
         local available = math.max(pixel, width - contentX - contentRight)
         local timerSpace = math.min(available * 0.4, math.max(20, timerSize * 3.0))
         local trackX = contentX + (twoRow and gap or 0)
-        local trackRight = contentRight + (twoRow and timerSpace + gap * 2 or 0)
+        local trackRight = contentRight + ((twoRow or obj.enlarged) and timerSpace + gap * 2 or 0)
         local trackTop = twoRow and -height / 2 + pad + fillHeight or height / 2 - pad
         bar:ClearAllPoints()
         bar:SetPoint("TOPLEFT", frame, "LEFT", trackX, Snap(trackTop, pixel))

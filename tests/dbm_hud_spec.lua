@@ -54,7 +54,8 @@ local function object(kind, name, parent)
     end
     function o:GetHeight() return self.h end
     function o:GetTexture() return self.path end
-    function o:SetTexture(v) self.path = v end
+    function o:SetTexture(v) self.path = v; self.filePath = nil end
+    function o:GetTextureFilePath() return self.filePath or self.path end
     function o:SetBlendMode(v) self.blend = v end
     if gradientMode == 'modern' then
         function o:SetGradient(direction, bottom, top) self.gradient = {direction, bottom, top} end
@@ -68,6 +69,11 @@ local function object(kind, name, parent)
     function o:GetAlpha() return self.alpha end
     function o:GetNumMaskTextures() return self.masked and 1 or 0 end
     function o:SetTexCoord(...) self.crop = {...} end
+    function o:GetTexCoord()
+        if self.privateCoords then return table.unpack(self.privateCoords) end
+        local c = self.crop or {0,1,0,1}
+        return c[1],c[3],c[1],c[4],c[2],c[3],c[2],c[4]
+    end
     function o:SetShown(v) self.shown = v end
     function o:IsShown() return self.shown end
     function o:IsVisible() return self.shown end
@@ -208,14 +214,17 @@ _G[f.name .. 'BarIJIcons2']:Hide(); first:SetIcon(136116)
 assert(b:GetWidth() == stripWidth and label.points[2][4] == labelRight and timer.points[1][4] == timerRight, 'small row reserved hidden mechanics')
 assert(f.points[1][2] == nativeAnchor and f.points[1][4] == 27 and f.points[1][5] == -60, 'skin moved native stack row')
 _G[f.name .. 'BarIJIcons2']:SetShown(true)
-local tint, endpoint
+local tint, endpoint, trackEnd
 for _, t in ipairs(b.regions) do
-    if t.sublevel == 2 then tint = t elseif t.sublevel == 3 then endpoint = t end
+    if t.sublevel == 2 then tint = t elseif t.sublevel == 3 then endpoint = t elseif t.sublevel == 4 then trackEnd = t end
     assert(not t.gradient and not t.gradientAlpha, 'matte bars must not create gradient overlays')
 end
 assert(tint and tint.layer == 'ARTWORK' and tint.all == b.fill and tint.fillColor[4] == 0.2)
 assert(endpoint and endpoint.points[1][2] == b.fill and endpoint.points[2][2] == b.fill and endpoint.w == 1)
 assert(endpoint.fillColor[4] == 0.55, 'fill endpoint should remain visible without a glow')
+assert(trackEnd and trackEnd.points[1][2] == b and trackEnd.points[2][2] == b and trackEnd.w == 1, 'fixed track end must follow full track, not current fill')
+assert(trackEnd.fillColor[1] < endpoint.fillColor[1], 'fixed and moving markers must be visually distinct')
+
 local trackEdges = 0
 for _, region in ipairs(b.regions) do
     if region.sublevel == -1 then
@@ -243,6 +252,7 @@ assert(first:SetIcon(999) == 'native-icon' and spellIcon.path == 999)
 assert(b.h == 5, 'repeated paint cumulatively resized strip')
 first.enlarged = true; first:ApplyStyle()
 assert(b.h == 24 and spellIcon.h == 24 and timer.size == 11, 'huge row must follow native configured height')
+assert(tint.fillColor[1] == 0.08 and tint.fillColor[4] == 0.4 and b.fill.color[1] == 0.9, 'huge fill tint must darken without changing native category colors')
 assert(label.points[1][5] == 0 and timer.points[1][5] == 0 and label.h == b.h, 'huge text/countdown must share one centerline')
 assert(label.points[1][4] >= b.points[1][4] and label.points[2][4] == b.points[2][4], 'huge name must overlay the fill with its own padding')
 assert(b.points[2][4] < timer.points[1][4] - timer.w, 'huge fill must stop before the right-hand countdown')
@@ -267,6 +277,64 @@ assert(symbol.h == 11 and _G[f.name .. 'BarIJIcons3'].points[1][5] < symbol.poin
 for i = 1, 4 do _G[f.name .. 'BarIJIcons' .. (i == 1 and '' or i)]:SetShown(i == 3) end
 first:SetIcon(999)
 assert(_G[f.name .. 'BarIJIcons3'].h == 17 and _G[f.name .. 'BarIJIcons3'].points[1][5] == 0)
+-- Recognize the actual native texture/crop, independent of timer names or colors.
+DBM_COMMON_L = {
+    DAMAGE_ICON = '|TInterface\\Journal\\sheet.blp:20:20:0:0:256:64:32:64:0:32|t',
+    INTERRUPT_ICON = '|TInterface\\Journal\\sheet.blp:20:20:0:0:256:64:96:128:0:32|t',
+}
+local mechanic = _G[f.name .. 'BarIJIcons3']
+local nativeColor = {0.7,0.8,0.9,0.65}
+mechanic:SetTexture('Interface\\Journal\\sheet.blp'); mechanic:SetTexCoord(32/256,64/256,0,32/64)
+mechanic:SetVertexColor(table.unpack(nativeColor)); first:SetIcon(999)
+local glyphAtlas = 'Interface\\AddOns\\EUIAddonSkins\\Media\\DBMMechanics.tga'
+assert(mechanic.path == glyphAtlas and mechanic.crop[1] == 1/8 and mechanic.color[1] == 0.92, 'damage glyph not replaced with monochrome sword')
+local glyphObjects, glyphHooks = created, hooks
+for _ = 1, 10 do first:ApplyStyle() end
+assert(mechanic.path == glyphAtlas and created == glyphObjects and hooks == glyphHooks, 'warm glyph styling must reuse native texture')
+-- Modern texture identity can be a file ID; prefer the public file-path accessor.
+mechanic:SetTexture(12345); mechanic.filePath = 'Interface/Journal/sheet.blp'
+mechanic:SetTexCoord(96/256,128/256,0,32/64); first:SetIcon(999)
+assert(mechanic.path == glyphAtlas and mechanic.crop[1] == 3/8, 'modern interrupt crop not recognized')
+mechanic:SetTexture('custom-unknown'); mechanic:SetTexCoord(0,1,0,1); first:SetIcon(999)
+assert(mechanic.path == 'custom-unknown' and mechanic.crop[2] == 1 and mechanic.color[1] == nativeColor[1], 'unknown symbol or native tint was overwritten')
+-- Empty configured/shown slots must not reserve room or invent a symbol.
+for i = 1, 4 do _G[f.name .. 'BarIJIcons' .. (i == 1 and '' or i)]:SetShown(i == 3) end
+first:SetIcon(999)
+local occupiedWidth = b:GetWidth()
+mechanic:SetTexture(nil); first:SetIcon(999)
+assert(b:GetWidth() > occupiedWidth and mechanic.path == nil, 'empty configured slots reserve blank space')
+mechanic:SetTexture('Interface\\Journal\\sheet.blp'); mechanic:SetTexCoord(32/256,64/256,0,32/64)
+mechanic.masked = true; first:SetIcon(999)
+assert(mechanic.path ~= glyphAtlas, 'masked mechanic artwork changed')
+mechanic.masked = nil
+local privateCoord = {}
+issecretvalue = function(v) return v == privateCoord end
+mechanic.privateCoords = {privateCoord,0,0,0.5,0.25,0,0.25,0.5}
+first:SetIcon(999); assert(mechanic.path ~= glyphAtlas, 'secret coordinates inspected')
+mechanic.privateCoords, issecretvalue = nil, nil
+-- Numeric-only paths without an accessor safely retain the original symbol.
+local nativePathGetter = mechanic.GetTextureFilePath
+mechanic.GetTextureFilePath = nil; mechanic:SetTexture(34567)
+first:SetIcon(999); assert(mechanic.path == 34567)
+mechanic.GetTextureFilePath = nativePathGetter
+-- Every original atlas cell maps only from its matching native mechanic tag.
+local fields = {'TANK_ICON','DAMAGE_ICON','HEALER_ICON','INTERRUPT_ICON','IMPORTANT_ICON','MAGIC_ICON','BLEED_ICON','DEADLY_ICON'}
+DBM_COMMON_L = {}
+for i, field in ipairs(fields) do
+    DBM_COMMON_L[field] = string.format('|TInterface\\Journal\\all.blp:20:20:0:0:256:32:%d:%d:0:32|t',(i-1)*32,i*32)
+end
+for i = 1, 8 do
+    mechanic:SetTexture('Interface\\Journal\\all.blp'); mechanic:SetTexCoord((i-1)/8,i/8,0,1)
+    first:SetIcon(999)
+    assert(mechanic.path == glyphAtlas and mechanic.crop[1] == (i-1)/8 and mechanic.crop[2] == i/8, 'wrong glyph for native mechanic '..i)
+end
+local nativeCoords = mechanic.GetTexCoord
+mechanic.GetTexCoord = function() return 0,1/8,0,1 end
+mechanic:SetTexture('Interface\\Journal\\all.blp'); first:SetIcon(999)
+assert(mechanic.path == glyphAtlas and mechanic.crop[1] == 0, 'four-coordinate compatibility failed')
+mechanic.GetTexCoord = nativeCoords
+mechanic:SetTexture('role-3'); mechanic:SetTexCoord(0,1,0,1)
+first:SetIcon(999)
 -- Native enlargement width changes remain bounded by opposing fill anchors.
 local beforeWidth = b:GetWidth()
 f:SetSize(230, 28); b:SetWidth(230)
@@ -296,6 +364,7 @@ assert(rightIcon.shown and rightIcon.points[1][1] == 'RIGHT' and rightIcon.point
 assert(b.points[2][4] < -rightIcon.w and label.points[2][4] < timer.points[1][4] - timer.w, 'right spell icon overlaps content')
 DBT.Options.IconRight = false; first.enlarged = false; first:ApplyStyle()
 assert(symbol.alpha == 0 and b.h == 5 and panel.points[1][4] == 0)
+assert(tint.fillColor[1] == 0.14 and tint.fillColor[4] == 0.2, 'small fill styling changed')
 assert(label.size == 9 and label.h == 10 and label.points[1][5] == 3 and b:GetWidth() == 137, 'small layout changed after huge transition')
 local smallHeight, smallWidth, smallY, smallFont = b.h, b:GetWidth(), label.points[1][5], label.size
 for _ = 1, 10 do
@@ -464,6 +533,7 @@ EllesmereUIDB.blizzWinAccentBar.enabled = false
 for _, fn in ipairs(looks) do fn() end; flush()
 for i = 2, 5 do assert(not f.regions[i].shown, 'small timer accent outline remained visible') end
 assert(not f.children[#f.children - 1].regions[1].shown and panel.shown and b.fill.shown)
+assert(trackEnd.shown and endpoint.shown, 'neutral progress markers should not depend on accent visibility')
 first.enlarged = true; first:ApplyStyle()
 for i = 2, 5 do assert(not f.regions[i].shown, 'huge timer accent outline remained visible') end
 assert(not f.children[#f.children - 1].regions[1].shown)
@@ -493,5 +563,5 @@ local skipped = DBT:CreateBar(20, 'disabled'); assert(_G[skipped.frame.name .. '
 assert(#errors == 0, table.concat(errors, '\n'))
 DBM, DBT, C_Secrets, DebuffTypeColor, AuraUtil = nil, nil, nil, nil, nil
 DBMWarning1, DBMSpecialWarning1, issecretvalue = nil, nil, nil
-CreateColor = nil
+CreateColor, DBM_COMMON_L = nil, nil
 print('PASS: DBM HUD late/core-only load, timer lifecycle/native colors/actions, reuse, no countdown work, aura previews, restricted guards, theme/combat/toggles')

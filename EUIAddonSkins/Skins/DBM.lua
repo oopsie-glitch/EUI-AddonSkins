@@ -102,6 +102,61 @@ local function HUD(C)
         end
     end
     local function Snap(value, pixel) return math.floor(value / pixel + 0.5) * pixel end
+    local GLYPHS = "Interface\\AddOns\\EUIAddonSkins\\Media\\DBMMechanics.tga"
+    local glyphNames = {"TANK_ICON", "DAMAGE_ICON", "HEALER_ICON", "INTERRUPT_ICON", "IMPORTANT_ICON", "MAGIC_ICON", "BLEED_ICON", "DEADLY_ICON"}
+    local glyphSource, glyphKeys
+    local function GlyphKey(path, left, right, top, bottom)
+        if (issecretvalue and (issecretvalue(path) or issecretvalue(left) or issecretvalue(right) or issecretvalue(top) or issecretvalue(bottom))) then return end
+        if type(path) ~= "string" or type(left) ~= "number" or type(right) ~= "number" or type(top) ~= "number" or type(bottom) ~= "number" then return end
+        path = path:lower():gsub("/", "\\"):gsub("%.blp$", ""):gsub("%.tga$", "")
+        return path .. ":" .. math.floor(left * 4096 + 0.5) .. ":" .. math.floor(right * 4096 + 0.5) .. ":" .. math.floor(top * 4096 + 0.5) .. ":" .. math.floor(bottom * 4096 + 0.5)
+    end
+    local function MechanicGlyph(icon, d)
+        if not H.Texture(icon) or not Allowed(icon) or not icon.GetTexCoord then return end
+        if icon.GetNumMaskTextures and icon:GetNumMaskTextures() > 0 then return end
+        local path = icon.GetTextureFilePath and icon:GetTextureFilePath() or icon:GetTexture()
+        if (issecretvalue and issecretvalue(path)) or path == nil then return end
+        local ownPath = type(path) == "string" and path:lower():gsub("/", "\\"):gsub("%.tga$", "")
+        if ownPath == GLYPHS:lower():gsub("%.tga$", "") then return end
+        local source = _G.DBM_COMMON_L
+        if type(source) ~= "table" then return end
+        if source ~= glyphSource then
+            glyphSource, glyphKeys = source, {}
+            for index, field in ipairs(glyphNames) do
+                local tag = source[field]
+                if type(tag) == "string" and not (issecretvalue and issecretvalue(tag)) then
+                    local p, w, h, l, r, t, b = tag:match("|T([^:|]+):%d+:%d+:[^|]-:(%d+):(%d+):(%d+):(%d+):(%d+):(%d+)|t")
+                    w, h = tonumber(w), tonumber(h)
+                    if p and w and h and w > 0 and h > 0 then
+                        glyphKeys[GlyphKey(p, tonumber(l) / w, tonumber(r) / w, tonumber(t) / h, tonumber(b) / h)] = index
+                    end
+                end
+            end
+        end
+        local ulX, ulY, llX, llY, urX, urY, lrX, lrY = icon:GetTexCoord()
+        if issecretvalue and (issecretvalue(ulX) or issecretvalue(ulY) or issecretvalue(llX) or issecretvalue(llY) or issecretvalue(urX) or issecretvalue(urY) or issecretvalue(lrX) or issecretvalue(lrY)) then return end
+        local key
+        if urX ~= nil then
+            -- WoW returns eight corner coordinates; older mocks/clients may
+            -- expose four. Leave rotated/skewed custom artwork untouched.
+            if llX == ulX and urY == ulY and lrX == urX and lrY == llY then key = GlyphKey(path, ulX, urX, ulY, llY) end
+        else key = GlyphKey(path, ulX, ulY, llX, llY) end
+        local index = key and glyphKeys[key]
+        d.mechanicGlyphs = d.mechanicGlyphs or {}
+        local old = d.mechanicGlyphs[icon]
+        if index then
+            if not old then
+                local r, g, b, alpha = icon:GetVertexColor()
+                if issecretvalue and (issecretvalue(r) or issecretvalue(g) or issecretvalue(b) or issecretvalue(alpha)) then return end
+                d.mechanicGlyphs[icon] = {r, g, b, alpha}
+            end
+            icon:SetTexture(GLYPHS)
+            icon:SetTexCoord((index - 1) / 8, index / 8, 0, 1)
+            icon:SetVertexColor(0.92, 0.94, 0.96, 1)
+        elseif old then
+            icon:SetVertexColor(old[1], old[2], old[3], old[4]); d.mechanicGlyphs[icon] = nil
+        end
+    end
     local function BarLayout(obj, bar, d, name)
         local frame, options = obj.frame, _G.DBT and _G.DBT.Options or {}
         local prefix = obj.enlarged and "Huge" or ""
@@ -136,7 +191,7 @@ local function HUD(C)
             if H.Texture(icon) then
                 if d.mechanicAlpha[icon] == nil then d.mechanicAlpha[icon] = icon:GetAlpha() end
                 icon:SetAlpha(obj.enlarged and d.mechanicAlpha[icon] or 0)
-                if obj.enlarged and icon:IsShown() then count = count + 1 end
+                if obj.enlarged and icon:IsShown() and icon:GetTexture() ~= nil then count = count + 1 end
             end
         end
         local columns, rows = count > 1 and 2 or 1, count > 2 and 2 or 1
@@ -145,11 +200,12 @@ local function HUD(C)
         local slot = 0
         for i = 1, 4 do
             local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
-            if H.Texture(icon) and obj.enlarged and icon:IsShown() then
+            if H.Texture(icon) and obj.enlarged and icon:IsShown() and icon:GetTexture() ~= nil then
                 local column, row = slot % columns, math.floor(slot / columns)
                 icon:SetSize(symbolSize, symbolSize); icon:ClearAllPoints()
                 icon:SetPoint("CENTER", frame, "RIGHT", -pad - rightSpace - mechanicSpace / 2 + (column - (columns - 1) / 2) * (symbolSize + pixel),
                     ((rows - 1) / 2 - row) * (symbolSize + pixel))
+                MechanicGlyph(icon, d)
                 slot = slot + 1
             end
         end
@@ -291,13 +347,19 @@ local function HUD(C)
             if H.Texture(fill) then
                 if not d.tint then d.tint = bar:CreateTexture(nil, "ARTWORK", nil, 2) end
                 d.tint:SetAllPoints(fill)
-                d.tint:SetColorTexture(0.14, 0.14, 0.14, 0.2)
+                d.tint:SetColorTexture(obj.enlarged and 0.08 or 0.14, obj.enlarged and 0.08 or 0.14, obj.enlarged and 0.08 or 0.14, obj.enlarged and 0.4 or 0.2)
                 if not d.endpoint then d.endpoint = bar:CreateTexture(nil, "ARTWORK", nil, 3) end
                 d.endpoint:ClearAllPoints()
                 d.endpoint:SetPoint("TOPRIGHT", fill, "TOPRIGHT")
                 d.endpoint:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT")
                 d.endpoint:SetWidth(d.borderPixel)
                 d.endpoint:SetColorTexture(0.6, 0.62, 0.64, 0.55)
+                if not d.trackEnd then d.trackEnd = bar:CreateTexture(nil, "ARTWORK", nil, 4) end
+                d.trackEnd:ClearAllPoints()
+                d.trackEnd:SetPoint("TOPRIGHT", bar, "TOPRIGHT")
+                d.trackEnd:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
+                d.trackEnd:SetWidth(d.borderPixel)
+                d.trackEnd:SetColorTexture(0.42, 0.44, 0.46, 0.55)
             end
         end)
         active = false

@@ -103,128 +103,33 @@ local function HUD(C)
         end
     end
     local function Snap(value, pixel) return math.floor(value / pixel + 0.5) * pixel end
-    local function ConceptLayout(obj, bar, d, name)
+    local function BarLayout(obj, bar, d, name)
         local frame, options = obj.frame, _G.DBT and _G.DBT.Options or {}
-        local width, height = frame:GetWidth(), options.HugeHeight or frame:GetHeight()
+        local prefix = obj.enlarged and "Huge" or ""
+        local width = frame:GetWidth()
+        local height = math.max(8, options[prefix .. "Height"] or frame:GetHeight())
         local scale = frame.GetEffectiveScale and frame:GetEffectiveScale() or 1
         local factor = PixelUtil and PixelUtil.GetPixelToUIUnitFactor and PixelUtil.GetPixelToUIUnitFactor()
         if not factor and GetPhysicalScreenSize then
             local _, physicalHeight = GetPhysicalScreenSize()
             if physicalHeight and physicalHeight > 0 then factor = 768 / physicalHeight end
         end
-        factor = factor or 1
-        local pixel = factor / math.max(scale, 0.01)
-        local top = height / 2
-        -- The 754x88 specification is a coordinate system, not an installation
-        -- size. Only the row contents change; the native hit/stack frame stays.
-        local count = 0
-        for i = 1, 4 do
-            local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
-            if H.Texture(icon) and icon:IsShown() then count = count + 1 end
-        end
-        -- Reclaim the mechanic compartment only when no indicator is shown.
-        local reclaimed = count == 0 and 77 or 0
-        local contentX = Snap(width * 110 / 754, pixel)
-        local trackRight = Snap(width * (754 - 533 - reclaimed) / 754, pixel)
-        bar:ClearAllPoints()
-        bar:SetPoint("TOPLEFT", frame, "LEFT", contentX, Snap(top - height * 53 / 88, pixel))
-        bar:SetPoint("TOPRIGHT", frame, "RIGHT", -trackRight, Snap(top - height * 53 / 88, pixel))
-        bar:SetHeight(math.max(pixel, Snap(height * 22 / 88, pixel)))
-        local iconSize = math.max(pixel, Snap(math.min(width * 73 / 754, height * 69 / 88), pixel))
-        for i = 1, 2 do
-            local icon = _G[name .. "BarIcon" .. i]
-            if H.Texture(icon) then
-                icon:ClearAllPoints(); icon:SetSize(iconSize, iconSize)
-                local center = i == 1 and width * 51.5 / 754 or width * 714.5 / 754
-                icon:SetPoint("CENTER", frame, "LEFT", Snap(center, pixel), Snap(top - height * 43.5 / 88, pixel))
-            end
-        end
-        Panel(frame, d)
-        d.panel:ClearAllPoints()
-        d.panel:SetPoint("TOPLEFT", frame, "LEFT", 0, Snap(top, pixel))
-        d.panel:SetPoint("BOTTOMRIGHT", frame, "RIGHT", 0, Snap(-top, pixel))
-        d.panel:SetColorTexture(11 / 255, 16 / 255, 20 / 255, 0.875)
-        local r, g, b = ns.AccentBarColor(S)
-        for i, edge in ipairs(d.edges) do
-            if i <= 2 then edge:SetHeight(pixel) else edge:SetWidth(pixel) end
-            edge:SetColorTexture(r, g, b, i == 1 and 0.8 or 0.45)
-            edge:SetShown(ns.AccentBarShown())
-        end
-        d.borderPixel = pixel
-        d.mechanicAlpha = d.mechanicAlpha or {}
-        local columns, rows = count > 1 and 2 or 1, count > 2 and 2 or 1
-        local symbolSize = math.min(height * 33 / 88, width * 65 / 754 / columns)
-        symbolSize = math.max(pixel, Snap(symbolSize, pixel))
-        local centerX = width * 714.5 / 754
-        local slot = 0
-        for i = 1, 4 do
-            local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
-            if H.Texture(icon) then
-                if d.mechanicAlpha[icon] == nil then d.mechanicAlpha[icon] = icon:GetAlpha() end
-                icon:SetAlpha(d.mechanicAlpha[icon]); icon:SetSize(symbolSize, symbolSize)
-                local column, row = slot % columns, math.floor(slot / columns)
-                if icon:IsShown() then slot = slot + 1 end
-                icon:ClearAllPoints()
-                icon:SetPoint("CENTER", frame, "LEFT", Snap(centerX + (column - (columns - 1) / 2) * (symbolSize + pixel), pixel),
-                    Snap(((rows - 1) / 2 - row) * (symbolSize + pixel), pixel))
-            end
-        end
-        if not d.separator then d.separator = frame:CreateTexture(nil, "BORDER") end
-        d.separator:ClearAllPoints()
-        d.separator:SetPoint("TOPLEFT", frame, "LEFT", Snap(width * 677 / 754, pixel), Snap(top - height * 6 / 88, pixel))
-        d.separator:SetPoint("BOTTOMLEFT", frame, "LEFT", Snap(width * 677 / 754, pixel), Snap(-top + height * 6 / 88, pixel))
-        d.separator:SetWidth(pixel); d.separator:SetColorTexture(0.12, 0.14, 0.16, 0.55)
-        d.separator:SetShown(count > 0)
-        local label, timer = _G[name .. "BarName"], _G[name .. "BarTimer"]
-        local path, flags = S.GetFont()
-        local x, y = options.HugeTextXOffset or 0, options.HugeTextYOffset or 0
-        local baseFont = _G.DBT and _G.DBT.DefaultOptions and _G.DBT.DefaultOptions.FontSize or 10
-        local fontScale = (options.FontSize or baseFont) / math.max(baseFont, 1)
-        d.labelSize = math.max(6, height * 23 / 88 * fontScale)
-        if Allowed(label) then
-            label:SetFont(path, d.labelSize, flags or ""); label:ClearAllPoints()
-            label:SetPoint("TOPLEFT", frame, "LEFT", contentX + x, Snap(top - height * 10 / 88, pixel) + y)
-            label:SetPoint("TOPRIGHT", frame, "RIGHT", -Snap(width * (754 - 565 - reclaimed) / 754, pixel) + x, Snap(top - height * 10 / 88, pixel) + y)
-            -- A fixed upper text band centers both plain lines and taller inline icons.
-            label:SetHeight(math.max(pixel, Snap(height * 34 / 88, pixel)))
-            if label.SetJustifyV then label:SetJustifyV("MIDDLE") end
-            if label.SetWordWrap then label:SetWordWrap(false) end
-            if label.SetNonSpaceWrap then label:SetNonSpaceWrap(false) end
-            Shadow(label)
-        end
-        if Allowed(timer) then
-            timer:SetFont(path, math.max(8, height * 34 / 88 * fontScale), flags or "")
-            timer:ClearAllPoints(); timer:SetWidth(Snap(width * 95 / 754, pixel))
-            timer:SetPoint("RIGHT", frame, "RIGHT", -Snap(width * (754 - 661 - reclaimed) / 754, pixel) + x, y)
-            if timer.SetJustifyH then timer:SetJustifyH("RIGHT") end
-            Shadow(timer)
-        end
-    end
-    local function BarLayout(obj, bar, d, name)
-        local options = _G.DBT and _G.DBT.Options or {}
-        if obj.enlarged and (options.HugeHeight or obj.frame:GetHeight()) >= 18
-            and obj.frame:GetWidth() >= 150 and not options.IconRight then
-            ConceptLayout(obj, bar, d, name); return
-        end
-        d.borderPixel = 1
-        if d.separator then d.separator:Hide() end
-        local prefix = obj.enlarged and "Huge" or ""
-        local height = options[prefix .. "Height"] or obj.frame:GetHeight()
-        local rowHeight = math.max(8, height - 2)
-        local compact = rowHeight < 16 or obj.frame:GetWidth() < 150
-        local iconSize = math.max(4, rowHeight - 4)
+        local pixel = (factor or 1) / math.max(scale, 0.01)
+        local pad = math.max(pixel, Snap(2, pixel))
+        local gap = math.max(pixel, Snap(3, pixel))
+        local iconSize = math.max(pixel, Snap(math.min(height - pad * 2, width * 0.14), pixel))
         local left, right = _G[name .. "BarIcon1"], _G[name .. "BarIcon2"]
-        local leftSpace = H.Texture(left) and left:IsShown() and iconSize + 7 or 0
-        local rightSpace = H.Texture(right) and right:IsShown() and iconSize + 7 or 0
+        local leftSpace = H.Texture(left) and left:IsShown() and iconSize + gap or 0
+        local rightSpace = H.Texture(right) and right:IsShown() and iconSize + gap or 0
         for i = 1, 2 do
             local icon = i == 1 and left or right
             if H.Texture(icon) then
                 icon:SetSize(iconSize, iconSize); icon:ClearAllPoints()
-                icon:SetPoint(i == 1 and "RIGHT" or "LEFT", obj.frame, i == 1 and "LEFT" or "RIGHT", i == 1 and -3 or 3, 0)
+                icon:SetPoint(i == 1 and "LEFT" or "RIGHT", frame, i == 1 and "LEFT" or "RIGHT", i == 1 and pad or -pad, 0)
             end
         end
-        -- Keep native mechanic artwork, but display it only on enlarged rows.
-        -- Alpha preserves DBM's own shown/hidden states and stored settings.
+        -- Only Huge Bars display mechanic symbols. Reserve space for actual
+        -- symbols, so empty slots never leave a blank compartment.
         d.mechanicAlpha = d.mechanicAlpha or {}
         local count = 0
         for i = 1, 4 do
@@ -232,87 +137,66 @@ local function HUD(C)
             if H.Texture(icon) then
                 if d.mechanicAlpha[icon] == nil then d.mechanicAlpha[icon] = icon:GetAlpha() end
                 icon:SetAlpha(obj.enlarged and d.mechanicAlpha[icon] or 0)
-                if icon:IsShown() then count = count + 1 end
+                if obj.enlarged and icon:IsShown() then count = count + 1 end
             end
         end
-        local stacked = options.JournalIcons == 4
-        local symbolSize = math.min(16, rowHeight * (stacked and 0.36 or 0.62), obj.frame:GetWidth() / 12)
-        -- Compact fallback reserves space only for visible mechanic symbols.
-        local capacity = count
-        if not obj.enlarged then capacity = 0 end
-        local mechanicSpace = capacity > 0 and ((stacked and math.min(capacity, 2) or capacity) * (symbolSize + 1) + 2) or 0
+        local columns, rows = count > 1 and 2 or 1, count > 2 and 2 or 1
+        local symbolSize = math.max(pixel, Snap(math.min(height * (rows == 2 and 0.4 or 0.6), width * 0.1), pixel))
+        local mechanicSpace = count > 0 and columns * (symbolSize + pixel) + gap or 0
         local slot = 0
         for i = 1, 4 do
             local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
-            if H.Texture(icon) and icon:IsShown() then
-                local column = stacked and slot % 2 or slot
+            if H.Texture(icon) and obj.enlarged and icon:IsShown() then
+                local column, row = slot % columns, math.floor(slot / columns)
                 icon:SetSize(symbolSize, symbolSize); icon:ClearAllPoints()
-                if stacked then
-                    icon:SetPoint("TOPRIGHT", obj.frame, "RIGHT", -2 - column * (symbolSize + 1), rowHeight / 2 - 1 - math.floor(slot / 2) * (symbolSize + 1))
-                else
-                    icon:SetPoint("RIGHT", obj.frame, "RIGHT", -2 - column * (symbolSize + 1), 0)
-                end
+                icon:SetPoint("CENTER", frame, "RIGHT", -pad - rightSpace - mechanicSpace / 2 + (column - (columns - 1) / 2) * (symbolSize + pixel),
+                    ((rows - 1) / 2 - row) * (symbolSize + pixel))
                 slot = slot + 1
             end
         end
-        local label, timer = _G[name .. "BarName"], _G[name .. "BarTimer"]
-        local nativeSize
-        if Allowed(label) then local _, size = label:GetFont(); nativeSize = size end
-        if nativeSize and nativeSize ~= d.labelSize then d.nativeTextSize = nativeSize end
-        nativeSize = options.FontSize or d.nativeTextSize or 10
-        d.labelSize = math.max(8, math.min(nativeSize, rowHeight * 0.56))
-        local timerSize = math.min(rowHeight * 0.82, math.max(12, nativeSize * 1.25))
-        local timerSpace = math.max(30, timerSize * 3.1)
-        -- DBT permits rows as small as 100x10. Keep a readable single-line
-        -- fallback at those sizes rather than overlap a two-line panel.
-        if compact then
-            d.labelSize = math.max(6, math.min(nativeSize, rowHeight * 0.7, obj.frame:GetWidth() * 0.07))
-            timerSize = d.labelSize
-            timerSpace = math.max(22, timerSize * 3)
-        end
-        -- Both horizontal anchors constrain the native StatusBar during DBT's
-        -- AnimateEnlarge SetWidth calls; its parent remains the native stack row.
+        local contentX, contentRight = pad + leftSpace, pad + rightSpace + mechanicSpace
         bar:ClearAllPoints()
-        bar:SetPoint("BOTTOMLEFT", obj.frame, "LEFT", 4, -height / 2 + 3)
-        bar:SetPoint("BOTTOMRIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 3, -height / 2 + 3)
-        local stripHeight = compact and rowHeight - 2 or math.max(2, height * 0.25)
-        bar:SetHeight(stripHeight)
-        Panel(obj.frame, d)
+        bar:SetPoint("TOPLEFT", frame, "LEFT", contentX, Snap(height / 2 - pad, pixel))
+        bar:SetPoint("TOPRIGHT", frame, "RIGHT", -contentRight, Snap(height / 2 - pad, pixel))
+        bar:SetHeight(math.max(pixel, Snap(height - pad * 2, pixel)))
+        Panel(frame, d)
         d.panel:ClearAllPoints()
-        -- Center-relative offsets also support DBT's unlocked-icon mode, where
-        -- the native hit frame can retain a different height from the bar.
-        d.panel:SetPoint("TOPLEFT", obj.frame, "LEFT", -leftSpace, rowHeight / 2)
-        d.panel:SetPoint("BOTTOMRIGHT", obj.frame, "RIGHT", rightSpace, -rowHeight / 2)
-        d.panel:SetColorTexture(0.065, 0.07, 0.075, 0.78)
+        d.panel:SetPoint("TOPLEFT", frame, "LEFT", 0, Snap(height / 2, pixel))
+        d.panel:SetPoint("BOTTOMRIGHT", frame, "RIGHT", 0, Snap(-height / 2, pixel))
+        d.panel:SetColorTexture(11 / 255, 16 / 255, 20 / 255, 0.5)
+        d.borderPixel = pixel
         local r, g, b = ns.AccentBarColor(S)
         for i, edge in ipairs(d.edges) do
-            if i <= 2 then edge:SetHeight(1) else edge:SetWidth(1) end
-            edge:SetColorTexture(r, g, b, 0.5)
+            if i <= 2 then edge:SetHeight(pixel) else edge:SetWidth(pixel) end
+            edge:SetColorTexture(r, g, b, 0.35)
             edge:SetShown(ns.AccentBarShown())
         end
-        local x, y = options[prefix .. "TextXOffset"] or 0, options[prefix .. "TextYOffset"] or 0
+        local label, timer = _G[name .. "BarName"], _G[name .. "BarTimer"]
         local path, flags = S.GetFont()
+        local nativeSize = options.FontSize or 10
+        d.labelSize = math.max(6, math.min(nativeSize * (obj.enlarged and 1.1 or 1), height * 0.55))
+        local timerSize = math.max(6, math.min(nativeSize * (obj.enlarged and 1.2 or 1), height * 0.6))
+        -- Limit reservations at DBT's narrowest sizes; never resize its stack frame.
+        local available = math.max(pixel, width - contentX - contentRight)
+        local timerSpace = math.min(available * 0.4, math.max(22, timerSize * 3.2))
+        local x, y = options[prefix .. "TextXOffset"] or 0, options[prefix .. "TextYOffset"] or 0
         if Allowed(timer) then
-            timer:SetFont(path, timerSize, flags or "")
-            timer:SetWidth(0)
-            timer:ClearAllPoints(); timer:SetPoint("RIGHT", obj.frame, "RIGHT", -mechanicSpace - 6 + x, y)
+            timer:SetFont(path, timerSize, flags or ""); timer:SetWidth(timerSpace)
+            timer:SetHeight(height - pad * 2); timer:ClearAllPoints()
+            timer:SetPoint("RIGHT", frame, "RIGHT", -contentRight - gap + x, y)
+            if timer.SetJustifyH then timer:SetJustifyH("RIGHT") end
+            if timer.SetJustifyV then timer:SetJustifyV("MIDDLE") end
             Shadow(timer)
         end
-        if Allowed(label) and Allowed(timer) then
-            label:SetFont(path, d.labelSize, flags or "")
-            label:ClearAllPoints()
+        if Allowed(label) then
+            label:SetFont(path, d.labelSize, flags or ""); label:ClearAllPoints()
+            label:SetPoint("LEFT", frame, "LEFT", contentX + gap + x, y)
+            label:SetPoint("RIGHT", frame, "RIGHT", -contentRight - timerSpace - gap * 2 + x, y)
+            label:SetHeight(height - pad * 2)
+            if label.SetJustifyH then label:SetJustifyH("LEFT") end
             if label.SetJustifyV then label:SetJustifyV("MIDDLE") end
-            if compact then
-                label:SetHeight(rowHeight - 2)
-                label:SetPoint("LEFT", obj.frame, "LEFT", 4 + x, y)
-                label:SetPoint("RIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 3 + x, y)
-            else
-                local labelTop = rowHeight / 2 - 2
-                local labelBottom = -height / 2 + 3 + stripHeight + 2
-                label:SetHeight(math.max(1, labelTop - labelBottom))
-                label:SetPoint("TOPLEFT", obj.frame, "LEFT", 4 + x, labelTop + y)
-                label:SetPoint("TOPRIGHT", obj.frame, "RIGHT", -timerSpace - mechanicSpace - 3 + x, labelTop + y)
-            end
+            if label.SetWordWrap then label:SetWordWrap(false) end
+            if label.SetNonSpaceWrap then label:SetNonSpaceWrap(false) end
             Shadow(label)
         end
     end
@@ -338,7 +222,7 @@ local function HUD(C)
                 end
             end
             local bg = _G[name .. "BarBackground"]
-            if H.Texture(bg) then bg:SetColorTexture(0.16, 0.17, 0.18, 0.68) end
+            if H.Texture(bg) then bg:SetColorTexture(0.16, 0.17, 0.18, 0.12) end
             local spark = _G[name .. "BarSpark"]
             if H.Texture(spark) then H.Fade(spark) end
             for _, side in ipairs({"Top", "Bottom", "Left", "Right"}) do
@@ -348,7 +232,6 @@ local function HUD(C)
             Font(_G[name .. "BarName"]); Font(_G[name .. "BarTimer"])
             local d = bars[obj]
             BarLayout(obj, bar, d, name)
-            if obj.enlarged and H.Texture(bg) then bg:SetColorTexture(32 / 255, 38 / 255, 43 / 255, 0.9) end
             if not d.trackEdges then
                 d.trackEdges = {}
                 for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do

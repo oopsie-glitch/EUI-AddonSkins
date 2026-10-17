@@ -175,36 +175,31 @@ local f, b = first.frame, _G[first.frame.name .. 'Bar']
 local nativeAnchor = {}
 f:SetPoint('TOP', nativeAnchor, 'TOP', 27, -60)
 assert(b.fill.path == 'Interface\\Buttons\\WHITE8X8' and b.fill.color[1] == 0.9 and b.fill.color[4] == 0.75)
-assert(_G[f.name .. 'BarName'].font == 'eui' and math.abs(_G[f.name .. 'BarName'].size - 10.08) < 0.001)
+local label, timer = _G[f.name .. 'BarName'], _G[f.name .. 'BarTimer']
+assert(label.font == 'eui' and label.size == 10 and label.justifyV == 'MIDDLE')
 assert(_G[f.name .. 'BarSpark'].alpha == 0 and _G[f.name .. 'BarBorderTop'].alpha == 0)
 assert(_G[f.name .. 'BarIcon1'].crop and _G[f.name .. 'BarIcon1'].path == 136116)
 assert(f.children[#f.children - 1].regions[1].fillColor[1] == accent, 'spell icon edge should follow accent')
-assert(_G[f.name .. 'BarBackground'].fillColor[1] == 0.16 and _G[f.name .. 'BarBackground'].fillColor[4] == 0.68, 'unfilled track should be visible')
-assert(math.abs(b.h - 5) < 0.001 and f.h == 20 and DBT.Options.Height == 20, 'thin strip changed native frame/settings')
-assert(_G[f.name .. 'BarIcon1'].w == 14 and _G[f.name .. 'BarIcon1'].h == 14)
-assert(math.abs(_G[f.name .. 'BarIJIcons'].w - 11.16) < 0.001 and _G[f.name .. 'BarIJIcons'].path == 'role-1')
-assert(_G[f.name .. 'BarIJIcons2'].points[1][1] == 'RIGHT' and _G[f.name .. 'BarIJIcons2'].points[1][2] == f)
-assert(_G[f.name .. 'BarName'].points[1][1] == 'TOPLEFT' and _G[f.name .. 'BarName'].points[1][4] == 4)
-assert(_G[f.name .. 'BarTimer'].points[1][2] == f and _G[f.name .. 'BarTimer'].size > _G[f.name .. 'BarName'].size)
-assert(b:GetWidth() < f:GetWidth() and b:GetWidth() > 30, 'strip did not reserve space for timer/mechanics')
-local panel = f.regions[1]
-assert(panel.layer == 'BACKGROUND' and panel.fillColor[4] == 0.78 and panel.points[1][4] == -21, 'panel should be translucent and contain spell icon')
+assert(_G[f.name .. 'BarBackground'].fillColor[4] == 0.12, 'unfilled track must remain translucent')
+assert(b.h == 16 and f.h == 20 and DBT.Options.Height == 20, 'single-row fill changed native frame/settings')
+local panel, spellIcon = f.regions[1], _G[f.name .. 'BarIcon1']
+assert(spellIcon.w == 16 and spellIcon.h == 16 and spellIcon.points[1][1] == 'LEFT')
+assert(panel.fillColor[4] == 0.5 and panel.points[1][4] == 0 and panel.points[2][4] == 0, 'panel should stay inside native row')
 assert(#f.regions == 5, 'panel background and four accent edges missing')
-for i = 2, 5 do assert(f.regions[i].fillColor[1] == accent and f.regions[i].fillColor[4] == 0.5, 'panel needs full accent outline') end
-assert(f.regions[2].h == 1 and f.regions[4].w == 1, 'panel outline should be one pixel thick')
-local spellIcon = _G[f.name .. 'BarIcon1']
-local iconLeft = spellIcon.points[1][4] - spellIcon.w
-assert(iconLeft - panel.points[1][4] > f.regions[4].w, 'spell icon overlaps outer left border')
-assert((18 - spellIcon.h) / 2 > f.regions[2].h, 'spell icon overlaps top/bottom border')
-assert(_G[f.name .. 'BarTimer'].points[1][4] == -6, 'small countdown needs inner right padding')
-assert(_G[f.name .. 'BarIJIcons'].alpha == 0 and _G[f.name .. 'BarIcon1'].alpha == 1, 'small row should hide only mechanic symbols')
-local stripWidth, labelRight, timerRight = b:GetWidth(), _G[f.name .. 'BarName'].points[2][4], _G[f.name .. 'BarTimer'].points[1][4]
+for i = 2, 5 do assert(f.regions[i].fillColor[1] == accent and f.regions[i].fillColor[4] == 0.35, 'panel needs subdued full accent outline') end
+assert(f.regions[2].h == 1 and f.regions[4].w == 1)
+assert(spellIcon.points[1][4] > f.regions[4].w and (20 - spellIcon.h) / 2 > f.regions[2].h, 'spell icon overlaps panel border')
+assert(label.points[1][1] == 'LEFT' and label.points[1][5] == 0 and timer.points[1][5] == 0, 'text should share the fill centerline')
+assert(label.h == b.h and timer.h == b.h and label.wordWrap == false)
+assert(label.shadow[4] == 0.9 and timer.shadow[4] == 0.9)
+assert(label.points[2][4] < timer.points[1][4] - timer.w, 'name overlaps reserved countdown')
+assert(b:GetWidth() == 172 and timer.points[1][4] == -5, 'fill should extend beneath the countdown')
+assert(_G[f.name .. 'BarIJIcons'].alpha == 0 and spellIcon.alpha == 1, 'small row should hide only mechanic symbols')
+local stripWidth, labelRight, timerRight = b:GetWidth(), label.points[2][4], timer.points[1][4]
 _G[f.name .. 'BarIJIcons2']:Hide(); first:SetIcon(136116)
-assert(b:GetWidth() == stripWidth and _G[f.name .. 'BarName'].points[2][4] == labelRight and _G[f.name .. 'BarTimer'].points[1][4] == timerRight, 'missing mechanic icon shifted the strip/text')
-_G[f.name .. 'BarIJIcons']:Hide(); first:SetIcon(136116)
-assert(b:GetWidth() == stripWidth, 'empty mechanic group changed reserved width')
+assert(b:GetWidth() == stripWidth and label.points[2][4] == labelRight and timer.points[1][4] == timerRight, 'small row reserved hidden mechanics')
 assert(f.points[1][2] == nativeAnchor and f.points[1][4] == 27 and f.points[1][5] == -60, 'skin moved native stack row')
-_G[f.name .. 'BarIJIcons']:SetShown(true); _G[f.name .. 'BarIJIcons2']:SetShown(true)
+_G[f.name .. 'BarIJIcons2']:SetShown(true)
 local tint, gloss
 for _, t in ipairs(b.regions) do if t.sublevel == 2 then tint = t elseif t.sublevel == 3 then gloss = t end end
 assert(tint and tint.layer == 'ARTWORK' and tint.all == b.fill and tint.fillColor[4] == 0.1, 'fill tint should be lighter and below text')
@@ -232,106 +227,73 @@ for _ = 1, 1000 do f.scripts.OnUpdate() end
 assert(nativeUpdate == f.scripts.OnUpdate and created == oldCreated and hooks == oldHooks and fontWrites == oldFonts and childReads == oldReads)
 assert(first.duration < 20, 'native timer stopped')
 assert(first:ApplyStyle() == 'native-style' and b.fill.path == 'Interface\\Buttons\\WHITE8X8')
-assert(_G[f.name .. 'BarName'].font == 'eui' and math.abs(_G[f.name .. 'BarName'].size - 10.08) < 0.001)
-assert(first:SetIcon(999) == 'native-icon' and _G[f.name .. 'BarIcon1'].path == 999)
-assert(math.abs(b.h - 5) < 0.001, 'repeated paint cumulatively shrank strip')
+assert(label.font == 'eui' and label.size == 10)
+assert(first:SetIcon(999) == 'native-icon' and spellIcon.path == 999)
+assert(b.h == 16, 'repeated paint cumulatively resized row')
 first.enlarged = true; first:ApplyStyle()
-assert(b.h == 7 and _G[f.name .. 'BarIcon1'].h == 19, 'huge concept proportions did not follow native size')
-assert(_G[f.name .. 'BarIJIcons'].alpha == 1, 'enlargement did not restore mechanic symbols')
-local largeWidth, largeTimer = b:GetWidth(), _G[f.name .. 'BarTimer'].points[1][4]
+assert(b.h == 24 and spellIcon.h == 24 and timer.size == 12, 'huge row must follow native configured height')
+local symbol = _G[f.name .. 'BarIJIcons']
+assert(symbol.alpha == 1 and symbol.h == 17, 'huge mechanic icons should occupy about 60% of height')
+local twoWidth, twoTimer = b:GetWidth(), timer.points[1][4]
 _G[f.name .. 'BarIJIcons2']:Hide(); first:SetIcon(999)
-assert(b:GetWidth() == largeWidth and _G[f.name .. 'BarTimer'].points[1][4] == largeTimer, 'large timer alignment varies by icon count')
+assert(b:GetWidth() > twoWidth and timer.points[1][4] > twoTimer, 'single mechanic did not reclaim unused width')
+local singleWidth = b:GetWidth()
+symbol:Hide(); first:SetIcon(999)
+assert(b:GetWidth() > singleWidth and timer.points[1][4] == -5, 'empty indicators left unused space')
+symbol:SetShown(true); first:SetIcon(999)
+assert(b:GetWidth() == singleWidth, 'reappearing symbol did not restore its space')
 DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 2, 3
 first:ApplyStyle()
-assert(_G[f.name .. 'BarName'].points[1][4] == 30 and _G[f.name .. 'BarTimer'].points[1][5] == 3)
-DBT.Options.JournalIcons = 4
-local stacked = _G[f.name .. 'BarIJIcons']; stacked:ClearAllPoints(); stacked:SetPoint('BOTTOMRIGHT', _G[f.name .. 'BarIcon1'], 'BOTTOMLEFT', 0, 0)
-first:ApplyStyle(); assert(stacked.points[1][1] == 'CENTER' and stacked.w == 8, 'four-symbol compartment not compact')
-assert(_G[f.name .. 'BarIJIcons3'].points[1][5] < stacked.points[1][5], 'four symbols should use two rows')
--- AnimateEnlarge updates the native frame and calls SetWidth on the strip.
--- Opposing anchors keep the strip inside its allocated body region.
+assert(label.points[1][4] == 34 and label.points[1][5] == 3 and timer.points[1][5] == 3, 'native text offsets lost')
+DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 0, 0
+DBT.Options.JournalIcons = 4; first:ApplyStyle()
+assert(symbol.h == 11 and _G[f.name .. 'BarIJIcons3'].points[1][5] < symbol.points[1][5], 'four-symbol grid must fit inside row')
+-- Sparse slots use a full-size centered symbol, not a four-slot size limit.
+for i = 1, 4 do _G[f.name .. 'BarIJIcons' .. (i == 1 and '' or i)]:SetShown(i == 3) end
+first:SetIcon(999)
+assert(_G[f.name .. 'BarIJIcons3'].h == 17 and _G[f.name .. 'BarIJIcons3'].points[1][5] == 0)
+-- Native enlargement width changes remain bounded by opposing fill anchors.
 local beforeWidth = b:GetWidth()
 f:SetSize(230, 28); b:SetWidth(230)
 assert(b:GetWidth() == beforeWidth + 35 and b:GetWidth() < f:GetWidth())
 f:SetSize(195, 20)
--- Exact concept coordinate system, including font ratios and optional symbols.
-DBT.Options.HugeHeight, DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 88, 0, 0
-f:SetSize(754, 88); first:ApplyStyle()
-local conceptLabel, conceptTimer = _G[f.name .. 'BarName'], _G[f.name .. 'BarTimer']
-assert(b:GetWidth() == 423 and b.h == 22 and b.points[1][4] == 110 and b.points[1][5] == -9)
-assert(conceptLabel.size == 23 and conceptTimer.size == 34 and conceptLabel.points[1][4] == 110 and conceptLabel.points[1][5] == 34)
-assert(conceptLabel.wordWrap == false and conceptTimer.w == 95 and conceptTimer.justifyH == 'RIGHT')
-assert(conceptTimer.points[1][4] == -93 and panel.points[1][4] == 0 and panel.points[2][4] == 0)
-assert(spellIcon.w == spellIcon.h and spellIcon.w == 69 and spellIcon.points[1][4] == 52)
-assert(f.regions[6].shown and f.regions[6].points[1][4] == 677, 'mechanic compartment separator missing')
-DBT.Options.HugeHeight = 66; f:SetSize(565.5, 66); first:ApplyStyle()
-assert(math.abs(b:GetWidth() - 317.25) <= 1 and b.h == 17 and conceptLabel.size == 17.25 and conceptTimer.size == 25.5)
--- A single visible mechanic uses its full size even with four slots configured.
-DBT.Options.JournalIcons = 4; first:ApplyStyle()
-local symbol = _G[f.name .. 'BarIJIcons3']
-for i = 1, 4 do _G[f.name .. 'BarIJIcons' .. (i == 1 and '' or i)]:SetShown(i == 3) end
-local fixedWidth, fixedTimer = b:GetWidth(), conceptTimer.points[1][4]
-first:SetIcon(999)
-assert(symbol.w == 25 and symbol.points[1][4] == 536, 'single mechanic should fill its centered compartment')
-assert(b:GetWidth() == fixedWidth and conceptTimer.points[1][4] == fixedTimer, 'symbol count moved progress/countdown')
-for i = 1, 4 do _G[f.name .. 'BarIJIcons' .. (i == 1 and '' or i)]:Hide() end
-first:SetIcon(999)
-assert(b:GetWidth() > fixedWidth and conceptTimer.points[1][4] > fixedTimer and not f.regions[6].shown, 'hidden indicators left an empty compartment')
-assert(conceptLabel.points[2][4] > -142, 'name did not reclaim empty compartment')
-symbol:SetShown(true)
-first:SetIcon(999)
-assert(b:GetWidth() == fixedWidth and conceptTimer.points[1][4] == fixedTimer and f.regions[6].shown, 'new indicator did not restore its compartment')
-DBT.Options.JournalIcons = 2; first:ApplyStyle()
-assert(symbol.w < 25, 'multiple symbols must fit without overlap')
--- Text bands center mixed-height inline artwork without changing native text.
-conceptLabel:SetText('|Twarning:20:20|t Custom User Bar')
-first:ApplyStyle()
-assert(conceptLabel.justifyV == 'MIDDLE' and conceptLabel.h == 26)
-assert(conceptLabel.text == '|Twarning:20:20|t Custom User Bar')
-DBT.Options.HugeHeight = 132; f:SetSize(565.5, 132); first:ApplyStyle()
-assert(b.h == 33 and conceptLabel.h == 51, 'huge strip/text band must scale with configured height')
-DBT.Options.HugeHeight = 66; f:SetSize(565.5, 66); first:ApplyStyle()
--- Effective scale/pixel factor affect snapping and one-physical-pixel edges,
--- rather than treating screenshot pixels as fixed WoW UI coordinates.
+-- A single row preserves inline text and uses the actual configured dimensions.
+label:SetText('|Twarning:20:20|t Custom User Bar')
+DBT.Options.HugeHeight = 40; first:ApplyStyle()
+assert(b.h == 36 and label.h == 36 and spellIcon.h == 27, 'row/icon geometry must scale without overflowing narrow rows')
+assert(label.text == '|Twarning:20:20|t Custom User Bar' and label.justifyV == 'MIDDLE')
+f:SetSize(400, 40); first:ApplyStyle()
+assert(spellIcon.h == 36 and _G[f.name .. 'BarIJIcons'].h == 16)
+DBT.Options.JournalIcons = 1; first:ApplyStyle()
+assert(symbol.h == 24, 'single mechanic must follow height rather than old concept width compartment')
 PixelUtil = {GetPixelToUIUnitFactor = function() return 0.75 end}; f.scale = 1.5
 first:ApplyStyle()
 assert(f.regions[2].h == 0.5 and f.regions[4].w == 0.5 and f.children[#f.children - 1].regions[1].h == 0.5)
 assert(b.points[1][4] * 2 == math.floor(b.points[1][4] * 2))
 PixelUtil = nil; GetPhysicalScreenSize = function() return 1820, 1024 end
-first:ApplyStyle(); assert(f.regions[2].h == 0.5, 'physical-screen fallback lost pixel conversion')
+first:ApplyStyle(); assert(f.regions[2].h == 0.5)
 GetPhysicalScreenSize = nil; f.scale = 1
-DBT.Options.JournalIcons = 0; first:ApplyStyle()
-assert(not f.regions[6].shown and conceptTimer.points[1][4] == -12, 'empty mechanic compartment should move the countdown right')
-assert(math.abs(b:GetWidth() - 375) <= 1, 'empty mechanic compartment should widen the strip')
-DBT.Options.JournalIcons, DBT.Options.HugeHeight = 2, 28
+DBT.Options.HugeHeight, DBT.Options.JournalIcons = 28, 2
 f:SetSize(195, 20)
 DBT.Options.IconRight = true; first:ApplyStyle()
-assert(not f.regions[6].shown and conceptTimer.w == 0 and _G[f.name .. 'BarIcon2'].shown, 'second-spell-icon mode needs compact fallback')
-DBT.Options.IconRight, DBT.Options.HugeHeight = false, 10; first:ApplyStyle()
-assert(not f.regions[6].shown and conceptLabel.points[1][1] == 'LEFT', 'short huge rows need compact fallback')
-DBT.Options.HugeHeight = 28
-DBT.Options.JournalIcons = 2; first.enlarged = false; first:ApplyStyle()
-assert(_G[f.name .. 'BarIJIcons'].alpha == 0 and b:GetWidth() > largeWidth, 'small row should reclaim mechanic space')
-DBT.Options.IconLeft, DBT.Options.IconRight = false, true
-first:ApplyStyle()
-assert(not _G[f.name .. 'BarIcon1'].shown and _G[f.name .. 'BarIcon2'].shown)
-assert(panel.points[1][4] == 0 and panel.points[2][4] == 21, 'panel did not follow native icon visibility')
-DBT.Options.IconLeft, DBT.Options.IconRight = true, false
+local rightIcon = _G[f.name .. 'BarIcon2']
+assert(rightIcon.shown and rightIcon.points[1][1] == 'RIGHT' and rightIcon.points[1][4] == -2)
+assert(b.points[2][4] < -rightIcon.w and label.points[2][4] < timer.points[1][4] - timer.w, 'right spell icon overlaps content')
+DBT.Options.IconRight = false; first.enlarged = false; first:ApplyStyle()
+assert(symbol.alpha == 0 and b.h == 16 and panel.points[1][4] == 0)
+DBT.Options.IconLeft = false; first:ApplyStyle()
+assert(b.points[1][4] == 2 and not spellIcon.shown, 'absent spell icon left blank space')
+DBT.Options.IconLeft = true
 DBT.Options.Height = 10; f:SetSize(100, 10); first:ApplyStyle()
-assert(b:GetWidth() > 20 and _G[f.name .. 'BarName'].points[1][1] == 'LEFT', 'smallest native row needs compact fallback')
+assert(b:GetWidth() > 20 and b.h == 6 and label.size == 6 and label.points[2][4] < timer.points[1][4] - timer.w, 'smallest row must remain usable')
 DBT.Options.Height = 20; f:SetSize(195, 20); first:ApplyStyle()
-assert(_G[f.name .. 'BarName'].points[1][1] == 'TOPLEFT' and panel.points[1][4] == -21)
 DBT.Options.IconLocked, DBT.Options.Height = false, 30
 first:ApplyStyle()
-assert(f.h == 20 and panel.points[1][5] == 14 and panel.points[2][5] == -14, 'unlocked native hit frame changed or panel height lost')
-DBT.Options.IconLocked, DBT.Options.Height = true, 20; first:ApplyStyle()
--- Small bars also scale their strip vertically, with no six-unit ceiling.
-DBT.Options.Height = 40; f:SetSize(195, 40); first:ApplyStyle()
-local smallLabel = _G[f.name .. 'BarName']
-assert(b.h == 10 and smallLabel.justifyV == 'MIDDLE' and smallLabel.h == 22)
-assert(smallLabel.points[1][5] == 17 and smallLabel.points[1][5] - smallLabel.h > b.points[1][5] + b.h)
-DBT.Options.Height = 60; f:SetSize(195, 60); first:ApplyStyle()
-assert(b.h == 15, 'small progress height was capped')
+assert(f.h == 20 and panel.points[1][5] == 15 and panel.points[2][5] == -15, 'unlocked hit frame/settings changed')
+DBT.Options.IconLocked, DBT.Options.Height = true, 40; first:ApplyStyle()
+assert(b.h == 36 and label.h == 36 and label.points[1][5] == 0, 'single row did not follow configured height')
+DBT.Options.Height = 60; first:ApplyStyle()
+assert(b.h == 56)
 DBT.Options.Height = 20; f:SetSize(195, 20); first:ApplyStyle()
 -- Native color updates remain authoritative; the same tint tracks the fill.
 b.fill:SetVertexColor(0.1, 0.3, 0.9, 0.75)

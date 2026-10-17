@@ -136,6 +136,7 @@ local function object(kind, name, parent)
     function o:EnableMouse(v) self.mouse = v end
     function o:RegisterEvent(e) self.events[e] = true end
     function o:SetScript(k, fn) self.scripts[k] = fn end
+    function o:GetScript(k) return self.scripts[k] end
     function o:HookScript(k, fn) local old = self.scripts[k]; self.scripts[k] = function(...) if old then old(...) end; fn(...) end end
     function o:GetChildren() childReads = childReads + 1; return table.unpack(self.children) end
     function o:GetRegions() return table.unpack(self.regions) end
@@ -1262,7 +1263,16 @@ do
         if kind ~= 'info' then f.text = f.header end
         f.lines = {}
         f.scripts.OnShow = function() f.nativeShown = true end
-        f.scripts.OnDragStart = function() f.nativeDragged = true end
+        f.scripts.OnDragStart = function()
+            f.nativeDragged = true
+            if not f.locked then f:StartMoving() end
+        end
+        f.scripts.OnDragStop = function(self)
+            assert(self == f, 'native drag stop received the backdrop instead of DBM frame')
+            f:StopMovingOrSizing(); f.savedNativePoint = {f:GetPoint(1)}
+            f.nativeStops = (f.nativeStops or 0) + 1
+        end
+        f.originalDragStart = f.scripts.OnDragStart
         f.scripts.OnMouseDown = function(_, button) f.nativeMenu = button end
         local getRegions = f.GetRegions
         f.GetRegions = function(self) regionWalks = regionWalks + 1; return getRegions(self) end
@@ -1313,11 +1323,49 @@ do
     for _,f in ipairs({radar,info,range}) do
         assert(f.header.font == 'eui' and f.header.points[1][1] == 'TOPLEFT' and f.header.points[1][4] == 8 and f.header.points[1][5] == -8)
         assert(f.points[1][4] == 40 and f.points[1][5] == -20 and f:GetWidth() == (f == radar and 128 or 170), 'auxiliary skin changed native geometry')
-        assert(f.children[1].panelStyled and f.children[1].mouse == false and f.children[1].level < f:GetFrameLevel())
+        assert(f.children[1].panelStyled and f.children[1].mouse == true and f.children[1].level < f:GetFrameLevel())
         assert(f.children[1].points[1][5] >= f.header:GetHeight()+16 and f.children[1].regions[1].fillColor[1] == 0.055, 'matte panel does not contain native header')
         assert(not f.backdrop and owners[f])
         f.scripts.OnDragStart(); f.scripts.OnMouseDown(f,'RightButton')
         assert(f.nativeDragged and f.nativeMenu == 'RightButton', 'native drag/menu action overwritten')
+    end
+    -- The expanded background is interactive without replacing native scripts.
+    for _,f in ipairs({range,radar,info}) do
+        local layer, nativeStart = f.children[1], f.originalDragStart
+        assert(layer.dragButtons[1] == 'LeftButton' and f:GetScript('OnDragStart') == nativeStart)
+        f:StopMovingOrSizing(); f.locked = true
+        layer.scripts.OnDragStart(layer,'LeftButton'); assert(not f.moving, 'backdrop bypassed native movement lock')
+        layer.scripts.OnDragStop(layer,'LeftButton')
+        f.locked = false
+        layer.scripts.OnDragStart(layer,'LeftButton'); assert(f.moving, 'visible margin did not move DBM owner')
+        layer.scripts.OnDragStop(layer,'LeftButton')
+        assert(not f.moving and f.savedNativePoint[4] == 40 and f.savedNativePoint[5] == -20)
+        layer.scripts.OnMouseDown(layer,'RightButton'); assert(f.nativeMenu == 'RightButton')
+        local oldMouse = f:GetScript('OnMouseDown')
+        f:SetScript('OnMouseDown',function(owner,button) assert(owner == f); f.replacedMenu = button end)
+        layer.scripts.OnMouseDown(layer,'RightButton'); assert(f.replacedMenu == 'RightButton', 'backdrop cached an obsolete menu handler')
+        f:SetScript('OnMouseDown',oldMouse)
+        local objectsBefore,hooksBefore,walksBefore = created,hooks,iteratorCalls
+        for i=1,20 do layer.scripts.OnDragStart(layer,'LeftButton'); layer.scripts.OnDragStop(layer,'LeftButton') end
+        assert(created == objectsBefore and hooks == hooksBefore and iteratorCalls == walksBefore, 'input forwarded through skin refresh/allocations')
+        layer.scripts.OnDragStart(layer,'LeftButton'); assert(f.moving)
+        layer:Hide(); layer.scripts.OnHide(layer); assert(not f.moving, 'hiding backdrop left native owner moving')
+        f.nativeMenu = nil; layer.scripts.OnMouseDown(layer,'RightButton'); assert(f.nativeMenu == nil)
+        layer:Show()
+        layer.scripts.OnDragStart(layer,'LeftButton'); assert(f.moving)
+        enabled = false; layer.scripts.OnHide(layer)
+        assert(not f.moving, 'disabling during a drag skipped native stop/save')
+        enabled = true
+        combat = true
+        layer.scripts.OnDragStart(layer,'LeftButton'); assert(f.moving, 'native in-combat movement was blocked')
+        layer.scripts.OnDragStop(layer,'LeftButton'); combat = false
+        enabled = false
+        layer.scripts.OnDragStart(layer,'LeftButton'); assert(not f.moving)
+        layer.scripts.OnMouseDown(layer,'RightButton'); assert(f.nativeMenu == nil)
+        enabled = true; f.protected = true
+        layer.scripts.OnDragStart(layer,'LeftButton'); assert(not f.moving, 'protected owner was moved')
+        layer.scripts.OnMouseDown(layer,'RightButton'); assert(f.nativeMenu == nil)
+        f.protected = false
     end
     assert(radar.background.alpha == 0 and radar.circle.color[2] == 1 and radar.dot.path == 'native-player-dot')
     assert(radar.header.text == 'Range: 10 · Players: 1' and radar.children[1].points[2][5] == -8, 'radar heading/empty footer spacing not corrected')
@@ -1409,7 +1457,7 @@ do
     ns.BindPopupOwner = nil
     DBM.RangeCheck,DBM.InfoFrame = nil,nil
     DBMRangeCheck,DBMRangeCheckRadar,DBMInfoFrame = nil,nil,nil
-    print('PASS: range/radar/info matte panels, title/footer/legacy-row spacing, localized headings, native warnings/art restoration, independent opacity extremes/reset/combat and warm reuse')
+    print('PASS: range/radar/info styling and opacity; expanded-hit-area native drag/menu forwarding, locks, stop/save, disable/hide/combat/protected guards and warm reuse')
 end
 -- Disabled skins can save preferences without repainting anything.
 enabled = false

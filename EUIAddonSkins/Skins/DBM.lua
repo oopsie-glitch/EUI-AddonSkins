@@ -1291,6 +1291,36 @@ local function HUD(C)
             if region:GetObjectType() == "FontString" then AuxFont(region, d) end
         end
     end
+    local function AuxMouse(f, layer, d)
+        if not f.GetScript then return end
+        -- The backdrop extends beyond DBM's original hit rectangle. Let those
+        -- margins forward input to the native owner; the higher-level native
+        -- frame still handles its original body and any controls normally.
+        layer:EnableMouse(true)
+        layer:RegisterForDrag("LeftButton")
+        local function Forward(script, ...)
+            if not d.styled or not ns.IsEnabled(C.module) or not Allowed(f) or not layer:IsShown() then return end
+            local handler = f:GetScript(script)
+            if handler then return handler(f, ...) end
+        end
+        local function StopDrag(...)
+            if not d.dragging then return end
+            d.dragging = nil
+            if not Allowed(f) then return end
+            local handler = f:GetScript("OnDragStop")
+            if handler then return handler(f, ...) end
+            if f.StopMovingOrSizing then f:StopMovingOrSizing() end
+        end
+        layer:SetScript("OnMouseDown", function(_, ...) return Forward("OnMouseDown", ...) end)
+        layer:SetScript("OnMouseUp", function(_, ...) return Forward("OnMouseUp", ...) end)
+        layer:SetScript("OnDragStart", function(_, ...)
+            if not d.styled or not ns.IsEnabled(C.module) or not Allowed(f) or not layer:IsShown() then return end
+            if f:GetScript("OnDragStart") then d.dragging = true; return Forward("OnDragStart", ...) end
+        end)
+        layer:SetScript("OnDragStop", function(_, ...) return StopDrag(...) end)
+        -- Closing/disabling during a drag must still run native stop/save logic.
+        layer:SetScript("OnHide", function() StopDrag() end)
+    end
     local function PaintAux(f, kind, force)
         if not Allowed(f) or not AuxEnabled() or not S.Panel then return end
         local d = auxiliary[f]
@@ -1303,6 +1333,7 @@ local function HUD(C)
             -- atlas/gradient beneath our independently controlled matte fill.
             S.Panel(layer, {noBg = true, noBorder = true})
             d.layer = layer
+            AuxMouse(f, layer, d)
             d.fill = layer:CreateTexture(nil, "BACKGROUND", nil, 7); d.fill:SetAllPoints(layer)
             if d.fill.SetIgnoreParentAlpha then d.fill:SetIgnoreParentAlpha(true) end
             d.edges = {}

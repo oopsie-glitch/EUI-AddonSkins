@@ -85,6 +85,11 @@ local function object(kind, name, parent)
     function o:SetVertexColor(...) self.color = {...} end
     function o:SetAlpha(v) self.alpha = v; self.alphaWrites = (self.alphaWrites or 0) + 1 end
     function o:GetAlpha() return self.alpha end
+    function o:SetIgnoreParentAlpha(value) self.ignoreParentAlpha = value end
+    function o:GetEffectiveAlpha()
+        if self.ignoreParentAlpha or not self.parent then return self.alpha end
+        return self.alpha * self.parent:GetEffectiveAlpha()
+    end
     function o:GetNumMaskTextures() return self.masked and 1 or 0 end
     function o:SetTexCoord(...) self.crop = {...} end
     function o:GetTexCoord()
@@ -345,7 +350,7 @@ local nativeColor = {0.7,0.8,0.9,0.65}
 mechanic:SetTexture('Interface\\Journal\\sheet.blp'); mechanic:SetTexCoord(32/256,64/256,0,32/64)
 mechanic:SetVertexColor(table.unpack(nativeColor)); first:SetIcon(999)
 local glyphAtlas = 'Interface\\AddOns\\EUIAddonSkins\\Media\\DBMMechanics.tga'
-assert(mechanic.path == glyphAtlas and mechanic.crop[1] == 1/8 and mechanic.color[1] == 0.92, 'damage glyph not replaced with monochrome sword')
+assert(mechanic.path == glyphAtlas and mechanic.crop[1] == 1/8 and mechanic.color[1] == accent, 'damage glyph not replaced with monochrome sword')
 local glyphObjects, glyphHooks = created, hooks
 for _ = 1, 10 do first:ApplyStyle() end
 assert(mechanic.path == glyphAtlas and created == glyphObjects and hooks == glyphHooks, 'warm glyph styling must reuse native texture')
@@ -810,13 +815,13 @@ for key,value in pairs(dbtOptions) do assert(DBT.Options[key] == value) end
 assert(DBT.DefaultOptions == nativeDefaults and nativeDefaults.saved and EUIAddonSkinsDB.extraSettings.keep)
 -- End-user side controls: independent styling, native restoration and warm reuse.
 do
-    local smallTab, hugeTab = sideControl('Small Bars'), sideControl('Huge Bars')
+    local smallTab, hugeTab = sideControl('Small Bars'), sideControl('Big Bars')
     local style = sideControl('Apply EUI styling')
     local border = sideControl('Accent border (follows EUI visibility)')
-    local glyphs = sideControl('EUI mechanic icons (outside Huge Bars)')
+    local glyphs = sideControl('EUI mechanic icons (outside Big Bars)')
     local reset = sideControl('Reset EUI styling')
     local opacity
-    for _, child in ipairs(sidePanel.children) do if child.kind == 'Slider' then opacity = child end end
+    for _, child in ipairs(sidePanel.children) do if child.kind == 'Slider' and child.minValue == 0 then opacity = child end end
     local function checked(control, value) control:SetChecked(value); control.scripts.OnClick(control) end
     smallTab.scripts.OnClick()
     assert(style.checkboxStyled and style.checked and not glyphs:IsShown())
@@ -926,7 +931,7 @@ do
 end
 -- Regression coverage for the three alpha.25 audit findings.
 do
-    local small, huge = sideControl('Small Bars'), sideControl('Huge Bars')
+    local small, huge = sideControl('Small Bars'), sideControl('Big Bars')
     local style = sideControl('Apply EUI styling')
     local reset = sideControl('Reset EUI styling')
     local function checked(control,value) control:SetChecked(value); control.scripts.OnClick(control) end
@@ -981,7 +986,7 @@ do
     progress.scripts.OnClick()
     dropdowns.smallLayout.selectValue('fill')
     local opacity
-    for _, control in ipairs(sidePanel.children) do if control.kind == 'Slider' then opacity = control end end
+    for _, control in ipairs(sidePanel.children) do if control.kind == 'Slider' and control.minValue == 0 then opacity = control end end
     opacity:SetValue(25); flush()
     first:SetIcon(456); first:ApplyStyle()
     assert(b.h == 5 and panel.fillColor[4] == 0.65 and tint.fillColor[4] == 0.2, 'pending layout/opacity/colour leaked through callbacks')
@@ -1063,8 +1068,8 @@ do
     DBT:CreateBar(10,'retail-native-tags')
     local mechanic, spell = _G[obj.frame.name .. 'BarIJIcons'], _G[obj.frame.name .. 'BarIcon1']
     assert(mechanic.path == glyphAtlas and mechanic.crop[1] == 0, 'first bar discovery lost native semantic tag with numeric textures')
-    sideControl('Huge Bars').scripts.OnClick()
-    local artwork = sideControl('EUI mechanic icons (outside Huge Bars)')
+    sideControl('Big Bars').scripts.OnClick()
+    local artwork = sideControl('EUI mechanic icons (outside Big Bars)')
     local function useEUI(value) artwork:SetChecked(value); artwork.scripts.OnClick(artwork) end
     local baseObjects,baseHooks = created,hooks
     for i,field in ipairs(fields) do
@@ -1085,6 +1090,88 @@ do
     GetFileIDFromPath, C_AddOns, DBM_COMMON_L = oldFileID, oldAddOns, oldCommon
     sideControl('Small Bars').scripts.OnClick()
     print('PASS: full-width track/countdown geometry, flush Small icons, no end ticks, external mechanic toggles and numeric-only Retail semantic tags')
+end
+-- Mechanic-size/colour controls, final background opacity, and top-right access.
+do
+    local smallTab,bigTab = sideControl('Small Bars'),sideControl('Big Bars')
+    local scale,opacity
+    for _,control in ipairs(sidePanel.children) do
+        if control.kind == 'Slider' then if control.minValue == 50 then scale = control else opacity = control end end
+    end
+    local accentBox = sideControl('Use EUI accent colour')
+    local customButton = sideControl('Custom mechanic colour')
+    local glyphs = sideControl('EUI mechanic icons (outside Big Bars)')
+    local reset = sideControl('Reset EUI styling')
+    local function checked(c,v) c:SetChecked(v); c.scripts.OnClick(c) end
+    assert(sideButton.points[1][3] == 'TOPRIGHT' and sideButton.points[1][4] == 8 and sideButton.points[1][5] == 0, 'styling button is not at DBM top-right')
+    reset.scripts.OnClick(); smallTab.scripts.OnClick()
+    local nativeAlpha = f.alpha
+    f:SetAlpha(0.3)
+    opacity:SetValue(100); flush()
+    assert(panel.ignoreParentAlpha and panel.fillColor[4] * panel:GetEffectiveAlpha() == 1, '100% background still inherits DBT row transparency')
+    assert(b.fill:GetEffectiveAlpha() == 0.3 and f.alpha == 0.3, 'background fix changed native row/fill opacity')
+    opacity:SetValue(0); flush(); assert(panel.fillColor[4] == 0)
+    f:SetAlpha(nativeAlpha)
+    assert(not scale:IsShown() and not accentBox:IsShown() and sidePanel.h == 438)
+    bigTab.scripts.OnClick()
+    assert(scale:IsShown() and accentBox:IsShown() and sidePanel.h == 580 and scale.minValue == 50 and scale.maxValue == 250)
+    local obj = bar('mechanic-options'); obj.enlarged = true
+    local common = DBM_COMMON_L
+    DBM_COMMON_L = {TANK_ICON = '|Tmechanic-options-sheet:20:20:0:0:64:64:0:32:0:32|t'}
+    obj.inlineIcon = DBM_COMMON_L.TANK_ICON
+    obj:SetIcon(777,nil,obj.inlineIcon); DBT:CreateBar(10,'mechanic-options')
+    local icon,spell = _G[obj.frame.name .. 'BarIJIcons'],_G[obj.frame.name .. 'BarIcon1']
+    local iconSize,spellSize = icon.w,spell.w
+    local nativeBar = _G[obj.frame.name .. 'Bar']
+    local trackEnd = nativeBar.points[2][4]
+    assert(accentBox.checked and icon.color[1] == accent, 'mechanics do not default to EUI accent')
+    local previousWalks = iteratorCalls
+    for i = 105,200,5 do scale:SetValue(i) end
+    assert(iteratorCalls == previousWalks, 'mechanic slider did not coalesce refreshes')
+    flush(); assert(iteratorCalls == previousWalks + 1 and icon.w == iconSize * 2 and spell.w == spellSize and nativeBar.points[2][4] == trackEnd)
+    local previousPicker = ColorPickerFrame
+    local picker = {rgb = {0.2,0.4,0.6}}
+    function picker:SetupColorPickerAndShow(info) self.info = info end
+    function picker:GetColorRGB() return table.unpack(self.rgb) end
+    ColorPickerFrame = picker
+    checked(accentBox,false)
+    assert(customButton.enabled)
+    customButton.scripts.OnClick()
+    picker.info.swatchFunc(); flush()
+    assert(icon.color[1] == 0.2 and icon.color[2] == 0.4 and icon.color[3] == 0.6 and spell.path == 777)
+    picker.info.cancelFunc(); flush(); assert(icon.color[1] == 1 and icon.color[2] == 1, 'colour cancel did not restore previous value')
+    customButton.scripts.OnClick(); picker.info.swatchFunc(); flush()
+    checked(accentBox,true)
+    local previousAccent = accent
+    accent = 0.42; for _,fn in ipairs(looks) do fn() end; flush()
+    assert(icon.color[1] == 0.42, 'cached glyph ignored theme-accent changes')
+    local previousEUI = EllesmereUIDB
+    EllesmereUIDB = {blizzWinAccentBar = {useCustom = true, enabled = false, color = {r = 0.14,g = 0.28,b = 0.56}}}
+    for _,fn in ipairs(looks) do fn() end; flush()
+    assert(icon.color[1] == 0.14 and icon.color[2] == 0.28 and icon.color[3] == 0.56, 'mechanic accent ignored Blizzard Skins+ custom colour')
+    assert(not obj.frame.regions[2]:IsShown(), 'mechanic colour bypassed accent border visibility')
+    checked(accentBox,false); assert(icon.color[1] == 0.2)
+    combat = true; event('PLAYER_REGEN_DISABLED')
+    scale:SetValue(150); picker.rgb = {0.7,0.3,0.1}; picker.info.swatchFunc(); flush()
+    obj:SetIcon(777,nil,obj.inlineIcon)
+    assert(icon.w == iconSize * 2 and icon.color[1] == 0.2, 'combat callbacks leaked pending icon settings')
+    combat = false; event('PLAYER_REGEN_ENABLED')
+    assert(icon.w == 25, 'post-combat 150% mechanic size not applied at native 28-unit row height')
+    assert(icon.color[1] == 0.7 and icon.color[2] == 0.3, 'post-combat custom colour not applied')
+    checked(glyphs,false)
+    assert(not accentBox.enabled and not customButton.enabled and scale.enabled, 'native artwork control states incorrect')
+    assert(icon.path == 'mechanic-options-sheet' and icon.color[1] == 1, 'native mechanic colour was not restored')
+    checked(glyphs,true)
+    reset.scripts.OnClick()
+    local savedR = EUIAddonSkinsDB.dbm.hugeIconR
+    picker.info.swatchFunc(); flush()
+    assert(EUIAddonSkinsDB.dbm.hugeIconR == savedR and EUIAddonSkinsDB.dbm.hugeIconScale == 1 and EUIAddonSkinsDB.dbm.hugeIconAccent, 'reset allowed stale colour callback or lost defaults')
+    ColorPickerFrame = nil; checked(accentBox,false); assert(not customButton.enabled, 'missing picker API was not handled')
+    ColorPickerFrame = previousPicker
+    EllesmereUIDB,accent,DBM_COMMON_L = previousEUI,previousAccent,common
+    reset.scripts.OnClick(); smallTab.scripts.OnClick()
+    for key,value in pairs(DBT.Options) do assert(dbtOptions[key] == value, 'new controls changed DBM profile '..key) end
+    print('PASS: mechanic scale, accent/custom/cancel colours, theme/combat/reset/missing-picker guards, independent opaque background and top-right Big Bars UI')
 end
 -- Disabled skins can save preferences without repainting anything.
 enabled = false

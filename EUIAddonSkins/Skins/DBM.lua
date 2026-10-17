@@ -13,7 +13,8 @@ local function HUD(C)
     local active, pending = false, false
     local defaults = {smallEnabled = true, hugeEnabled = true, smallLayout = "strip", hugeLayout = "fill",
         smallOpacity = 0.65, hugeOpacity = 0.65, smallColour = "category", hugeColour = "category",
-        smallBorder = true, hugeBorder = true, hugeGlyphs = true}
+        smallBorder = true, hugeBorder = true, hugeGlyphs = true,
+        hugeIconScale = 1, hugeIconAccent = true, hugeIconR = 1, hugeIconG = 1, hugeIconB = 1}
     local normalized
     local function Settings()
         EUIAddonSkinsDB = EUIAddonSkinsDB or {}
@@ -26,6 +27,7 @@ local function HUD(C)
             local valid = type(current) == type(value)
             if key:match("Layout$") then valid = current == "strip" or current == "fill"
             elseif key:match("Colour$") then valid = current == "category" or current == "accent"
+            elseif key == "hugeIconScale" then valid = valid and current == current and current >= 0.5 and current <= 2.5
             elseif type(value) == "number" then valid = valid and current == current and current >= 0 and current <= 1 end
             if not valid then settings[key] = value end
         end
@@ -235,6 +237,9 @@ local function HUD(C)
     local function Panel(parent, d)
         if d.panel then return end
         d.panel = parent:CreateTexture(nil, "BACKGROUND")
+        -- The background slider owns its final opacity. DBT's row alpha still
+        -- applies to native text/fill/icons; visibility continues to inherit.
+        if d.panel.SetIgnoreParentAlpha then d.panel:SetIgnoreParentAlpha(true) end
         d.edges = {}
         for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
             local edge = parent:CreateTexture(nil, "BORDER")
@@ -362,12 +367,16 @@ local function HUD(C)
                 old.nativeTexture, old.nativeCrop = rawPath, {icon:GetTexCoord()}
             end
             local target, left, right = GlyphTexture(index)
-            if styled and target == old.path then return end
-            old.index, old.path = index, target
-            icon:SetTexture(target)
-            old.texture = icon:GetTexture()
-            icon:SetTexCoord(left, right, 0, 1)
-            icon:SetVertexColor(0.92, 0.94, 0.96, 1)
+            if not styled or target ~= old.path then
+                old.index, old.path = index, target
+                icon:SetTexture(target)
+                old.texture = icon:GetTexture()
+                icon:SetTexCoord(left, right, 0, 1)
+            end
+            local settings = AppliedSettings()
+            local r, g, b = settings.hugeIconR, settings.hugeIconG, settings.hugeIconB
+            if settings.hugeIconAccent then r, g, b = ns.AccentBarColor(S) end
+            icon:SetVertexColor(r, g, b, 1)
         elseif old then
             icon:SetVertexColor(old[1], old[2], old[3], old[4]); d.mechanicGlyphs[icon] = nil
         end
@@ -411,7 +420,7 @@ local function HUD(C)
             end
         end
         local columns, rows = count > 1 and 2 or 1, count > 2 and 2 or 1
-        local symbolSize = math.max(pixel, Snap(math.min(height * (rows == 2 and 0.4 or 0.6), width * 0.1), pixel))
+        local symbolSize = math.max(pixel, Snap(math.min(height * (rows == 2 and 0.4 or 0.6), width * 0.1) * AppliedSettings().hugeIconScale, pixel))
         local slot = 0
         for i = 1, 4 do
             local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
@@ -820,6 +829,15 @@ local function HUD(C)
         state.border:SetChecked(db[prefix .. "Border"])
         state.glyphs:SetChecked(db.hugeGlyphs)
         state.glyphs:SetShown(prefix == "huge")
+        state.iconScale:SetValue(db.hugeIconScale * 100)
+        state.iconScaleText:SetText("Mechanic icon size: " .. math.floor(db.hugeIconScale * 100 + 0.5) .. "%")
+        state.iconAccent:SetChecked(db.hugeIconAccent)
+        for _, control in ipairs({state.iconScale, state.iconScaleText, state.iconAccent, state.iconCustom}) do control:SetShown(prefix == "huge") end
+        state.iconSwatch:SetColorTexture(db.hugeIconR, db.hugeIconG, db.hugeIconB, 1)
+        state.frame:SetHeight(prefix == "huge" and 580 or 438)
+        state.preview:ClearAllPoints(); state.preview:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 14, prefix == "huge" and -439 or -310)
+        state.reset:ClearAllPoints(); state.reset:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 169, prefix == "huge" and -439 or -310)
+        state.notice:ClearAllPoints(); state.notice:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 14, prefix == "huge" and -483 or -348)
         state.layout:SetText("Layout: " .. (db[prefix .. "Layout"] == "strip" and "Name above progress" or "Name over progress"))
         state.colour:SetText("Progress: " .. (db[prefix .. "Colour"] == "accent" and "EUI accent colour" or "DBM category colours"))
         state.opacity:SetValue(db[prefix .. "Opacity"] * 100)
@@ -828,6 +846,11 @@ local function HUD(C)
         for _, control in ipairs({state.layout, state.colour, state.opacity, state.border, state.glyphs}) do control:SetEnabled(available) end
         state.enabled:SetEnabled(ns.IsEnabled(C.module))
         state.reset:SetEnabled(ns.IsEnabled(C.module))
+        state.iconScale:SetEnabled(available)
+        state.iconAccent:SetEnabled(available and db.hugeGlyphs)
+        local picker = _G.ColorPickerFrame
+        state.iconCustom:SetEnabled(available and db.hugeGlyphs and not db.hugeIconAccent and picker ~= nil
+            and type(picker.SetupColorPickerAndShow) == "function" and type(picker.GetColorRGB) == "function")
         local r, g, b = ns.AccentBarColor(S)
         for key, button in pairs(state.tabs) do
             local label = button:GetFontString()
@@ -873,7 +896,7 @@ local function HUD(C)
                 button.Text:ClearAllPoints(); button.Text:SetPoint("LEFT", button, "RIGHT", 4, 0)
                 button.Text:SetWidth(270); button.Text:SetJustifyH("LEFT"); button.Text:SetText(text)
                 button:SetScript("OnClick", function(self)
-                    ChangeSetting(key == "hugeGlyphs" and key or state.selected .. key, not not self:GetChecked())
+                    ChangeSetting(defaults[key] ~= nil and key or state.selected .. key, not not self:GetChecked())
                 end)
                 state.controls[#state.controls + 1] = {button, "Checkbox"}
                 return button
@@ -882,7 +905,7 @@ local function HUD(C)
             state.close = Button("X", 292, -8, 26, function() panel:Hide() end)
             state.tabs = {
                 small = Button("Small Bars", 14, -44, 147, function() state.selected = "small"; UpdateSide() end),
-                huge = Button("Huge Bars", 169, -44, 147, function() state.selected = "huge"; UpdateSide() end),
+                huge = Button("Big Bars", 169, -44, 147, function() state.selected = "huge"; UpdateSide() end),
             }
             state.enabled = Check("Apply EUI styling", "Enabled", -80)
             state.layout = Button("", 14, -116, 302, function()
@@ -906,12 +929,45 @@ local function HUD(C)
                 ChangeSetting(state.selected .. "Opacity", math.floor(math.max(0, math.min(100, value)) + 0.5) / 100, true)
             end)
             state.border = Check("Accent border (follows EUI visibility)", "Border", -239)
-            state.glyphs = Check("EUI mechanic icons (outside Huge Bars)", "hugeGlyphs", -271)
+            state.glyphs = Check("EUI mechanic icons (outside Big Bars)", "hugeGlyphs", -271)
+            state.iconScaleText = Text("", -309)
+            state.iconScale = CreateFrame("Slider", nil, panel)
+            state.iconScale:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -330); state.iconScale:SetSize(294, 18)
+            state.iconScale:EnableMouse(true); state.iconScale:SetOrientation("HORIZONTAL")
+            state.iconScale:SetMinMaxValues(50, 250); state.iconScale:SetValueStep(5)
+            if state.iconScale.SetObeyStepOnDrag then state.iconScale:SetObeyStepOnDrag(true) end
+            state.iconScale:SetThumbTexture(WHITE)
+            state.iconScale:SetScript("OnValueChanged", function(_, value)
+                if state.updating or not ns.IsEnabled(C.module) then return end
+                ChangeSetting("hugeIconScale", math.floor(math.max(50, math.min(250, value)) / 5 + 0.5) * 0.05, true)
+            end)
+            state.iconAccent = Check("Use EUI accent colour", "hugeIconAccent", -359)
+            state.iconCustom = Button("Custom mechanic colour", 14, -397, 302, function()
+                local picker, db = _G.ColorPickerFrame, Settings()
+                if not ns.IsEnabled(C.module) or db.hugeIconAccent or not db.hugeGlyphs or not db.hugeEnabled
+                    or not picker or type(picker.SetupColorPickerAndShow) ~= "function" or type(picker.GetColorRGB) ~= "function" then return end
+                local r, g, b = db.hugeIconR, db.hugeIconG, db.hugeIconB
+                local session = {}; state.colourSession = session
+                local function Save(red, green, blue)
+                    if state.colourSession ~= session or not ns.IsEnabled(C.module) then return end
+                    if type(red) ~= "number" or type(green) ~= "number" or type(blue) ~= "number" then return end
+                    db.hugeIconR, db.hugeIconG, db.hugeIconB = math.max(0, math.min(1, red)), math.max(0, math.min(1, green)), math.max(0, math.min(1, blue))
+                    H.Queue(state, RefreshBars); UpdateSide()
+                end
+                picker:SetupColorPickerAndShow({r = r, g = g, b = b, hasOpacity = false,
+                    swatchFunc = function() Save(picker:GetColorRGB()) end,
+                    cancelFunc = function() Save(r, g, b) end})
+            end)
+            local swatch = CreateFrame("Frame", nil, state.iconCustom)
+            swatch:SetSize(16, 12); swatch:SetPoint("RIGHT", state.iconCustom, "RIGHT", -8, 0); swatch:EnableMouse(false)
+            state.iconSwatch = swatch:CreateTexture(nil, "OVERLAY"); state.iconSwatch:SetAllPoints(swatch)
+
             state.preview = Button("Preview DBM bars", 14, -310, 147, RunPreview)
             state.preview:SetScript("OnShow", function() PreviewState(state) end)
             state.reset = Button("Reset EUI styling", 169, -310, 147, function()
                 if not ns.IsEnabled(C.module) then return end
                 local db = Settings()
+                state.colourSession = nil
                 for key, value in pairs(defaults) do db[key] = value end
                 RefreshBars(); UpdateSide(); SyncLayoutControls()
             end)
@@ -924,9 +980,11 @@ local function HUD(C)
         -- Style owned controls explicitly; the generic scanner never enters here.
         for _, entry in ipairs(state.controls) do Control(C, entry[1], entry[2]); Font(entry[1].Text or entry[1]:GetFontString()) end
         for _, label in ipairs(state.labels) do Font(label) end
-        H.LegacySlider(state.opacity)
-        local thumb = state.opacity:GetThumbTexture()
-        if thumb then thumb:SetSize(10, 14) end
+        for _, slider in ipairs({state.opacity, state.iconScale}) do
+            H.LegacySlider(slider)
+            local thumb = slider:GetThumbTexture()
+            if thumb then thumb:SetSize(10, 14) end
+        end
         UpdateSide()
     end
     local function PreviewButton()
@@ -936,7 +994,7 @@ local function HUD(C)
         if not state then
             local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
             button:SetSize(160, 26)
-            button:SetPoint("TOPLEFT", frame, "TOPRIGHT", 8, -76)
+            button:SetPoint("TOPLEFT", frame, "TOPRIGHT", 8, 0)
             button:SetText("EUI Bar Styling")
             button:SetScript("OnClick", OpenSide)
             state = {button = button}; C.dbmPreview = state
@@ -948,9 +1006,11 @@ local function HUD(C)
         if state.frame then
             for _, entry in ipairs(state.controls) do Control(C, entry[1], entry[2]); Font(entry[1].Text or entry[1]:GetFontString()) end
             for _, label in ipairs(state.labels) do Font(label) end
-            H.LegacySlider(state.opacity)
-            local thumb = state.opacity:GetThumbTexture()
-            if thumb then thumb:SetSize(10, 14) end
+            for _, slider in ipairs({state.opacity, state.iconScale}) do
+                H.LegacySlider(slider)
+                local thumb = slider:GetThumbTexture()
+                if thumb then thumb:SetSize(10, 14) end
+            end
             UpdateSide()
         end
     end
@@ -985,7 +1045,7 @@ local function HUD(C)
                 return control
             end
             state.small = Dropdown("Small Bars", "smallLayout", -40)
-            state.huge = Dropdown("Huge Bars", "hugeLayout", -108)
+            state.huge = Dropdown("Big Bars", "hugeLayout", -108)
             state.preview = area:CreateButton("Preview DBM bars", 180, 24, RunPreview)
             state.preview:SetPoint("TOPLEFT", area.frame, "TOPLEFT", 20, -166)
             state.preview.myheight = 40

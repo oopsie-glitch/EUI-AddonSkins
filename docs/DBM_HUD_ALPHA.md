@@ -4,14 +4,14 @@ Branch: `skin/dbm-refinement`. This untagged test build does not publish to Curs
 
 ## Bar styling controls
 
-Open DBM options and click **EUI Bar Styling** on the right side of the window. The panel is created on first use and offers separate **Small Bars** and **Huge Bars** settings:
+Open DBM options and click **EUI Bar Styling** on the right side of the window. The panel is created on first use and offers separate **Small Bars** and **Big Bars** settings:
 
 - Apply EUI styling, with live restoration of native DBM appearance when disabled.
 - Layout: name above progress or name over progress. Click the layout button to switch.
 - Progress: native DBM category colours or the EUI Blizzard Skins+ accent colour. Click to switch.
-- Background opacity, from 0% to 100%.
+- Background opacity, from 0% to 100%, independent of DBM row alpha.
 - Accent border: follows **Show accent bar** in Blizzard Skins+ unless hidden for that bar type.
-- Huge Bars only: **EUI mechanic icons (outside Huge Bars)** swaps tank, damage/sword, healer, interrupt, important, magic, bleed and deadly symbols in the external left gutter. It does not alter spell icons.
+- Big Bars only: **EUI mechanic icons (outside Big Bars)** swaps tank, damage/sword, healer, interrupt, important, magic, bleed and deadly symbols in the external left gutter. It does not alter spell icons.
 
 **Preview DBM bars** runs the real DBT demo, including on Retail, without replacing DBM's native Test Bars action. **Reset EUI styling** restores both types' EUI defaults and preserves unrelated saved settings. Defaults retain the previous alpha's appearance. Existing choices in **DBM > Timers > EUI AddonSkins** remain available and share the same saved layouts.
 
@@ -141,3 +141,10 @@ Alpha.27 extends the progress track to the right content edge beneath the countd
 The artwork option is now labelled **EUI mechanic icons (outside Huge Bars)**. It controls the external tank, sword/damage, healer, interrupt, important, magic, bleed and deadly symbols, never the spell icon or inline warning symbols in ability text. In addition to texture-path/file-ID recognition, DBM's explicit custom mechanic tags provide verified semantic hints matched to the current rendered texture and crop. This supports numeric-only Retail textures when path lookup APIs are absent. First discovery uses the timer's native inlineIcon field; later native SetIcon calls refresh/clear hints. Unknown, masked and secret artwork remains native. Installed EUI role/interrupt/death artwork and the existing original fallback atlas are retained, without bundling new assets.
 
 Regression coverage checks the new bounds and countdown baseline for both layouts and bar types, flush Small spell icons, missing end-tick textures, all eight external symbol toggles with numeric textures and no lookup APIs, first discovery, native restoration, preserved spell artwork, stale-hint rejection, and object/hook reuse. The alpha.26 flash-alpha and combat-deferral checks remain in place. Automated checks do not establish actual in-game rendering. This alpha remains untagged and does not publish to CurseForge or Wago.
+
+
+Alpha.28 adds mechanic-icon sizing from 50% to 250% in 5% steps under **Big Bars**. The size scales the external mechanic symbols only; spell icons and track bounds remain unchanged. EUI mechanic artwork now follows Blizzard Skins+' selected accent colour by default. Disable **Use EUI accent colour** to choose a custom RGB colour with WoW's picker; cancel restores the prior choice. Custom colours apply to recognized monochrome EUI glyphs; native/unknown artwork retains its own colours. The native-art toggle still restores the original icon tint. Picker callbacks coalesce refreshes and follow the same combat-deferral rules. Reset restores scale/colour defaults and invalidates stale picker callbacks.
+
+The background texture ignores inherited row alpha so its own opacity slider can reach a fully opaque 100%. DBM's native alpha still applies to the progress fill, text and icons, and hiding a timer continues to hide its background. Player profile values remain unchanged. The EUI options label is now **Big Bars**, with existing Huge-prefixed saved settings/native DBM keys preserved. The side button anchors level with DBM's top-right corner rather than 76 units lower. The options card expands for Big Bar controls and retains its compact Small Bar layout.
+
+Regressions cover final background opacity under a translucent parent, size-slider coalescing, custom/linked accent colours, cancel/reset and missing-picker handling, native-colour restoration, preserved spell geometry, combat catch-up, label/anchor changes and unchanged native profiles. All 19 suites, Lua syntax and the 37-file installation package pass outside WoW; actual in-game rendering remains unverified. This untagged alpha publishes to neither CurseForge nor Wago.

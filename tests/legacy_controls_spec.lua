@@ -85,7 +85,15 @@ local function frame(kind, name, parent)
     if name then _G[name] = f end
     return f
 end
-CreateFrame = function(kind, name, parent) local f = frame(kind, name, parent); events[#events + 1] = f; return f end
+CreateFrame = function(kind, name, parent, template)
+    local f = frame(kind, name, parent)
+    if template == 'UIPanelButtonTemplate' then
+        f.label = f:CreateFontString(nil, nil, 'GameFontNormal')
+        function f:SetText(value) self.label:SetText(value) end
+        function f:SetEnabled(value) self.disabled = not value end
+    end
+    events[#events + 1] = f; return f
+end
 local S = {GetAccentColor = function() return accent, 0.6, 0.7 end}
 function S.Font(t, r, g, b) local _, size = t:GetFont(); t:SetFont('eui', size or 12); if r then t:SetTextColor(r, g, b) end end
 function S.Button(f, keys)

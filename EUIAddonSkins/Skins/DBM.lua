@@ -511,14 +511,44 @@ local function HUD(C)
         end
     end
     local function PreviewState(state)
-        if not state.preview or not state.notice then return end
+        if not state.preview then return end
         local dbm = _G.DBM
         local inCombat = InCombatLockdown and InCombatLockdown()
-        local available = type(dbm) == "table" and type(dbm.DemoMode) == "function"
+        local available = ns.IsEnabled(C.module) and type(dbm) == "table" and type(dbm.DemoMode) == "function"
         if state.preview.SetEnabled then state.preview:SetEnabled(available and not inCombat) end
+        if not state.notice then return end
         if inCombat then state.notice:SetText("Layout changes apply after combat. Preview is unavailable during combat.")
         elseif not available then state.notice:SetText("Bar preview is unavailable in this DBM version.")
         else state.notice:SetText("Changes apply immediately. Size, position and spacing remain controlled by DBM.") end
+    end
+    local function RunPreview()
+        if not ns.IsEnabled(C.module) or InCombatLockdown and InCombatLockdown() then return end
+        local dbm, gui = _G.DBM, _G.DBM_GUI
+        if type(dbm) ~= "table" or type(dbm.DemoMode) ~= "function" then return end
+        local duration = dbm:DemoMode(true)
+        if type(gui) == "table" and type(gui.CollapseForPreview) == "function" and type(duration) == "number" and duration > 0 then
+            gui:CollapseForPreview(duration)
+        end
+    end
+    local function PreviewButton()
+        local frame = Window()
+        if not Allowed(frame) then return end
+        local state = C.dbmPreview
+        if not state then
+            -- Independent of timer-category APIs: older GUI versions can still
+            -- preview real DBT bars. Parenting follows the window's visibility.
+            local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+            button:SetSize(160, 26)
+            button:SetPoint("TOPLEFT", frame, "TOPRIGHT", 8, -76)
+            button:SetText("Preview DBM bars")
+            button:SetScript("OnClick", RunPreview)
+            state = {preview = button}
+            C.dbmPreview = state
+            button:SetScript("OnShow", function() PreviewState(state) end)
+            S.Button(button)
+        end
+        Font(state.preview:GetFontString())
+        PreviewState(state)
     end
     local function SettingsPanel()
         local gui = _G.DBM_GUI
@@ -551,13 +581,7 @@ local function HUD(C)
             end
             state.small = Dropdown("Small Bars", "smallLayout", -40)
             state.huge = Dropdown("Huge Bars", "hugeLayout", -108)
-            state.preview = area:CreateButton("Preview DBM bars", 180, 24, function()
-                if InCombatLockdown and InCombatLockdown() then PreviewState(state); return end
-                local dbm = _G.DBM
-                if type(dbm) ~= "table" or type(dbm.DemoMode) ~= "function" then PreviewState(state); return end
-                local duration = dbm:DemoMode(true)
-                if gui.CollapseForPreview and type(duration) == "number" and duration > 0 then gui:CollapseForPreview(duration) end
-            end)
+            state.preview = area:CreateButton("Preview DBM bars", 180, 24, RunPreview)
             state.preview:SetPoint("TOPLEFT", area.frame, "TOPLEFT", 20, -166)
             state.preview.myheight = 40
             state.controls[#state.controls + 1] = state.preview
@@ -600,6 +624,7 @@ local function HUD(C)
             end)
         end
         RefreshBars()
+        PreviewButton()
         SettingsPanel()
         local auras = _G.DBM and _G.DBM.Auras
         for _, method in ipairs({"PreviewToggle", "OnSettingsChange", "UpdateAuraAnchors", "RegisterAllUnits"}) do
@@ -615,7 +640,8 @@ local function HUD(C)
     events:SetScript("OnEvent", function(_, event)
         if event == "PLAYER_REGEN_DISABLED" then
             if C.dbmSettings then PreviewState(C.dbmSettings) end
-        elseif event == "ADDON_LOADED" or pending or event == "PLAYER_REGEN_ENABLED" and C.dbmSettings then H.Queue(events, Refresh) end
+            if C.dbmPreview then PreviewState(C.dbmPreview) end
+        elseif event == "ADDON_LOADED" or pending or event == "PLAYER_REGEN_ENABLED" and (C.dbmSettings or C.dbmPreview) then H.Queue(events, Refresh) end
     end)
     if S.OnLooksChanged then S.OnLooksChanged(Refresh) end
     C.dbmHUD = Refresh
@@ -669,6 +695,7 @@ ns.RegisterScopedSkin("DBM", "Deadly Boss Mods", {
         end})
         if f and f.searchHighlightFrame then exclude[f.searchHighlightFrame] = true end
         if C.dbmSettings then exclude[C.dbmSettings.frame] = true end
+        if C.dbmPreview then exclude[C.dbmPreview.preview] = true end
         -- MinimalTabTemplate has child frames holding the Classic tab artwork.
         -- Skin tabs before generic discovery can assign them a button backdrop.
         for i in ipairs(f and f.tabs or {}) do

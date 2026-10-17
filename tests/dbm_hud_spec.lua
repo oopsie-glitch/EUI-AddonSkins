@@ -79,7 +79,11 @@ local function object(kind, name, parent)
     function o:IsVisible() return self.shown end
     function o:GetFont() return self.font, self.size, '' end
     function o:GetText() return self.text end
-    function o:SetText(v) self.text = v; textWrites = textWrites + 1 end
+    function o:SetText(v)
+        self.text = v; textWrites = textWrites + 1
+        if self.kind == 'Button' and not self.label then self.label = self:CreateFontString() end
+        if self.kind == 'Button' then self.label.text = v end
+    end
     function o:SetFontObject(v) self.font = v end
     function o:SetWordWrap(v) self.wordWrap = v end
     function o:SetNonSpaceWrap(v) self.nonSpaceWrap = v end
@@ -593,6 +597,7 @@ function prototypes:CreateText(value, width)
     local text = self.frame:CreateFontString(); text:SetText(value); text:SetWidth(width); return text
 end
 S.Panel = function(frame) frame.panelStyled = true end
+S.Shell = function(frame) frame.shellStyled = true end
 S.Dropdown = function(frame) frame.dropdownStyled = true end
 S.Button = function(frame) frame.buttonStyled = true end
 local nativeDemoCalls, collapseDuration = 0, nil
@@ -607,10 +612,18 @@ DBM.DemoMode = function(self, forceOld)
 end
 DBM_GUI = {}
 event('ADDON_LOADED'); assert(pageCount == 0, 'incomplete GUI must not create a partial settings page')
+local menuUpdates = 0
+DBM_GUI_OptionsFrame = CreateFrame('Frame')
+DBM_GUI_OptionsFrame.UpdateMenuFrame = function() menuUpdates = menuUpdates + 1 end
+event('ADDON_LOADED')
+local sidePreview = DBM_GUI_OptionsFrame.children[1]
+assert(sidePreview and sidePreview.text == 'Preview DBM bars' and sidePreview.buttonStyled and sidePreview.enabled)
+assert(sidePreview:GetParent() == DBM_GUI_OptionsFrame and sidePreview.points[1][3] == 'TOPRIGHT', 'preview must attach outside the main window')
+assert(pageCount == 0, 'side preview must not require the timer-category APIs')
+sidePreview.scripts.OnClick(); assert(nativeDemoCalls == 1)
+nativeDemoCalls = 0
 DBM_GUI.Cat_Timers = group(CreateFrame('Frame'))
 DBM_GUI.CollapseForPreview = function(_, duration) collapseDuration = duration end
-local menuUpdates = 0
-DBM_GUI_OptionsFrame = {IsShown = function() return true end, UpdateMenuFrame = function() menuUpdates = menuUpdates + 1 end}
 local originalDemo = DBM.DemoMode
 EUIAddonSkinsDB.extraSettings = {keep = true}
 local dbtOptions = {}; for key,value in pairs(DBT.Options) do dbtOptions[key] = value end
@@ -651,22 +664,27 @@ dropdowns.smallLayout.selectValue('strip')
 assert(_G[futureLayout.frame.name .. 'Bar'].h == 5)
 nativePreview.scripts.OnClick(); assert(nativeDemoCalls == 1 and collapseDuration == 62)
 -- Missing preview APIs and combat are explicit, safe unavailable states.
-DBM.DemoMode = nil; nativePage.frame.scripts.OnShow(); assert(not nativePreview.enabled)
+DBM.DemoMode = nil; nativePage.frame.scripts.OnShow(); sidePreview.scripts.OnShow(); assert(not nativePreview.enabled and not sidePreview.enabled)
 nativePreview.scripts.OnClick(); assert(nativeDemoCalls == 1)
+sidePreview.scripts.OnClick(); assert(nativeDemoCalls == 1)
 DBM.DemoMode = originalDemo
-combat = true; event('PLAYER_REGEN_DISABLED'); assert(not nativePreview.enabled)
+combat = true; event('PLAYER_REGEN_DISABLED'); assert(not nativePreview.enabled and not sidePreview.enabled)
 local combatHeight = b.h
 dropdowns.smallLayout.selectValue('fill')
 assert(EUIAddonSkinsDB.dbm.smallLayout == 'fill' and b.h == combatHeight, 'layout changes must defer during combat')
 nativePreview.scripts.OnClick(); assert(nativeDemoCalls == 1)
+sidePreview.scripts.OnClick(); assert(nativeDemoCalls == 1)
 combat = false; event('PLAYER_REGEN_ENABLED')
-assert(nativePreview.enabled and b.h == 16 and label.points[1][5] == 0)
+assert(nativePreview.enabled and sidePreview.enabled and b.h == 16 and label.points[1][5] == 0)
+sidePreview.scripts.OnClick(); assert(nativeDemoCalls == 2 and collapseDuration == 62)
 dropdowns.smallLayout.selectValue('strip'); assert(b.h == 5)
 for key,value in pairs(DBT.Options) do assert(dbtOptions[key] == value, 'native DBM options changed: '..key) end
 for key,value in pairs(dbtOptions) do assert(DBT.Options[key] == value) end
 assert(DBT.DefaultOptions == nativeDefaults and nativeDefaults.saved and EUIAddonSkinsDB.extraSettings.keep)
 -- Disabled skins can save preferences without repainting anything.
 enabled = false
+sidePreview.scripts.OnShow(); assert(not sidePreview.enabled)
+sidePreview.scripts.OnClick(); assert(nativeDemoCalls == 2, 'disabled skin must not start its preview')
 local disabledIterations, disabledHeight = iteratorCalls, b.h
 dropdowns.smallLayout.selectValue('fill')
 assert(iteratorCalls == disabledIterations and b.h == disabledHeight and EUIAddonSkinsDB.dbm.smallLayout == 'fill')

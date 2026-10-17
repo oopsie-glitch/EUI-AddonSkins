@@ -819,7 +819,7 @@ local function HUD(C)
         if label then label:SetTextColor(r, g, b, 1) end
     end
     local function PositionSide(state)
-        local panel, position = state.frame, Settings().optionsPosition
+        local panel, position = state.frame, state.position
         panel:ClearAllPoints()
         if type(position) == "table" and type(position.x) == "number" and type(position.y) == "number"
             and position.x == position.x and position.y == position.y and math.abs(position.x) < 100000 and math.abs(position.y) < 100000 then
@@ -835,17 +835,8 @@ local function HUD(C)
         local px, py = UIParent:GetLeft(), UIParent:GetTop()
         local scale = panel:GetEffectiveScale() / UIParent:GetEffectiveScale()
         if not x or not y or not px or not py then PositionSide(state); return end
-        Settings().optionsPosition = {x = x * scale - px, y = y * scale - py}
+        state.position = {x = x * scale - px, y = y * scale - py}
         PositionSide(state)
-    end
-    local function ResetSidePosition()
-        if not ns.IsEnabled(C.module) then return end
-        local state = C.dbmPreview
-        Settings().optionsPosition = nil
-        if state and state.frame then
-            state.dragging = nil; state.frame:StopMovingOrSizing()
-            PositionSide(state); state.frame:SetShown(true)
-        elseif OpenSide then OpenSide() end
     end
     local function SyncLayoutControls()
         local page, db = C.dbmSettings, Settings()
@@ -1058,14 +1049,19 @@ local function HUD(C)
             button:SetScript("OnShow", function() button:SetEnabled(ns.IsEnabled(C.module)); UpdateSide(); SideAccent() end)
             S.Button(button)
             H.Script(button, "OnEnter", SideAccent); H.Script(button, "OnLeave", SideAccent); H.Script(button, "OnEnable", SideAccent)
-            local reset = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-            reset:SetSize(110, 26); reset:SetPoint("TOPLEFT", button, "TOPRIGHT", 6, 0)
-            reset:SetText("Reset position"); reset:SetScript("OnClick", ResetSidePosition)
-            S.Button(reset); state.positionReset = reset
+            -- Detached positions last only until the main DBM window reopens.
+            -- Use a separate hook: the scoped skin already owns its OnShow callback.
+            Settings().optionsPosition = nil
+            frame:HookScript("OnShow", function()
+                state.position, state.dragging = nil, nil
+                if state.frame then
+                    state.frame:StopMovingOrSizing()
+                    PositionSide(state)
+                end
+            end)
         end
         state.button:SetEnabled(ns.IsEnabled(C.module))
-        Font(state.button:GetFontString()); Font(state.positionReset:GetFontString())
-        state.positionReset:SetEnabled(ns.IsEnabled(C.module))
+        Font(state.button:GetFontString())
         SideAccent()
         if state.frame then
             for _, entry in ipairs(state.controls) do Control(C, entry[1], entry[2]); Font(entry[1].Text or entry[1]:GetFontString()) end
@@ -1374,7 +1370,6 @@ local function GUIExclude(C)
     if C.dbmSettings then C.dbmExclude[C.dbmSettings.frame] = true end
     if C.dbmPreview then
         C.dbmExclude[C.dbmPreview.button] = true
-        if C.dbmPreview.positionReset then C.dbmExclude[C.dbmPreview.positionReset] = true end
         if C.dbmPreview.frame then C.dbmExclude[C.dbmPreview.frame] = true end
     end
     if C.dbmMatte then C.dbmExclude[C.dbmMatte] = true end

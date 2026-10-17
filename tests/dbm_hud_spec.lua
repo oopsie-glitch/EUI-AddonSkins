@@ -1183,7 +1183,7 @@ do
     for key,value in pairs(DBT.Options) do assert(dbtOptions[key] == value, 'new controls changed DBM profile '..key) end
     print('PASS: mechanic scale, accent/custom/cancel colours, theme/combat/reset/missing-picker guards, independent opaque background and top-right Big Bars UI')
 end
--- Rebased icon percentages, detachable position/reset, accent titles and footer.
+-- Rebased icon percentages, session-local dragging, accent titles and footer.
 do
     local small,big = sideControl('Small Bars'),sideControl('Big Bars')
     local title,notice,drag
@@ -1194,7 +1194,7 @@ do
     for _,child in ipairs(sidePanel.children) do if child.scripts.OnDragStart then drag = child end end
     local resetPosition
     for _,child in ipairs(DBM_GUI_OptionsFrame.children) do if child.text == 'Reset position' then resetPosition = child end end
-    assert(title and notice and drag and resetPosition, 'detachable Options UI controls missing')
+    assert(title and notice and drag and not resetPosition, 'Options controls missing or obsolete reset button retained')
     assert(sidePanel:GetParent() == UIParent and sidePanel.movable and drag.dragButtons[1] == 'LeftButton')
     assert(notice.size == 14 and notice.spacing == 2 and notice.justifyV == 'TOP' and notice.points[2][1] == 'BOTTOMRIGHT', 'footer is not readable or does not fill its space')
     assert(title.color[1] == accent and sideButton:GetFontString().color[1] == accent)
@@ -1208,14 +1208,22 @@ do
     sidePanel.left,sidePanel.top = 350,600
     drag.scripts.OnDragStart(); assert(sidePanel.moving)
     drag.scripts.OnDragStop()
-    assert(not sidePanel.moving and EUIAddonSkinsDB.dbm.optionsPosition.x == 350 and EUIAddonSkinsDB.dbm.optionsPosition.y == -168)
+    assert(not sidePanel.moving and not EUIAddonSkinsDB.dbm.optionsPosition, 'dragging persisted a session-only position')
     assert(sidePanel.points[1][1] == 'TOPLEFT' and sidePanel.points[1][2] == UIParent)
     local pointX,pointY = sidePanel.points[1][4],sidePanel.points[1][5]
+    assert(pointX == 350 and pointY == -168, 'dragged coordinates changed')
     big.scripts.OnClick(); small.scripts.OnClick(); sideButton.scripts.OnClick(); sideButton.scripts.OnClick()
     assert(sidePanel.points[1][4] == pointX and sidePanel.points[1][5] == pointY, 'resize/reopen lost detached top-left position')
     assert(created == baseObjects and hooks == baseHooks and iteratorCalls == baseWalks, 'drag/reopen rebuilt controls or scanned HUD')
-    resetPosition.scripts.OnClick()
-    assert(not EUIAddonSkinsDB.dbm.optionsPosition and sidePanel.points[1][2] == sideButton and sidePanel:IsShown(), 'position reset did not recover the Options panel')
+    DBM_GUI_OptionsFrame.scripts.OnShow(DBM_GUI_OptionsFrame)
+    assert(sidePanel.points[1][2] == sideButton and sidePanel:IsShown(), 'DBM reopen did not restore default position')
+    flush()
+    drag.scripts.OnDragStart(); drag.scripts.OnDragStop()
+    assert(sidePanel.points[1][2] == UIParent, 'dragging stopped working after DBM reopen')
+    sideButton.scripts.OnClick(); assert(not sidePanel:IsShown())
+    DBM_GUI_OptionsFrame.scripts.OnShow(DBM_GUI_OptionsFrame)
+    assert(sidePanel.points[1][2] == sideButton and not sidePanel:IsShown(), 'DBM reopen forced hidden Options panel open')
+    flush(); sideButton.scripts.OnClick()
     -- Scaling conversion uses a versioned saved setting; old 125% becomes 100%
     -- once, while an explicit old 100% retains its previous rendered size at 80%.
     local originalDB = EUIAddonSkinsDB.dbm
@@ -1232,7 +1240,7 @@ do
     EUIAddonSkinsDB.dbm = originalDB; EllesmereUIDB = originalEUI
     modules.DBM.refresh(); flush()
     assert(title.color[1] == accent and sideButton:GetFontString().color[1] == accent)
-    print('PASS: former 125% rebased to 100%, one-time migration, draggable detached Options panel, saved position/reset, accent labels and larger anchored footer')
+    print('PASS: former 125% rebased to 100%, one-time migration, draggable detached Options panel, session-only position/reset on DBM reopen, accent labels and larger anchored footer')
 end
 -- Disabled skins can save preferences without repainting anything.
 enabled = false

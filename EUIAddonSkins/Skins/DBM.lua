@@ -2,6 +2,7 @@ local ADDON, ns = ...
 local function DefineSkin()
 
 local function Window() return _G.DBM_GUI_OptionsFrame end
+local Control
 -- HUD work is independent of the load-on-demand options window. Hooks follow
 -- DBT's object lifecycle, never its countdown Update/OnUpdate hot path.
 local function HUD(C)
@@ -624,9 +625,9 @@ local function HUD(C)
         end
         if not state.styled then
             C.Panel(state.area)
-            S.Dropdown(state.small); S.Dropdown(state.huge); S.Button(state.preview)
             state.styled = true
         end
+        Control(C, state.small, "Dropdown"); Control(C, state.huge, "Dropdown"); Control(C, state.preview, "Button")
         -- Owned controls are excluded from the generic GUI scanner. Updating a
         -- selector repaints bars directly, without an extra window traversal.
         for _, frame in ipairs(state.controls) do
@@ -709,6 +710,118 @@ local function ApplyFont(S, text, r, g, b)
         state.target, state.targetFlags, state.generation = target, targetFlags, fontGeneration
     elseif r ~= nil and text.SetTextColor then text:SetTextColor(r, g, b or r) end
 end
+local textTones = setmetatable({}, {__mode = "k"})
+local function TextTone(C, text, role, owner)
+    if C.H.Allowed(text) then
+        local tone = textTones[text]
+        if not tone then tone = {}; textTones[text] = tone end
+        tone.role, tone.owner = role, owner
+    end
+end
+local function PaintTone(text, html)
+    local tone = textTones[text]
+    if not tone or not text.SetTextColor then return end
+    local role, owner = tone.role, tone.owner
+    local value = role == "muted" and 0.6 or role == "heading" and 0.95 or 0.88
+    if owner and owner.IsEnabled and not owner:IsEnabled() then value = 0.5 end
+    local r, g, b, a
+    if text.GetTextColor then
+        if html then r, g, b, a = text:GetTextColor("p") else r, g, b, a = text:GetTextColor() end
+    end
+    if issecretvalue and (issecretvalue(r) or issecretvalue(g) or issecretvalue(b) or issecretvalue(a)) then return end
+    if r ~= value or g ~= value or b ~= value or a ~= 1 then
+        if html then text:SetTextColor("p", value, value, value, 1) else text:SetTextColor(value, value, value, 1) end
+    end
+end
+local function PanelColor(S)
+    if S.GetPanelColor then return S.GetPanelColor() end
+    return 0.055, 0.055, 0.06, 0.98
+end
+Control = function(C, f, method)
+    C.dbmControls = C.dbmControls or setmetatable({}, {__mode = "k"})
+    local d = C.dbmControls[f]
+    if not d then
+        d = {}; C.dbmControls[f] = d
+        local before = {}
+        for _, region in ipairs(C.H.Regions(f)) do before[region] = true end
+        if method == "EditBox" then C.S.EditBox(f, {padInput = not (f:GetParent() and f:GetParent().mytype == "slider")})
+        else C.S[method](f, method == "Checkbox" and {borderInset = 4, hover = 0.05} or nil) end
+        if method == "Button" and C.S.StateButtonLabel then C.S.StateButtonLabel(f) end
+        for _, region in ipairs(C.H.Regions(f)) do
+            if not before[region] and C.H.Texture(region) then
+                if region.GetDrawLayer and region:GetDrawLayer() == "BACKGROUND" then d.fill = region end
+                if method == "Dropdown" and region.GetAtlas and region:GetAtlas() == "Azerite-PointingArrow" then d.arrow = region end
+            end
+        end
+        if method == "Dropdown" then
+            if C.H.Texture(f.Arrow) then C.H.Fade(f.Arrow) end
+            local name = f.GetName and f:GetName()
+            local button = f.Button or f.button or name and _G[name .. "Button"]
+            if C.H.Allowed(button) then
+                for _, region in ipairs(C.H.Regions(button)) do if C.H.Texture(region) then C.H.Fade(region) end end
+            end
+            C.MenuOwner(f)
+            if not d.arrow then d.arrow = f:CreateTexture(nil, "OVERLAY") end
+            d.arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
+            d.arrow:SetSize(12, 8); d.arrow:ClearAllPoints(); d.arrow:SetPoint("RIGHT", f, "RIGHT", -8, 0)
+            d.arrow:SetVertexColor(0.8, 0.8, 0.8, 1)
+        end
+    end
+    if d.fill and method ~= "Checkbox" then
+        local r, g, b = PanelColor(C.S)
+        if d.r ~= r or d.g ~= g or d.b ~= b or d.generation ~= fontGeneration then
+            d.fill:SetColorTexture(math.min(1, r + 0.025), math.min(1, g + 0.025), math.min(1, b + 0.025), 1)
+            d.r, d.g, d.b, d.generation = r, g, b, fontGeneration
+        end
+    end
+    if method == "Checkbox" then
+        local r, g, b = C.S.GetAccentColor()
+        for i, getter in ipairs({"GetCheckedTexture", "GetDisabledCheckedTexture"}) do
+            local mark = f[getter] and f[getter](f)
+            if C.H.Texture(mark) and (d[getter] ~= mark or d.r ~= r or d.g ~= g or d.b ~= b or d.generation ~= fontGeneration) then
+                -- EUI's own option checkboxes use an inset solid accent square.
+                -- Reuse the native checked regions so checked/disabled visibility
+                -- remains controlled entirely by WoW and DBM.
+                mark:SetVertexColor(1, 1, 1, 1)
+                if i == 1 then mark:SetColorTexture(r, g, b, 1) else mark:SetColorTexture(0.4, 0.4, 0.4, 0.8) end
+                mark:ClearAllPoints(); mark:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -6); mark:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -6, 6)
+                d[getter] = mark
+            end
+        end
+        d.r, d.g, d.b, d.generation = r, g, b, fontGeneration
+        TextTone(C, f.textObj, "label", f)
+    end
+    local label = f.Text or (f.GetFontString and f:GetFontString())
+    TextTone(C, label, "label", f)
+    PaintTone(label)
+    local name = f.GetName and f:GetName()
+    if method == "Dropdown" and name then
+        TextTone(C, _G[name .. "TitleText"], "label"); PaintTone(_G[name .. "TitleText"])
+    end
+    return d
+end
+local function Slider(C, f)
+    local H, S = C.H, C.S
+    local vertical = f.GetOrientation and f:GetOrientation() == "VERTICAL"
+    if vertical then
+        C.dbmArrows = C.dbmArrows or {}
+        local name = f.GetName and f:GetName()
+        for i, button in ipairs({f.ScrollUpButton or name and _G[name .. "ScrollUpButton"], f.ScrollDownButton or name and _G[name .. "ScrollDownButton"]}) do
+            if H.Allowed(button) and not C.dbmArrows[button] then
+                (S.SoftPageButton or S.PageButton)(button, i == 1 and "^" or "v")
+                for _, region in ipairs(H.Regions(button)) do if region:GetObjectType() == "FontString" then H.Fade(region) end end
+                local arrow = button:CreateTexture(nil, "OVERLAY")
+                arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-" .. (i == 1 and "up3.png" or "down3.png"))
+                arrow:SetSize(10, 7); arrow:SetPoint("CENTER"); arrow:SetVertexColor(0.8, 0.8, 0.8, 1)
+                C.dbmArrows[button] = arrow
+            end
+        end
+    end
+    H.LegacySlider(f)
+    local thumb = f.GetThumbTexture and f:GetThumbTexture()
+    if H.Texture(thumb) then thumb:SetSize(vertical and 5 or 10, vertical and 22 or 14) end
+    TextTone(C, f.textFrame, "label")
+end
 local function Fonts(C, f, kind)
     local H, S = C.H, C.S
     local function Bind(text, html)
@@ -728,6 +841,7 @@ local function Fonts(C, f, kind)
                         generation = fontGeneration
                     end
                 elseif not html then H.Font(text) end
+                PaintTone(text, html)
             end)
             painting = false
         end
@@ -739,10 +853,15 @@ local function Fonts(C, f, kind)
             generation = nil; Paint()
         end)
         H.Hook(text, "SetFont", Paint)
+        H.Hook(text, "SetTextColor", Paint)
     end
     if kind == "SimpleHTML" then Bind(f, true); return true end
     for _, text in ipairs(H.Regions(f)) do
-        if H.Allowed(text) and text:GetObjectType() == "FontString" then Bind(text, false) end
+        if H.Allowed(text) and text:GetObjectType() == "FontString" then
+            local name = text.GetName and text:GetName()
+            if name and name:match("HeaderText$") then TextTone(C, text, "heading") end
+            Bind(text, false)
+        end
     end
 end
 local function GUIExclude(C)
@@ -759,11 +878,28 @@ local function GUIExclude(C)
     if f and f.searchHighlightFrame then C.dbmExclude[f.searchHighlightFrame] = true end
     if C.dbmSettings then C.dbmExclude[C.dbmSettings.frame] = true end
     if C.dbmPreview then C.dbmExclude[C.dbmPreview.preview] = true end
+    if C.dbmMatte then C.dbmExclude[C.dbmMatte] = true end
     return C.dbmExclude
 end
 local function Chrome(C)
     local f, H = Window(), C.H
     local exclude = GUIExclude(C)
+    if H.Allowed(f) then
+        if not C.dbmMatte then
+            local layer = CreateFrame("Frame", nil, f); layer:SetAllPoints(f)
+            if layer.SetFrameLevel and f.GetFrameLevel then layer:SetFrameLevel(f:GetFrameLevel()) end
+            layer:EnableMouse(false)
+            C.dbmMatte = layer; exclude[layer] = true
+            C.dbmMatteFill = layer:CreateTexture(nil, "BACKGROUND"); C.dbmMatteFill:SetAllPoints(layer)
+        end
+        local r, g, b, a = PanelColor(C.S)
+        if C.dbmMatteR ~= r or C.dbmMatteG ~= g or C.dbmMatteB ~= b or C.dbmMatteA ~= a then
+            C.dbmMatteFill:SetColorTexture(r, g, b, a)
+            C.dbmMatteR, C.dbmMatteG, C.dbmMatteB, C.dbmMatteA = r, g, b, a
+        end
+        TextTone(C, _G.DBM_GUI_OptionsFrameHeaderText, "heading")
+        TextTone(C, _G.DBM_GUI_OptionsFrameWebsite, "muted")
+    end
     for i in ipairs(f and f.tabs or {}) do
         local tab = _G["DBM_GUI_OptionsFrameTab" .. i]
         if H.Allowed(tab) then
@@ -840,7 +976,7 @@ ns.RegisterScopedSkin("DBM", "Deadly Boss Mods", {
     available = function() return type(_G.DBM) == "table" or type(_G.DBM_GUI) == "table" and Window() ~= nil end,
     preserveTextColors = true,
     immediateShow = true,
-    panelOptions = {noBorder = true},
+    panelOptions = {noBorder = true, noBg = true},
     font = ApplyFont,
     controlRefresh = function(C, root, source)
         if C.dbmControlRefresh then C.dbmControlRefresh(root, source) end
@@ -849,7 +985,7 @@ ns.RegisterScopedSkin("DBM", "Deadly Boss Mods", {
         Chrome(C)
         local f, exclude = Window(), GUIExclude(C)
         local roots = {}
-        if C.H.Allowed(f) then roots[1] = {frame = f, options = {bottomBar = 36}, exclude = exclude} end
+        if C.H.Allowed(f) then roots[1] = {frame = f, options = {noAccent = true, noTopBar = true}, exclude = exclude} end
         local popup = _G.DBM_GUI_DropDown
         if C.H.Allowed(popup) then roots[#roots + 1] = {frame = popup, exclude = exclude} end
         return roots
@@ -873,11 +1009,17 @@ ns.RegisterScopedSkin("DBM", "Deadly Boss Mods", {
     end,
     visit = function(C, f, kind)
         local H, S = C.H, C.S
+        if kind == "SimpleHTML" and f:GetParent() and f:GetParent().mytype == "checkbutton" then TextTone(C, f, "label", f:GetParent()) end
+        if kind == "CheckButton" and not (f.GetName and (f:GetName() or ""):match("^DBM_GUI_OptionsFrameTab%d+$")) then Control(C, f, "Checkbox") end
+        if kind == "DropdownButton" or f.mytype == "dropdown" or f.mytype == "dropdown2" then Control(C, f, "Dropdown") end
+        if kind == "EditBox" then Control(C, f, "EditBox") end
         if Fonts(C, f, kind) then return true end
         local name = f.GetName and f:GetName() or ""
         local tab = tonumber(name:match("^DBM_GUI_OptionsFrameTab(%d+)$"))
         if tab then H.Tab(f, Window().tab == tab); return true end
-        if kind == "Slider" then H.LegacySlider(f); return true end
+        if kind == "Slider" then Slider(C, f); return true end
+        if kind == "CheckButton" or kind == "DropdownButton" or kind == "EditBox" then return true end
+        if C.dbmArrows and C.dbmArrows[f] then return true end
         if kind == "Button" then
             if name == "DBM_GUI_OptionsFrameClosePanelButton" then S.CloseButton(f); return true end
             -- Do not fade or recolour DBM's colour-picker swatch textures.
@@ -885,7 +1027,9 @@ ns.RegisterScopedSkin("DBM", "Deadly Boss Mods", {
                 for _, region in ipairs(H.Regions(f)) do H.Font(region) end
                 return true
             end
-            if f.element and H.Allowed(f.toggle) then
+            -- Pooled sidebar rows exist before they receive an element. Claim
+            -- them immediately so generic discovery never creates row boxes.
+            if H.Allowed(f.toggle) and (f.element or f:GetParent() == _G.DBM_GUI_OptionsFrameList) then
                 local window = Window()
                 local page = window.tabs and window.tabs[window.tab]
                 local selected = window.searchQuery and window.searchQuery ~= ""
@@ -895,17 +1039,27 @@ ns.RegisterScopedSkin("DBM", "Deadly Boss Mods", {
                     f.euiSelection:SetAllPoints(f)
                 end
                 local r, g, b = S.GetAccentColor()
-                f.euiSelection:SetColorTexture(r, g, b, selected == f.element and 0.2 or 0)
+                f.euiSelection:SetColorTexture(r, g, b, f.element and selected == f.element and 0.12 or 0)
                 local highlight = f.GetHighlightTexture and H.Texture(f:GetHighlightTexture())
-                if highlight then highlight:SetColorTexture(r, g, b, 0.08) end
-                H.Font(f.text)
-                H.Toggle(f.toggle, f.element.showSub)
+                if highlight then
+                    highlight:SetColorTexture(r, g, b, 0.08)
+                    highlight:SetVertexColor(1, 1, 1, 1)
+                    if highlight.SetBlendMode then highlight:SetBlendMode("BLEND") end
+                end
+                TextTone(C, f.text, f.element and selected == f.element and "heading" or "label")
+                H.Font(f.text); PaintTone(f.text)
+                H.Toggle(f.toggle, f.element and f.element.showSub)
+                return true
+            end
+            if f:GetParent() and f:GetParent().toggle == f then
+                for _, region in ipairs(H.Regions(f)) do if H.Texture(region) and region.GetDrawLayer and region:GetDrawLayer() == "BACKGROUND" then region:SetColorTexture(0, 0, 0, 0) end end
                 return true
             end
             H.Resize(f)
+            if f.GetFontString and H.Allowed(f:GetFontString()) then Control(C, f, "Button"); return true end
         end
         if f.mytype == "dropdown" or f.mytype == "dropdown2" then
-            S.Dropdown(f)
+            Control(C, f, "Dropdown")
             return true
         end
         if f.mytype == "area" then C.Panel(f) end

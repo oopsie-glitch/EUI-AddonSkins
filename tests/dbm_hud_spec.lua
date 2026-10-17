@@ -180,24 +180,28 @@ local nativeAnchor = {}
 f:SetPoint('TOP', nativeAnchor, 'TOP', 27, -60)
 assert(b.fill.path == 'Interface\\Buttons\\WHITE8X8' and b.fill.color[1] == 0.9 and b.fill.color[4] == 0.75)
 local label, timer = _G[f.name .. 'BarName'], _G[f.name .. 'BarTimer']
-assert(label.font == 'eui' and label.size == 10 and label.justifyV == 'MIDDLE')
+assert(label.font == 'eui' and label.size == 9 and label.justifyV == 'MIDDLE')
 assert(_G[f.name .. 'BarSpark'].alpha == 0 and _G[f.name .. 'BarBorderTop'].alpha == 0)
 assert(_G[f.name .. 'BarIcon1'].crop and _G[f.name .. 'BarIcon1'].path == 136116)
 assert(f.children[#f.children - 1].regions[1].fillColor[1] == accent, 'spell icon edge should follow accent')
-assert(_G[f.name .. 'BarBackground'].fillColor[4] == 0.55, 'empty track needs a consistent matte grey background')
-assert(b.h == 16 and f.h == 20 and DBT.Options.Height == 20, 'single-row fill changed native frame/settings')
+assert(_G[f.name .. 'BarBackground'].alpha == 0, 'native track background must not layer over the row background')
+_G[f.name .. 'BarBackground']:SetAlpha(1)
+assert(_G[f.name .. 'BarBackground'].alpha == 0, 'native redraw restored a second background')
+assert(b.h == 5 and f.h == 20 and DBT.Options.Height == 20, 'thin strip must scale with height without changing native frame/settings')
 local panel, spellIcon = f.regions[1], _G[f.name .. 'BarIcon1']
 assert(spellIcon.w == 16 and spellIcon.h == 16 and spellIcon.points[1][1] == 'LEFT')
-assert(panel.fillColor[4] == 0.45 and panel.points[1][4] == 0 and panel.points[2][4] == 0, 'panel should stay inside native row')
+assert(panel.fillColor[4] == 0.65 and panel.points[1][4] == 0 and panel.points[2][4] == 0, 'panel should stay inside native row')
 assert(#f.regions == 5, 'panel background and four accent edges missing')
 for i = 2, 5 do assert(f.regions[i].fillColor[1] == accent and f.regions[i].fillColor[4] == 0.35, 'panel needs subdued full accent outline') end
 assert(f.regions[2].h == 1 and f.regions[4].w == 1)
 assert(spellIcon.points[1][4] > f.regions[4].w and (20 - spellIcon.h) / 2 > f.regions[2].h, 'spell icon overlaps panel border')
-assert(label.points[1][1] == 'LEFT' and label.points[1][5] == 0 and timer.points[1][5] == 0, 'text should share the fill centerline')
-assert(label.h == b.h and timer.h == b.h and label.wordWrap == false)
+assert(label.points[1][1] == 'LEFT' and label.points[1][5] > 0 and timer.points[1][5] == 0, 'name must sit above strip with countdown centered')
+assert(label.points[1][5] - label.h / 2 >= b.points[1][5] + 1, 'name overlaps the progress strip')
+assert(label.h == 10 and timer.h == 16 and label.wordWrap == false)
 assert(label.shadow[4] == 0.9 and timer.shadow[4] == 0.9)
 assert(label.points[2][4] < timer.points[1][4] - timer.w, 'name overlaps reserved countdown')
-assert(b:GetWidth() == 173 and timer.points[1][4] == -4, 'fill should extend beneath the countdown')
+assert(b:GetWidth() == 137 and timer.points[1][4] == -4, 'thin strip must stop before the countdown')
+assert(label.points[1][4] == b.points[1][4] and label.points[2][4] == b.points[2][4], 'name and strip should share horizontal bounds')
 assert(_G[f.name .. 'BarIJIcons'].alpha == 0 and spellIcon.alpha == 1, 'small row should hide only mechanic symbols')
 local stripWidth, labelRight, timerRight = b:GetWidth(), label.points[2][4], timer.points[1][4]
 _G[f.name .. 'BarIJIcons2']:Hide(); first:SetIcon(136116)
@@ -219,7 +223,7 @@ for _, region in ipairs(b.regions) do
         assert(region.fillColor[1] == 0.2 and region.fillColor[4] == 0.4 and region.points[1][2] == b, 'track edge should be subtle')
     end
 end
-assert(trackEdges == 4)
+assert(trackEdges == 0, 'inner track outlines must not create extra grey boxes')
 assert(not _G[f.name .. 'BarVariance'].shown, 'disabled variance indicator became visible')
 first.hasVariance, first.varianceWidth, first.varianceDuration, first.totalTime = true, 73, 5, 20
 assert(first:SetVariance() == 'native-variance')
@@ -234,11 +238,11 @@ for _ = 1, 1000 do f.scripts.OnUpdate() end
 assert(nativeUpdate == f.scripts.OnUpdate and created == oldCreated and hooks == oldHooks and fontWrites == oldFonts and childReads == oldReads and textWrites == oldTexts)
 assert(first.duration < 20, 'native timer stopped')
 assert(first:ApplyStyle() == 'native-style' and b.fill.path == 'Interface\\Buttons\\WHITE8X8')
-assert(label.font == 'eui' and label.size == 10)
+assert(label.font == 'eui' and label.size == 9)
 assert(first:SetIcon(999) == 'native-icon' and spellIcon.path == 999)
-assert(b.h == 16, 'repeated paint cumulatively resized row')
+assert(b.h == 5, 'repeated paint cumulatively resized strip')
 first.enlarged = true; first:ApplyStyle()
-assert(b.h == 24 and spellIcon.h == 24 and timer.size == 11, 'huge row must follow native configured height')
+assert(b.h == 7 and spellIcon.h == 24 and timer.size == 11, 'huge row must follow native configured height')
 local symbol = _G[f.name .. 'BarIJIcons']
 assert(symbol.alpha == 1 and symbol.h == 17, 'huge mechanic icons should occupy about 60% of height')
 local twoWidth, twoTimer = b:GetWidth(), timer.points[1][4]
@@ -251,7 +255,7 @@ symbol:SetShown(true); first:SetIcon(999)
 assert(b:GetWidth() == singleWidth, 'reappearing symbol did not restore its space')
 DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 2, 3
 first:ApplyStyle()
-assert(label.points[1][4] == 32 and label.points[1][5] == 3 and timer.points[1][5] == 3, 'native text offsets lost')
+assert(label.points[1][4] == 32 and label.points[1][5] == 7 and timer.points[1][5] == 3, 'native text offsets lost')
 DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 0, 0
 DBT.Options.JournalIcons = 4; first:ApplyStyle()
 assert(symbol.h == 11 and _G[f.name .. 'BarIJIcons3'].points[1][5] < symbol.points[1][5], 'four-symbol grid must fit inside row')
@@ -264,10 +268,10 @@ local beforeWidth = b:GetWidth()
 f:SetSize(230, 28); b:SetWidth(230)
 assert(b:GetWidth() == beforeWidth + 35 and b:GetWidth() < f:GetWidth())
 f:SetSize(195, 20)
--- A single row preserves inline text and uses the actual configured dimensions.
+-- Two-row layout preserves inline text and uses configured dimensions.
 label:SetText('|Twarning:20:20|t Custom User Bar')
 DBT.Options.HugeHeight = 40; first:ApplyStyle()
-assert(b.h == 36 and label.h == 36 and spellIcon.h == 27, 'row/icon geometry must scale without overflowing narrow rows')
+assert(b.h == 10 and label.h == 25 and spellIcon.h == 27, 'row/icon geometry must scale without overflowing narrow rows')
 assert(label.text == '|Twarning:13:13|t Custom User Bar' and label.justifyV == 'MIDDLE')
 f:SetSize(400, 40); first:ApplyStyle()
 assert(spellIcon.h == 36 and _G[f.name .. 'BarIJIcons'].h == 16)
@@ -287,9 +291,9 @@ local rightIcon = _G[f.name .. 'BarIcon2']
 assert(rightIcon.shown and rightIcon.points[1][1] == 'RIGHT' and rightIcon.points[1][4] == -2)
 assert(b.points[2][4] < -rightIcon.w and label.points[2][4] < timer.points[1][4] - timer.w, 'right spell icon overlaps content')
 DBT.Options.IconRight = false; first.enlarged = false; first:ApplyStyle()
-assert(symbol.alpha == 0 and b.h == 16 and panel.points[1][4] == 0)
+assert(symbol.alpha == 0 and b.h == 5 and panel.points[1][4] == 0)
 DBT.Options.IconLeft = false; first:ApplyStyle()
-assert(b.points[1][4] == 2 and not spellIcon.shown, 'absent spell icon left blank space')
+assert(b.points[1][4] == 4 and not spellIcon.shown, 'absent spell icon left blank space')
 DBT.Options.IconLeft = true
 DBT.Options.Height = 10; f:SetSize(100, 10); first:ApplyStyle()
 assert(b:GetWidth() > 20 and b.h == 6 and label.size == 6 and label.points[2][4] < timer.points[1][4] - timer.w, 'smallest row must remain usable')
@@ -298,18 +302,18 @@ DBT.Options.IconLocked, DBT.Options.Height = false, 30
 first:ApplyStyle()
 assert(f.h == 20 and panel.points[1][5] == 15 and panel.points[2][5] == -15, 'unlocked hit frame/settings changed')
 DBT.Options.IconLocked, DBT.Options.Height = true, 40; first:ApplyStyle()
-assert(b.h == 36 and label.h == 36 and label.points[1][5] == 0, 'single row did not follow configured height')
+assert(b.h == 10 and label.h == 25 and label.points[1][5] > 0, 'two-row layout did not follow configured height')
 DBT.Options.Height = 60; first:ApplyStyle()
-assert(b.h == 56)
+assert(b.h == 15)
 DBT.Options.Height = 20; f:SetSize(195, 20); first:ApplyStyle()
 -- Text updates normalize only oversized inline textures, retaining full source
 -- geometry for a later font change and all native text/crop information.
 local inline = '|Twarning:20:20:0:0:512:256:401:433:1:33|t '
 assert(first:SetText('|cffffff00Custom User Bar|r', inline) == 'native-text')
-assert(label.text == '|Twarning:12:12:0:0:512:256:401:433:1:33|t |cffffff00Custom User Bar|r')
+assert(label.text == '|Twarning:10:10:0:0:512:256:401:433:1:33|t |cffffff00Custom User Bar|r')
 for _ = 1, 10 do
     first:SetText('|cffffff00Custom User Bar|r', inline)
-    assert(label.text == '|Twarning:12:12:0:0:512:256:401:433:1:33|t |cffffff00Custom User Bar|r', 'native text reset restored oversized icon')
+    assert(label.text == '|Twarning:10:10:0:0:512:256:401:433:1:33|t |cffffff00Custom User Bar|r', 'native text reset restored oversized icon')
 end
 local textCount = textWrites
 for _ = 1, 10 do first:ApplyStyle() end
@@ -320,7 +324,7 @@ DBT.Options.FontSize, DBT.Options.Height = nil, 20; first:ApplyStyle()
 first:SetText('Auto |Twarning:0:0|t and atlas |A:warning:20:20|a')
 assert(label.text == 'Auto |Twarning:0:0|t and atlas |A:warning:20:20|a')
 first:SetText('Aspect |Twarning:40:20|t')
-assert(label.text == 'Aspect |Twarning:12:6|t')
+assert(label.text == 'Aspect |Twarning:10:5|t')
 local secretLabel = {}
 issecretvalue = function(v) return v == secretLabel end
 first:SetText(secretLabel, nil, true)

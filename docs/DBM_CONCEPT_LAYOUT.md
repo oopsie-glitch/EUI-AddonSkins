@@ -1,6 +1,6 @@
 # DBM measured concept layout (historical two-row design)
 
-Superseded by alpha.15: the current layout uses one row with name/countdown over the fill, retains native configured dimensions, and sizes icons by available height/width. These measurements document the earlier concept experiment. See DBM_HUD_ALPHA.md for current behavior.
+Superseded by alpha.15: alpha.15–16 tried a single-row layout. Alpha.17 returns to name-above-strip geometry with one matte background; the original measured proportions below remain historical. These measurements document the earlier concept experiment. See DBM_HUD_ALPHA.md for current behavior.
 
 Applied in HUD alpha.9, refined in alpha.10–12 to native **Huge Bars**. The user's Blizzard Skins+ accent-bar color (custom or linked to the overall EUI accent) replaces the concept's fixed teal and mechanic-colored spell-icon borders. DBM retains control of positions, row spacing, normal/huge dimensions, scale, timer values, priorities and number formatting. No profiles or saved settings are rewritten.
 

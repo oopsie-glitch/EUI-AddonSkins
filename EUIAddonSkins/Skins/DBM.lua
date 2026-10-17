@@ -154,15 +154,11 @@ local function HUD(C)
             end
         end
         local contentX, contentRight = pad + leftSpace, pad + rightSpace + mechanicSpace
-        bar:ClearAllPoints()
-        bar:SetPoint("TOPLEFT", frame, "LEFT", contentX, Snap(height / 2 - pad, pixel))
-        bar:SetPoint("TOPRIGHT", frame, "RIGHT", -contentRight, Snap(height / 2 - pad, pixel))
-        bar:SetHeight(math.max(pixel, Snap(height - pad * 2, pixel)))
         Panel(frame, d)
         d.panel:ClearAllPoints()
         d.panel:SetPoint("TOPLEFT", frame, "LEFT", 0, Snap(height / 2, pixel))
         d.panel:SetPoint("BOTTOMRIGHT", frame, "RIGHT", 0, Snap(-height / 2, pixel))
-        d.panel:SetColorTexture(0.1, 0.105, 0.11, 0.45)
+        d.panel:SetColorTexture(0.13, 0.135, 0.14, 0.65)
         d.borderPixel = pixel
         local r, g, b = ns.AccentBarColor(S)
         for i, edge in ipairs(d.edges) do
@@ -173,11 +169,21 @@ local function HUD(C)
         local label, timer = _G[name .. "BarName"], _G[name .. "BarTimer"]
         local path, flags = S.GetFont()
         local nativeSize = options.FontSize or 10
-        d.labelSize = math.max(6, math.min(nativeSize * (obj.enlarged and 1.1 or 1), height * 0.55))
+        local twoRow = height >= 18 and width >= 150
+        local fillHeight = twoRow and math.max(pixel, Snap(height * 0.25, pixel)) or math.max(pixel, Snap(height - pad * 2, pixel))
+        local labelHeight = twoRow and math.max(pixel, height - pad * 2 - fillHeight - pixel) or height - pad * 2
+        d.labelSize = math.max(6, math.min(nativeSize * (obj.enlarged and 1.1 or 1), twoRow and labelHeight * 0.9 or height * 0.55))
         local timerSize = math.max(6, math.min(nativeSize * (obj.enlarged and 1.1 or 1), height * 0.6))
         -- Limit reservations at DBT's narrowest sizes; never resize its stack frame.
         local available = math.max(pixel, width - contentX - contentRight)
         local timerSpace = math.min(available * 0.4, math.max(20, timerSize * 3.0))
+        local trackX = contentX + (twoRow and gap or 0)
+        local trackRight = contentRight + (twoRow and timerSpace + gap * 2 or 0)
+        local trackTop = twoRow and -height / 2 + pad + fillHeight or height / 2 - pad
+        bar:ClearAllPoints()
+        bar:SetPoint("TOPLEFT", frame, "LEFT", trackX, Snap(trackTop, pixel))
+        bar:SetPoint("TOPRIGHT", frame, "RIGHT", -trackRight, Snap(trackTop, pixel))
+        bar:SetHeight(fillHeight)
         local x, y = options[prefix .. "TextXOffset"] or 0, options[prefix .. "TextYOffset"] or 0
         if Allowed(timer) then
             timer:SetFont(path, timerSize, flags or ""); timer:SetWidth(timerSpace)
@@ -189,9 +195,10 @@ local function HUD(C)
         end
         if Allowed(label) then
             label:SetFont(path, d.labelSize, flags or ""); label:ClearAllPoints()
-            label:SetPoint("LEFT", frame, "LEFT", contentX + gap + x, y)
-            label:SetPoint("RIGHT", frame, "RIGHT", -contentRight - timerSpace - gap * 2 + x, y)
-            label:SetHeight(height - pad * 2)
+            local labelY = twoRow and height / 2 - pad - labelHeight / 2 or 0
+            label:SetPoint("LEFT", frame, "LEFT", contentX + gap + x, labelY + y)
+            label:SetPoint("RIGHT", frame, "RIGHT", -contentRight - timerSpace - gap * 2 + x, labelY + y)
+            label:SetHeight(labelHeight)
             if label.SetJustifyH then label:SetJustifyH("LEFT") end
             if label.SetJustifyV then label:SetJustifyV("MIDDLE") end
             if label.SetWordWrap then label:SetWordWrap(false) end
@@ -251,7 +258,7 @@ local function HUD(C)
                 end
             end
             local bg = _G[name .. "BarBackground"]
-            if H.Texture(bg) then bg:SetColorTexture(0.16, 0.17, 0.18, 0.55) end
+            if H.Texture(bg) then H.Fade(bg) end
             local spark = _G[name .. "BarSpark"]
             if H.Texture(spark) then H.Fade(spark) end
             for _, side in ipairs({"Top", "Bottom", "Left", "Right"}) do
@@ -262,22 +269,6 @@ local function HUD(C)
             local d = bars[obj]
             BarLayout(obj, bar, d, name)
             FitInlineIcons(obj)
-            if not d.trackEdges then
-                d.trackEdges = {}
-                for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
-                    local edge = bar:CreateTexture(nil, "OVERLAY", nil, -1)
-                    if i <= 2 then
-                        edge:SetPoint(side .. "LEFT", bar, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", bar, side .. "RIGHT"); edge:SetHeight(1)
-                    else
-                        edge:SetPoint("TOP" .. side, bar, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, bar, "BOTTOM" .. side); edge:SetWidth(1)
-                    end
-                    edge:SetColorTexture(0.2, 0.215, 0.23, 0.4)
-                    d.trackEdges[i] = edge
-                end
-            end
-            for i, edge in ipairs(d.trackEdges) do
-                if i <= 2 then edge:SetHeight(d.borderPixel) else edge:SetWidth(d.borderPixel) end
-            end
             PaintVariance(obj)
             local r, g, b = ns.AccentBarColor(S)
             for i = 1, 2 do

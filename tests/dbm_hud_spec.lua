@@ -666,6 +666,11 @@ event('ADDON_LOADED'); assert(pageCount == 0, 'incomplete GUI must not create a 
 local menuUpdates = 0
 DBM_GUI_OptionsFrame = CreateFrame('Frame')
 DBM_GUI_OptionsFrame.UpdateMenuFrame = function() menuUpdates = menuUpdates + 1 end
+DBM_GUI_OptionsFrame.DisplayFrame = function(_, page) DBM_GUI.currentViewing = page end
+DBM_GUI_OptionsFrame.ShowTab = function(self, tab)
+    self.tab = tab; self:UpdateMenuFrame()
+    if DBM_GUI.currentViewing then self:DisplayFrame(DBM_GUI.currentViewing) end
+end
 event('ADDON_LOADED')
 local sidePreview = DBM_GUI_OptionsFrame.children[1]
 assert(sidePreview and sidePreview.text == 'Preview DBM bars' and sidePreview.buttonStyled and sidePreview.enabled)
@@ -688,6 +693,20 @@ assert(dropdowns.smallLayout.value == 'strip' and dropdowns.hugeLayout.value == 
 local uiCreated, uiHooks = created, hooks
 for _ = 1, 10 do event('ADDON_LOADED'); nativePage.frame.scripts.OnShow() end
 assert(pageCount == 1 and created == uiCreated and hooks == uiHooks and menuUpdates == 1, 'settings controls/hooks or category-list updates duplicated')
+-- Navigating ordinary options must not repaint the active HUD timer pool,
+-- warnings or aura previews. Full/manual refreshes still discover/repaint it.
+if os.getenv('EUI_AUDIT_BASELINE') ~= '1' then
+    local page = CreateFrame('Frame', nil, DBM_GUI_OptionsFrame); page.mytype = 'panel'
+    local text = page:CreateFontString(); text:SetText('Ordinary options')
+    DBM_GUI_OptionsFrame:DisplayFrame(page); flush()
+    local navIterations, navFonts, navObjects, navHooks = iteratorCalls, fontWrites, created, hooks
+    for i = 1, 100 do DBM_GUI_OptionsFrame:ShowTab(i % 2 + 1) end
+    flush()
+    assert(iteratorCalls == navIterations and fontWrites == navFonts, 'GUI navigation repainted HUD or unchanged fonts')
+    assert(created == navObjects and hooks == navHooks, 'GUI navigation duplicated objects/hooks')
+    print(('BENCH dbm_navigation_hud pool_walks=%d font_writes=%d callbacks=100'):format(iteratorCalls - navIterations, fontWrites - navFonts))
+    modules.DBM.refresh(); flush(); assert(iteratorCalls > navIterations, 'manual refresh lost HUD discovery')
+end
 -- Changes repaint existing bars synchronously, without traversing GUI frames.
 first.enlarged = false; first:ApplyStyle()
 local beforeUIReads = childReads

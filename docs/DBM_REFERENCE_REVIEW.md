@@ -8,7 +8,7 @@ The user requested a reminder before this DBM alpha is prepared for release if u
 
 - [ ] Theme current DBM range/radar windows through EllesmereUI, after verifying current frame/API behavior.
 - [ ] Theme the current DBM information window, using targeted lifecycle hooks and reusable styling.
-- [ ] Separate GUI refreshes from HUD repaints, retaining theme/accent updates, late loading, manual refreshes and enable transitions; add regressions before changing that behavior.
+- [x] Separate ordinary GUI navigation/control refreshes from HUD repaints, retaining theme/accent updates, late loading, manual refreshes and enable transitions; covered by alpha.23 regressions.
 - [x] Reuse timer skin objects and install per-object lifecycle hooks once.
 - [x] Discover new timers directly instead of scanning the whole active pool on creation; protect with a creation-burst regression.
 - [x] Keep countdowns free of added Update/OnUpdate hooks and polling; retain the simulated countdown regression.
@@ -43,5 +43,7 @@ No runtime change was justified by copying these approaches. Our direct creation
 These are mocked operation counts, not live CPU/FPS measurements or timings. The references' per-creation traversal has cumulative growth as the active timer pool grows; no numerical speedup over either addon is claimed.
 
 A separate candidate remains in our implementation: the scoped GUI hooks call the HUD refresh, so an options-page refresh can repaint existing timers and aura previews. Removing that coupling needs coverage for theme changes, late-loaded APIs, manual refreshes and enable transitions. It is recorded for the DBM performance pass; alpha.7's runtime is unchanged by this review.
+
+Completed in alpha.23: navigation and control callbacks now repaint the selected page/sidebar without entering the full GUI/HUD refresh. Full/manual/theme/load refreshes still run HUD discovery; hidden pages style when shown. The new simulated navigation regression checks 100 callbacks with zero active timer-pool walks or font writes. See [DBM GUI performance](DBM_GUI_PERFORMANCE.md) for scope, baseline counts and limitations. Range/radar and information-window styling remain pending.
 
 Azilroka's custom license restricts modifications and reserves other rights. The older repository does not establish permission to transplant its code merely by being public. This review retains implementation ideas and API observations only; project licensing is unchanged.

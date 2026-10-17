@@ -682,35 +682,156 @@ local function HUD(C)
 end
 local nativeTabs = setmetatable({}, {__mode = "k"})
 local fontPaints = setmetatable({}, {__mode = "k"})
+local fontStates = setmetatable({}, {__mode = "k"})
+local fontGeneration = 0
+local function ApplyFont(S, text, r, g, b)
+    local state = fontStates[text]
+    if not state then state = {}; fontStates[text] = state end
+    if state.painting then return end
+    local path, size, flags = text:GetFont()
+    if issecretvalue and (issecretvalue(path) or issecretvalue(size) or issecretvalue(flags)) then return end
+    local target, targetFlags
+    if S.GetFont then target, targetFlags = S.GetFont() end
+    if not fontPaints[text] or state.generation ~= fontGeneration or state.path ~= path or state.size ~= size or state.flags ~= flags
+        or state.target ~= target or state.targetFlags ~= targetFlags then
+        -- EUI primes a FontObject shadow before SetFont. Guard that entire
+        -- primitive, so our native-font hooks cannot re-enter it halfway through.
+        state.painting = true
+        local cr, cg, cb, ca
+        if r == nil and text.GetTextColor then cr, cg, cb, ca = text:GetTextColor() end
+        local ok, err = pcall(S.Font, text, r, g, b)
+        state.painting = false
+        if not ok then error(err) end
+        if cr ~= nil and not (issecretvalue and (issecretvalue(cr) or issecretvalue(cg) or issecretvalue(cb) or issecretvalue(ca))) then
+            text:SetTextColor(cr, cg, cb, ca)
+        end
+        state.path, state.size, state.flags = text:GetFont()
+        state.target, state.targetFlags, state.generation = target, targetFlags, fontGeneration
+    elseif r ~= nil and text.SetTextColor then text:SetTextColor(r, g, b or r) end
+end
 local function Fonts(C, f, kind)
     local H, S = C.H, C.S
     local function Bind(text, html)
         if fontPaints[text] then fontPaints[text](); return end
-        local painting = false
+        local painting, generation = false, nil
         local function Paint()
-            if painting then return end
+            if painting or fontStates[text] and fontStates[text].painting then return end
             if InCombatLockdown and InCombatLockdown() then C.module.refresh(); return end
             painting = true
             H.Safe(function()
                 if html and S.GetFont then
-                    -- SimpleHTML regenerates its text regions when DBM resizes
-                    -- a page. Style its paragraph font, not the transient regions.
-                    local _, size = text:GetFont("p")
-                    local path, flags = S.GetFont()
-                    text:SetFont("p", path, size or 12, flags or "")
+                    local path, size, flags = text:GetFont("p")
+                    if issecretvalue and (issecretvalue(path) or issecretvalue(size) or issecretvalue(flags)) then return end
+                    local target, targetFlags = S.GetFont()
+                    if generation ~= fontGeneration or path ~= target or (flags or "") ~= (targetFlags or "") then
+                        text:SetFont("p", target, size or 12, targetFlags or "")
+                        generation = fontGeneration
+                    end
                 elseif not html then H.Font(text) end
             end)
             painting = false
         end
         fontPaints[text] = Paint
         Paint()
-        H.Hook(text, "SetFontObject", Paint)
+        H.Hook(text, "SetFontObject", function()
+            if painting or fontStates[text] and fontStates[text].painting then return end
+            if fontStates[text] then fontStates[text].generation = nil end
+            generation = nil; Paint()
+        end)
         H.Hook(text, "SetFont", Paint)
     end
     if kind == "SimpleHTML" then Bind(f, true); return true end
     for _, text in ipairs(H.Regions(f)) do
         if H.Allowed(text) and text:GetObjectType() == "FontString" then Bind(text, false) end
     end
+end
+local function GUIExclude(C)
+    if not C.dbmExclude then
+        C.dbmExclude = setmetatable({}, {__index = function(_, child)
+            return child:GetObjectType() == "ScrollingMessageFrame" or child.mytype == "modelframe"
+                or child.mytype == "panel" and child.IsShown and not child:IsShown()
+        end})
+        C.dbmChromeExclude = setmetatable({}, {__index = function(_, child)
+            return child.mytype == "panel" or C.dbmExclude[child]
+        end})
+    end
+    local f = Window()
+    if f and f.searchHighlightFrame then C.dbmExclude[f.searchHighlightFrame] = true end
+    if C.dbmSettings then C.dbmExclude[C.dbmSettings.frame] = true end
+    if C.dbmPreview then C.dbmExclude[C.dbmPreview.preview] = true end
+    return C.dbmExclude
+end
+local function Chrome(C)
+    local f, H = Window(), C.H
+    local exclude = GUIExclude(C)
+    for i in ipairs(f and f.tabs or {}) do
+        local tab = _G["DBM_GUI_OptionsFrameTab" .. i]
+        if H.Allowed(tab) then
+            local art = nativeTabs[tab]
+            if not art then
+                art = {}; nativeTabs[tab] = art
+                local function Strip(child, depth)
+                    if depth > 4 or not H.Allowed(child) then return end
+                    for _, region in ipairs(H.Regions(child)) do if H.Texture(region) then H.Fade(region) end end
+                    for _, nested in ipairs(H.Children(child)) do Strip(nested, depth + 1) end
+                end
+                for _, region in ipairs(H.Regions(tab)) do if H.Texture(region) then H.Fade(region) end end
+                for _, child in ipairs(H.Children(tab)) do Strip(child, 0); art[#art + 1] = child end
+            end
+            for _, child in ipairs(art) do exclude[child] = true end
+            H.Tab(tab, f.tab == i)
+        end
+    end
+    local list = _G.DBM_GUI_OptionsFrameList
+    local wrapper = H.Allowed(list) and list:GetParent()
+    if H.Allowed(wrapper) and wrapper ~= f and C.dbmWrapper ~= wrapper then
+        C.Panel(wrapper)
+        wrapper:SetPoint("TOPLEFT", f, "TOPLEFT", 15, -72)
+        C.dbmWrapper = wrapper
+    end
+end
+local function Navigation(C)
+    if C.dbmNavigation then return end
+    C.dbmNavigation = true
+    local H, dirty = C.H, {}
+    local function Paint(root, chrome)
+        if not ns.IsEnabled(C.module) or not H.Allowed(root) then return end
+        if InCombatLockdown and InCombatLockdown() then C.module.refresh(); return end
+        dirty[root] = nil -- A synchronous completed-page paint consumes OnShow work.
+        GUIExclude(C)
+        if C.dbmExclude[root] then return end
+        if chrome then
+            Chrome(C)
+            root = C.dbmWrapper or _G.DBM_GUI_OptionsFrameList
+            if not H.Allowed(root) then return end
+        end
+        C.RefreshControlsNow(root, chrome and C.dbmChromeExclude or C.dbmExclude)
+    end
+    local function Queue(root, chrome)
+        if not H.Allowed(root) or dirty[root] then return end
+        dirty[root] = true
+        H.Queue(root, function() if dirty[root] then Paint(root, chrome) end end)
+    end
+    C.dbmPaintChrome = function() Paint(Window(), true) end
+    C.dbmPaintPage = function(_, page) Paint(page, false); C.dbmPaintChrome() end
+    C.dbmQueueVisible = function()
+        Queue(_G.DBM_GUI and _G.DBM_GUI.currentViewing, false)
+        Queue(Window(), true)
+    end
+    C.dbmControlRefresh = function(root, source)
+        local node = H.Allowed(source) and source or root
+        for _ = 1, 20 do
+            if not H.Allowed(node) then break end
+            if node.mytype == "panel" then Queue(node, false); return end
+            if node == _G.DBM_GUI_DropDown then Queue(node, false); return end
+            if node == _G.DBM_GUI_OptionsFrameList or node == C.dbmWrapper then Queue(Window(), true); return end
+            node = node.GetParent and node:GetParent()
+        end
+        -- Scroll containers and window-level controls can affect the selected
+        -- page. Refresh it once without entering unrelated hidden panels/HUD.
+        C.dbmQueueVisible()
+    end
+    C.dbmConsumePending = function() for root in pairs(dirty) do dirty[root] = nil end end
 end
 
 ns.RegisterScopedSkin("DBM", "Deadly Boss Mods", {
@@ -720,59 +841,35 @@ ns.RegisterScopedSkin("DBM", "Deadly Boss Mods", {
     preserveTextColors = true,
     immediateShow = true,
     panelOptions = {noBorder = true},
+    font = ApplyFont,
+    controlRefresh = function(C, root, source)
+        if C.dbmControlRefresh then C.dbmControlRefresh(root, source) end
+    end,
     roots = function(C)
-        local f = Window()
-        local exclude = setmetatable({}, {__index = function(_, child)
-            -- Font/warning previews and creature models show DBM's settings.
-            return child:GetObjectType() == "ScrollingMessageFrame" or child.mytype == "modelframe"
-        end})
-        if f and f.searchHighlightFrame then exclude[f.searchHighlightFrame] = true end
-        if C.dbmSettings then exclude[C.dbmSettings.frame] = true end
-        if C.dbmPreview then exclude[C.dbmPreview.preview] = true end
-        -- MinimalTabTemplate has child frames holding the Classic tab artwork.
-        -- Skin tabs before generic discovery can assign them a button backdrop.
-        for i in ipairs(f and f.tabs or {}) do
-            local tab = _G["DBM_GUI_OptionsFrameTab" .. i]
-            if C.H.Allowed(tab) then
-                if not nativeTabs[tab] then
-                    nativeTabs[tab] = {}
-                    for _, region in ipairs(C.H.Regions(tab)) do
-                        if C.H.Texture(region) then nativeTabs[tab][#nativeTabs[tab] + 1] = region end
-                    end
-                end
-                for _, region in ipairs(nativeTabs[tab]) do C.H.Fade(region) end
-                local function Strip(child, depth)
-                    if depth > 4 or not C.H.Allowed(child) then return end
-                    for _, region in ipairs(C.H.Regions(child)) do if C.H.Texture(region) then C.H.Fade(region) end end
-                    for _, nested in ipairs(C.H.Children(child)) do Strip(nested, depth + 1) end
-                end
-                for _, child in ipairs(C.H.Children(tab)) do Strip(child, 0); exclude[child] = true end
-                C.H.Tab(tab, f.tab == i)
-            end
-        end
-        local list = _G.DBM_GUI_OptionsFrameList
-        local wrapper = C.H.Allowed(list) and list:GetParent()
-        if C.H.Allowed(wrapper) and wrapper ~= f then
-            C.Panel(wrapper)
-            wrapper:SetPoint("TOPLEFT", f, "TOPLEFT", 15, -72)
-        end
+        Chrome(C)
+        local f, exclude = Window(), GUIExclude(C)
         local roots = {}
         if C.H.Allowed(f) then roots[1] = {frame = f, options = {bottomBar = 36}, exclude = exclude} end
-        -- Older DBM versions use a private popup instead of Blizzard's Menu API.
         local popup = _G.DBM_GUI_DropDown
         if C.H.Allowed(popup) then roots[#roots + 1] = {frame = popup, exclude = exclude} end
         return roots
     end,
-    hooks = function(C, refresh)
+    hooks = function(C)
+        Navigation(C)
+        C.dbmConsumePending()
+        fontGeneration = fontGeneration + 1
+        -- Full/manual/theme/load refreshes retain HUD discovery. Ordinary
+        -- navigation and control callbacks below never enter this path.
         HUD(C)()
         for _, name in ipairs({"CreateNewPanel", "CreateBossModPanel", "CreateDropdown"}) do
-            C.H.Hook(_G.DBM_GUI, name, refresh)
+            C.H.Hook(_G.DBM_GUI, name, C.dbmQueueVisible)
         end
-        for _, name in ipairs({"ShowTab", "DisplayFrame", "UpdateMenuFrame", "ClearSelection"}) do
-            C.H.Hook(Window(), name, C.RefreshNow)
+        for _, name in ipairs({"ShowTab", "UpdateMenuFrame", "ClearSelection"}) do
+            C.H.Hook(Window(), name, C.dbmPaintChrome)
         end
+        C.H.Hook(Window(), "DisplayFrame", C.dbmPaintPage)
         local f = Window()
-        C.H.Hook(f and f.tabsGroup, "SelectAtIndex", C.RefreshNow)
+        C.H.Hook(f and f.tabsGroup, "SelectAtIndex", C.dbmPaintChrome)
     end,
     visit = function(C, f, kind)
         local H, S = C.H, C.S

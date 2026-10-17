@@ -1479,26 +1479,39 @@ tracker:Update(); flush(); assert(disabledText.font == 'GameFontNormal')
 enabled = true
 print('PASS: Questie owned windows/tabs, tracker colours/opacity, secure items, dynamic rows, combat/toggles and hook idempotence')
 -- DBM-GUI loads on demand; its colour selectors and previews are not ordinary buttons.
+do
 DBM_GUI, DBM_GUI_OptionsFrame = nil, nil
 assert(loadfile('EUIAddonSkins/Skins/DBM.lua'))('EUIAddonSkins', ns)
 assert(not modules.DBM.available(), 'DBM skin forced missing GUI initialization')
 DBM_GUI = {CreateNewPanel = function() return 'panel-native' end}
 local dbm = frame('Frame', 'DBM_GUI_OptionsFrame')
 dbm.tab, dbm.tabs = 1, {{}, {}}
-dbm.ShowTab = function(self, index) self.tab = index end
-dbm.DisplayFrame = function(_, page) DBM_GUI.currentViewing = page; dbm.tabs[dbm.tab].selection = page end
+dbm.ShowTab = function(self, index)
+    self.tab = index; self:UpdateMenuFrame()
+    local target = self.tabs[index].selection or DBM_GUI.currentViewing
+    if target then self:DisplayFrame(target) end
+end
+dbm.DisplayFrame = function(_, target)
+    local previous = DBM_GUI.currentViewing
+    if previous and previous ~= target then previous:Hide() end
+    DBM_GUI.currentViewing = target; dbm.tabs[dbm.tab].selection = target
+    local changed = not target:IsShown(); target:Show()
+    if changed and target.hooks.OnShow then target.hooks.OnShow(target) end
+end
 dbm.UpdateMenuFrame = function() end
+dbm.ClearSelection = function() end
 local dbmTab1 = frame('Button', 'DBM_GUI_OptionsFrameTab1', dbm)
 local dbmTab2 = frame('Button', 'DBM_GUI_OptionsFrameTab2', dbm)
 local tabArt = frame('Frame', nil, dbmTab2); local stockTab = tabArt:CreateTexture()
 dbmTab2.kind = 'CheckButton'
 local rootStockTab = dbmTab2:CreateTexture()
 local wrapper = frame('Frame', nil, dbm)
-frame('ScrollFrame', 'DBM_GUI_OptionsFrameList', wrapper)
+local dbmList = frame('ScrollFrame', 'DBM_GUI_OptionsFrameList', wrapper)
 local close = frame('Button', 'DBM_GUI_OptionsFrameClosePanelButton', dbm)
 local page = frame('Frame', nil, dbm); page.mytype = 'panel'; page.showSub = true
 dbm.tabs[1].selection = page
-local row = frame('Button', nil, dbm); row.element = page
+DBM_GUI.currentViewing = page
+local row = frame('Button', nil, dbmList); row.element = page
 row.toggle = frame('Button', nil, row); row.toggle.normal = texture(); row.toggle.normal.path = 130821
 local swatch = frame('Button', nil, page); swatch.SetColorRGB = function() return 'colour-native' end
 local colour = swatch:CreateTexture(); colour:SetVertexColor(0.3, 0.8, 0.1, 1)
@@ -1511,12 +1524,24 @@ local slider = frame('Slider', nil, page); slider.GetThumbTexture = function() r
 slider.GetOrientation = function() return 'HORIZONTAL' end; slider.value = 0.7
 S.GetFont = function() return 'eui', 'OUTLINE' end
 local html = frame('SimpleHTML', nil, page)
-html.GetFont = function(self, tag) assert(tag == 'p'); return self.font or 'native', 13 end
+html.GetFont = function(self, tag) assert(tag == 'p'); return self.font or 'native', 13, self.flags end
 html.SetFont = function(self, tag, path, size, flags) assert(tag == 'p'); self.font, self.fontSize, self.flags = path, size, flags end
 html.SetFontObject = function(self, tag, path) assert(tag == 'p'); self.font = path end
 local dbmLabel = page:CreateFontString(nil, nil, 'GameFontNormal'); dbmLabel:SetTextColor(0.2, 0.7, 0.3, 0.8)
 local warning = frame(); local alert = warning:CreateFontString(nil, 'OVERLAY', 'DBMAlertFont')
 local area = frame('Frame', nil, page); area.mytype = 'area'; area:SetBackdrop({bgFile = 'native'})
+-- DBM retains many hidden option pages under its panel container. Navigation
+-- must scale with the visible page, not every previously constructed page.
+local hiddenDBMPages, hiddenDBMControls = {}, {}
+for i = 1, 20 do
+    local panel = frame('Frame', nil, dbm); panel.mytype = 'panel'; panel:Hide()
+    hiddenDBMPages[i] = panel
+    for j = 1, 40 do
+        local control = frame('CheckButton', nil, panel)
+        control:CreateFontString(nil, nil, 'GameFontNormal'):SetText('Hidden option')
+        hiddenDBMControls[#hiddenDBMControls + 1] = control
+    end
+end
 assert(modules.DBM.available())
 S.Dropdown = function(f) f.dropdown = true end
 modules.DBM.install(S, modules.DBM); flush()
@@ -1539,7 +1564,54 @@ auditScans[dbm] = 0
 for _ = 1,100 do assert(DBM_GUI:CreateNewPanel() == 'panel-native') end
 flush()
 print(('BENCH dbm_construct full=%d callbacks=100'):format(auditScans[dbm] or 0))
-if not auditBaseline then assert(auditScans[dbm] == 1, 'DBM construction burst repeated full scans') end
+if not auditBaseline then assert(auditScans[dbm] == 0, 'DBM construction burst traversed the whole window') end
+
+auditScans[dbm], auditScans[page] = 0, 0
+for _, control in ipairs(hiddenDBMControls) do auditVisits[control] = 0 end
+local beforeFontWrites = dbmLabel.fontWrites or 0
+for i = 1, 10 do dbm:ShowTab(i % 2 + 1); flush() end
+local hiddenDBMVisits = 0
+for _, control in ipairs(hiddenDBMControls) do hiddenDBMVisits = hiddenDBMVisits + (auditVisits[control] or 0) end
+print(('BENCH dbm_navigation full=%d page=%d hidden_controls=%d label_font_writes=%d switches=10'):format(
+    auditScans[dbm] or 0, auditScans[page] or 0, hiddenDBMVisits, (dbmLabel.fontWrites or 0) - beforeFontWrites))
+if not auditBaseline then
+    assert(auditScans[dbm] == 0 and auditScans[page] == 10 and hiddenDBMVisits == 0, 'DBM navigation repeated full scans or visited hidden pages')
+    assert((dbmLabel.fontWrites or 0) == beforeFontWrites, 'warm navigation rewrote an unchanged font')
+end
+-- Native font-object priming inside EUI's Font primitive must not recursively
+-- invoke the primitive or lose semantic text colors/alpha.
+if not auditBaseline then
+local plainFont = S.Font
+S.Font = function(text, ...)
+    text:SetFontObject('eui-shadow-object'); text:SetTextColor(1,1,1,1); plainFont(text, ...)
+end
+dbmLabel:SetTextColor(0.2,0.7,0.3,0.8)
+local primedWrites = dbmLabel.fontWrites
+dbmLabel:SetFont('native', 17)
+assert(dbmLabel.font == 'eui' and dbmLabel.fontSize == 17 and dbmLabel.textColor[1] == 0.2 and dbmLabel.textColor[4] == 0.8)
+assert(dbmLabel.fontWrites == primedWrites + 2, 'EUI shadow priming re-entered the font primitive')
+S.Font = plainFont
+-- Previously untouched hidden pages style synchronously when first displayed.
+assert(not hiddenDBMControls[1].checkbox, 'hidden controls were styled at startup')
+dbm:DisplayFrame(hiddenDBMPages[1]); assert(hiddenDBMControls[1].checkbox)
+assert(not hiddenDBMControls[41].checkbox, 'opening one panel styled another hidden panel')
+-- The synchronous completed-page pass consumes its earlier OnShow request.
+page:Hide(); auditScans[dbm], auditScans[page] = 0, 0
+dbm:DisplayFrame(page); assert(auditScans[page] == 1); flush()
+assert(auditScans[dbm] == 0 and auditScans[page] == 1, 'OnShow duplicated the completed DisplayFrame pass')
+local pageScroll = frame('ScrollFrame', nil, page)
+local scrollOption = frame('CheckButton', nil, pageScroll)
+dbm:DisplayFrame(page); assert(scrollOption.checkbox)
+auditScans[dbm], auditScans[page] = 0, 0
+for _ = 1,100 do pageScroll.hooks.OnVerticalScroll(pageScroll) end
+flush(); assert(auditScans[dbm] == 0 and auditScans[page] == 1, 'page scroll burst performed full or repeated scans')
+auditScans[page], auditScans[wrapper] = 0, 0
+for _ = 1,100 do dbmList.hooks.OnVerticalScroll(dbmList) end
+flush(); assert(auditScans[page] == 0 and auditScans[wrapper] == 1, 'sidebar scrolling refreshed page content')
+auditScans[dbm], auditScans[page] = 0, 0
+for _ = 1,100 do dynamic.hooks.OnClick(dynamic) end
+flush(); assert(auditScans[dbm] == 0 and auditScans[page] == 1, 'control callback burst escaped its selected page')
+end
 
 local dbmHook, objects = dbm.ShowTab, #row.regions + #row.toggle.regions + #slider.regions
 for _ = 1, 5 do modules.DBM.refresh(); flush() end
@@ -1551,11 +1623,21 @@ DBM_GUI:CreateNewPanel(); flush(); assert(not deferred.checkbox)
 combat = false
 for _, eventFrame in ipairs(events) do if eventFrame.events and eventFrame.events.PLAYER_REGEN_ENABLED then eventFrame.hooks.OnEvent(eventFrame, 'PLAYER_REGEN_ENABLED') end end
 flush(); assert(deferred.checkbox and dbmLabel.font == 'eui')
+combat = true; dbm:DisplayFrame(hiddenDBMPages[2]); flush()
+assert(not hiddenDBMControls[41].checkbox, 'combat navigation styled protected-time UI')
+combat = false
+for _, eventFrame in ipairs(events) do if eventFrame.events and eventFrame.events.PLAYER_REGEN_ENABLED then eventFrame.hooks.OnEvent(eventFrame, 'PLAYER_REGEN_ENABLED') end end
+flush(); assert(hiddenDBMControls[41].checkbox, 'combat navigation did not catch up after combat')
+dbm:DisplayFrame(page)
 enabled = false; dbmLabel:SetFontObject('disabled-native'); assert(dbmLabel.font == 'disabled-native')
 local skipped = frame('CheckButton', nil, page)
 DBM_GUI:CreateNewPanel(); flush(); assert(not skipped.checkbox)
+dbm:DisplayFrame(hiddenDBMPages[3]); assert(not hiddenDBMControls[81].checkbox)
 enabled = true
+modules.DBM.refresh(); flush(); assert(hiddenDBMControls[81].checkbox, 'enable/manual refresh lost visible-page discovery')
+dbm:DisplayFrame(page); assert(skipped.checkbox)
 print('PASS: DBM lazy GUI, dynamic controls, selection, swatches/previews, theme refresh, combat/toggles and idempotence')
+end
 -- AtlasLoot Continued: owned custom widgets and foreground/status art.
 AtlasLoot = nil
 assert(loadfile('EUIAddonSkins/Skins/AtlasLootContinued.lua'))('EUIAddonSkins', ns)

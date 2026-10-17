@@ -116,6 +116,7 @@ local function object(kind, name, parent)
     function o:IsVisible() return self.shown end
     function o:GetFont() return self.font, self.size, '' end
     function o:GetText() return self.text end
+    function o:GetStringWidth() return self.stringWidth or #(self.text or "") * self.size * 0.55 end
     function o:SetText(v)
         self.text = v; textWrites = textWrites + 1
         if self.kind == 'Button' and not self.label then self.label = self:CreateFontString() end
@@ -712,7 +713,7 @@ function prototypes:CreateText(value, width)
     local text = self.frame:CreateFontString(); text:SetText(value); text:SetWidth(width); return text
 end
 S.Checkbox = function(frame) frame.checkboxStyled = true end
-S.Panel = function(frame) frame.panelStyled = true end
+S.Panel = function(frame, options) frame.panelStyled = true; frame.panelOptions = options end
 S.Shell = function(frame) frame.shellStyled = true end
 S.Dropdown = function(frame) frame.dropdownStyled = true end
 S.Button = function(frame) frame.buttonStyled = true end
@@ -1257,7 +1258,8 @@ do
         f:SetPoint('CENTER', UIParent, 'CENTER', 40, -20)
         f.backdrop = {bgFile = 'native-background'}
         f.header = f:CreateFontString(); f.header:SetPoint('BOTTOMLEFT',f,'TOPLEFT',2,2)
-        f.header:SetText('Native header')
+        f.header:SetText(kind == 'info' and 'Native header' or 'Range:10 Players:1')
+        if kind ~= 'info' then f.text = f.header end
         f.lines = {}
         f.scripts.OnShow = function() f.nativeShown = true end
         f.scripts.OnDragStart = function() f.nativeDragged = true end
@@ -1266,7 +1268,8 @@ do
         f.GetRegions = function(self) regionWalks = regionWalks + 1; return getRegions(self) end
         if kind == 'radar' then
             f.background = f:CreateTexture(); f.background:SetAlpha(0.3)
-            f.circle = f:CreateTexture(); f.circle:SetVertexColor(0,1,0,1)
+            f.circle = f:CreateTexture(); f.circle:SetTexture('native-radar'); f.circle:SetVertexColor(0,1,0,1); f.circle:SetBlendMode('ADD')
+            f.arrow = f:CreateTexture(); f.arrow:SetTexture(136431); f.arrow:SetSize(32,32); f.arrow:SetBlendMode('ADD')
             f.dot = f:CreateTexture(); f.dot:SetTexture('native-player-dot')
         end
         return f
@@ -1291,6 +1294,13 @@ do
         SetLine = function(_,row) addLine(DBMInfoFrame,row); return 'native-line' end,
         UpdateStyle = function() for _,text in ipairs(DBMInfoFrame.lines) do text:SetFont('native',12) end end,
         SetHeader = function() DBMInfoFrame.header:SetText('Updated header') end,
+        AlignLine = function(_,index,perColumn)
+            local line = DBMInfoFrame.lines[index]
+            line:ClearAllPoints()
+            if index == 1 then line:SetPoint('TOPLEFT',DBMInfoFrame,'TOPLEFT',6,-6)
+            elseif index % 2 == 0 then line:SetPoint('TOPLEFT',DBMInfoFrame.lines[index-1],'TOPRIGHT',6,0)
+            else line:SetPoint('TOPLEFT',DBMInfoFrame.lines[index-2],'LEFT',0,-6) end
+        end,
         ShowDirect = function() return 'direct' end,
         SetDirectLine = function(_,row) addLine(DBMInfoFrame,row); return true end,
         UpdateDirect = function() addLine(DBMInfoFrame,4); return true end,
@@ -1301,15 +1311,27 @@ do
     assert(DBM.RangeCheck:Show() == 'native-range' and DBM.InfoFrame:Show() == 'native-info')
     local radar,info,range = DBMRangeCheckRadar,DBMInfoFrame,DBMRangeCheck
     for _,f in ipairs({radar,info,range}) do
-        assert(f.header.font == 'eui' and f.header.points[1][1] == 'BOTTOMLEFT' and f.header.text == 'Native header', f.name..':'..f.header.font..':'..table.concat(errors,';'))
+        assert(f.header.font == 'eui' and f.header.points[1][1] == 'TOPLEFT' and f.header.points[1][4] == 8 and f.header.points[1][5] == -8)
         assert(f.points[1][4] == 40 and f.points[1][5] == -20 and f:GetWidth() == (f == radar and 128 or 170), 'auxiliary skin changed native geometry')
-        assert(f.children[1].shellStyled and f.children[1].mouse == false and f.children[1].level < f:GetFrameLevel())
-        assert(f.children[1].points[1][5] == 22 and f.children[1].regions[1].fillColor[1] == 0.055, 'matte shell does not contain native header')
+        assert(f.children[1].panelStyled and f.children[1].mouse == false and f.children[1].level < f:GetFrameLevel())
+        assert(f.children[1].points[1][5] >= f.header:GetHeight()+16 and f.children[1].regions[1].fillColor[1] == 0.055, 'matte panel does not contain native header')
         assert(not f.backdrop and owners[f])
         f.scripts.OnDragStart(); f.scripts.OnMouseDown(f,'RightButton')
         assert(f.nativeDragged and f.nativeMenu == 'RightButton', 'native drag/menu action overwritten')
     end
     assert(radar.background.alpha == 0 and radar.circle.color[2] == 1 and radar.dot.path == 'native-player-dot')
+    assert(radar.header.text == 'Range: 10 · Players: 1' and radar.children[1].points[2][5] == -8, 'radar heading/empty footer spacing not corrected')
+    assert(radar.circle.path:find('DBMRadar.tga',1,true) and radar.circle:GetBlendMode() == 'BLEND')
+    assert(radar.arrow.w == 18 and radar.arrow:GetBlendMode() == 'BLEND' and radar.arrow.path == 136431)
+    radar.circle:SetVertexColor(1,0,0,1); assert(radar.circle.color[1] == 1 and radar.circle.color[2] == 0, 'danger colour overridden')
+    radar.header:SetText('Umkreis: 10 Spieler: 1'); assert(radar.header.text == 'Umkreis: 10 Spieler: 1', 'localized header rewritten')
+    radar.header:SetText('Range:10 Players:1')
+    info.header:SetText('A much longer encounter-specific heading')
+    assert(info.children[1].w >= info.header:GetStringWidth()+16, 'info title clipped by its background')
+    local footer = radar:CreateFontString(); footer:SetHeight(15); footer:Hide(); radar.inRangeText = footer
+    modules.DBM.refresh(); flush()
+    footer:Show(); assert(radar.children[1].points[2][5] == -23)
+    footer:Hide(); assert(radar.children[1].points[2][5] == -8)
     radar.scripts.OnShow(radar); assert(radar.nativeShown, 'native OnShow callback overwritten')
     local oldPanelColour = S.GetPanelColor
     S.GetPanelColor = function() return 0.08,0.09,0.10,0.95 end
@@ -1317,6 +1339,35 @@ do
     assert(radar.children[1].regions[1].fillColor[2] == 0.09, 'auxiliary background missed theme refresh')
     S.GetPanelColor = oldPanelColour
     for _,fn in ipairs(looks) do fn() end; flush()
+    local framesTab = sideControl('Frames')
+    assert(framesTab, 'Frames settings tab missing'); framesTab.scripts.OnClick()
+    local sliders = {}
+    for _,control in ipairs(sidePanel.children) do
+        if control.kind == 'Slider' then
+            local y = control.points[1] and control.points[1][5]
+            if y == -124 then sliders.range = control elseif y == -192 then sliders.radar = control elseif y == -260 then sliders.info = control end
+        end
+    end
+    assert(sliders.range and sliders.radar and sliders.info and sliders.radar:IsShown())
+    for _,f in ipairs({radar,info,range}) do assert(f.children[1].panelOptions.noBg and f.children[1].panelOptions.noBorder, 'opaque EUI layer remains below opacity fill') end
+    local barWalks = iteratorCalls
+    sliders.radar:SetValue(0); flush()
+    assert(radar.children[1].regions[1].fillColor[4] == 0 and info.children[1].regions[1].fillColor[4] == 0.85)
+    radar:SetAlpha(0.2)
+    sliders.radar:SetValue(100); sliders.range:SetValue(25); sliders.info:SetValue(40); flush()
+    assert(radar.children[1].regions[1].fillColor[4] == 1 and radar.children[1].regions[1]:GetEffectiveAlpha() == 1, '100% radar background still inherits transparency')
+    assert(range.children[1].regions[1].fillColor[4] == 0.25 and info.children[1].regions[1].fillColor[4] == 0.4)
+    assert(EUIAddonSkinsDB.dbm.radarOpacity == 1 and EUIAddonSkinsDB.dbm.rangeOpacity == 0.25 and iteratorCalls == barWalks, 'frame opacity changed bar styling or failed to save')
+    combat = true; sliders.info:SetValue(70); flush()
+    assert(info.children[1].regions[1].fillColor[4] == 0.4, 'frame opacity applied during combat')
+    combat = false; event('PLAYER_REGEN_ENABLED')
+    assert(info.children[1].regions[1].fillColor[4] == 0.7)
+    sideControl('Reset EUI styling').scripts.OnClick()
+    assert(EUIAddonSkinsDB.dbm.infoOpacity == 0.85 and info.children[1].regions[1].fillColor[4] == 0.85)
+    local oldObjects,oldHooks = created,hooks
+    for i=1,10 do sideControl('Small Bars').scripts.OnClick(); framesTab.scripts.OnClick() end
+    assert(created == oldObjects and hooks == oldHooks, 'Frames settings recreated controls/hooks')
+    sideControl('Small Bars').scripts.OnClick(); assert(not sliders.radar:IsShown())
     local first = info.lines[1]
     assert(first.font == 'eui' and first.size == 12 and first.color[2] == 0.8 and first.points[1][4] == 8)
     assert(DBM.InfoFrame:SetLine(2) == 'native-line' and info.lines[3].font == 'eui', 'dynamic info rows missed styling')
@@ -1324,6 +1375,9 @@ do
     assert(DBM.InfoFrame:UpdateDirect() and info.lines[7].font == 'eui')
     assert(DBM.InfoFrame:SetDirectHeader() and info.directHeader.font == 'eui')
     DBM.InfoFrame:UpdateStyle(); assert(first.font == 'eui' and first.color[2] == 0.8)
+    DBM.InfoFrame:AlignLine(1,10); DBM.InfoFrame:AlignLine(2,10); DBM.InfoFrame:AlignLine(3,10)
+    assert(first.points[1][4] == 0 and first.points[1][5] == -8 and info.lines[2].points[1][4] == 12 and info.lines[3].points[1][5] == -8)
+    DBM.InfoFrame:AlignLine(3,10); assert(info.lines[3].points[1][5] == -8, 'row spacing accumulated')
     local objectsBefore,hooksBefore,fontsBefore,walksBefore = created,hooks,fontWrites,regionWalks
     for i=1,1000 do DBM.InfoFrame:SetLine(1); DBM.InfoFrame:SetDirectLine(2) end
     assert(created == objectsBefore and hooks == hooksBefore and fontWrites == fontsBefore and regionWalks == walksBefore, 'warm info updates allocate, hook, re-font or enumerate regions')
@@ -1334,17 +1388,20 @@ do
     DBM.InfoFrame:SetLine(5); assert(info.lines[9].font == 'native', 'new auxiliary styling ran during combat')
     combat = false; event('PLAYER_REGEN_ENABLED'); assert(info.lines[9].font == 'eui')
     first:SetTextColor(0.4,0.9,0.2,1); first:SetSize(123,18)
-    first:ClearAllPoints(); first:SetPoint('LEFT',info,'LEFT',19,2)
     first:SetFont('new-native',18)
     enabled = false
     for _,fn in ipairs(looks) do fn() end; flush()
+    local savedRadar = EUIAddonSkinsDB.dbm.radarOpacity
+    sliders.radar:SetValue(20); assert(EUIAddonSkinsDB.dbm.radarOpacity == savedRadar, 'disabled opacity control saved changes')
+    assert(info.backdrop, 'missing restored backdrop: '..table.concat(errors,';'))
     assert(not info.children[1]:IsShown() and info.backdrop.bgFile == 'updated-native' and radar.background.alpha == 0.3)
-    assert(first.font == 'new-native' and first.size == 18 and first.w == 123 and first.points[1][4] == 19 and first.color[2] == 0.9, 'auxiliary disable lost native font/updated geometry/colours')
+    assert(radar.circle.path == 'native-radar' and radar.circle:GetBlendMode() == 'ADD' and radar.circle.color[1] == 1 and radar.arrow.w == 32 and radar.header.text == 'Range:10 Players:1', 'native radar artwork/header restoration failed')
+    assert(first.font == 'new-native' and first.size == 18 and first.w == 123 and first.points[1][4] == 6 and first.points[1][5] == -6 and first.color[2] == 0.9, 'auxiliary disable lost native font/updated geometry/colours')
     local disabledObjects,disabledFonts = created,fontWrites
     DBM.InfoFrame:SetLine(1)
     assert(created == disabledObjects and fontWrites == disabledFonts, 'disabled auxiliary callback styled content')
     enabled = true; modules.DBM.refresh(); flush()
-    assert(first.font == 'eui' and info.children[1]:IsShown())
+    assert(first.font == 'eui' and info.children[1]:IsShown() and first.points[1][5] == -8, 're-enable lost info styling/spacing')
     radar.protected = true
     local protectedFonts = fontWrites; radar.header:SetFont('native',16)
     DBM.RangeCheck:Show(); assert(radar.header.font == 'native', 'protected radar touched')
@@ -1352,7 +1409,7 @@ do
     ns.BindPopupOwner = nil
     DBM.RangeCheck,DBM.InfoFrame = nil,nil
     DBMRangeCheck,DBMRangeCheckRadar,DBMInfoFrame = nil,nil,nil
-    print('PASS: lazy range/radar/info shells, native markers/colour/data/geometry/actions, dynamic/direct rows, warm-update reuse, theme/disable restoration and combat deferral')
+    print('PASS: range/radar/info matte panels, title/footer/legacy-row spacing, localized headings, native warnings/art restoration, independent opacity extremes/reset/combat and warm reuse')
 end
 -- Disabled skins can save preferences without repainting anything.
 enabled = false

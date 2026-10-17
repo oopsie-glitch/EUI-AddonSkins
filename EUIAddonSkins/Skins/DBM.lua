@@ -14,7 +14,8 @@ local function HUD(C)
     local defaults = {smallEnabled = true, hugeEnabled = true, smallLayout = "strip", hugeLayout = "fill",
         smallOpacity = 0.65, hugeOpacity = 0.65, smallColour = "category", hugeColour = "category",
         smallBorder = true, hugeBorder = true, hugeGlyphs = true,
-        hugeIconScale = 1, hugeIconAccent = true, hugeIconR = 1, hugeIconG = 1, hugeIconB = 1}
+        hugeIconScale = 1, hugeIconAccent = true, hugeIconR = 1, hugeIconG = 1, hugeIconB = 1,
+        rangeOpacity = 0.85, radarOpacity = 0.85, infoOpacity = 0.85}
     local normalized
     local function Settings()
         EUIAddonSkinsDB = EUIAddonSkinsDB or {}
@@ -797,6 +798,7 @@ local function HUD(C)
         if state.button then state.button:SetEnabled(ns.IsEnabled(C.module) and (not inCombat or state.frame ~= nil)) end
         if not state.notice then return end
         if inCombat then state.notice:SetText("Styling changes apply after combat. Preview is unavailable during combat.")
+        elseif state.selected == "frames" then state.notice:SetText("Changes apply immediately.\nFrame position and size remain controlled by DBM.")
         elseif not available then state.notice:SetText("Bar preview is unavailable in this DBM version.")
         else state.notice:SetText("Changes apply immediately.\nSize, position and spacing remain controlled by DBM.") end
     end
@@ -809,7 +811,7 @@ local function HUD(C)
             gui:CollapseForPreview(duration)
         end
     end
-    local UpdateSide, OpenSide
+    local UpdateSide, OpenSide, RefreshAux
     local function SideAccent()
         local state = C.dbmPreview
         if not state then return end
@@ -849,7 +851,9 @@ local function HUD(C)
         local db = Settings()
         if db[key] == value then return end
         db[key] = value
-        if coalesce then H.Queue(C.dbmPreview, RefreshBars) else RefreshBars() end
+        local refresh = key == "rangeOpacity" or key == "radarOpacity" or key == "infoOpacity"
+        refresh = refresh and RefreshAux or RefreshBars
+        if coalesce then H.Queue(C.dbmPreview, refresh) else refresh() end
         if UpdateSide then UpdateSide() end
         SyncLayoutControls()
     end
@@ -857,36 +861,59 @@ local function HUD(C)
         local state = C.dbmPreview
         if not state or not state.frame then return end
         local db, prefix = Settings(), state.selected
+        local frames = prefix == "frames"
+        for _, control in ipairs({state.enabled, state.layout, state.colour, state.opacity, state.opacityText, state.border}) do control:SetShown(not frames) end
+        for _, entry in ipairs(state.frameSliders) do
+            entry.slider:SetShown(frames); entry.label:SetShown(frames)
+            entry.slider:SetEnabled(ns.IsEnabled(C.module))
+        end
+        state.preview:SetShown(not frames)
         state.updating = true
-        state.enabled:SetChecked(db[prefix .. "Enabled"])
-        state.border:SetChecked(db[prefix .. "Border"])
-        state.glyphs:SetChecked(db.hugeGlyphs)
-        state.glyphs:SetShown(prefix == "huge")
-        state.iconScale:SetValue(db.hugeIconScale * 100)
-        state.iconScaleText:SetText("Mechanic icon size: " .. math.floor(db.hugeIconScale * 100 + 0.5) .. "%")
-        state.iconAccent:SetChecked(db.hugeIconAccent)
-        for _, control in ipairs({state.iconScale, state.iconScaleText, state.iconAccent, state.iconCustom}) do control:SetShown(prefix == "huge") end
-        state.iconSwatch:SetColorTexture(db.hugeIconR, db.hugeIconG, db.hugeIconB, 1)
-        state.frame:SetHeight(prefix == "huge" and 580 or 438)
-        state.preview:ClearAllPoints(); state.preview:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 14, prefix == "huge" and -439 or -310)
-        state.reset:ClearAllPoints(); state.reset:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 169, prefix == "huge" and -439 or -310)
-        state.notice:ClearAllPoints(); state.notice:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 14, prefix == "huge" and -483 or -348)
-        state.notice:SetPoint("BOTTOMRIGHT", state.frame, "BOTTOMRIGHT", -14, 14)
-        state.notice:SetTextColor(0.9, 0.9, 0.9, 1)
-        SideAccent()
-        state.layout:SetText("Layout: " .. (db[prefix .. "Layout"] == "strip" and "Name above progress" or "Name over progress"))
-        state.colour:SetText("Progress: " .. (db[prefix .. "Colour"] == "accent" and "EUI accent colour" or "DBM category colours"))
-        state.opacity:SetValue(db[prefix .. "Opacity"] * 100)
-        state.opacityText:SetText("Background opacity: " .. math.floor(db[prefix .. "Opacity"] * 100 + 0.5) .. "%")
-        local available = ns.IsEnabled(C.module) and db[prefix .. "Enabled"]
-        for _, control in ipairs({state.layout, state.colour, state.opacity, state.border, state.glyphs}) do control:SetEnabled(available) end
-        state.enabled:SetEnabled(ns.IsEnabled(C.module))
-        state.reset:SetEnabled(ns.IsEnabled(C.module))
-        state.iconScale:SetEnabled(available)
-        state.iconAccent:SetEnabled(available and db.hugeGlyphs)
-        local picker = _G.ColorPickerFrame
-        state.iconCustom:SetEnabled(available and db.hugeGlyphs and not db.hugeIconAccent and picker ~= nil
-            and type(picker.SetupColorPickerAndShow) == "function" and type(picker.GetColorRGB) == "function")
+        for _, entry in ipairs(state.frameSliders) do
+            entry.slider:SetValue(db[entry.key] * 100)
+            entry.label:SetText(entry.text .. ": " .. math.floor(db[entry.key] * 100 + 0.5) .. "%")
+        end
+        if not frames then
+            state.enabled:SetChecked(db[prefix .. "Enabled"])
+            state.border:SetChecked(db[prefix .. "Border"])
+            state.glyphs:SetChecked(db.hugeGlyphs)
+            state.glyphs:SetShown(prefix == "huge")
+            state.iconScale:SetValue(db.hugeIconScale * 100)
+            state.iconScaleText:SetText("Mechanic icon size: " .. math.floor(db.hugeIconScale * 100 + 0.5) .. "%")
+            state.iconAccent:SetChecked(db.hugeIconAccent)
+            for _, control in ipairs({state.iconScale, state.iconScaleText, state.iconAccent, state.iconCustom}) do control:SetShown(prefix == "huge") end
+            state.iconSwatch:SetColorTexture(db.hugeIconR, db.hugeIconG, db.hugeIconB, 1)
+            state.frame:SetHeight(prefix == "huge" and 580 or 438)
+            state.preview:ClearAllPoints(); state.preview:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 14, prefix == "huge" and -439 or -310)
+            state.reset:ClearAllPoints(); state.reset:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 169, prefix == "huge" and -439 or -310)
+            state.notice:ClearAllPoints(); state.notice:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 14, prefix == "huge" and -483 or -348)
+            state.notice:SetPoint("BOTTOMRIGHT", state.frame, "BOTTOMRIGHT", -14, 14)
+            state.notice:SetTextColor(0.9, 0.9, 0.9, 1)
+            SideAccent()
+            state.layout:SetText("Layout: " .. (db[prefix .. "Layout"] == "strip" and "Name above progress" or "Name over progress"))
+            state.colour:SetText("Progress: " .. (db[prefix .. "Colour"] == "accent" and "EUI accent colour" or "DBM category colours"))
+            state.opacity:SetValue(db[prefix .. "Opacity"] * 100)
+            state.opacityText:SetText("Background opacity: " .. math.floor(db[prefix .. "Opacity"] * 100 + 0.5) .. "%")
+            local available = ns.IsEnabled(C.module) and db[prefix .. "Enabled"]
+            for _, control in ipairs({state.layout, state.colour, state.opacity, state.border, state.glyphs}) do control:SetEnabled(available) end
+            state.enabled:SetEnabled(ns.IsEnabled(C.module))
+            state.reset:SetEnabled(ns.IsEnabled(C.module))
+            state.iconScale:SetEnabled(available)
+            state.iconAccent:SetEnabled(available and db.hugeGlyphs)
+            local picker = _G.ColorPickerFrame
+            state.iconCustom:SetEnabled(available and db.hugeGlyphs and not db.hugeIconAccent and picker ~= nil
+                and type(picker.SetupColorPickerAndShow) == "function" and type(picker.GetColorRGB) == "function")
+        end
+        if frames then
+            for _, control in ipairs({state.glyphs, state.iconScale, state.iconScaleText, state.iconAccent, state.iconCustom}) do control:Hide() end
+            state.frame:SetHeight(438)
+            state.reset:ClearAllPoints(); state.reset:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 14, -310)
+            state.reset:SetWidth(302)
+            state.notice:ClearAllPoints(); state.notice:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 14, -348)
+            state.notice:SetPoint("BOTTOMRIGHT", state.frame, "BOTTOMRIGHT", -14, 14)
+            state.reset:SetEnabled(ns.IsEnabled(C.module))
+            SideAccent()
+        else state.reset:SetWidth(147) end
         local r, g, b = ns.AccentBarColor(S)
         for key, button in pairs(state.tabs) do
             local label = button:GetFontString()
@@ -951,9 +978,25 @@ local function HUD(C)
             PositionSide(state)
             state.close = Button("X", 292, -8, 26, function() panel:Hide() end)
             state.tabs = {
-                small = Button("Small Bars", 14, -44, 147, function() state.selected = "small"; UpdateSide() end),
-                huge = Button("Big Bars", 169, -44, 147, function() state.selected = "huge"; UpdateSide() end),
+                small = Button("Small Bars", 14, -44, 96, function() state.selected = "small"; UpdateSide() end),
+                huge = Button("Big Bars", 117, -44, 96, function() state.selected = "huge"; UpdateSide() end),
             }
+            state.tabs.frames = Button("Frames", 220, -44, 96, function() state.selected = "frames"; UpdateSide() end)
+            state.frameSliders = {}
+            for i, entry in ipairs({{"rangeOpacity", "Range background"}, {"radarOpacity", "Radar background"}, {"infoOpacity", "Info background"}}) do
+                local key, text = entry[1], entry[2]
+                local label = Text("", -100 - (i - 1) * 68)
+                local slider = CreateFrame("Slider", nil, panel)
+                slider:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -124 - (i - 1) * 68); slider:SetSize(294, 18)
+                slider:EnableMouse(true); slider:SetOrientation("HORIZONTAL"); slider:SetMinMaxValues(0, 100); slider:SetValueStep(1)
+                if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
+                slider:SetThumbTexture(WHITE)
+                slider:SetScript("OnValueChanged", function(_, value)
+                    if state.updating or not ns.IsEnabled(C.module) then return end
+                    ChangeSetting(key, math.floor(math.max(0, math.min(100, value)) + 0.5) / 100, true)
+                end)
+                state.frameSliders[#state.frameSliders + 1] = {slider = slider, label = label, key = key, text = text}
+            end
             state.enabled = Check("Apply EUI styling", "Enabled", -80)
             state.layout = Button("", 14, -116, 302, function()
                 local key = state.selected .. "Layout"
@@ -1016,7 +1059,7 @@ local function HUD(C)
                 local db = Settings()
                 state.colourSession = nil
                 for key, value in pairs(defaults) do db[key] = value end
-                RefreshBars(); UpdateSide(); SyncLayoutControls()
+                RefreshBars(); RefreshAux(); UpdateSide(); SyncLayoutControls()
             end)
             state.notice = Text("", -348, 14)
             state.notice:SetHeight(72); state.notice:SetWordWrap(true); state.notice:SetJustifyV("TOP")
@@ -1028,6 +1071,10 @@ local function HUD(C)
         -- Style owned controls explicitly; the generic scanner never enters here.
         for _, entry in ipairs(state.controls) do Control(C, entry[1], entry[2]); Font(entry[1].Text or entry[1]:GetFontString()) end
         for _, label in ipairs(state.labels) do Font(label) end
+        for _, entry in ipairs(state.frameSliders) do
+            H.LegacySlider(entry.slider)
+            local thumb = entry.slider:GetThumbTexture(); if thumb then thumb:SetSize(10, 14) end
+        end
         for _, slider in ipairs({state.opacity, state.iconScale}) do
             H.LegacySlider(slider)
             local thumb = slider:GetThumbTexture()
@@ -1064,6 +1111,10 @@ local function HUD(C)
         Font(state.button:GetFontString())
         SideAccent()
         if state.frame then
+            for _, entry in ipairs(state.frameSliders) do
+                H.LegacySlider(entry.slider)
+                local thumb = entry.slider:GetThumbTexture(); if thumb then thumb:SetSize(10, 14) end
+            end
             for _, entry in ipairs(state.controls) do Control(C, entry[1], entry[2]); Font(entry[1].Text or entry[1]:GetFontString()) end
             for _, label in ipairs(state.labels) do Font(label) end
             for _, slider in ipairs({state.opacity, state.iconScale}) do
@@ -1140,7 +1191,58 @@ local function HUD(C)
     end
     -- Small encounter windows have their own lifecycle. Never scan their
     -- children or attach work to radar/encounter Update or OnUpdate paths.
-    local auxiliary = {}
+    local auxiliary, InfoSpacing = {}, nil
+    local function PublicWidth(text)
+        if not Allowed(text) or not text.GetStringWidth then return 0 end
+        local ok, width = pcall(text.GetStringWidth, text)
+        if not ok or issecretvalue and issecretvalue(width) or type(width) ~= "number" then return 0 end
+        return width
+    end
+    local function AuxGeometry(f, d)
+        if not d.styled or not Allowed(f) then return end
+        local width, top = f:GetWidth() + 16, 24
+        for text in pairs(d.headers) do
+            width = math.max(width, PublicWidth(text) + 16)
+            if text.GetHeight then top = math.max(top, text:GetHeight() + 16) end
+        end
+        local bottom = 8
+        local footer = f.inRangeText
+        if d.kind ~= "info" and Allowed(footer) and footer:IsShown() then bottom = footer:GetHeight() + 8 end
+        if d.kind == "info" then bottom = bottom + (d.extraHeight or 0) end
+        local left = d.kind == "radar" and -(width - f:GetWidth()) / 2 or -8
+        if d.width ~= width or d.top ~= top or d.bottom ~= bottom or d.left ~= left then
+            d.width, d.top, d.bottom, d.left = width, top, bottom, left
+            d.layer:ClearAllPoints()
+            d.layer:SetPoint("TOPLEFT", f, "TOPLEFT", left, top)
+            d.layer:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", left, -bottom)
+            d.layer:SetWidth(width)
+        end
+    end
+    local function RangeHeader(text, d)
+        if d.formatting or not d.styled or not Allowed(d.frame) or not Allowed(text) or not ns.IsEnabled(C.module) then return end
+        local value = text:GetText()
+        if issecretvalue and issecretvalue(value) or type(value) ~= "string" then return end
+        -- Leave localized/reverse headers and unknown formats verbatim.
+        local range, players = value:match("^Range:%s*(%d+)%s+Players:%s*(%d+)$")
+        if range then
+            d.nativeHeader, d.formattedHeader = value, "Range: " .. range .. " · Players: " .. players
+            d.formatting = true; text:SetText(d.formattedHeader); d.formatting = false
+        elseif value ~= d.formattedHeader then d.nativeHeader, d.formattedHeader = nil, nil end
+        AuxGeometry(d.frame, d)
+    end
+    local function Header(text, d)
+        if d.headers[text] or not text.GetNumPoints or text:GetNumPoints() == 0 then return end
+        local point, relative, relativePoint = text:GetPoint(1)
+        if point ~= "BOTTOMLEFT" or relative ~= d.frame or relativePoint ~= "TOPLEFT" then return end
+        d.headers[text] = {text:GetPoint(1)}
+        text:ClearAllPoints(); text:SetPoint("TOPLEFT", d.layer, "TOPLEFT", 8, -8)
+        H.Hook(text, "SetText", function()
+            if not Allowed(d.frame) or not Allowed(text) or not ns.IsEnabled(C.module) then return end
+            if InCombatLockdown and InCombatLockdown() then pending = true; return end
+            if d.kind == "info" then AuxGeometry(d.frame, d) else RangeHeader(text, d) end
+        end)
+        if d.kind ~= "info" then RangeHeader(text, d) end
+    end
     local function AuxEnabled()
         if not ns.IsEnabled(C.module) then return false end
         if InCombatLockdown and InCombatLockdown() then pending = true; return false end
@@ -1178,7 +1280,8 @@ local function HUD(C)
                 PaintFont()
             end)
         end
-        PaintFont() -- Keep native sizes, colours and column anchors.
+        PaintFont() -- Keep native sizes and semantic colours.
+        Header(text, d)
     end
     local function DiscoverAux(f, d, force)
         local count = f.GetNumRegions and f:GetNumRegions()
@@ -1189,22 +1292,43 @@ local function HUD(C)
         end
     end
     local function PaintAux(f, kind, force)
-        if not Allowed(f) or not AuxEnabled() or not S.Shell then return end
+        if not Allowed(f) or not AuxEnabled() or not S.Panel then return end
         local d = auxiliary[f]
         if not d then
-            d = {fonts = {}, fontHooks = {}, frame = f}; auxiliary[f] = d
+            d = {fonts = {}, fontHooks = {}, headers = {}, rowPoints = {}, frame = f, kind = kind}; auxiliary[f] = d
             local layer = CreateFrame("Frame", nil, f)
             layer:EnableMouse(false)
             if layer.SetFrameLevel and f.GetFrameLevel then layer:SetFrameLevel(math.max(0, f:GetFrameLevel() - 1)) end
-            layer:SetPoint("TOPLEFT", f, "TOPLEFT", -6, 22)
-            layer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 6, kind == "info" and -6 or -20)
-            S.Shell(layer, {noAccent = true, noTopBar = true})
+            -- Strip-only EUI panel: opacity must not reveal an opaque Shell
+            -- atlas/gradient beneath our independently controlled matte fill.
+            S.Panel(layer, {noBg = true, noBorder = true})
             d.layer = layer
             d.fill = layer:CreateTexture(nil, "BACKGROUND", nil, 7); d.fill:SetAllPoints(layer)
+            if d.fill.SetIgnoreParentAlpha then d.fill:SetIgnoreParentAlpha(true) end
+            d.edges = {}
+            for _, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+                local edge = layer:CreateTexture(nil, "BORDER")
+                if side == "TOP" or side == "BOTTOM" then
+                    edge:SetPoint(side .. "LEFT", layer, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", layer, side .. "RIGHT"); edge:SetHeight(1)
+                else
+                    edge:SetPoint("TOP" .. side, layer, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, layer, "BOTTOM" .. side); edge:SetWidth(1)
+                end
+                d.edges[#d.edges + 1] = edge
+            end
+            if kind == "radar" and H.Texture(f.circle) then
+                d.circle = {region = f.circle, texture = f.circle:GetTexture(), blend = f.circle:GetBlendMode()}
+                for _, texture in ipairs(H.Regions(f)) do
+                    if H.Texture(texture) and (texture:GetTexture() == 136431 or texture:GetTexture() == "Interface\\Minimap\\MinimapArrow.blp") then
+                        d.arrow = {region = texture, width = texture:GetWidth(), height = texture:GetHeight(), blend = texture:GetBlendMode()}
+                        break
+                    end
+                end
+            end
             if f.GetBackdrop then d.backdrop = f:GetBackdrop() end
             if kind == "radar" and H.Texture(f.background) then
                 d.background = f.background; d.backgroundAlpha = f.background:GetAlpha()
             end
+            H.Hook(f, "SetSize", function() if AuxEnabled() then AuxGeometry(f, d) end end)
             H.Script(f, "OnShow", function() PaintAux(f, kind, true) end)
             H.Hook(f, "SetBackdrop", function(_, value)
                 if d.settingBackdrop then return end
@@ -1215,15 +1339,35 @@ local function HUD(C)
             end)
             if ns.BindPopupOwner then ns.BindPopupOwner(S, C.module, f) end
         end
+        if Allowed(f.inRangeText) and d.footer ~= f.inRangeText then
+            d.footer = f.inRangeText
+            for _, method in ipairs({"Show", "Hide"}) do H.Hook(f.inRangeText, method, function()
+                if AuxEnabled() then AuxGeometry(f, d) end
+            end) end
+        end
+        local wasStyled = d.styled
         d.styled = true
         if f.SetBackdrop then
             d.settingBackdrop = true; f:SetBackdrop(nil); d.settingBackdrop = nil
         end
         if d.background then d.background:SetAlpha(0) end
-        local r, g, b, alpha = PanelColor(S)
+        if d.circle then
+            d.circle.region:SetTexture("Interface\\AddOns\\EUIAddonSkins\\Media\\DBMRadar.tga")
+            d.circle.region:SetBlendMode("BLEND")
+        end
+        if d.arrow then
+            d.arrow.region:SetBlendMode("BLEND"); d.arrow.region:SetSize(18, 18)
+        end
+        local r, g, b = PanelColor(S)
+        local alpha = Settings()[kind == "radar" and "radarOpacity" or kind == "info" and "infoOpacity" or "rangeOpacity"]
         d.fill:SetColorTexture(r, g, b, alpha)
+        for _, edge in ipairs(d.edges) do edge:SetColorTexture(0, 0, 0, alpha * 0.35) end
         d.layer:Show()
         DiscoverAux(f, d, force)
+        if not wasStyled and not d.direct then
+            for index, perColumn in pairs(d.spacing or {}) do InfoSpacing(nil, index, perColumn) end
+        end
+        AuxGeometry(f, d)
     end
     local function RestoreAux()
         for f, d in pairs(auxiliary) do
@@ -1233,6 +1377,17 @@ local function HUD(C)
                     d.settingBackdrop = true; f:SetBackdrop(d.backdrop); d.settingBackdrop = nil
                 end
                 if d.background then d.background:SetAlpha(d.backgroundAlpha) end
+                if d.circle then d.circle.region:SetTexture(d.circle.texture); d.circle.region:SetBlendMode(d.circle.blend) end
+                if d.arrow then d.arrow.region:SetSize(d.arrow.width, d.arrow.height); d.arrow.region:SetBlendMode(d.arrow.blend) end
+                for text, point in pairs(d.headers) do
+                    text:ClearAllPoints(); text:SetPoint(unpack(point))
+                    if d.formattedHeader then
+                        local value = text:GetText()
+                        if not (issecretvalue and issecretvalue(value)) and value == d.formattedHeader then text:SetText(d.nativeHeader) end
+                    end
+                end
+                for text, point in pairs(d.rowPoints) do text:ClearAllPoints(); text:SetPoint(unpack(point)) end
+                d.headers, d.rowPoints, d.width = {}, {}, nil
                 -- Restore fonts only: DBM may have resized/reanchored rows or
                 -- changed semantic colours since their first appearance.
                 for text, state in pairs(d.fonts) do
@@ -1247,11 +1402,11 @@ local function HUD(C)
             end
         end
     end
-    local function RefreshAux()
+    RefreshAux = function(force)
         if not ns.IsEnabled(C.module) then RestoreAux(); return end
-        PaintAux(_G.DBMRangeCheck, "range", true)
-        PaintAux(_G.DBMRangeCheckRadar, "radar", true)
-        PaintAux(_G.DBMInfoFrame, "info", true)
+        PaintAux(_G.DBMRangeCheck, "range", force == true)
+        PaintAux(_G.DBMRangeCheckRadar, "radar", force == true)
+        PaintAux(_G.DBMInfoFrame, "info", force == true)
     end
     local function NewInfoRegions()
         local f = _G.DBMInfoFrame
@@ -1260,17 +1415,43 @@ local function HUD(C)
         if not d then PaintAux(f, "info", true)
         else DiscoverAux(f, d, false) end
     end
+    InfoSpacing = function(_, index, perColumn)
+        local f = _G.DBMInfoFrame
+        local d = auxiliary[f]
+        if issecretvalue and (issecretvalue(index) or issecretvalue(perColumn)) then return end
+        if not d or not Allowed(f) or not AuxEnabled() or type(index) ~= "number" or type(perColumn) ~= "number"
+            or perColumn < 2 or not f.lines then return end
+        local text = f.lines[index]
+        if not Allowed(text) or text.IsShown and not text:IsShown() then return end
+        d.spacing = d.spacing or {}; d.spacing[index] = perColumn; d.direct = false
+        local point = {text:GetPoint(1)}
+        if not point[1] then return end
+        d.rowPoints[text] = point
+        local x, y = point[4] or 0, point[5] or 0
+        if index == 1 then x, y = 0, -8
+        elseif index % 2 == 0 then x = math.max(12, x + 4)
+        elseif index % perColumn ~= 1 then y = y - 2 end
+        text:ClearAllPoints(); text:SetPoint(point[1], point[2], point[3], x, y)
+        d.extraHeight = math.max(0, math.min(#f.lines / 2, perColumn / 2) - 1) * 2 + 2
+        AuxGeometry(f, d)
+    end
     local function BindAux()
         local dbm = _G.DBM
         H.Hook(dbm and dbm.RangeCheck, "Show", RefreshAux)
         local info = dbm and dbm.InfoFrame
-        for _, method in ipairs({"Show", "ShowDirect", "UpdateStyle"}) do H.Hook(info, method, RefreshAux) end
+        H.Hook(info, "AlignLine", InfoSpacing)
+        H.Hook(info, "ShowDirect", function()
+            local d = auxiliary[_G.DBMInfoFrame]
+            if d then d.extraHeight, d.direct = 0, true end -- Direct layouts keep their own row geometry.
+            RefreshAux()
+        end)
+        for _, method in ipairs({"Show", "UpdateStyle"}) do H.Hook(info, method, RefreshAux) end
         -- These setters can allocate new row/header FontStrings. A region-count
         -- guard makes ordinary value updates constant work without text reads.
         for _, method in ipairs({"SetLine", "SetHeader", "SetDirectLine", "UpdateDirect", "SetDirectHeader"}) do
             H.Hook(info, method, NewInfoRegions)
         end
-        RefreshAux()
+        RefreshAux(true)
     end
     local function Refresh()
         if not ns.IsEnabled(C.module) then RestoreAux(); return end

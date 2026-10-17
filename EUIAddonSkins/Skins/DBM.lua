@@ -121,7 +121,7 @@ local function HUD(C)
             _G[name .. "BarName"]:SetText(d.inlineSource)
         end
         d.inlineSource, d.inlineOutput, d.inlineLastSource, d.inlineSize, d.labelSize = nil, nil, nil, nil, nil
-        for _, texture in ipairs({d.panel, d.tint, d.endpoint, d.trackEnd}) do if texture then texture:Hide() end end
+        for _, texture in ipairs({d.panel, d.tint}) do if texture then texture:Hide() end end
         for _, edge in ipairs(d.edges or {}) do edge:Hide() end
         for i = 1, 2 do
             local icon = _G[name .. "BarIcon" .. i]
@@ -273,6 +273,67 @@ local function HUD(C)
         path = tostring(path):lower():gsub("/", "\\"):gsub("%.blp$", ""):gsub("%.tga$", "")
         return path .. ":" .. math.floor(left * 4096 + 0.5) .. ":" .. math.floor(right * 4096 + 0.5) .. ":" .. math.floor(top * 4096 + 0.5) .. ":" .. math.floor(bottom * 4096 + 0.5)
     end
+    local function ParseGlyphTag(tag)
+        if type(tag) ~= "string" or issecretvalue and issecretvalue(tag) then return end
+        local p, w, h, l, r, t, b = tag:match("|T([^:|]+):%d+:%d+:[^|]-:(%d+):(%d+):(%d+):(%d+):(%d+):(%d+)|t")
+        w, h = tonumber(w), tonumber(h)
+        if p and w and h and w > 0 and h > 0 then
+            return p, tonumber(l) / w, tonumber(r) / w, tonumber(t) / h, tonumber(b) / h
+        end
+    end
+    local function GlyphMap()
+        local source = _G.DBM_COMMON_L
+        if type(source) ~= "table" then return end
+        if source ~= glyphSource then
+            glyphSource, glyphKeys = source, {}
+            for index, field in ipairs(glyphNames) do
+                local p, left, right, top, bottom = ParseGlyphTag(source[field])
+                if p then
+                    glyphKeys[GlyphKey(p, left, right, top, bottom)] = index
+                    if type(GetFileIDFromPath) == "function" then
+                        local id = GetFileIDFromPath(p)
+                        if not (issecretvalue and issecretvalue(id)) and type(id) == "number" and id > 0 then
+                            glyphKeys[GlyphKey(id, left, right, top, bottom)] = index
+                        end
+                    end
+                end
+            end
+        end
+        return glyphKeys
+    end
+    local function IconKey(icon, path)
+        local ulX, ulY, llX, llY, urX, urY, lrX, lrY = icon:GetTexCoord()
+        if issecretvalue and (issecretvalue(ulX) or issecretvalue(ulY) or issecretvalue(llX) or issecretvalue(llY) or issecretvalue(urX) or issecretvalue(urY) or issecretvalue(lrX) or issecretvalue(lrY)) then return end
+        if urX ~= nil then
+            if llX == ulX and urY == ulY and lrX == urX and lrY == llY then return GlyphKey(path, ulX, urX, ulY, llY) end
+        else return GlyphKey(path, ulX, ulY, llX, llY) end
+    end
+    local function RememberMechanics(obj, d, custom)
+        if not d then return end
+        d.mechanicHints = nil
+        if type(custom) ~= "string" or issecretvalue and issecretvalue(custom) then return end
+        local keys, name = GlyphMap(), obj.frame:GetName()
+        if not keys or not name then return end
+        local slot = 0
+        for tag in custom:gmatch("|T[^|]+|t") do
+            local p, left, right, top, bottom = ParseGlyphTag(tag)
+            if p then
+                slot = slot + 1
+                if slot > 4 then break end
+                local index = keys[GlyphKey(p, left, right, top, bottom)]
+                local icon = _G[name .. "BarIJIcons" .. (slot == 1 and "" or slot)]
+                if index and H.Texture(icon) and not (icon.GetNumMaskTextures and icon:GetNumMaskTextures() > 0) then
+                    local key = IconKey(icon, icon:GetTexture())
+                    if key then
+                        d.mechanicHints = d.mechanicHints or {}
+                        -- Match the actual rendered texture/crop to DBM's explicit
+                        -- tag. Numeric file IDs then need no path-resolution API.
+                        d.mechanicHints[icon] = {key = key, index = index}
+                    end
+                end
+            end
+        end
+    end
     local function MechanicGlyph(icon, d)
         if not H.Texture(icon) or not Allowed(icon) or not icon.GetTexCoord then return end
         if icon.GetNumMaskTextures and icon:GetNumMaskTextures() > 0 then return end
@@ -285,41 +346,12 @@ local function HUD(C)
         -- Reuse identity only while our exact texture remains assigned. Native
         -- SetIcon resets it on pooling; late EUI modules can upgrade our fallback.
         local styled = old and rawPath == old.texture
-        local source = _G.DBM_COMMON_L
-        if type(source) ~= "table" then return end
-        if source ~= glyphSource then
-            glyphSource, glyphKeys = source, {}
-            for index, field in ipairs(glyphNames) do
-                local tag = source[field]
-                if type(tag) == "string" and not (issecretvalue and issecretvalue(tag)) then
-                    local p, w, h, l, r, t, b = tag:match("|T([^:|]+):%d+:%d+:[^|]-:(%d+):(%d+):(%d+):(%d+):(%d+):(%d+)|t")
-                    w, h = tonumber(w), tonumber(h)
-                    if p and w and h and w > 0 and h > 0 then
-                        local left, right, top, bottom = tonumber(l) / w, tonumber(r) / w, tonumber(t) / h, tonumber(b) / h
-                        glyphKeys[GlyphKey(p, left, right, top, bottom)] = index
-                        -- Retail may expose a file ID instead of a texture path.
-                        -- Resolve aliases once per locale table, outside updates.
-                        if type(GetFileIDFromPath) == "function" then
-                            local id = GetFileIDFromPath(p)
-                            if not (issecretvalue and issecretvalue(id)) and type(id) == "number" and id > 0 then
-                                glyphKeys[GlyphKey(id, left, right, top, bottom)] = index
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        local ulX, ulY, llX, llY, urX, urY, lrX, lrY = icon:GetTexCoord()
-        if issecretvalue and (issecretvalue(ulX) or issecretvalue(ulY) or issecretvalue(llX) or issecretvalue(llY) or issecretvalue(urX) or issecretvalue(urY) or issecretvalue(lrX) or issecretvalue(lrY)) then return end
-        local key, rawKey
-        if urX ~= nil then
-            -- WoW returns eight corner coordinates; older mocks/clients may
-            -- expose four. Leave rotated/skewed custom artwork untouched.
-            if llX == ulX and urY == ulY and lrX == urX and lrY == llY then
-                key = GlyphKey(path, ulX, urX, ulY, llY); rawKey = GlyphKey(rawPath, ulX, urX, ulY, llY)
-            end
-        else key = GlyphKey(path, ulX, ulY, llX, llY); rawKey = GlyphKey(rawPath, ulX, ulY, llX, llY) end
-        local index = styled and old.index or key and (glyphKeys[key] or glyphKeys[rawKey])
+        local keys = GlyphMap()
+        if not keys then return end
+        local key, rawKey = IconKey(icon, path), IconKey(icon, rawPath)
+        local hint = d.mechanicHints and d.mechanicHints[icon]
+        local index = styled and old.index or key and (keys[key] or keys[rawKey])
+            or hint and rawKey == hint.key and hint.index
         if index then
             if not old then
                 local r, g, b, alpha = icon:GetVertexColor()
@@ -354,7 +386,8 @@ local function HUD(C)
         local pixel = (factor or 1) / math.max(scale, 0.01)
         local pad = math.max(pixel, Snap(2, pixel))
         local gap = math.max(pixel, Snap(2, pixel))
-        local iconSize = math.max(pixel, Snap(math.min(height - pad * 2, width * 0.14), pixel))
+        local iconPad = obj.enlarged and pad or 0
+        local iconSize = math.max(pixel, Snap(obj.enlarged and math.min(height - pad * 2, width * 0.14) or height, pixel))
         local left, right = _G[name .. "BarIcon1"], _G[name .. "BarIcon2"]
         local leftSpace = H.Texture(left) and left:IsShown() and iconSize + gap or 0
         local rightSpace = H.Texture(right) and right:IsShown() and iconSize + gap or 0
@@ -362,7 +395,7 @@ local function HUD(C)
             local icon = i == 1 and left or right
             if H.Texture(icon) then
                 icon:SetSize(iconSize, iconSize); icon:ClearAllPoints()
-                icon:SetPoint(i == 1 and "LEFT" or "RIGHT", frame, i == 1 and "LEFT" or "RIGHT", i == 1 and pad or -pad, 0)
+                icon:SetPoint(i == 1 and "LEFT" or "RIGHT", frame, i == 1 and "LEFT" or "RIGHT", i == 1 and iconPad or -iconPad, 0)
             end
         end
         -- Huge Bar indicators live outside the left edge, before the spell icon.
@@ -391,7 +424,8 @@ local function HUD(C)
                 slot = slot + 1
             end
         end
-        local contentX, contentRight = pad + leftSpace, pad + rightSpace
+        local contentX = leftSpace > 0 and iconPad + leftSpace or pad
+        local contentRight = rightSpace > 0 and iconPad + rightSpace or pad
         Panel(frame, d)
         d.panel:ClearAllPoints()
         d.panel:SetPoint("TOPLEFT", frame, "LEFT", 0, Snap(height / 2, pixel))
@@ -420,24 +454,26 @@ local function HUD(C)
         local available = math.max(pixel, width - contentX - contentRight)
         local timerSpace = math.min(available * 0.4, math.max(20, timerSize * 3.0))
         local trackX = contentX + (twoRow and gap or 0)
-        local trackRight = contentRight + ((twoRow or layout == "fill" or obj.enlarged) and timerSpace + gap * 2 or 0)
+        -- Countdown reserves text space, never progress width. The strip/fill
+        -- reaches the row's right inset (or the configured right spell icon).
+        local trackRight = contentRight
         local trackTop = twoRow and -height / 2 + pad + fillHeight or height / 2 - pad
         bar:ClearAllPoints()
         bar:SetPoint("TOPLEFT", frame, "LEFT", trackX, Snap(trackTop, pixel))
         bar:SetPoint("TOPRIGHT", frame, "RIGHT", -trackRight, Snap(trackTop, pixel))
         bar:SetHeight(fillHeight)
         local x, y = options[prefix .. "TextXOffset"] or 0, options[prefix .. "TextYOffset"] or 0
+        local labelY = twoRow and height / 2 - pad - labelHeight / 2 or 0
         if Allowed(timer) then
-            timer:SetFont(path, timerSize, flags or ""); timer:SetWidth(timerSpace)
-            timer:SetHeight(height - pad * 2); timer:ClearAllPoints()
-            timer:SetPoint("RIGHT", frame, "RIGHT", -contentRight - gap + x, y)
+            timer:SetFont(path, math.min(timerSize, twoRow and labelHeight * 0.9 or timerSize), flags or ""); timer:SetWidth(timerSpace)
+            timer:SetHeight(twoRow and labelHeight or height - pad * 2); timer:ClearAllPoints()
+            timer:SetPoint("RIGHT", frame, "RIGHT", -contentRight - gap + x, labelY + y)
             if timer.SetJustifyH then timer:SetJustifyH("RIGHT") end
             if timer.SetJustifyV then timer:SetJustifyV("MIDDLE") end
             Shadow(timer)
         end
         if Allowed(label) then
             label:SetFont(path, d.labelSize, flags or ""); label:ClearAllPoints()
-            local labelY = twoRow and height / 2 - pad - labelHeight / 2 or 0
             label:SetPoint("LEFT", frame, "LEFT", contentX + gap + x, labelY + y)
             label:SetPoint("RIGHT", frame, "RIGHT", -contentRight - timerSpace - gap * 2 + x, labelY + y)
             label:SetHeight(labelHeight)
@@ -554,8 +590,8 @@ local function HUD(C)
                     end
                 end
             end
-            -- Uniform matte tint and a thin fill endpoint follow the native
-            -- fill texture, without querying its value or hooking countdowns.
+            -- The matte tint follows the native fill and its flash alpha.
+            -- Full-width tracks need no fixed or moving end ticks.
             fill = bar:GetStatusBarTexture()
             if H.Texture(fill) then
                 if not d.tint then d.tint = bar:CreateTexture(nil, "ARTWORK", nil, 2) end
@@ -568,20 +604,6 @@ local function HUD(C)
                 end
                 d.tint:SetShown(true)
                 BindFillAlpha(obj, bar, fill, d)
-                if not d.endpoint then d.endpoint = bar:CreateTexture(nil, "ARTWORK", nil, 3) end
-                d.endpoint:ClearAllPoints()
-                d.endpoint:SetPoint("TOPRIGHT", fill, "TOPRIGHT")
-                d.endpoint:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT")
-                d.endpoint:SetWidth(d.borderPixel)
-                d.endpoint:SetColorTexture(0.6, 0.62, 0.64, 0.55)
-                d.endpoint:SetShown(true)
-                if not d.trackEnd then d.trackEnd = bar:CreateTexture(nil, "ARTWORK", nil, 4) end
-                d.trackEnd:ClearAllPoints()
-                d.trackEnd:SetPoint("TOPRIGHT", bar, "TOPRIGHT")
-                d.trackEnd:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT")
-                d.trackEnd:SetWidth(d.borderPixel)
-                d.trackEnd:SetColorTexture(0.42, 0.44, 0.46, 0.55)
-                d.trackEnd:SetShown(true)
             end
         end)
         active = false
@@ -589,6 +611,7 @@ local function HUD(C)
     local function NativeIconChanged(obj, _, eventID, custom)
         if type(obj) ~= "table" or obj.isSecret or not Allowed(obj.frame) then return end
         local d = bars[obj]
+        RememberMechanics(obj, d, custom)
         if d and d.styled and not (issecretvalue and (issecretvalue(eventID) or issecretvalue(custom))) and not eventID and type(custom) == "string" then
             d.nativeIconSizes = d.nativeIconSizes or {}
             local name = obj.frame:GetName()
@@ -617,6 +640,7 @@ local function HUD(C)
         if type(obj) ~= "table" or obj.isSecret or not Allowed(obj.frame) then return end
         if not bars[obj] then
             bars[obj] = {}
+            RememberMechanics(obj, bars[obj], obj.inlineIcon)
             H.Hook(obj, "ApplyStyle", PaintBar)
             H.Hook(obj, "SetIcon", NativeIconChanged)
             H.Hook(obj, "SetVariance", PaintVariance)
@@ -882,7 +906,7 @@ local function HUD(C)
                 ChangeSetting(state.selected .. "Opacity", math.floor(math.max(0, math.min(100, value)) + 0.5) / 100, true)
             end)
             state.border = Check("Accent border (follows EUI visibility)", "Border", -239)
-            state.glyphs = Check("Use EUI mechanic artwork", "hugeGlyphs", -271)
+            state.glyphs = Check("EUI mechanic icons (outside Huge Bars)", "hugeGlyphs", -271)
             state.preview = Button("Preview DBM bars", 14, -310, 147, RunPreview)
             state.preview:SetScript("OnShow", function() PreviewState(state) end)
             state.reset = Button("Reset EUI styling", 169, -310, 147, function()

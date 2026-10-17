@@ -11,7 +11,7 @@ Open DBM options and click **EUI Bar Styling** on the right side of the window. 
 - Progress: native DBM category colours or the EUI Blizzard Skins+ accent colour. Click to switch.
 - Background opacity, from 0% to 100%.
 - Accent border: follows **Show accent bar** in Blizzard Skins+ unless hidden for that bar type.
-- Huge Bars only: EUI or native mechanic artwork, retaining the external left gutter.
+- Huge Bars only: **EUI mechanic icons (outside Huge Bars)** swaps tank, damage/sword, healer, interrupt, important, magic, bleed and deadly symbols in the external left gutter. It does not alter spell icons.
 
 **Preview DBM bars** runs the real DBT demo, including on Retail, without replacing DBM's native Test Bars action. **Reset EUI styling** restores both types' EUI defaults and preserves unrelated saved settings. Defaults retain the previous alpha's appearance. Existing choices in **DBM > Timers > EUI AddonSkins** remain available and share the same saved layouts.
 
@@ -134,3 +134,10 @@ Alpha.26 fixes the three findings from the alpha.25 audit:
 - Custom mechanic-icon dimensions and crops are captured after native SetIcon updates, before EUI layout. Disabling styling restores the latest native geometry, including changed/unknown artwork on reused timers, then reapplies DBT's current profile.
 
 Regression coverage now models native status-bar colour setters, direct vertex-alpha changes, 1,000 simulated flashing updates, stable-alpha writes, secret alpha and disabled processing. It also covers pending enable/disable and layout/opacity/colour choices through combat callbacks and new timers, plus repeated custom-icon reuse with new dimensions/crops and known glyph restoration. Existing navigation and creation operation counts remain unchanged. All 19 suites, Lua syntax and 37-file single-folder packaging checks pass outside WoW. These are mocked checks, not live-client verification. The current bar design is retained; this untagged alpha does not publish to CurseForge or Wago.
+
+
+Alpha.27 extends the progress track to the right content edge beneath the countdown instead of reserving a blank timer compartment. Both fixed and moving white end ticks are removed. Filled layouts keep countdowns inside the fill; strip layouts align countdowns with the ability name above progress. Native right-side spell icons, if enabled, keep their reserved space. Small spell icons meet the row's top and bottom edges, while Huge spell-icon geometry remains unchanged.
+
+The artwork option is now labelled **EUI mechanic icons (outside Huge Bars)**. It controls the external tank, sword/damage, healer, interrupt, important, magic, bleed and deadly symbols, never the spell icon or inline warning symbols in ability text. In addition to texture-path/file-ID recognition, DBM's explicit custom mechanic tags provide verified semantic hints matched to the current rendered texture and crop. This supports numeric-only Retail textures when path lookup APIs are absent. First discovery uses the timer's native inlineIcon field; later native SetIcon calls refresh/clear hints. Unknown, masked and secret artwork remains native. Installed EUI role/interrupt/death artwork and the existing original fallback atlas are retained, without bundling new assets.
+
+Regression coverage checks the new bounds and countdown baseline for both layouts and bar types, flush Small spell icons, missing end-tick textures, all eight external symbol toggles with numeric textures and no lookup APIs, first discovery, native restoration, preserved spell artwork, stale-hint rejection, and object/hook reuse. The alpha.26 flash-alpha and combat-deferral checks remain in place. Automated checks do not establish actual in-game rendering. This alpha remains untagged and does not publish to CurseForge or Wago.

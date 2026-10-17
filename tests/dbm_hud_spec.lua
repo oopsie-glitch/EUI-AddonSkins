@@ -249,19 +249,19 @@ _G[f.name .. 'BarBackground']:SetAlpha(1)
 assert(_G[f.name .. 'BarBackground'].alpha == 0, 'native redraw restored a second background')
 assert(b.h == 5 and f.h == 20 and DBT.Options.Height == 20, 'thin strip must scale with height without changing native frame/settings')
 local panel, spellIcon = f.regions[1], _G[f.name .. 'BarIcon1']
-assert(spellIcon.w == 16 and spellIcon.h == 16 and spellIcon.points[1][1] == 'LEFT')
+assert(spellIcon.w == 20 and spellIcon.h == 20 and spellIcon.points[1][1] == 'LEFT')
 assert(panel.fillColor[4] == 0.65 and panel.points[1][4] == 0 and panel.points[2][4] == 0, 'panel should stay inside native row')
 assert(#f.regions == 5, 'panel background and four accent edges missing')
 for i = 2, 5 do assert(f.regions[i].fillColor[1] == accent and f.regions[i].fillColor[4] == 0.35, 'panel needs subdued full accent outline') end
 assert(f.regions[2].h == 1 and f.regions[4].w == 1)
-assert(spellIcon.points[1][4] > f.regions[4].w and (20 - spellIcon.h) / 2 > f.regions[2].h, 'spell icon overlaps panel border')
-assert(label.points[1][1] == 'LEFT' and label.points[1][5] > 0 and timer.points[1][5] == 0, 'name must sit above strip with countdown centered')
+assert(spellIcon.points[1][4] == 0 and spellIcon.h == DBT.Options.Height, 'small spell icon must meet the row top and bottom')
+assert(label.points[1][1] == 'LEFT' and label.points[1][5] > 0 and timer.points[1][5] == label.points[1][5], 'name and countdown must share the line above progress')
 assert(label.points[1][5] - label.h / 2 >= b.points[1][5] + 1, 'name overlaps the progress strip')
-assert(label.h == 10 and timer.h == 16 and label.wordWrap == false)
+assert(label.h == 10 and timer.h == 10 and label.wordWrap == false)
 assert(label.shadow[4] == 0.9 and timer.shadow[4] == 0.9)
 assert(label.points[2][4] < timer.points[1][4] - timer.w, 'name overlaps reserved countdown')
-assert(b:GetWidth() == 137 and timer.points[1][4] == -4, 'thin strip must stop before the countdown')
-assert(label.points[1][4] == b.points[1][4] and label.points[2][4] == b.points[2][4], 'name and strip should share horizontal bounds')
+assert(b:GetWidth() == 169 and b.points[2][4] == -2 and timer.points[1][4] == -4, 'thin strip must reach the row end below countdown text')
+assert(label.points[1][4] == b.points[1][4] and label.points[2][4] < b.points[2][4], 'only the name should reserve countdown width')
 assert(_G[f.name .. 'BarIJIcons'].alpha == 0 and spellIcon.alpha == 1, 'small row should hide only mechanic symbols')
 local stripWidth, labelRight, timerRight = b:GetWidth(), label.points[2][4], timer.points[1][4]
 _G[f.name .. 'BarIJIcons2']:Hide(); first:SetIcon(136116)
@@ -274,10 +274,7 @@ for _, t in ipairs(b.regions) do
     assert(not t.gradient and not t.gradientAlpha, 'matte bars must not create gradient overlays')
 end
 assert(tint and tint.layer == 'ARTWORK' and tint.all == b.fill and tint.fillColor[4] == 0.2)
-assert(endpoint and endpoint.points[1][2] == b.fill and endpoint.points[2][2] == b.fill and endpoint.w == 1)
-assert(endpoint.fillColor[4] == 0.55, 'fill endpoint should remain visible without a glow')
-assert(trackEnd and trackEnd.points[1][2] == b and trackEnd.points[2][2] == b and trackEnd.w == 1, 'fixed track end must follow full track, not current fill')
-assert(trackEnd.fillColor[1] < endpoint.fillColor[1], 'fixed and moving markers must be visually distinct')
+assert(not endpoint and not trackEnd, 'full-width progress tracks must not create white end ticks')
 
 local trackEdges = 0
 for _, region in ipairs(b.regions) do
@@ -308,8 +305,8 @@ first.enlarged = true; first:ApplyStyle()
 assert(b.h == 24 and spellIcon.h == 24 and timer.size == 11, 'huge row must follow native configured height')
 assert(tint.fillColor[1] == 0.08 and tint.fillColor[4] == 0.4 and b.fill.color[1] == 0.9, 'huge fill tint must darken without changing native category colors')
 assert(label.points[1][5] == 0 and timer.points[1][5] == 0 and label.h == b.h, 'huge text/countdown must share one centerline')
-assert(label.points[1][4] >= b.points[1][4] and label.points[2][4] == b.points[2][4], 'huge name must overlay the fill with its own padding')
-assert(b.points[2][4] < timer.points[1][4] - timer.w, 'huge fill must stop before the right-hand countdown')
+assert(label.points[1][4] >= b.points[1][4] and label.points[2][4] < b.points[2][4], 'huge name must reserve countdown width over the fill')
+assert(b.points[2][4] == -2 and b.points[2][4] > timer.points[1][4], 'huge fill must extend behind its countdown to the row end')
 
 local symbol = _G[f.name .. 'BarIJIcons']
 assert(symbol.alpha == 1 and symbol.h == 17, 'huge mechanic icons should occupy about 60% of height')
@@ -470,7 +467,7 @@ assert(b.points[2][4] < -rightIcon.w and label.points[2][4] < timer.points[1][4]
 DBT.Options.IconRight = false; first.enlarged = false; first:ApplyStyle()
 assert(symbol.alpha == 0 and b.h == 5 and panel.points[1][4] == 0)
 assert(tint.fillColor[1] == 0.14 and tint.fillColor[4] == 0.2, 'small fill styling changed')
-assert(label.size == 9 and label.h == 10 and label.points[1][5] == 3 and b:GetWidth() == 137, 'small layout changed after huge transition')
+assert(label.size == 9 and label.h == 10 and label.points[1][5] == 3 and b:GetWidth() == 169, 'small layout changed after huge transition')
 local smallHeight, smallWidth, smallY, smallFont = b.h, b:GetWidth(), label.points[1][5], label.size
 for _ = 1, 10 do
     first.enlarged = true; first:ApplyStyle()
@@ -638,7 +635,7 @@ EllesmereUIDB.blizzWinAccentBar.enabled = false
 for _, fn in ipairs(looks) do fn() end; flush()
 for i = 2, 5 do assert(not f.regions[i].shown, 'small timer accent outline remained visible') end
 assert(not f.children[#f.children - 1].regions[1].shown and panel.shown and b.fill.shown)
-assert(trackEnd.shown and endpoint.shown, 'neutral progress markers should not depend on accent visibility')
+assert(not trackEnd and not endpoint, 'accent changes resurrected end ticks')
 first.enlarged = true; first:ApplyStyle()
 for i = 2, 5 do assert(not f.regions[i].shown, 'huge timer accent outline remained visible') end
 assert(not f.children[#f.children - 1].regions[1].shown)
@@ -816,7 +813,7 @@ do
     local smallTab, hugeTab = sideControl('Small Bars'), sideControl('Huge Bars')
     local style = sideControl('Apply EUI styling')
     local border = sideControl('Accent border (follows EUI visibility)')
-    local glyphs = sideControl('Use EUI mechanic artwork')
+    local glyphs = sideControl('EUI mechanic icons (outside Huge Bars)')
     local reset = sideControl('Reset EUI styling')
     local opacity
     for _, child in ipairs(sidePanel.children) do if child.kind == 'Slider' then opacity = child end end
@@ -879,7 +876,7 @@ do
     assert(ulx == 0 and uly == 0 and urx == 1 and rn.wordWrap and rn.shadowOffset[1] == 0)
     assert(rn.text == 'Restore |Tknown:40:40|t', 'original inline text was not restored')
     assert(_G[rf.name .. 'BarBackground'].alpha == 1 and lateBorder.alpha == 0.7, 'native alpha remained locked')
-    assert(not panel:IsShown() and not tint:IsShown() and not endpoint:IsShown() and not trackEnd:IsShown())
+    assert(not panel:IsShown() and not tint:IsShown() and not endpoint and not trackEnd)
     assert(not opacity.enabled and not border.enabled and not progress.enabled and style.enabled)
     _G[rf.name .. 'BarBackground']:SetAlpha(0.6); assert(_G[rf.name .. 'BarBackground'].alpha == 0.6)
     restored:SetVariance(); assert(_G[rf.name .. 'BarVariance'].path == 'native-gradient')
@@ -1022,6 +1019,72 @@ do
     checked(style,true); b.fill:SetVertexColor(table.unpack(original))
     for key,value in pairs(DBT.Options) do assert(dbtOptions[key] == value, 'audit fixes modified native profile '..key) end
     print('PASS: DBM native flash alpha, unchanged-alpha fast path, combat callback/new-timer deferral, pooled custom sizes/crops and native restoration')
+end
+-- Full-width tracks keep countdowns on the correct text line in both layouts.
+do
+    first.enlarged = false; first:ApplyStyle()
+    assert(timer.points[1][5] == label.points[1][5] and timer.h == label.h and timer.points[1][5] - timer.h/2 >= b.points[1][5] + 1)
+    assert(spellIcon.w == DBT.Options.Height and spellIcon.h == DBT.Options.Height and spellIcon.points[1][4] == 0)
+    local rightEdge = b.points[2][4]
+    dropdowns.smallLayout.selectValue('fill')
+    assert(timer.points[1][5] == 0 and b.points[2][4] == rightEdge and timer.h == b.h, 'filled Small countdown must sit inside full-width fill')
+    dropdowns.smallLayout.selectValue('strip')
+    first.enlarged = true; first:ApplyStyle()
+    dropdowns.hugeLayout.selectValue('strip')
+    assert(timer.points[1][5] == label.points[1][5] and timer.h == label.h and b.points[2][4] == rightEdge, 'Huge strip countdown must sit above progress')
+    dropdowns.hugeLayout.selectValue('fill')
+    assert(timer.points[1][5] == 0 and timer.h == b.h and b.points[2][4] == rightEdge)
+    first.enlarged = false; first:ApplyStyle()
+end
+-- DBM's explicit mechanic tags identify Retail numeric textures without any
+-- GetTextureFilePath/GetFileIDFromPath API. The option affects external symbols
+-- only, restores the originals immediately, and never changes spell artwork.
+do
+    local oldFileID, oldAddOns, oldCommon = GetFileIDFromPath, C_AddOns, DBM_COMMON_L
+    GetFileIDFromPath = nil
+    C_AddOns = {IsAddOnLoaded = function() return false end}
+    local fields = {'TANK_ICON','DAMAGE_ICON','HEALER_ICON','INTERRUPT_ICON','IMPORTANT_ICON','MAGIC_ICON','BLEED_ICON','DEADLY_ICON'}
+    DBM_COMMON_L = {}
+    for i,field in ipairs(fields) do
+        DBM_COMMON_L[field] = string.format('|TInterface\\EncounterJournal\\native-sheet.blp:20:20:0:0:256:32:%d:%d:0:32|t',(i-1)*32,i*32)
+    end
+    local obj = bar('retail-native-tags'); obj.enlarged = true
+    local nativeSetIcon = prototype.SetIcon
+    obj.SetIcon = function(self,v,eventID,custom)
+        local result = nativeSetIcon(self,v,eventID,custom)
+        local path = self.frame.name .. 'BarIJIcons'
+        local icon = _G[path]
+        if icon:GetTexture() ~= nil then icon:SetTexture(60001) end
+        return result
+    end
+    for i = 1,4 do _G[obj.frame.name .. 'BarIJIcons' .. (i == 1 and '' or i)].GetTextureFilePath = nil end
+    obj.inlineIcon = DBM_COMMON_L.TANK_ICON
+    obj:SetIcon(777,nil,obj.inlineIcon)
+    DBT:CreateBar(10,'retail-native-tags')
+    local mechanic, spell = _G[obj.frame.name .. 'BarIJIcons'], _G[obj.frame.name .. 'BarIcon1']
+    assert(mechanic.path == glyphAtlas and mechanic.crop[1] == 0, 'first bar discovery lost native semantic tag with numeric textures')
+    sideControl('Huge Bars').scripts.OnClick()
+    local artwork = sideControl('EUI mechanic icons (outside Huge Bars)')
+    local function useEUI(value) artwork:SetChecked(value); artwork.scripts.OnClick(artwork) end
+    local baseObjects,baseHooks = created,hooks
+    for i,field in ipairs(fields) do
+        assert(obj:SetIcon(777,nil,DBM_COMMON_L[field]) == 'native-icon')
+        assert(mechanic.path == glyphAtlas and mechanic.crop[1] == (i-1)/8, 'numeric mechanic tag failed for '..field)
+        assert(mechanic.points[1][4] < 0, 'semantic icon left its external gutter')
+        useEUI(false)
+        assert(mechanic.path == 60001, 'native mechanic artwork was not restored for '..field)
+        useEUI(true)
+        assert(mechanic.path == glyphAtlas and mechanic.crop[1] == (i-1)/8, 're-enabling did not swap external mechanic artwork')
+        assert(spell.path == 777 and spell.crop[1] == 0.08 and spell.crop[2] == 0.92, 'mechanic toggle changed spell artwork')
+    end
+    obj:SetIcon(777,nil,'|Tinvalid-short-tag|t' .. DBM_COMMON_L.TANK_ICON)
+    assert(mechanic.path == glyphAtlas and mechanic.crop[1] == 0, 'malformed tags shifted native semantic slots')
+    obj:SetIcon(777,nil,'|Tcustom-unrecognized:20:20:0:0:64:64:0:64:0:64|t')
+    assert(mechanic.path == 60001, 'stale semantic hint changed unknown custom artwork')
+    assert(created == baseObjects and hooks == baseHooks, 'mechanic switches duplicated objects/hooks')
+    GetFileIDFromPath, C_AddOns, DBM_COMMON_L = oldFileID, oldAddOns, oldCommon
+    sideControl('Small Bars').scripts.OnClick()
+    print('PASS: full-width track/countdown geometry, flush Small icons, no end ticks, external mechanic toggles and numeric-only Retail semantic tags')
 end
 -- Disabled skins can save preferences without repainting anything.
 enabled = false

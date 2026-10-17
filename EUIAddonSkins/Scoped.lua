@@ -25,6 +25,16 @@ function ns.RegisterScopedSkin(id, label, config)
         events:RegisterEvent("PLAYER_ENTERING_WORLD")
         events:RegisterEvent("PLAYER_REGEN_ENABLED")
         local C = {S = S, H = H, module = module}
+        -- Optional integration-local routing for control/scroll callbacks.
+        -- Other adapters retain the existing coalesced full refresh.
+        local controlRefreshes = {}
+        local function ControlRefresh(root)
+            if not config.controlRefresh then return refresh end
+            if not controlRefreshes[root] then
+                controlRefreshes[root] = function(source) config.controlRefresh(C, root, source) end
+            end
+            return controlRefreshes[root]
+        end
         function C.MenuOwner(owner)
             if ns.BindPopupOwner then ns.BindPopupOwner(S, module, owner) end
         end
@@ -161,7 +171,7 @@ function ns.RegisterScopedSkin(id, label, config)
                     -- change the look, and showing one queues its own refresh.
                     if not scanned[f] or not f.IsVisible or f:IsVisible() then
                         scanned[f] = true
-                        H.Scan(f, refresh, Visit, target.exclude)
+                        H.Scan(f, ControlRefresh(f), Visit, target.exclude)
                     end
                 end
             end
@@ -169,11 +179,11 @@ function ns.RegisterScopedSkin(id, label, config)
         end
         -- Setter/data callbacks can repaint only their owned subtree instead
         -- of rediscovering and scanning every integration window.
-        function C.RefreshControlsNow(root)
+        function C.RefreshControlsNow(root, exclude)
             if applying or not ns.IsEnabled(module) or not H.Allowed(root) then return end
             if InCombatLockdown and InCombatLockdown() then waiting = true; return end
             applying = true
-            H.Safe(H.Scan, root, refresh, Visit)
+            H.Safe(H.Scan, root, ControlRefresh(root), Visit, exclude)
             applying = false
         end
         local controlsPending = {}

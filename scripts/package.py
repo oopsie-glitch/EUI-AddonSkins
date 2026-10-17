@@ -18,7 +18,14 @@ assert all((addon/p).is_file() for p in runtime)
 assert {p.relative_to(addon).as_posix() for p in addon.rglob('*.lua')}==set(runtime), 'Unloaded runtime files'
 assert set(p for p in runtime if p.startswith('Skins/'))=={f'Skins/{skin}.lua' for skin,_,_ in catalog}
 assert runtime.index('Loader.lua') < min(runtime.index(f'Skins/{skin}.lua') for skin,_,_ in catalog)
-files=[toc]+[addon/p for p in runtime]+[addon/'LICENSE',addon/'Media/Icon.tga']
+# Runtime icon atlas is original RGBA art, not a development fixture.
+glyph_header=(addon/'Media/DBMMechanics.tga').read_bytes()[:18]
+assert glyph_header[2]==2 and int.from_bytes(glyph_header[12:14],'little')==256
+assert int.from_bytes(glyph_header[14:16],'little')==32 and glyph_header[16]==32
+radar_header=(addon/'Media/DBMRadar.tga').read_bytes()[:18]
+assert radar_header[2]==2 and int.from_bytes(radar_header[12:14],'little')==128
+assert int.from_bytes(radar_header[14:16],'little')==128 and radar_header[16]==32
+files=[toc]+[addon/p for p in runtime]+[addon/'LICENSE',addon/'Media/Icon.tga',addon/'Media/DBMMechanics.tga',addon/'Media/DBMRadar.tga']
 for flavor in ['Camelot','Mainline']:
     alias=addon/f'EUIAddonSkins_{flavor}.toc'
     assert alias.read_bytes()==toc.read_bytes(),f'Stale client manifest: {alias}'

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.0 — DBM Skin and Performance Improvements
+
+- Redesigned DBM timer bars with separate Small and Big Bar styling, clearer progress, countdowns and mechanic icons.
+- Added Skin Options for bar layouts, colours, borders, mechanic icons and background opacity.
+- Refined the DBM interface, range/radar and info frames, including menus, accent headings and draggable backgrounds.
+- Reduced unnecessary work when switching DBM options pages and updating timers.
+- Preserved DBM positioning, movement locks, category colours and encounter warnings.
+
 ## 1.4.2 — Auctionator and Performance Improvements
 
 - Themed Auctionator’s crafting and enchanting price controls, Search buttons and quantity-search popup.

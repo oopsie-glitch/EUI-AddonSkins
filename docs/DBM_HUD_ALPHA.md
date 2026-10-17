@@ -180,3 +180,8 @@ Mock regressions cover all three windows, locked/unlocked movement, native posit
 
 
 Alpha.34 removes EUI branding from the DBM options labels. The opener is **Skin Options**, the native Timers category is **AddonSkins**, and controls use **Style bars**, **Accent border**, **Use custom mechanic icons**, **Use accent colour**, **Choose icon colour**, **Progress: Accent colour** and **Reset styling**. **Text range background** distinguishes the list window from Radar. This is a wording-only change: saved keys, assets, API integration and behaviour are unchanged. Existing label-based regressions and all packaging checks pass. No release tag or platform upload.
+
+
+Alpha.35 accents neutral range, radar and info headings with the selected Blizzard Skins+ accent colour. Native non-white heading colours and embedded colour codes take precedence; secret titles are not inspected or accented. Live native colour changes remain effective, alpha is preserved, and disable restores the latest native heading colour. Radar/status/row colours and encounter text/data are unchanged. Theme changes refresh headings; combat defers custom recolouring while native warnings remain immediate.
+
+Regressions cover custom/linked accents, native red warnings, inline colour codes, secret titles, native alpha, combat catch-up, disable/re-enable and 1,000 unchanged heading updates without added objects/hooks/font or colour writes. All 19 suites and the 38-file install package pass outside WoW. Untagged alpha only; no platform publication.

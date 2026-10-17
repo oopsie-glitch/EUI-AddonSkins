@@ -129,7 +129,7 @@ local function object(kind, name, parent)
     function o:SetJustifyH(v) self.justifyH = v end
     function o:SetJustifyV(v) self.justifyV = v end
     function o:GetTextColor() return table.unpack(self.color) end
-    function o:SetTextColor(...) self.color = {...} end
+    function o:SetTextColor(...) self.color = {...}; self.colourWrites = (self.colourWrites or 0) + 1 end
     function o:GetFontString() return self.label end
     function o:SetFont(path, size) self.font, self.size = path, size; fontWrites = fontWrites + 1 end
     function o:SetBackdropBorderColor(...) self.borderColor = {...} end
@@ -1329,6 +1329,33 @@ do
         f.scripts.OnDragStart(); f.scripts.OnMouseDown(f,'RightButton')
         assert(f.nativeDragged and f.nativeMenu == 'RightButton', 'native drag/menu action overwritten')
     end
+    for _,f in ipairs({radar,info,range}) do assert(f.header.color[1] == accent and f.header.color[2] == 0.6, 'neutral heading missed selected accent') end
+    local priorEUI = EllesmereUIDB
+    EllesmereUIDB = {blizzWinAccentBar = {useCustom = true, color = {r=0.7,g=0.3,b=0.4}}}
+    for _,fn in ipairs(looks) do fn() end; flush()
+    for _,f in ipairs({radar,info,range}) do assert(f.header.color[1] == 0.7 and f.header.color[2] == 0.3, 'heading missed Blizzard Skins+ custom accent') end
+    info.header:SetTextColor(1,0,0,0.7); info.header:SetText('Encounter warning')
+    assert(info.header.color[1] == 1 and info.header.color[2] == 0 and info.header.color[4] == 0.7, 'native warning colour overwritten')
+    info.header:SetTextColor(1,1,1,0.6)
+    assert(info.header.color[1] == 0.7 and info.header.color[4] == 0.6, 'neutral heading alpha changed')
+    info.header:SetText('|cffff0000Danger|r')
+    assert(info.header.text == '|cffff0000Danger|r' and info.header.color[1] == 1 and info.header.color[2] == 1, 'embedded colour code interfered with')
+    local privateHeading, previousSecret = {}, issecretvalue
+    issecretvalue = function(v) return v == privateHeading or previousSecret and previousSecret(v) end
+    info.header:SetText(privateHeading); assert(info.header.color[1] == 1 and info.header.color[2] == 1, 'secret heading tinted or inspected')
+    issecretvalue = previousSecret
+    info.header:SetText('Neutral heading'); info.header:SetTextColor(1,1,1,1)
+    assert(info.header.color[1] == 0.7 and info.header.color[2] == 0.3)
+    EllesmereUIDB = priorEUI
+    for _,fn in ipairs(looks) do fn() end; flush()
+    assert(info.header.color[1] == accent)
+    local headingObjects,headingHooks,headingFonts,headingColours = created,hooks,fontWrites,info.header.colourWrites
+    for i=1,1000 do info.header:SetText('Neutral heading') end
+    assert(created == headingObjects and hooks == headingHooks and fontWrites == headingFonts and info.header.colourWrites == headingColours, 'unchanged heading updates repaint or allocate')
+    combat = true
+    info.header:SetTextColor(1,0,0,1); assert(info.header.color[2] == 0, 'combat warning colour was overridden')
+    info.header:SetTextColor(1,1,1,1); assert(info.header.color[2] == 1)
+    combat = false; event('PLAYER_REGEN_ENABLED'); assert(info.header.color[1] == accent, 'deferred heading accent did not catch up')
     -- The expanded background is interactive without replacing native scripts.
     for _,f in ipairs({range,radar,info}) do
         local layer, nativeStart = f.children[1], f.originalDragStart
@@ -1443,6 +1470,7 @@ do
     sliders.radar:SetValue(20); assert(EUIAddonSkinsDB.dbm.radarOpacity == savedRadar, 'disabled opacity control saved changes')
     assert(info.backdrop, 'missing restored backdrop: '..table.concat(errors,';'))
     assert(not info.children[1]:IsShown() and info.backdrop.bgFile == 'updated-native' and radar.background.alpha == 0.3)
+    for _,f in ipairs({radar,info,range}) do assert(f.header.color[1] == 1 and f.header.color[2] == 1, 'disable did not restore native heading colour') end
     assert(radar.circle.path == 'native-radar' and radar.circle:GetBlendMode() == 'ADD' and radar.circle.color[1] == 1 and radar.arrow.w == 32 and radar.header.text == 'Range:10 Players:1', 'native radar artwork/header restoration failed')
     assert(first.font == 'new-native' and first.size == 18 and first.w == 123 and first.points[1][4] == 6 and first.points[1][5] == -6 and first.color[2] == 0.9, 'auxiliary disable lost native font/updated geometry/colours')
     local disabledObjects,disabledFonts = created,fontWrites
@@ -1450,6 +1478,7 @@ do
     assert(created == disabledObjects and fontWrites == disabledFonts, 'disabled auxiliary callback styled content')
     enabled = true; modules.DBM.refresh(); flush()
     assert(first.font == 'eui' and info.children[1]:IsShown() and first.points[1][5] == -8, 're-enable lost info styling/spacing')
+    assert(info.header.color[1] == accent, 're-enable lost heading accent')
     radar.protected = true
     local protectedFonts = fontWrites; radar.header:SetFont('native',16)
     DBM.RangeCheck:Show(); assert(radar.header.font == 'native', 'protected radar touched')

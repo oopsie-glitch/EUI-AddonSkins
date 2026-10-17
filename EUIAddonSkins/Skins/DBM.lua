@@ -1230,8 +1230,35 @@ local function HUD(C)
         elseif value ~= d.formattedHeader then d.nativeHeader, d.formattedHeader = nil, nil end
         AuxGeometry(d.frame, d)
     end
+    local function PublicColour(r, g, b, a)
+        if issecretvalue and (issecretvalue(r) or issecretvalue(g) or issecretvalue(b) or issecretvalue(a)) then return false end
+        return type(r) == "number" and type(g) == "number" and type(b) == "number" and (a == nil or type(a) == "number")
+    end
+    local function HeadingColour(text, d)
+        if d.paintingHeading or d.paintingFont or not d.styled or not Allowed(d.frame) or not Allowed(text) or not ns.IsEnabled(C.module) then return end
+        if InCombatLockdown and InCombatLockdown() then pending = true; return end
+        local colour = d.headingColours[text]
+        if not colour then
+            local r, g, b, a = text:GetTextColor()
+            if not PublicColour(r, g, b, a) then return end
+            colour = {r, g, b, a or 1}; d.headingColours[text] = colour
+        end
+        local r, g, b, a = colour[1], colour[2], colour[3], colour[4]
+        local value = text:GetText()
+        local secretText = issecretvalue and issecretvalue(value)
+        -- Accent only neutral white. Native warning colours and embedded colour
+        -- codes win; never inspect or rewrite a secret encounter title.
+        if not secretText and type(value) == "string" and not value:find("|c", 1, true) and not value:find("|r", 1, true)
+            and r == 1 and g == 1 and b == 1 then r, g, b = ns.AccentBarColor(S) end
+        local cr, cg, cb, ca = text:GetTextColor()
+        if not PublicColour(cr, cg, cb, ca) then return end
+        if cr ~= r or cg ~= g or cb ~= b or ca ~= a then
+            d.paintingHeading = true; text:SetTextColor(r, g, b, a); d.paintingHeading = false
+        end
+    end
     local function Header(text, d)
-        if d.headers[text] or not text.GetNumPoints or text:GetNumPoints() == 0 then return end
+        if d.headers[text] then HeadingColour(text, d); return end
+        if not text.GetNumPoints or text:GetNumPoints() == 0 then return end
         local point, relative, relativePoint = text:GetPoint(1)
         if point ~= "BOTTOMLEFT" or relative ~= d.frame or relativePoint ~= "TOPLEFT" then return end
         d.headers[text] = {text:GetPoint(1)}
@@ -1240,8 +1267,16 @@ local function HUD(C)
             if not Allowed(d.frame) or not Allowed(text) or not ns.IsEnabled(C.module) then return end
             if InCombatLockdown and InCombatLockdown() then pending = true; return end
             if d.kind == "info" then AuxGeometry(d.frame, d) else RangeHeader(text, d) end
+            HeadingColour(text, d)
+        end)
+        H.Hook(text, "SetTextColor", function(_, r, g, b, a)
+            if d.paintingHeading or d.paintingFont or not d.headers[text] then return end
+            if not PublicColour(r, g, b, a) then d.headingColours[text] = nil; return end
+            d.headingColours[text] = {r, g, b, a or 1}
+            HeadingColour(text, d)
         end)
         if d.kind ~= "info" then RangeHeader(text, d) end
+        HeadingColour(text, d)
     end
     local function AuxEnabled()
         if not ns.IsEnabled(C.module) then return false end
@@ -1325,7 +1360,7 @@ local function HUD(C)
         if not Allowed(f) or not AuxEnabled() or not S.Panel then return end
         local d = auxiliary[f]
         if not d then
-            d = {fonts = {}, fontHooks = {}, headers = {}, rowPoints = {}, frame = f, kind = kind}; auxiliary[f] = d
+            d = {fonts = {}, fontHooks = {}, headers = {}, headingColours = {}, rowPoints = {}, frame = f, kind = kind}; auxiliary[f] = d
             local layer = CreateFrame("Frame", nil, f)
             layer:EnableMouse(false)
             if layer.SetFrameLevel and f.GetFrameLevel then layer:SetFrameLevel(math.max(0, f:GetFrameLevel() - 1)) end
@@ -1411,6 +1446,8 @@ local function HUD(C)
                 if d.circle then d.circle.region:SetTexture(d.circle.texture); d.circle.region:SetBlendMode(d.circle.blend) end
                 if d.arrow then d.arrow.region:SetSize(d.arrow.width, d.arrow.height); d.arrow.region:SetBlendMode(d.arrow.blend) end
                 for text, point in pairs(d.headers) do
+                    local colour = d.headingColours[text]
+                    if colour then text:SetTextColor(unpack(colour)) end
                     text:ClearAllPoints(); text:SetPoint(unpack(point))
                     if d.formattedHeader then
                         local value = text:GetText()
@@ -1418,7 +1455,7 @@ local function HUD(C)
                     end
                 end
                 for text, point in pairs(d.rowPoints) do text:ClearAllPoints(); text:SetPoint(unpack(point)) end
-                d.headers, d.rowPoints, d.width = {}, {}, nil
+                d.headers, d.headingColours, d.rowPoints, d.width = {}, {}, {}, nil
                 -- Restore fonts only: DBM may have resized/reanchored rows or
                 -- changed semantic colours since their first appearance.
                 for text, state in pairs(d.fonts) do

@@ -1,6 +1,7 @@
 -- Native-control fixtures: actions, geometry, status colours, redraws and reuse.
 local enabled, combat, accent, timers, events = true, false, 0.4, {}, {}
-local ns = {IsEnabled = function() return enabled end, AttachAccent = function(_, f) f.accent = true end}
+local ns = {IsEnabled = function() return enabled end, AttachAccent = function(_, f) f.accent = true end,
+    AccentBarColor = function(S) return S.GetAccentColor() end}
 C_Timer = {After = function(_, fn) timers[#timers + 1] = fn end}
 InCombatLockdown = function() return combat end
 geterrorhandler = function() return function(e) error(e) end end

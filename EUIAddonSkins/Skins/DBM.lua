@@ -22,6 +22,11 @@ local function HUD(C)
         if type(db.dbm) ~= "table" then db.dbm = {} end
         local settings = db.dbm
         if settings == normalized then return settings end
+        if settings.iconScaleVersion ~= 2 then
+            local scale = settings.hugeIconScale
+            if type(scale) == "number" and scale == scale then settings.hugeIconScale = math.max(0.5, math.min(2.5, scale / 1.25)) end
+            settings.iconScaleVersion = 2
+        end
         for key, value in pairs(defaults) do
             local current = settings[key]
             local valid = type(current) == type(value)
@@ -420,7 +425,7 @@ local function HUD(C)
             end
         end
         local columns, rows = count > 1 and 2 or 1, count > 2 and 2 or 1
-        local symbolSize = math.max(pixel, Snap(math.min(height * (rows == 2 and 0.4 or 0.6), width * 0.1) * AppliedSettings().hugeIconScale, pixel))
+        local symbolSize = math.max(pixel, Snap(math.min(height * (rows == 2 and 0.4 or 0.6), width * 0.1) * 1.25 * AppliedSettings().hugeIconScale, pixel))
         local slot = 0
         for i = 1, 4 do
             local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
@@ -793,7 +798,7 @@ local function HUD(C)
         if not state.notice then return end
         if inCombat then state.notice:SetText("Styling changes apply after combat. Preview is unavailable during combat.")
         elseif not available then state.notice:SetText("Bar preview is unavailable in this DBM version.")
-        else state.notice:SetText("Changes apply immediately. Size, position and spacing remain controlled by DBM.") end
+        else state.notice:SetText("Changes apply immediately.\nSize, position and spacing remain controlled by DBM.") end
     end
     local function RunPreview()
         if not ns.IsEnabled(C.module) or InCombatLockdown and InCombatLockdown() then return end
@@ -805,6 +810,43 @@ local function HUD(C)
         end
     end
     local UpdateSide, OpenSide
+    local function SideAccent()
+        local state = C.dbmPreview
+        if not state then return end
+        local r, g, b = ns.AccentBarColor(S)
+        if state.title then state.title:SetTextColor(r, g, b, 1) end
+        local label = state.button:GetFontString()
+        if label then label:SetTextColor(r, g, b, 1) end
+    end
+    local function PositionSide(state)
+        local panel, position = state.frame, Settings().optionsPosition
+        panel:ClearAllPoints()
+        if type(position) == "table" and type(position.x) == "number" and type(position.y) == "number"
+            and position.x == position.x and position.y == position.y and math.abs(position.x) < 100000 and math.abs(position.y) < 100000 then
+            panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", position.x, position.y)
+        else panel:SetPoint("TOPLEFT", state.button, "BOTTOMLEFT", 0, -6) end
+    end
+    local function SaveSidePosition(state)
+        local panel = state.frame
+        panel:StopMovingOrSizing()
+        if not state.dragging then return end
+        state.dragging = nil
+        local x, y = panel:GetLeft(), panel:GetTop()
+        local px, py = UIParent:GetLeft(), UIParent:GetTop()
+        local scale = panel:GetEffectiveScale() / UIParent:GetEffectiveScale()
+        if not x or not y or not px or not py then PositionSide(state); return end
+        Settings().optionsPosition = {x = x * scale - px, y = y * scale - py}
+        PositionSide(state)
+    end
+    local function ResetSidePosition()
+        if not ns.IsEnabled(C.module) then return end
+        local state = C.dbmPreview
+        Settings().optionsPosition = nil
+        if state and state.frame then
+            state.dragging = nil; state.frame:StopMovingOrSizing()
+            PositionSide(state); state.frame:SetShown(true)
+        elseif OpenSide then OpenSide() end
+    end
     local function SyncLayoutControls()
         local page, db = C.dbmSettings, Settings()
         if not page then return end
@@ -838,6 +880,9 @@ local function HUD(C)
         state.preview:ClearAllPoints(); state.preview:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 14, prefix == "huge" and -439 or -310)
         state.reset:ClearAllPoints(); state.reset:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 169, prefix == "huge" and -439 or -310)
         state.notice:ClearAllPoints(); state.notice:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 14, prefix == "huge" and -483 or -348)
+        state.notice:SetPoint("BOTTOMRIGHT", state.frame, "BOTTOMRIGHT", -14, 14)
+        state.notice:SetTextColor(0.9, 0.9, 0.9, 1)
+        SideAccent()
         state.layout:SetText("Layout: " .. (db[prefix .. "Layout"] == "strip" and "Name above progress" or "Name over progress"))
         state.colour:SetText("Progress: " .. (db[prefix .. "Colour"] == "accent" and "EUI accent colour" or "DBM category colours"))
         state.opacity:SetValue(db[prefix .. "Opacity"] * 100)
@@ -867,9 +912,9 @@ local function HUD(C)
         if not state.frame then
             if InCombatLockdown and InCombatLockdown() then return end
             -- Created on first use, independent of DBM's timer-category APIs.
-            local panel = CreateFrame("Frame", nil, Window())
+            local panel = CreateFrame("Frame", nil, UIParent)
             panel:SetSize(330, 438)
-            panel:SetPoint("TOPLEFT", state.button, "BOTTOMLEFT", 0, -6)
+            panel:SetMovable(true)
             if panel.SetClampedToScreen then panel:SetClampedToScreen(true) end
             if panel.SetFrameStrata then panel:SetFrameStrata("DIALOG") end
             panel:EnableMouse(true)
@@ -901,7 +946,18 @@ local function HUD(C)
                 state.controls[#state.controls + 1] = {button, "Checkbox"}
                 return button
             end
-            Text("EUI Bar Styling", -14, 14)
+            state.title = Text("Options", -14, 14)
+            local drag = CreateFrame("Frame", nil, panel)
+            drag:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0); drag:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -40, 0); drag:SetHeight(36)
+            drag:EnableMouse(true); drag:RegisterForDrag("LeftButton")
+            drag:SetScript("OnDragStart", function()
+                if not ns.IsEnabled(C.module) then return end
+                state.dragging = true; panel:StartMoving()
+            end)
+            drag:SetScript("OnDragStop", function() SaveSidePosition(state) end)
+            panel:SetScript("OnHide", function() if state.dragging then SaveSidePosition(state) end end)
+            state.drag = drag
+            PositionSide(state)
             state.close = Button("X", 292, -8, 26, function() panel:Hide() end)
             state.tabs = {
                 small = Button("Small Bars", 14, -44, 147, function() state.selected = "small"; UpdateSide() end),
@@ -971,8 +1027,9 @@ local function HUD(C)
                 for key, value in pairs(defaults) do db[key] = value end
                 RefreshBars(); UpdateSide(); SyncLayoutControls()
             end)
-            state.notice = Text("", -348)
-            state.notice:SetHeight(72); state.notice:SetWordWrap(true)
+            state.notice = Text("", -348, 14)
+            state.notice:SetHeight(72); state.notice:SetWordWrap(true); state.notice:SetJustifyV("TOP")
+            if state.notice.SetSpacing then state.notice:SetSpacing(2) end
             panel:SetScript("OnShow", UpdateSide)
             S.Shell(panel, {noAccent = true, noTopBar = true})
         else state.frame:SetShown(not state.frame:IsShown()) end
@@ -998,11 +1055,18 @@ local function HUD(C)
             button:SetText("EUI Bar Styling")
             button:SetScript("OnClick", OpenSide)
             state = {button = button}; C.dbmPreview = state
-            button:SetScript("OnShow", function() button:SetEnabled(ns.IsEnabled(C.module)); UpdateSide() end)
+            button:SetScript("OnShow", function() button:SetEnabled(ns.IsEnabled(C.module)); UpdateSide(); SideAccent() end)
             S.Button(button)
+            H.Script(button, "OnEnter", SideAccent); H.Script(button, "OnLeave", SideAccent); H.Script(button, "OnEnable", SideAccent)
+            local reset = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+            reset:SetSize(110, 26); reset:SetPoint("TOPLEFT", button, "TOPRIGHT", 6, 0)
+            reset:SetText("Reset position"); reset:SetScript("OnClick", ResetSidePosition)
+            S.Button(reset); state.positionReset = reset
         end
         state.button:SetEnabled(ns.IsEnabled(C.module))
-        Font(state.button:GetFontString())
+        Font(state.button:GetFontString()); Font(state.positionReset:GetFontString())
+        state.positionReset:SetEnabled(ns.IsEnabled(C.module))
+        SideAccent()
         if state.frame then
             for _, entry in ipairs(state.controls) do Control(C, entry[1], entry[2]); Font(entry[1].Text or entry[1]:GetFontString()) end
             for _, label in ipairs(state.labels) do Font(label) end
@@ -1310,6 +1374,7 @@ local function GUIExclude(C)
     if C.dbmSettings then C.dbmExclude[C.dbmSettings.frame] = true end
     if C.dbmPreview then
         C.dbmExclude[C.dbmPreview.button] = true
+        if C.dbmPreview.positionReset then C.dbmExclude[C.dbmPreview.positionReset] = true end
         if C.dbmPreview.frame then C.dbmExclude[C.dbmPreview.frame] = true end
     end
     if C.dbmMatte then C.dbmExclude[C.dbmMatte] = true end

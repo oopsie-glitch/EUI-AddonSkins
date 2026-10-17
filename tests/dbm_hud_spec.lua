@@ -32,6 +32,14 @@ local function object(kind, name, parent)
     function o:GetObjectType() return self.kind end
     function o:GetName() return self.name end
     function o:GetParent() return self.parent end
+    function o:SetMovable(v) self.movable = v end
+    function o:RegisterForDrag(...) self.dragButtons = {...} end
+    function o:StartMoving() self.moving = true end
+    function o:StopMovingOrSizing() self.moving = false end
+    function o:GetCenter() return self.cx or 500, self.cy or 400 end
+    function o:GetLeft() return self.left or 0 end
+    function o:GetTop() return self.top or 768 end
+    function o:SetSpacing(v) self.spacing = v end
     function o:GetEffectiveScale() return self.scale or 1 end
     function o:IsForbidden() return self.forbidden end
     function o:IsProtected() return self.protected end
@@ -145,6 +153,8 @@ end
 CreateFrame = function(kind, name, parent)
     local f = object(kind, name, parent); frames[#frames + 1] = f; return f
 end
+local previousUIParent = UIParent
+UIParent = CreateFrame('Frame')
 local ns = {IsEnabled = function() return enabled end}
 function ns.RegisterModule(id, _, available, install) modules[id] = {available = available, install = install} end
 local S = {GetAccentColor = function() return accent, 0.6, 0.7 end,
@@ -314,7 +324,7 @@ assert(label.points[1][4] >= b.points[1][4] and label.points[2][4] < b.points[2]
 assert(b.points[2][4] == -2 and b.points[2][4] > timer.points[1][4], 'huge fill must extend behind its countdown to the row end')
 
 local symbol = _G[f.name .. 'BarIJIcons']
-assert(symbol.alpha == 1 and symbol.h == 17, 'huge mechanic icons should occupy about 60% of height')
+assert(symbol.alpha == 1 and symbol.h == 21, 'default mechanic icon should use the former 125% size')
 local twoWidth, twoTimer = b:GetWidth(), timer.points[1][4]
 local hugeLeft, hugeRight, hugeLabelRight = b.points[1][4], b.points[2][4], label.points[2][4]
 assert(symbol.points[1][3] == 'LEFT' and symbol.points[1][4] + symbol.w / 2 < 0, 'mechanic must sit before the left spell icon')
@@ -330,7 +340,7 @@ first:ApplyStyle()
 assert(label.points[1][4] == 32 and label.points[1][5] == 3 and timer.points[1][5] == 3, 'native text offsets lost')
 DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 0, 0
 DBT.Options.JournalIcons = 4; first:ApplyStyle()
-assert(symbol.h == 11 and _G[f.name .. 'BarIJIcons3'].points[1][5] < symbol.points[1][5], 'four-symbol grid must fit within row height')
+assert(symbol.h == 14 and _G[f.name .. 'BarIJIcons3'].points[1][5] < symbol.points[1][5], 'four-symbol grid must fit within row height')
 assert(b.points[1][4] == hugeLeft and b.points[2][4] == hugeRight and label.points[2][4] == hugeLabelRight and timer.points[1][4] == twoTimer)
 for i = 1, 4 do
     local icon = _G[f.name .. 'BarIJIcons' .. (i == 1 and '' or i)]
@@ -339,7 +349,7 @@ end
 -- Sparse slots use a full-size centered symbol, not a four-slot size limit.
 for i = 1, 4 do _G[f.name .. 'BarIJIcons' .. (i == 1 and '' or i)]:SetShown(i == 3) end
 first:SetIcon(999)
-assert(_G[f.name .. 'BarIJIcons3'].h == 17 and _G[f.name .. 'BarIJIcons3'].points[1][5] == 0)
+assert(_G[f.name .. 'BarIJIcons3'].h == 21 and _G[f.name .. 'BarIJIcons3'].points[1][5] == 0)
 -- Recognize the actual native texture/crop, independent of timer names or colors.
 DBM_COMMON_L = {
     DAMAGE_ICON = '|TInterface\\Journal\\sheet.blp:20:20:0:0:256:64:32:64:0:32|t',
@@ -453,9 +463,9 @@ DBT.Options.HugeHeight = 40; first:ApplyStyle()
 assert(b.h == 36 and label.h == 36 and spellIcon.h == 27, 'row/icon geometry must scale without overflowing narrow rows')
 assert(label.text == '|Twarning:13:13|t Custom User Bar' and label.justifyV == 'MIDDLE')
 f:SetSize(400, 40); first:ApplyStyle()
-assert(spellIcon.h == 36 and _G[f.name .. 'BarIJIcons'].h == 16)
+assert(spellIcon.h == 36 and _G[f.name .. 'BarIJIcons'].h == 20)
 DBT.Options.JournalIcons = 1; first:ApplyStyle()
-assert(symbol.h == 24, 'single mechanic must follow height rather than old concept width compartment')
+assert(symbol.h == 30, 'single mechanic must follow height rather than old concept width compartment')
 PixelUtil = {GetPixelToUIUnitFactor = function() return 0.75 end}; f.scale = 1.5
 first:ApplyStyle()
 assert(f.regions[2].h == 0.5 and f.regions[4].w == 0.5 and f.children[#f.children - 1].regions[1].h == 0.5)
@@ -729,7 +739,7 @@ assert(pageCount == 0, 'side preview must not require the timer-category APIs')
 local sideButton = sidePreview
 sideButton.scripts.OnClick(); assert(nativeDemoCalls == 0, 'opening styling panel started demo bars')
 local sidePanel
-for _, child in ipairs(DBM_GUI_OptionsFrame.children) do if child.w == 330 then sidePanel = child end end
+for _, child in ipairs(frames) do if child.w == 330 and child:GetParent() == UIParent then sidePanel = child end end
 assert(sidePanel and sidePanel:IsShown(), 'side styling panel missing')
 local function sideControl(text)
     for _, child in ipairs(sidePanel.children) do
@@ -1156,7 +1166,7 @@ do
     obj:SetIcon(777,nil,obj.inlineIcon)
     assert(icon.w == iconSize * 2 and icon.color[1] == 0.2, 'combat callbacks leaked pending icon settings')
     combat = false; event('PLAYER_REGEN_ENABLED')
-    assert(icon.w == 25, 'post-combat 150% mechanic size not applied at native 28-unit row height')
+    assert(icon.w == 32, 'post-combat 150% mechanic size not applied at native 28-unit row height')
     assert(icon.color[1] == 0.7 and icon.color[2] == 0.3, 'post-combat custom colour not applied')
     checked(glyphs,false)
     assert(not accentBox.enabled and not customButton.enabled and scale.enabled, 'native artwork control states incorrect')
@@ -1172,6 +1182,57 @@ do
     reset.scripts.OnClick(); smallTab.scripts.OnClick()
     for key,value in pairs(DBT.Options) do assert(dbtOptions[key] == value, 'new controls changed DBM profile '..key) end
     print('PASS: mechanic scale, accent/custom/cancel colours, theme/combat/reset/missing-picker guards, independent opaque background and top-right Big Bars UI')
+end
+-- Rebased icon percentages, detachable position/reset, accent titles and footer.
+do
+    local small,big = sideControl('Small Bars'),sideControl('Big Bars')
+    local title,notice,drag
+    for _,text in ipairs(sidePanel.regions) do
+        if text.text == 'Options' then title = text end
+        if text.text and text.text:find('Changes apply immediately',1,true) then notice = text end
+    end
+    for _,child in ipairs(sidePanel.children) do if child.scripts.OnDragStart then drag = child end end
+    local resetPosition
+    for _,child in ipairs(DBM_GUI_OptionsFrame.children) do if child.text == 'Reset position' then resetPosition = child end end
+    assert(title and notice and drag and resetPosition, 'detachable Options UI controls missing')
+    assert(sidePanel:GetParent() == UIParent and sidePanel.movable and drag.dragButtons[1] == 'LeftButton')
+    assert(notice.size == 14 and notice.spacing == 2 and notice.justifyV == 'TOP' and notice.points[2][1] == 'BOTTOMRIGHT', 'footer is not readable or does not fill its space')
+    assert(title.color[1] == accent and sideButton:GetFontString().color[1] == accent)
+    local originalEUI = EllesmereUIDB
+    EllesmereUIDB = {blizzWinAccentBar = {useCustom = true, color = {r = 0.3,g = 0.5,b = 0.7}}}
+    for _,fn in ipairs(looks) do fn() end; flush()
+    assert(title.color[1] == 0.3 and sideButton:GetFontString().color[1] == 0.3, 'panel/opener titles did not follow accent changes')
+    sideButton:GetFontString():SetTextColor(1,1,1,1); sideButton.scripts.OnEnter(sideButton)
+    assert(sideButton:GetFontString().color[1] == 0.3, 'hover reset opener accent colour')
+    local baseObjects,baseHooks,baseWalks = created,hooks,iteratorCalls
+    sidePanel.left,sidePanel.top = 350,600
+    drag.scripts.OnDragStart(); assert(sidePanel.moving)
+    drag.scripts.OnDragStop()
+    assert(not sidePanel.moving and EUIAddonSkinsDB.dbm.optionsPosition.x == 350 and EUIAddonSkinsDB.dbm.optionsPosition.y == -168)
+    assert(sidePanel.points[1][1] == 'TOPLEFT' and sidePanel.points[1][2] == UIParent)
+    local pointX,pointY = sidePanel.points[1][4],sidePanel.points[1][5]
+    big.scripts.OnClick(); small.scripts.OnClick(); sideButton.scripts.OnClick(); sideButton.scripts.OnClick()
+    assert(sidePanel.points[1][4] == pointX and sidePanel.points[1][5] == pointY, 'resize/reopen lost detached top-left position')
+    assert(created == baseObjects and hooks == baseHooks and iteratorCalls == baseWalks, 'drag/reopen rebuilt controls or scanned HUD')
+    resetPosition.scripts.OnClick()
+    assert(not EUIAddonSkinsDB.dbm.optionsPosition and sidePanel.points[1][2] == sideButton and sidePanel:IsShown(), 'position reset did not recover the Options panel')
+    -- Scaling conversion uses a versioned saved setting; old 125% becomes 100%
+    -- once, while an explicit old 100% retains its previous rendered size at 80%.
+    local originalDB = EUIAddonSkinsDB.dbm
+    local function legacy(scale)
+        local db = {}; for key,value in pairs(originalDB) do db[key] = value end
+        db.hugeIconScale,db.iconScaleVersion = scale,nil
+        EUIAddonSkinsDB.dbm = db; modules.DBM.refresh(); flush()
+        return db
+    end
+    local converted = legacy(1.25)
+    assert(converted.hugeIconScale == 1 and converted.iconScaleVersion == 2)
+    modules.DBM.refresh(); flush(); assert(converted.hugeIconScale == 1, 'icon scaling migrated twice')
+    converted = legacy(1); assert(converted.hugeIconScale == 0.8)
+    EUIAddonSkinsDB.dbm = originalDB; EllesmereUIDB = originalEUI
+    modules.DBM.refresh(); flush()
+    assert(title.color[1] == accent and sideButton:GetFontString().color[1] == accent)
+    print('PASS: former 125% rebased to 100%, one-time migration, draggable detached Options panel, saved position/reset, accent labels and larger anchored footer')
 end
 -- Disabled skins can save preferences without repainting anything.
 enabled = false
@@ -1194,5 +1255,6 @@ local skipped = DBT:CreateBar(20, 'disabled'); assert(_G[skipped.frame.name .. '
 assert(#errors == 0, table.concat(errors, '\n'))
 DBM, DBT, C_Secrets, DebuffTypeColor, AuraUtil = nil, nil, nil, nil, nil
 DBMWarning1, DBMSpecialWarning1, issecretvalue = nil, nil, nil
+UIParent = previousUIParent
 CreateColor, DBM_COMMON_L, DBM_GUI, DBM_GUI_OptionsFrame = nil, nil, nil, nil
 print('PASS: DBM HUD late/core-only load, timer lifecycle/native colors/actions, reuse, no countdown work, aura previews, restricted guards, theme/combat/toggles')

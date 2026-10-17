@@ -62,14 +62,18 @@ local function OptionsSkin(S, H, module, addon)
             frame:SetBackdrop(nil)
         end
     end
-    local function Font(d, text, r, g, b)
+    local function Font(d, text, r, g, b, alpha)
         if not H.Allowed(text) or not text.GetFont then return end
         local saved = Save(d, text)
         if not saved.font then saved.font, saved.color = {text:GetFont()}, {text:GetTextColor()} end
         local path, _, flags = text:GetFont()
         local target, targetFlags = S.GetFont()
-        if path ~= target or flags ~= (targetFlags or '') then S.Font(text) end
-        if r then text:SetTextColor(r, g, b, select(4, text:GetTextColor())) end
+        if path ~= target or (flags or '') ~= (targetFlags or '') then S.Font(text) end
+        if r then
+            local cr, cg, cb, ca = text:GetTextColor()
+            alpha = alpha or ca
+            if cr ~= r or cg ~= g or cb ~= b or ca ~= alpha then text:SetTextColor(r, g, b, alpha) end
+        end
     end
     local function Layer(d, key, host, method, options)
         if not H.Allowed(host) then return end
@@ -102,7 +106,7 @@ local function OptionsSkin(S, H, module, addon)
         return layer
     end
     local function Neutral(d, text, disabled)
-        Font(d, text, disabled and 0.5 or 0.9, disabled and 0.5 or 0.9, disabled and 0.52 or 0.92)
+        Font(d, text, disabled and 0.5 or 0.9, disabled and 0.5 or 0.9, disabled and 0.52 or 0.92, 1)
     end
     local function Slider(d, slider)
         if not H.Allowed(slider) then return end
@@ -318,7 +322,10 @@ local function OptionsSkin(S, H, module, addon)
         H.Hook(dialog, 'Open', function(_, app, container)
             if not App(app) then return end
             local widget = container or dialog.OpenFrames and dialog.OpenFrames[app]
-            if widget then roots[widget] = true; PaintTree(widget) end
+            if widget then
+                roots[widget] = true
+                if not states[widget] or not states[widget].active then PaintTree(widget) end
+            end
         end)
         for app, groups in pairs(dialog.BlizOptions or {}) do
             if App(app) then
@@ -342,6 +349,41 @@ end, function(S, module)
     local refreshOptions = OptionsSkin(S, H, module, addon)
     local themed = setmetatable({}, {__mode = "k"})
     local targetSeen
+    local function Font(text, r, g, b)
+        if not text or not text.GetFont or not H.Allowed(text) then return end
+        local path, _, flags = text:GetFont()
+        local target, targetFlags = S.GetFont()
+        if path ~= target or (flags or "") ~= (targetFlags or "") then H.Font(text) end
+        if r and text.GetTextColor then
+            local cr, cg, cb, ca = text:GetTextColor()
+            if cr ~= r or cg ~= g or cb ~= b then text:SetTextColor(r, g, b, ca) end
+        end
+    end
+    local titleMetrics = setmetatable({}, {__mode = "k"})
+    local function AuxiliaryTitle(f)
+        if InCombatLockdown and InCombatLockdown() then applyWaiting = true; return end
+        local title, text = f and f.title, f and f.title and f.title.text
+        if not title or not text or not text.GetFont then return end
+        local r, g, b = S.GetAccentColor()
+        Font(text, r, g, b)
+        -- RXP measured with its previous font. Clear a stale FontString width
+        -- before measuring the new face, retaining the native localized text.
+        if not text.GetStringWidth or not title.SetWidth then return end
+        local path, size, flags = text:GetFont()
+        local value = text.GetText and text:GetText()
+        local saved, width = titleMetrics[text]
+        if saved and value and saved.value == value and saved.path == path and saved.size == size and saved.flags == flags then
+            width = saved.width
+        else
+            if text.SetWidth then text:SetWidth(0) end
+            width = text.GetUnboundedStringWidth and text:GetUnboundedStringWidth() or text:GetStringWidth()
+            if not width or width <= 0 then return end
+            width = math.ceil(width) + 12
+            titleMetrics[text] = {path = path, size = size, flags = flags, value = value, width = width}
+        end
+        if not title.GetWidth or title:GetWidth() ~= width then title:SetWidth(width) end
+        if f.GetWidth and f.SetWidth and f:GetWidth() < width + 10 then f:SetWidth(width + 10) end
+    end
     local copies, wrapped = setmetatable({}, {__mode = "k"}), {}
     local unpack = unpack or table.unpack
     local function Pack(...) return {n = select("#", ...), ...} end
@@ -508,19 +550,13 @@ end, function(S, module)
                 header:SetPoint("BOTTOMLEFT", f.BottomFrame, "TOPLEFT", 0, 0)
                 header:SetPoint("BOTTOMRIGHT", f.BottomFrame, "TOPRIGHT", 0, 0)
             end
-            local icon, class = H.Texture(header.icon), H.Texture(header.classIcon)
-            if icon then
-                icon:ClearAllPoints(); icon:SetPoint("TOPLEFT", header, "TOPLEFT", 6, -3)
-                icon:SetSize(28, 28); S.SquareIcon(icon)
-            end
-            if class and icon then
-                class:ClearAllPoints(); class:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 2, -1)
-                class:SetSize(12, 12); S.SquareIcon(class)
-            end
-            if header.text then
+            H.Fade(header.icon); H.Fade(header.classIcon)
+            if header.text and header.text.ClearAllPoints and not guideChrome[header.text] then
+                guideChrome[header.text] = true
                 header.text:ClearAllPoints()
-                header.text:SetPoint("LEFT", header, "LEFT", 42, 0)
+                header.text:SetPoint("LEFT", header, "LEFT", 6, 0)
                 header.text:SetPoint("RIGHT", header, "RIGHT", -6, 0)
+                if header.text.SetJustifyH then header.text:SetJustifyH("CENTER") end
             end
         end
         local scroll = f.ScrollFrame and f.ScrollFrame.ScrollBar
@@ -568,12 +604,27 @@ end, function(S, module)
             local backdrop = f:GetBackdrop()
             shown = backdrop and backdrop.bgFile and true or false
             if shown and f.SetBackdropColor and not entry.lock then
-                entry.lock = true
-                f:SetBackdropColor(0, 0, 0, 0)
-                entry.lock = false
+                local r, g, b, a
+                if f.GetBackdropColor then r, g, b, a = f:GetBackdropColor() end
+                if r ~= 0 or g ~= 0 or b ~= 0 or a ~= 0 then
+                    entry.lock = true
+                    f:SetBackdropColor(0, 0, 0, 0)
+                    entry.lock = false
+                end
             end
         end
-        entry.layer:SetAlpha(shown and entry.opacity or 0)
+        local opacity = entry.opacity
+        local target = addon.targeting and addon.targeting.activeTargetFrame
+        if f == addon.activeItemFrame then
+            local source = target and themed[target]
+            if source then opacity = source.opacity
+            elseif addon.colors and addon.colors.background then opacity = addon.colors.background[4] or 1
+            else opacity = select(4, S.GetPanelColor()) or 1 end
+        end
+        local alpha = shown and opacity or 0
+        if not entry.layer.GetAlpha or entry.layer:GetAlpha() ~= alpha then entry.layer:SetAlpha(alpha) end
+        local items = addon.activeItemFrame
+        if f == target and items and items ~= f and themed[items] then SyncShell(items, themed[items]) end
     end
     local function ThemeShell(f)
         if not f or not f.GetFrameLevel or (not f.GetBackdrop and not f.rxpBackground) or CombatLocked()
@@ -610,6 +661,8 @@ end, function(S, module)
     local function TargetFrame()
         return addon.targeting and addon.targeting.activeTargetFrame
     end
+    local QueueTargets, QueueItems
+    local targetQueue, itemQueue = {}, {}
     local function ApplyTargets()
         local f = TargetFrame()
         if not f or CombatLocked() or (f.IsForbidden and f:IsForbidden()) then return end
@@ -618,14 +671,20 @@ end, function(S, module)
         if targetSeen ~= f then
             targetSeen = f
             if f.UpdateVisuals then H.Safe(f.UpdateVisuals, f) end
-            H.Hook(f, "UpdateVisuals", refresh)
+            H.Hook(f, "UpdateVisuals", function() AuxiliaryTitle(f); QueueTargets() end)
+            H.Script(f, "OnShow", function() AuxiliaryTitle(f) end)
         end
         TintBackdrop(f)
         TintBackdrop(f.title)
         ThemeShell(f)
         ThemeShell(f.title)
-        local r, g, b = S.GetAccentColor()
-        H.Font(f.title and f.title.text, r, g, b)
+        AuxiliaryTitle(f)
+    end
+    QueueTargets = function()
+        H.Queue(TargetFrame() or targetQueue, function()
+            if CombatLocked() then applyWaiting = true; return end
+            ApplyTargets()
+        end)
     end
     local itemSeen
     local function ApplyItems()
@@ -634,13 +693,13 @@ end, function(S, module)
         if itemSeen ~= f then
             itemSeen = f
             if f.UpdateVisuals then H.Safe(f.UpdateVisuals, f) end
-            H.Hook(f, "UpdateVisuals", function() H.Queue(f, ApplyItems) end)
-            H.Hook(f, "UpdateFrame", function() H.Queue(f, ApplyItems) end)
+            H.Hook(f, "UpdateVisuals", function() AuxiliaryTitle(f); QueueItems() end)
+            H.Hook(f, "UpdateFrame", QueueItems)
+            H.Script(f, "OnShow", function() AuxiliaryTitle(f) end)
         end
         TintBackdrop(f); TintBackdrop(f.title)
         ThemeShell(f); ThemeShell(f.title)
-        local r, g, b = S.GetAccentColor()
-        H.Font(f.title and f.title.text, r, g, b)
+        AuxiliaryTitle(f)
         -- Secure item-use buttons keep all attributes, dimensions and handlers.
         -- Crop only their existing icon textures, outside combat.
         for _, button in ipairs(f.buttonList or {}) do
@@ -648,13 +707,33 @@ end, function(S, module)
             if icon then S.SquareIcon(icon) end
         end
     end
-    local function QueueItems()
-        H.Queue(addon.activeItemFrame or module, function()
+    QueueItems = function()
+        H.Queue(addon.activeItemFrame or itemQueue, function()
             if CombatLocked() then applyWaiting = true; return end
             ApplyItems()
         end)
     end
     for _, name in ipairs({"CreateActiveItemFrame", "UpdateItemFrame"}) do H.Hook(addon, name, QueueItems) end
+    local guideWindowSeen
+    local function V2Chrome(window)
+        if not window then return end
+        if CombatLocked() then applyWaiting = true; return end
+        H.Fade(window.iconLogo); H.Fade(window.classIcon)
+        local title, header = window.title, window.guideNameFrame
+        if title and title.ClearAllPoints and H.Allowed(header) then
+            local right = 6
+            for _, button in ipairs({window.settingsButton, window.guideSelectButton}) do
+                if H.Allowed(button) then right = right + button:GetWidth() + 7 end
+            end
+            -- Mirror the native control space on the left to keep the label
+            -- centered on the header without covering either native button.
+            title:ClearAllPoints()
+            title:SetPoint("TOPLEFT", header, "TOPLEFT", right, -6)
+            title:SetPoint("TOPRIGHT", header, "TOPRIGHT", -right, -6)
+            if title.SetJustifyH then title:SetJustifyH("CENTER") end
+            if window.subtitle and window.subtitle.SetJustifyH then window.subtitle:SetJustifyH("CENTER") end
+        end
+    end
     local function Apply()
         if CombatLocked() then applyWaiting = true; return end
         applyWaiting = false
@@ -684,15 +763,20 @@ end, function(S, module)
         -- Inspect only existing widgets; GetGuideWindow would create one eagerly.
         local window = addon.v2 and addon.v2.state and addon.v2.state.guideWindow or _G.RXPV2GuideWindow
         if window then
+            guideWindowSeen = window
             Scan(window.frame)
             for _, key in ipairs({"upperFrame", "guideNameFrame", "guideStepsFrame"}) do ThemeShell(window[key]) end
             ns.AttachAccent(S, window.upperFrame or window.frame)
             H.Fade(window.banner)
+            V2Chrome(window)
+            H.Hook(window, "UpdateFrameLayout", function() V2Chrome(window) end)
             H.Hook(window, "UpdateTheme", refresh)
             H.Hook(window, "UpdateSubTheme", refresh)
-            H.Hook(window, "RefreshLayout", refresh)
+            H.Hook(window, "RefreshLayout", function()
+                H.Queue(window.frame, function() V2Chrome(window); Scan(window.frame) end)
+            end)
             local r, g, b = S.GetAccentColor()
-            H.Font(window.title, r, g, b)
+            Font(window.title, r, g, b)
             if window.closebutton and H.Allowed(window.closebutton) then S.CloseButton(window.closebutton) end
         end
         -- Active V2 steps are widgets kept outside the main guide window.
@@ -715,7 +799,6 @@ end, function(S, module)
             end
             H.Hook(importer, "UpdateTheme", refresh)
         end
-        S.RefreshSoftBorders()
     end
     refresh = function() H.Queue(module, Apply) end
     local function UpdateTheme()
@@ -735,27 +818,34 @@ end, function(S, module)
         if addon.guideImporter and addon.guideImporter.UpdateTheme then H.Safe(addon.guideImporter.UpdateTheme, addon.guideImporter) end
         local target = TargetFrame()
         if target and not CombatLocked() and target.UpdateVisuals then H.Safe(target.UpdateVisuals, target) end
+        S.RefreshSoftBorders()
         refresh()
     end
     Wrap(addon, "LoadActiveTheme", true)
     Wrap(addon.v2, "GetTheme")
     for _, name in ipairs({"RenderFrame", "LoadGuide", "SetStep"}) do H.Hook(addon, name, refresh) end
-    for _, name in ipairs({"GetGuideWindow", "UpdateGuideWindow", "UpdateActiveStepTheme"}) do H.Hook(addon.v2, name, refresh) end
+    H.Hook(addon.v2, "GetGuideWindow", function()
+        local window = addon.v2.state and addon.v2.state.guideWindow or _G.RXPV2GuideWindow
+        if window and window ~= guideWindowSeen then refresh() end
+    end)
+    for _, name in ipairs({"UpdateGuideWindow", "UpdateActiveStepTheme"}) do H.Hook(addon.v2, name, refresh) end
     if addon.ui and addon.ui.v2 then
         H.Hook(addon.ui.v2, "CreateGuideImporter", refresh)
         H.Hook(addon.ui.v2, "ApplyFrameBackdrop", function(_, f, edge, background)
             local entry = themed[f]
-            if entry then entry.opacity = background and background[4] or 1; SyncShell(f, entry) end
-            refresh()
+            if entry then entry.opacity = background and background[4] or 1; SyncShell(f, entry)
+            else refresh() end -- one coalesced discovery for newly constructed controls
         end)
         H.Hook(addon.ui.v2, "SetFrameBackdropShown", function(_, f)
             local entry = themed[f]
             if entry then SyncShell(f, entry) end
         end)
     end
-    for _, name in ipairs({"CreateTargetFrame", "RenderTargetFrameBackground", "UpdateTargetFrame"}) do
-        H.Hook(addon.targeting, name, refresh)
+    for _, name in ipairs({"CreateTargetFrame", "RenderTargetFrameBackground"}) do
+        H.Hook(addon.targeting, name, QueueTargets)
     end
+    -- UpdateTargetFrame only changes native secure target rows and geometry.
+    -- It needs no skin scan: creation/visual/background hooks cover our work.
     local combatEvents = CreateFrame("Frame")
     combatEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
     combatEvents:SetScript("OnEvent", function()

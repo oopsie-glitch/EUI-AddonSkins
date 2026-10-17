@@ -36,6 +36,17 @@ local function texture(kind, parent)
     function t:SetTexCoord(...) self.crop = {...} end
     function t:GetNumMaskTextures() return self.masked and 1 or 0 end
     function t:SetText(s) assert(self.font, "FontString:SetText(): Font not set"); self.text = s end
+    function t:GetText() return self.text end
+    function t:GetStringWidth()
+        self.measureCalls=(self.measureCalls or 0)+1
+        local width=#(self.text or '')*(self.font=='eui' and 8 or 4)
+        return self.width and self.width>0 and math.min(self.width,width) or width
+    end
+    function t:GetUnboundedStringWidth()
+        self.measureCalls=(self.measureCalls or 0)+1
+        return #(self.text or '')*(self.font=='eui' and 8 or 4)
+    end
+    function t:SetJustifyH(value)self.justifyH=value end
     function t:GetFont() return self.font, self.font and 12, '' end
     function t:SetFont(v) self.font = v; self.fontWrites = (self.fontWrites or 0) + 1 end
     function t:SetFontObject(v) self.font = v end
@@ -128,6 +139,7 @@ frame = function(kind, name, parent)
     local f = oldFrame(kind,name,parent)
     f.color,f.border={0,0,0,1},{1,1,1,1}
     function f:GetFrameLevel() return 6 end
+    function f:GetWidth() return self.width or 24 end
     function f:SetFrameLevel(n) self.level=n end
     function f:SetAllPoints(target) self.allPoints=target end
     function f:EnableMouse(value) self.mouse=value end
@@ -226,7 +238,19 @@ dialog.FeedGroup=function(_,app,_,container)return 'feed-native',nil,container e
 dialog.Open=function(_,app,container)return 'open-native'end
 local previousLibStub=LibStub
 LibStub=function(name)if name=='AceConfigDialog-3.0' then return dialog end end
-RXP={title='RestedXP Guides',LoadActiveTheme=function()return {font='original',background={.1,.1,.1,1}}end}
+local targetPerf=frame('Frame',nil,UIParent)
+targetPerf.backdrop={bgFile='native',edgeFile='native'};targetPerf.color={.1,.1,.1,.85}
+targetPerf.title=frame('Frame',nil,targetPerf);targetPerf.title.text=label(targetPerf.title,'Active Targets')
+targetPerf.title.text.width=24 -- simulate a stale width left by the old face
+targetPerf.UpdateVisuals=function(self)
+    self.title.text:SetFont('native-font');self.title:SetSize(self.title.text:GetStringWidth()+10,19)
+    return 'target-visuals'
+end
+local targetCalls=0
+local targetApi={activeTargetFrame=targetPerf,UpdateTargetFrame=function()targetCalls=targetCalls+1;return 'target-native'end,
+    RenderTargetFrameBackground=function(self)self.activeTargetFrame:SetBackdropColor(.1,.1,.1,.85);return 'background-native'end}
+local v2Ui={ApplyFrameBackdrop=function(_,f,_,bg)f.backdrop={bgFile='native'};f.color=bg;return 'backdrop-native'end}
+RXP={v2={state={},GetTheme=function()return {}end,GetGuideWindow=function(self)return self.state.guideWindow,nil,'getter-tail'end},targeting=targetApi,ui={v2=v2Ui},title='RestedXP Guides',LoadActiveTheme=function()return {font='original',background={.1,.1,.1,1}}end}
 assert(loadfile('EUIAddonSkins/Skins/RXPGuides.lua'))('EUIAddonSkins',ns)
 local m=modules.RXPGuides
 local baseScan=ns.CreateSkinHelper
@@ -236,6 +260,8 @@ ns.CreateSkinHelper=function(...)
     return h
 end
 m.install(S,m);flush()
+assert(targetPerf.title.width==#'Active Targets'*8+12 and targetPerf.title.text.text=='Active Targets'
+    and targetPerf.width>=targetPerf.title.width+10,'initial target title clipped before first click')
 assert(root.frame.icon.alpha==1 and root.frame.icon.path=='RXP logo','branding changed')
 assert(button.native.alpha==0 and button.text.font=='eui' and heading.line.alpha==0)
 assert(checkbox.checkbg.alpha==0 and checkbox.checked and checkbox.check.hidden==false)
@@ -248,6 +274,11 @@ local out,empty,tail=dialog:FeedGroup('RestedXP Guides',{},page,root,{})
 assert(out=='feed-native' and empty==nil and tail==page)
 assert(button.frame.hooks.OnClick()=='button-native' and button.clicks==1)
 dropdown.button.hooks.OnClick();dropdown.button_cover.hooks.OnClick();assert(dropdown.clicks==2,'dropdown handler lost')
+button.disabled=true;button.text:SetTextColor(.5,.5,.5,.1)
+dialog:FeedGroup('RestedXP Guides',{},page,root,{})
+assert(button.text.textColor[1]==.5 and button.text.textColor[4]==1,'disabled label remained nearly invisible')
+button.disabled=false
+dialog:FeedGroup('RestedXP Guides',{},page,root,{})
 local total=objects;local feedHook=dialog.FeedGroup;local initialWrites=writes
 for i=1,25 do dialog:FeedGroup('RestedXP Guides',{},page,root,{})end
 flush();assert(objects==total and dialog.FeedGroup==feedHook and scans==0,'page navigation allocates layers/hooks or scans guide')
@@ -297,7 +328,11 @@ local skip=check.SetChecked
 local iconFrame=frame('Frame',nil,UIParent);iconFrame.backdrop={bgFile='native',edgeFile='native'}
 iconFrame.title=frame('Frame',nil,iconFrame);iconFrame.title.text=label(iconFrame.title,'Active Items')
 iconFrame.title.backdrop={bgFile='native',edgeFile='native'}
-iconFrame.UpdateVisuals=function()return 'item-native' end
+iconFrame.UpdateVisuals=function(self)
+    self:SetBackdropColor(.1,.1,.1,.4) -- native V1 hard-coded opacity
+    self.title.text:SetFont('native-font');self.title:SetSize(self.title.text:GetStringWidth()+10,19)
+    return 'item-native'
+end
 iconFrame.UpdateFrame=function()return 'item-update' end
 local secure=frame('Button',nil,iconFrame);secure.protected=true;secure.icon=art(secure);secure.hooks.OnClick=function()return 'use-native'end
 iconFrame.buttonList={secure}
@@ -305,10 +340,37 @@ RXP.activeItemFrame=iconFrame;RXP.RXPFrame=guide
 RXP.settings={profile={activeTheme='Custom'}}
 modules.RXPGuides.refresh();flush()
 assert(guide.GuideName.points[1][3]=='TOPLEFT' and guide.GuideName.points[1][5]==0,'guide header still overlaps list')
+assert(guide.GuideName.icon.alpha==0 and guide.GuideName.text.points[1][4]==6
+    and guide.GuideName.text.points[2][4]==-6 and guide.GuideName.text.justifyH=='CENTER','logo was not removed and title centered')
 assert(check.checkedArt.color[1]==accent and check.checked and check.SetChecked==skip,'guide completion/skip action changed')
 check.normal:SetAlpha(1);assert(check.normal.alpha==0,'native guide checkbox chrome reappeared')
 assert(iconFrame.skinMethod==nil and iconFrame.children[#iconFrame.children].skinMethod=='Panel','item container not styled separately')
 assert(secure.skinMethod==nil and secure.hooks.OnClick()=='use-native' and secure.width==nil,'secure item action changed')
+local function panelOf(f)
+    for _,child in ipairs(f.children)do if child.skinMethod=='Panel' then return child end end
+end
+local targetLayer,itemLayer=panelOf(targetPerf),panelOf(iconFrame)
+assert(targetLayer.alpha==.85 and itemLayer.alpha==targetLayer.alpha,'active backgrounds differ')
+assert(iconFrame.title.width==#'Active Items'*8+12 and iconFrame.title.text.text=='Active Items','initial item title clipped')
+assert(targetPerf:UpdateVisuals()=='target-visuals' and targetPerf.title.width==#'Active Targets'*8+12,'native redraw clipped target title')
+assert(iconFrame:UpdateVisuals()=='item-native' and iconFrame.title.width==#'Active Items'*8+12,'native redraw clipped item title')
+flush()
+local measureUnbounded=targetPerf.title.text.GetUnboundedStringWidth
+targetPerf.title.text.GetUnboundedStringWidth=nil
+targetPerf.title.text:SetText('Aktiva mål');targetPerf.title.text:SetWidth(24)
+targetPerf:UpdateVisuals();flush()
+assert(targetPerf.title.text.text=='Aktiva mål' and targetPerf.title.width==#'Aktiva mål'*8+12,
+    'legacy width fallback truncated or replaced localized title')
+targetPerf.title.text.GetUnboundedStringWidth=measureUnbounded
+targetPerf.title.text:SetText('Active Targets');targetPerf:UpdateVisuals();flush()
+targetPerf:SetBackdropColor(.1,.1,.1,.65)
+assert(targetLayer.alpha==.65 and itemLayer.alpha==.65,'matching item opacity did not follow target changes synchronously')
+iconFrame:SetBackdrop(nil);assert(itemLayer.alpha==0 and targetLayer.alpha==.65,'hidden item background restored')
+iconFrame:SetBackdrop({bgFile='native',edgeFile='native'});iconFrame:SetBackdropColor(.1,.1,.1,.4)
+assert(itemLayer.alpha==targetLayer.alpha,'native item opacity reset broke matching')
+targetPerf:SetBackdrop(nil)
+assert(targetLayer.alpha==0 and itemLayer.alpha==.65,'target hide-background incorrectly hides/restores item background')
+targetPerf:SetBackdrop({bgFile='native',edgeFile='native'});targetPerf:SetBackdropColor(.1,.1,.1,.65)
 assert(iconFrame.UpdateFrame()=='item-update');flush()
 local count=objects
 for i=1,20 do iconFrame.UpdateFrame()end
@@ -319,5 +381,45 @@ iconFrame.UpdateFrame();flush();assert(not more.crop,'secure icon modified durin
 combat=false
 for _,f in ipairs(events)do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f,'PLAYER_REGEN_ENABLED')end end
 flush()
+scans=0
+local stableObjects,stableWrites,stableMeasures=objects,writes,targetPerf.title.text.measureCalls
+for i=1,100 do assert(targetApi:UpdateTargetFrame()=='target-native')end
+flush()
+assert(scans==0 and objects==stableObjects and writes==stableWrites,'target data updates scan guide or allocate/style controls')
+assert(targetPerf.title.text.measureCalls==stableMeasures,'target data updates repeatedly measure title')
+print('BENCH rxp_target_burst scans='..scans..' callbacks='..targetCalls)
+scans=0
+for i=1,100 do assert(targetApi:RenderTargetFrameBackground()=='background-native')end
+flush();assert(scans==0 and objects==stableObjects and writes==stableWrites,'target background burst restyled guide/options')
+assert(targetPerf.title.text.measureCalls==stableMeasures,'background bursts repeatedly measure unchanged titles')
+print('BENCH rxp_target_background_burst scans='..scans..' callbacks=100')
+scans=0
+for i=1,100 do assert(v2Ui:ApplyFrameBackdrop(guide.BottomFrame,{}, {.1,.1,.1,.8})=='backdrop-native')end
+flush();assert(scans==0 and objects==stableObjects,'known V2 background updates scan guide')
+print('BENCH rxp_known_backdrop_burst scans='..scans..' callbacks=100')
+-- A genuinely new V2 control still triggers one completed discovery pass.
+local discovered=frame('Frame',nil,guide);discovered.backdrop={bgFile='native'}
+v2Ui:ApplyFrameBackdrop(discovered,{}, {.1,.1,.1,.8});flush()
+assert(scans==1,'new V2 background lost discovery/coalescing')
+local v2Window={frame=frame('Frame',nil,UIParent)}
+v2Window.guideNameFrame=frame('Frame',nil,v2Window.frame)
+v2Window.guideNameFrame.backdrop={bgFile='native',edgeFile='native'}
+v2Window.iconLogo=art(v2Window.guideNameFrame);v2Window.classIcon=art(v2Window.guideNameFrame)
+v2Window.title=label(v2Window.guideNameFrame,'Guide V2');v2Window.subtitle=label(v2Window.guideNameFrame,'Subtitle')
+v2Window.settingsButton=frame('Button',nil,v2Window.guideNameFrame);v2Window.settingsButton.width=21
+v2Window.guideSelectButton=frame('Button',nil,v2Window.guideNameFrame);v2Window.guideSelectButton.width=21
+v2Window.UpdateFrameLayout=function(self)self.title:ClearAllPoints();self.title:SetPoint('TOPLEFT',self.guideNameFrame,'TOPLEFT',42,-6);return 'layout-native'end
+v2Window.RefreshLayout=function()return 'refresh-native'end
+RXP.v2.state.guideWindow=v2Window
+m.refresh();flush()
+assert(v2Window.iconLogo.alpha==0 and v2Window.classIcon.alpha==0 and v2Window.title.justifyH=='CENTER','V2 guide branding/title missed')
+assert(v2Window:UpdateFrameLayout()=='layout-native' and v2Window.title.points[1][4]==62 and v2Window.title.points[2][4]==-62,
+    'V2 layout reset centering or overlapped native control space')
+scans=0
+for i=1,100 do local w,empty,tail=RXP.v2:GetGuideWindow();assert(w==v2Window and empty==nil and tail=='getter-tail')end
+flush();assert(scans==0,'reading the existing V2 guide triggers scans')
+for i=1,100 do assert(v2Window:RefreshLayout()=='refresh-native')end
+flush();assert(scans==1,'V2 resize burst did not stay within one guide-window scan')
+print('BENCH rxp_v2_known_getter scans=0 callbacks=100; layout scans='..scans..' callbacks=100')
 ns.CreateSkinHelper=baseScan;LibStub=previousLibStub
 print('PASS: RXP page-local options, native actions/values/branding, dropdown pool cleanup, input alignment, no warm objects/font writes, themes, disabled state and combat deferral')

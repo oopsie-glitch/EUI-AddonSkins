@@ -10,7 +10,6 @@ local function HUD(C)
     local WHITE = "Interface\\Buttons\\WHITE8X8"
     local bars, icons = {}, {}
     local active, pending = false, false
-    local glossBottom, glossTop
     local function Allowed(f)
         return H.Allowed(f) and not (f.IsProtected and f:IsProtected())
     end
@@ -116,7 +115,7 @@ local function HUD(C)
         end
         local pixel = (factor or 1) / math.max(scale, 0.01)
         local pad = math.max(pixel, Snap(2, pixel))
-        local gap = math.max(pixel, Snap(3, pixel))
+        local gap = math.max(pixel, Snap(2, pixel))
         local iconSize = math.max(pixel, Snap(math.min(height - pad * 2, width * 0.14), pixel))
         local left, right = _G[name .. "BarIcon1"], _G[name .. "BarIcon2"]
         local leftSpace = H.Texture(left) and left:IsShown() and iconSize + gap or 0
@@ -142,7 +141,7 @@ local function HUD(C)
         end
         local columns, rows = count > 1 and 2 or 1, count > 2 and 2 or 1
         local symbolSize = math.max(pixel, Snap(math.min(height * (rows == 2 and 0.4 or 0.6), width * 0.1), pixel))
-        local mechanicSpace = count > 0 and columns * (symbolSize + pixel) + gap or 0
+        local mechanicSpace = count > 0 and columns * (symbolSize + pixel) + pixel or 0
         local slot = 0
         for i = 1, 4 do
             local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
@@ -163,7 +162,7 @@ local function HUD(C)
         d.panel:ClearAllPoints()
         d.panel:SetPoint("TOPLEFT", frame, "LEFT", 0, Snap(height / 2, pixel))
         d.panel:SetPoint("BOTTOMRIGHT", frame, "RIGHT", 0, Snap(-height / 2, pixel))
-        d.panel:SetColorTexture(11 / 255, 16 / 255, 20 / 255, 0.5)
+        d.panel:SetColorTexture(0.1, 0.105, 0.11, 0.45)
         d.borderPixel = pixel
         local r, g, b = ns.AccentBarColor(S)
         for i, edge in ipairs(d.edges) do
@@ -175,10 +174,10 @@ local function HUD(C)
         local path, flags = S.GetFont()
         local nativeSize = options.FontSize or 10
         d.labelSize = math.max(6, math.min(nativeSize * (obj.enlarged and 1.1 or 1), height * 0.55))
-        local timerSize = math.max(6, math.min(nativeSize * (obj.enlarged and 1.2 or 1), height * 0.6))
+        local timerSize = math.max(6, math.min(nativeSize * (obj.enlarged and 1.1 or 1), height * 0.6))
         -- Limit reservations at DBT's narrowest sizes; never resize its stack frame.
         local available = math.max(pixel, width - contentX - contentRight)
-        local timerSpace = math.min(available * 0.4, math.max(22, timerSize * 3.2))
+        local timerSpace = math.min(available * 0.4, math.max(20, timerSize * 3.0))
         local x, y = options[prefix .. "TextXOffset"] or 0, options[prefix .. "TextYOffset"] or 0
         if Allowed(timer) then
             timer:SetFont(path, timerSize, flags or ""); timer:SetWidth(timerSpace)
@@ -198,6 +197,36 @@ local function HUD(C)
             if label.SetWordWrap then label:SetWordWrap(false) end
             if label.SetNonSpaceWrap then label:SetNonSpaceWrap(false) end
             Shadow(label)
+        end
+    end
+    local function FitInlineIcons(obj)
+        if type(obj) ~= "table" or obj.isSecret or not Allowed(obj.frame) then return end
+        local d = bars[obj]
+        local name = obj.frame:GetName()
+        local label = name and _G[name .. "BarName"]
+        if not d or d.inlineBusy or not d.labelSize or not Allowed(label) or not label.GetText then return end
+        local text = label:GetText()
+        if (issecretvalue and issecretvalue(text)) or type(text) ~= "string" then return end
+        if text ~= d.inlineOutput then d.inlineSource = text end
+        if d.inlineSource == d.inlineLastSource and d.inlineSize == d.labelSize and text == d.inlineOutput then return end
+        d.inlineLastSource, d.inlineSize = d.inlineSource, d.labelSize
+        local limit = math.max(1, math.floor(d.labelSize * 1.15 + 0.5))
+        -- Preserve path, crop coordinates, offsets, words and color tags. Only
+        -- explicitly sized oversized texture tags need resizing; auto-sized and
+        -- atlas tags retain native behavior. Never write this back to DBM data.
+        local output = d.inlineSource:gsub("|T([^:|]+):(%d+):(%d+)([^|]*)|t", function(path, h, w, rest)
+            local height, width = tonumber(h), tonumber(w)
+            if height <= 0 or width <= 0 or math.max(height, width) <= limit then
+                return "|T" .. path .. ":" .. h .. ":" .. w .. rest .. "|t"
+            end
+            local ratio = limit / math.max(height, width)
+            return "|T" .. path .. ":" .. math.max(1, math.floor(height * ratio + 0.5)) .. ":" .. math.max(1, math.floor(width * ratio + 0.5)) .. rest .. "|t"
+        end)
+        d.inlineOutput = output
+        if output ~= text then
+            d.inlineBusy = true
+            label:SetText(output)
+            d.inlineBusy = false
         end
     end
     local function PaintBar(obj)
@@ -222,7 +251,7 @@ local function HUD(C)
                 end
             end
             local bg = _G[name .. "BarBackground"]
-            if H.Texture(bg) then bg:SetColorTexture(0.16, 0.17, 0.18, 0.12) end
+            if H.Texture(bg) then bg:SetColorTexture(0.16, 0.17, 0.18, 0.55) end
             local spark = _G[name .. "BarSpark"]
             if H.Texture(spark) then H.Fade(spark) end
             for _, side in ipairs({"Top", "Bottom", "Left", "Right"}) do
@@ -232,6 +261,7 @@ local function HUD(C)
             Font(_G[name .. "BarName"]); Font(_G[name .. "BarTimer"])
             local d = bars[obj]
             BarLayout(obj, bar, d, name)
+            FitInlineIcons(obj)
             if not d.trackEdges then
                 d.trackEdges = {}
                 for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
@@ -262,32 +292,19 @@ local function HUD(C)
                     end
                 end
             end
-            -- A cached neutral tint follows the native fill region itself.
-            -- DBT can change its color/value every tick without a skin callback;
-            -- text and semantic overlays draw above this ARTWORK sublevel.
+            -- Uniform matte tint and a thin fill endpoint follow the native
+            -- fill texture, without querying its value or hooking countdowns.
             fill = bar:GetStatusBarTexture()
             if H.Texture(fill) then
                 if not d.tint then d.tint = bar:CreateTexture(nil, "ARTWORK", nil, 2) end
                 d.tint:SetAllPoints(fill)
-                d.tint:SetColorTexture(0.045, 0.045, 0.05, 0.1)
-                if not d.gloss then
-                    d.gloss = bar:CreateTexture(nil, "ARTWORK", nil, 3)
-                    d.gloss:SetTexture(WHITE)
-                    -- Multiplicative shading adds depth without a white overlay
-                    -- remaining bright when DBT flashes its native fill alpha.
-                    d.gloss:SetBlendMode("MOD")
-                    if d.gloss.SetGradient and CreateColor then
-                        if not glossBottom then
-                            glossBottom, glossTop = CreateColor(0.85, 0.85, 0.85, 1), CreateColor(1, 1, 1, 1)
-                        end
-                        d.gloss:SetGradient("VERTICAL", glossBottom, glossTop)
-                    elseif d.gloss.SetGradientAlpha then
-                        d.gloss:SetGradientAlpha("VERTICAL", 0.85, 0.85, 0.85, 1, 1, 1, 1, 1)
-                    else
-                        d.gloss:SetVertexColor(0.94, 0.94, 0.94, 1)
-                    end
-                end
-                d.gloss:SetAllPoints(fill)
+                d.tint:SetColorTexture(0.14, 0.14, 0.14, 0.2)
+                if not d.endpoint then d.endpoint = bar:CreateTexture(nil, "ARTWORK", nil, 3) end
+                d.endpoint:ClearAllPoints()
+                d.endpoint:SetPoint("TOPRIGHT", fill, "TOPRIGHT")
+                d.endpoint:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT")
+                d.endpoint:SetWidth(d.borderPixel)
+                d.endpoint:SetColorTexture(0.6, 0.62, 0.64, 0.55)
             end
         end)
         active = false
@@ -299,6 +316,7 @@ local function HUD(C)
             H.Hook(obj, "ApplyStyle", PaintBar)
             H.Hook(obj, "SetIcon", PaintBar)
             H.Hook(obj, "SetVariance", PaintVariance)
+            H.Hook(obj, "SetText", FitInlineIcons)
         end
         PaintBar(obj)
     end

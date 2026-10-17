@@ -1,7 +1,7 @@
 -- HUD lifecycle regression: actual shared helper/scoped adapter, no GUI loaded.
 local timers, modules, frames, looks, errors = {}, {}, {}, {}, {}
 local enabled, combat, accent, secret = true, false, 0.2, false
-local created, hooks, fontWrites, childReads = 0, 0, 0, 0
+local created, hooks, fontWrites, childReads, textWrites = 0, 0, 0, 0, 0
 local gradientMode = 'modern'
 CreateColor = function(r, g, b, a) return {r = r, g = g, b = b, a = a} end
 DBM_GUI, DBM_GUI_OptionsFrame, DBM_GUI_OptionsFrameList, DBM_GUI_DropDown, DBT = nil, nil, nil, nil, nil
@@ -73,7 +73,7 @@ local function object(kind, name, parent)
     function o:IsVisible() return self.shown end
     function o:GetFont() return self.font, self.size, '' end
     function o:GetText() return self.text end
-    function o:SetText(v) self.text = v end
+    function o:SetText(v) self.text = v; textWrites = textWrites + 1 end
     function o:SetFontObject(v) self.font = v end
     function o:SetWordWrap(v) self.wordWrap = v end
     function o:SetNonSpaceWrap(v) self.nonSpaceWrap = v end
@@ -132,6 +132,10 @@ function prototype:ApplyStyle()
     _G[prefix .. 'Name']:SetFont('native', 14)
     return 'native-style'
 end
+function prototype:SetText(v, inline, private)
+    _G[self.frame.name .. 'BarName']:SetText(private and v or (inline or '') .. v)
+    return 'native-text'
+end
 function prototype:SetIcon(v) _G[self.frame.name .. 'BarIcon1']:SetTexture(v); return 'native-icon' end
 function prototype:Update() self.duration = self.duration - 0.01 end
 function prototype:SetVariance()
@@ -180,11 +184,11 @@ assert(label.font == 'eui' and label.size == 10 and label.justifyV == 'MIDDLE')
 assert(_G[f.name .. 'BarSpark'].alpha == 0 and _G[f.name .. 'BarBorderTop'].alpha == 0)
 assert(_G[f.name .. 'BarIcon1'].crop and _G[f.name .. 'BarIcon1'].path == 136116)
 assert(f.children[#f.children - 1].regions[1].fillColor[1] == accent, 'spell icon edge should follow accent')
-assert(_G[f.name .. 'BarBackground'].fillColor[4] == 0.12, 'unfilled track must remain translucent')
+assert(_G[f.name .. 'BarBackground'].fillColor[4] == 0.55, 'empty track needs a consistent matte grey background')
 assert(b.h == 16 and f.h == 20 and DBT.Options.Height == 20, 'single-row fill changed native frame/settings')
 local panel, spellIcon = f.regions[1], _G[f.name .. 'BarIcon1']
 assert(spellIcon.w == 16 and spellIcon.h == 16 and spellIcon.points[1][1] == 'LEFT')
-assert(panel.fillColor[4] == 0.5 and panel.points[1][4] == 0 and panel.points[2][4] == 0, 'panel should stay inside native row')
+assert(panel.fillColor[4] == 0.45 and panel.points[1][4] == 0 and panel.points[2][4] == 0, 'panel should stay inside native row')
 assert(#f.regions == 5, 'panel background and four accent edges missing')
 for i = 2, 5 do assert(f.regions[i].fillColor[1] == accent and f.regions[i].fillColor[4] == 0.35, 'panel needs subdued full accent outline') end
 assert(f.regions[2].h == 1 and f.regions[4].w == 1)
@@ -193,18 +197,21 @@ assert(label.points[1][1] == 'LEFT' and label.points[1][5] == 0 and timer.points
 assert(label.h == b.h and timer.h == b.h and label.wordWrap == false)
 assert(label.shadow[4] == 0.9 and timer.shadow[4] == 0.9)
 assert(label.points[2][4] < timer.points[1][4] - timer.w, 'name overlaps reserved countdown')
-assert(b:GetWidth() == 172 and timer.points[1][4] == -5, 'fill should extend beneath the countdown')
+assert(b:GetWidth() == 173 and timer.points[1][4] == -4, 'fill should extend beneath the countdown')
 assert(_G[f.name .. 'BarIJIcons'].alpha == 0 and spellIcon.alpha == 1, 'small row should hide only mechanic symbols')
 local stripWidth, labelRight, timerRight = b:GetWidth(), label.points[2][4], timer.points[1][4]
 _G[f.name .. 'BarIJIcons2']:Hide(); first:SetIcon(136116)
 assert(b:GetWidth() == stripWidth and label.points[2][4] == labelRight and timer.points[1][4] == timerRight, 'small row reserved hidden mechanics')
 assert(f.points[1][2] == nativeAnchor and f.points[1][4] == 27 and f.points[1][5] == -60, 'skin moved native stack row')
 _G[f.name .. 'BarIJIcons2']:SetShown(true)
-local tint, gloss
-for _, t in ipairs(b.regions) do if t.sublevel == 2 then tint = t elseif t.sublevel == 3 then gloss = t end end
-assert(tint and tint.layer == 'ARTWORK' and tint.all == b.fill and tint.fillColor[4] == 0.1, 'fill tint should be lighter and below text')
-assert(gloss and gloss.all == b.fill and gloss.blend == 'MOD' and gloss.gradient[1] == 'VERTICAL', 'shading should follow the fill below text')
-assert(gloss.gradient[2].r == 0.85 and gloss.gradient[3].r == 1, 'shading contrast is too strong')
+local tint, endpoint
+for _, t in ipairs(b.regions) do
+    if t.sublevel == 2 then tint = t elseif t.sublevel == 3 then endpoint = t end
+    assert(not t.gradient and not t.gradientAlpha, 'matte bars must not create gradient overlays')
+end
+assert(tint and tint.layer == 'ARTWORK' and tint.all == b.fill and tint.fillColor[4] == 0.2)
+assert(endpoint and endpoint.points[1][2] == b.fill and endpoint.points[2][2] == b.fill and endpoint.w == 1)
+assert(endpoint.fillColor[4] == 0.55, 'fill endpoint should remain visible without a glow')
 local trackEdges = 0
 for _, region in ipairs(b.regions) do
     if region.sublevel == -1 then
@@ -222,16 +229,16 @@ assert(variance.shown and variance.w == b:GetWidth() * 0.25 and variance.points[
 assert(variance.color[1] == 0.14 and variance.color[4] == 0.65)
 assert(f.children[#f.children].shown == false, 'hidden right icon acquired a visible border')
 local nativeUpdate = f.scripts.OnUpdate
-local oldCreated, oldHooks, oldFonts, oldReads = created, hooks, fontWrites, childReads
+local oldCreated, oldHooks, oldFonts, oldReads, oldTexts = created, hooks, fontWrites, childReads, textWrites
 for _ = 1, 1000 do f.scripts.OnUpdate() end
-assert(nativeUpdate == f.scripts.OnUpdate and created == oldCreated and hooks == oldHooks and fontWrites == oldFonts and childReads == oldReads)
+assert(nativeUpdate == f.scripts.OnUpdate and created == oldCreated and hooks == oldHooks and fontWrites == oldFonts and childReads == oldReads and textWrites == oldTexts)
 assert(first.duration < 20, 'native timer stopped')
 assert(first:ApplyStyle() == 'native-style' and b.fill.path == 'Interface\\Buttons\\WHITE8X8')
 assert(label.font == 'eui' and label.size == 10)
 assert(first:SetIcon(999) == 'native-icon' and spellIcon.path == 999)
 assert(b.h == 16, 'repeated paint cumulatively resized row')
 first.enlarged = true; first:ApplyStyle()
-assert(b.h == 24 and spellIcon.h == 24 and timer.size == 12, 'huge row must follow native configured height')
+assert(b.h == 24 and spellIcon.h == 24 and timer.size == 11, 'huge row must follow native configured height')
 local symbol = _G[f.name .. 'BarIJIcons']
 assert(symbol.alpha == 1 and symbol.h == 17, 'huge mechanic icons should occupy about 60% of height')
 local twoWidth, twoTimer = b:GetWidth(), timer.points[1][4]
@@ -239,12 +246,12 @@ _G[f.name .. 'BarIJIcons2']:Hide(); first:SetIcon(999)
 assert(b:GetWidth() > twoWidth and timer.points[1][4] > twoTimer, 'single mechanic did not reclaim unused width')
 local singleWidth = b:GetWidth()
 symbol:Hide(); first:SetIcon(999)
-assert(b:GetWidth() > singleWidth and timer.points[1][4] == -5, 'empty indicators left unused space')
+assert(b:GetWidth() > singleWidth and timer.points[1][4] == -4, 'empty indicators left unused space')
 symbol:SetShown(true); first:SetIcon(999)
 assert(b:GetWidth() == singleWidth, 'reappearing symbol did not restore its space')
 DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 2, 3
 first:ApplyStyle()
-assert(label.points[1][4] == 34 and label.points[1][5] == 3 and timer.points[1][5] == 3, 'native text offsets lost')
+assert(label.points[1][4] == 32 and label.points[1][5] == 3 and timer.points[1][5] == 3, 'native text offsets lost')
 DBT.Options.HugeTextXOffset, DBT.Options.HugeTextYOffset = 0, 0
 DBT.Options.JournalIcons = 4; first:ApplyStyle()
 assert(symbol.h == 11 and _G[f.name .. 'BarIJIcons3'].points[1][5] < symbol.points[1][5], 'four-symbol grid must fit inside row')
@@ -261,7 +268,7 @@ f:SetSize(195, 20)
 label:SetText('|Twarning:20:20|t Custom User Bar')
 DBT.Options.HugeHeight = 40; first:ApplyStyle()
 assert(b.h == 36 and label.h == 36 and spellIcon.h == 27, 'row/icon geometry must scale without overflowing narrow rows')
-assert(label.text == '|Twarning:20:20|t Custom User Bar' and label.justifyV == 'MIDDLE')
+assert(label.text == '|Twarning:13:13|t Custom User Bar' and label.justifyV == 'MIDDLE')
 f:SetSize(400, 40); first:ApplyStyle()
 assert(spellIcon.h == 36 and _G[f.name .. 'BarIJIcons'].h == 16)
 DBT.Options.JournalIcons = 1; first:ApplyStyle()
@@ -295,6 +302,32 @@ assert(b.h == 36 and label.h == 36 and label.points[1][5] == 0, 'single row did 
 DBT.Options.Height = 60; first:ApplyStyle()
 assert(b.h == 56)
 DBT.Options.Height = 20; f:SetSize(195, 20); first:ApplyStyle()
+-- Text updates normalize only oversized inline textures, retaining full source
+-- geometry for a later font change and all native text/crop information.
+local inline = '|Twarning:20:20:0:0:512:256:401:433:1:33|t '
+assert(first:SetText('|cffffff00Custom User Bar|r', inline) == 'native-text')
+assert(label.text == '|Twarning:12:12:0:0:512:256:401:433:1:33|t |cffffff00Custom User Bar|r')
+for _ = 1, 10 do
+    first:SetText('|cffffff00Custom User Bar|r', inline)
+    assert(label.text == '|Twarning:12:12:0:0:512:256:401:433:1:33|t |cffffff00Custom User Bar|r', 'native text reset restored oversized icon')
+end
+local textCount = textWrites
+for _ = 1, 10 do first:ApplyStyle() end
+assert(textWrites == textCount, 'warm paint rewrote normalized text')
+DBT.Options.FontSize = 30; DBT.Options.Height = 60; first:ApplyStyle()
+assert(label.text == inline .. '|cffffff00Custom User Bar|r', 'larger fonts did not restore original inline icon size')
+DBT.Options.FontSize, DBT.Options.Height = nil, 20; first:ApplyStyle()
+first:SetText('Auto |Twarning:0:0|t and atlas |A:warning:20:20|a')
+assert(label.text == 'Auto |Twarning:0:0|t and atlas |A:warning:20:20|a')
+first:SetText('Aspect |Twarning:40:20|t')
+assert(label.text == 'Aspect |Twarning:12:6|t')
+local secretLabel = {}
+issecretvalue = function(v) return v == secretLabel end
+first:SetText(secretLabel, nil, true)
+first:ApplyStyle()
+assert(label.text == secretLabel, 'secret inline text inspected or changed')
+issecretvalue = nil
+first:SetText('Normal text')
 -- Native color updates remain authoritative; the same tint tracks the fill.
 b.fill:SetVertexColor(0.1, 0.3, 0.9, 0.75)
 assert(b.fill.color[3] == 0.9 and tint.all == b.fill)
@@ -302,14 +335,10 @@ local new, result = DBT:CreateBar(20, 'new')
 assert(result == 'native-create' and _G[new.frame.name .. 'Bar'].fill.path == 'Interface\\Buttons\\WHITE8X8')
 gradientMode = 'legacy'
 local legacy = DBT:CreateBar(20, 'legacy-gradient')
-local legacyGloss
-for _, t in ipairs(_G[legacy.frame.name .. 'Bar'].regions) do if t.sublevel == 3 then legacyGloss = t end end
-assert(legacyGloss.gradientAlpha[1] == 'VERTICAL' and legacyGloss.gradientAlpha[2] == 0.85)
+for _, t in ipairs(_G[legacy.frame.name .. 'Bar'].regions) do assert(not t.gradient and not t.gradientAlpha) end
 gradientMode = 'none'
 local fallback = DBT:CreateBar(20, 'fallback-gradient')
-local fallbackGloss
-for _, t in ipairs(_G[fallback.frame.name .. 'Bar'].regions) do if t.sublevel == 3 then fallbackGloss = t end end
-assert(fallbackGloss.color[1] == 0.94, 'missing gradient API needs a safe fallback')
+for _, t in ipairs(_G[fallback.frame.name .. 'Bar'].regions) do assert(not t.gradient and not t.gradientAlpha) end
 gradientMode = 'modern'
 -- Unlike the reference skins' CreateBar handlers, creating a timer must not
 -- enumerate the entire active pool or repaint existing timer text.

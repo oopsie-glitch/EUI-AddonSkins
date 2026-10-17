@@ -94,24 +94,15 @@ local function HUD(C)
         d.edges = {}
         for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
             local edge = parent:CreateTexture(nil, "BORDER")
-            if i == 1 then
-                edge:SetPoint("TOPLEFT", d.panel, "TOPLEFT")
-            elseif i == 2 then
-                edge:SetPoint("BOTTOMLEFT", d.panel, "BOTTOMLEFT"); edge:SetPoint("BOTTOMRIGHT", d.panel, "BOTTOMRIGHT")
-            elseif i == 3 then
-                edge:SetPoint("TOPLEFT", d.panel, "TOPLEFT"); edge:SetPoint("BOTTOMLEFT", d.panel, "BOTTOMLEFT")
+            if i <= 2 then
+                edge:SetPoint(side .. "LEFT", d.panel, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", d.panel, side .. "RIGHT")
             else
-                edge:SetPoint("BOTTOMRIGHT", d.panel, "BOTTOMRIGHT")
+                edge:SetPoint("TOP" .. side, d.panel, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, d.panel, "BOTTOM" .. side)
             end
             d.edges[i] = edge
         end
     end
     local function Snap(value, pixel) return math.floor(value / pixel + 0.5) * pixel end
-    local function BracketGeometry(d, width, height, pixel)
-        -- Open top/right, with short returns matching the supplied bracket sketch.
-        d.edges[1]:SetWidth(math.max(pixel, Snap(math.min(width * 0.1, height * 0.45), pixel)))
-        d.edges[4]:SetHeight(math.max(pixel, Snap(height * 0.28, pixel)))
-    end
     local function ConceptLayout(obj, bar, d, name)
         local frame, options = obj.frame, _G.DBT and _G.DBT.Options or {}
         local width, height = frame:GetWidth(), options.HugeHeight or frame:GetHeight()
@@ -159,7 +150,6 @@ local function HUD(C)
             edge:SetColorTexture(r, g, b, i == 1 and 0.8 or 0.45)
             edge:SetShown(ns.AccentBarShown())
         end
-        BracketGeometry(d, width, height, pixel)
         d.borderPixel = pixel
         d.mechanicAlpha = d.mechanicAlpha or {}
         local columns, rows = count > 1 and 2 or 1, count > 2 and 2 or 1
@@ -300,7 +290,6 @@ local function HUD(C)
             edge:SetColorTexture(r, g, b, 0.5)
             edge:SetShown(ns.AccentBarShown())
         end
-        BracketGeometry(d, obj.frame:GetWidth() + leftSpace + rightSpace, rowHeight, 1)
         local x, y = options[prefix .. "TextXOffset"] or 0, options[prefix .. "TextYOffset"] or 0
         local path, flags = S.GetFont()
         if Allowed(timer) then

@@ -192,10 +192,6 @@ assert(panel.layer == 'BACKGROUND' and panel.fillColor[4] == 0.78 and panel.poin
 assert(#f.regions == 5, 'panel background and four accent edges missing')
 for i = 2, 5 do assert(f.regions[i].fillColor[1] == accent and f.regions[i].fillColor[4] == 0.5, 'panel needs full accent outline') end
 assert(f.regions[2].h == 1 and f.regions[4].w == 1, 'panel outline should be one pixel thick')
-assert(#f.regions[2].points == 1 and f.regions[2].points[1][1] == 'TOPLEFT' and f.regions[2].w == 8, 'small top return must be short')
-assert(#f.regions[5].points == 1 and f.regions[5].points[1][1] == 'BOTTOMRIGHT' and f.regions[5].h == 5, 'small right return must rise from bottom')
-assert(#f.regions[3].points == 2 and #f.regions[4].points == 2, 'bottom and left should span the panel')
-
 local spellIcon = _G[f.name .. 'BarIcon1']
 local iconLeft = spellIcon.points[1][4] - spellIcon.w
 assert(iconLeft - panel.points[1][4] > f.regions[4].w, 'spell icon overlaps outer left border')
@@ -268,7 +264,6 @@ assert(conceptLabel.wordWrap == false and conceptTimer.w == 95 and conceptTimer.
 assert(conceptTimer.points[1][4] == -93 and panel.points[1][4] == 0 and panel.points[2][4] == 0)
 assert(spellIcon.w == spellIcon.h and spellIcon.w == 69 and spellIcon.points[1][4] == 52)
 assert(f.regions[6].shown and f.regions[6].points[1][4] == 677, 'mechanic compartment separator missing')
-assert(f.regions[2].w == 40 and f.regions[5].h == 25, 'huge bracket returns must follow row size')
 DBT.Options.HugeHeight = 66; f:SetSize(565.5, 66); first:ApplyStyle()
 assert(math.abs(b:GetWidth() - 317.25) <= 1 and b.h == 17 and conceptLabel.size == 17.25 and conceptTimer.size == 25.5)
 -- A single visible mechanic uses its full size even with four slots configured.
@@ -301,7 +296,6 @@ DBT.Options.HugeHeight = 66; f:SetSize(565.5, 66); first:ApplyStyle()
 PixelUtil = {GetPixelToUIUnitFactor = function() return 0.75 end}; f.scale = 1.5
 first:ApplyStyle()
 assert(f.regions[2].h == 0.5 and f.regions[4].w == 0.5 and f.children[#f.children - 1].regions[1].h == 0.5)
-assert(f.regions[2].w == 29.5 and f.regions[5].h == 18.5, 'bracket returns must snap to physical pixels')
 assert(b.points[1][4] * 2 == math.floor(b.points[1][4] * 2))
 PixelUtil = nil; GetPhysicalScreenSize = function() return 1820, 1024 end
 first:ApplyStyle(); assert(f.regions[2].h == 0.5, 'physical-screen fallback lost pixel conversion')

@@ -83,7 +83,7 @@ local function object(kind, name, parent)
     function o:SetColorTexture(...) self.fillColor = {...} end
     function o:GetVertexColor() return table.unpack(self.color) end
     function o:SetVertexColor(...) self.color = {...} end
-    function o:SetAlpha(v) self.alpha = v end
+    function o:SetAlpha(v) self.alpha = v; self.alphaWrites = (self.alphaWrites or 0) + 1 end
     function o:GetAlpha() return self.alpha end
     function o:GetNumMaskTextures() return self.masked and 1 or 0 end
     function o:SetTexCoord(...) self.crop = {...} end
@@ -129,6 +129,10 @@ local function object(kind, name, parent)
     end
     function o:GetStatusBarTexture() return self.fill end
     function o:SetStatusBarTexture(v) self.fill.path = v end
+    function o:SetStatusBarColor(r,g,b,a)
+        -- Native C setters need not invoke the Lua SetVertexColor hook.
+        self.fill.color = {r,g,b,a == nil and 1 or a}
+    end
     if name then _G[name] = o end
     if parent and kind ~= 'Texture' and kind ~= 'FontString' then parent.children[#parent.children + 1] = o end
     return o
@@ -170,8 +174,30 @@ function prototype:SetText(v, inline, private)
     _G[self.frame.name .. 'BarName']:SetText(private and v or (inline or '') .. v)
     return 'native-text'
 end
-function prototype:SetIcon(v) _G[self.frame.name .. 'BarIcon1']:SetTexture(v); return 'native-icon' end
-function prototype:Update() self.duration = self.duration - 0.01 end
+function prototype:SetIcon(v, eventID, custom)
+    local prefix = self.frame.name .. 'Bar'
+    _G[prefix .. 'Icon1']:SetTexture(v)
+    if custom then
+        -- Model DBT's custom-journal path: clear pooled slots and replace
+        -- texture, native size and crop before the skin's post-hook runs.
+        for i = 1,4 do _G[prefix .. 'IJIcons' .. (i == 1 and '' or i)]:SetTexture(nil) end
+        local index = 0
+        for path,h,w,tw,th,l,r,t,b in custom:gmatch('|T([^:|]+):(%d+):(%d+):[^|]-:(%d+):(%d+):(%d+):(%d+):(%d+):(%d+)|t') do
+            index = index + 1
+            local icon = _G[prefix .. 'IJIcons' .. (index == 1 and '' or index)]
+            icon:SetTexture(path); icon:SetSize(tonumber(w),tonumber(h))
+            icon:SetTexCoord(tonumber(l)/tonumber(tw),tonumber(r)/tonumber(tw),tonumber(t)/tonumber(th),tonumber(b)/tonumber(th))
+        end
+    end
+    return 'native-icon'
+end
+function prototype:Update()
+    self.duration = self.duration - 0.01
+    if self.auditFlash then
+        self.auditPhase = (self.auditPhase or 0) + 1
+        _G[self.frame.name .. 'Bar']:SetStatusBarColor(0.4,0.5,0.6, self.auditPhase % 2 == 0 and 1 or 0)
+    end
+end
 function prototype:SetVariance()
     local prefix = self.frame.name .. 'Bar'
     local t = _G[prefix .. 'Variance']
@@ -901,6 +927,102 @@ do
     for key,value in pairs(DBT.Options) do assert(dbtOptions[key] == value, 'styling changed DBT profile '..key) end
     print('PASS: DBM side options, independent types, native restore/re-enable, lazy border alpha, glyph restore, coalesced opacity, combat, profile preservation and panel reuse')
 end
+-- Regression coverage for the three alpha.25 audit findings.
+do
+    local small, huge = sideControl('Small Bars'), sideControl('Huge Bars')
+    local style = sideControl('Apply EUI styling')
+    local reset = sideControl('Reset EUI styling')
+    local function checked(control,value) control:SetChecked(value); control.scripts.OnClick(control) end
+    reset.scripts.OnClick(); small.scripts.OnClick()
+    first.enlarged = false; first:ApplyStyle()
+    local progress = sideControl('Progress: DBM category colours')
+    local original = {b.fill:GetVertexColor()}
+    progress.scripts.OnClick()
+    for _, alpha in ipairs({0, 0.25, 0.5, 1}) do
+        b:SetStatusBarColor(0.4,0.5,0.6,alpha)
+        assert(tint.alpha == alpha and tint.fillColor[1] == accent and b.fill.color[1] == 0.4, 'accent tint masked DBT flashing or overwrote native colour')
+    end
+    local alphaWrites = tint.alphaWrites
+    local nObjects,nHooks,nFonts,nReads,nWalks = created,hooks,fontWrites,childReads,iteratorCalls
+    for _ = 1,1000 do b:SetStatusBarColor(0.5,0.6,0.7,1) end
+    assert(tint.alphaWrites == alphaWrites, 'unchanged native alpha rewrote overlay opacity')
+    first.auditFlash = true
+    for _ = 1,1000 do
+        first:Update()
+        assert(tint.alpha == b.fill.color[4], 'simulated native Update flashing did not reach accent tint')
+    end
+    first.auditFlash = nil
+    assert(created == nObjects and hooks == nHooks and fontWrites == nFonts and childReads == nReads and iteratorCalls == nWalks, 'flashing added objects/hooks/fonts/scans')
+    b.fill:SetVertexColor(0.6,0.5,0.4,0.35); assert(tint.alpha == 0.35, 'direct vertex-alpha changes ignored')
+    b:SetStatusBarColor(0.3,0.4,0.5); assert(tint.alpha == 1, 'omitted alpha must retain native default of one')
+    local previousSecret = issecretvalue
+    local privateAlpha = {}
+    issecretvalue = function(v) return v == privateAlpha or previousSecret and previousSecret(v) end
+    alphaWrites = tint.alphaWrites
+    b:SetStatusBarColor(0.3,0.4,0.5,privateAlpha)
+    assert(tint.alphaWrites == alphaWrites, 'secret native alpha was read or applied')
+    issecretvalue = previousSecret
+    b:SetStatusBarColor(0.3,0.4,0.5,1)
+    progress.scripts.OnClick()
+    b:SetStatusBarColor(0.4,0.5,0.6,0)
+    assert(tint.alpha == 0 and tint.fillColor[4] == 0.2, 'category tint still masks native flashing')
+    b.fill:SetVertexColor(table.unpack(original))
+    -- Deferred preferences must survive both native style/icon callbacks and
+    -- new timer creation in combat, then apply after PLAYER_REGEN_ENABLED.
+    combat = true; event('PLAYER_REGEN_DISABLED')
+    checked(style,false)
+    first:SetIcon(456); first:ApplyStyle(); first:SetText('Deferred |Tknown:40:40|t')
+    assert(b.fill.path == 'Interface\\Buttons\\WHITE8X8' and panel:IsShown() and b.h == 5, 'native callback applied pending disable during combat')
+    local future = DBT:CreateBar(20,'combat-pending-style')
+    assert(_G[future.frame.name .. 'Bar'].fill.path == 'Interface\\Buttons\\WHITE8X8', 'new combat timer consumed uncommitted preferences')
+    combat = false; event('PLAYER_REGEN_ENABLED')
+    assert(b.fill.path == 'dbm-gloss' and not panel:IsShown() and _G[future.frame.name .. 'Bar'].fill.path == 'dbm-gloss')
+    combat = true; event('PLAYER_REGEN_DISABLED'); checked(style,true)
+    first:SetIcon(456); first:ApplyStyle(); assert(b.fill.path == 'dbm-gloss', 'pending enable applied during combat')
+    combat = false; event('PLAYER_REGEN_ENABLED'); assert(b.fill.path == 'Interface\\Buttons\\WHITE8X8')
+    combat = true; event('PLAYER_REGEN_DISABLED')
+    progress.scripts.OnClick()
+    dropdowns.smallLayout.selectValue('fill')
+    local opacity
+    for _, control in ipairs(sidePanel.children) do if control.kind == 'Slider' then opacity = control end end
+    opacity:SetValue(25); flush()
+    first:SetIcon(456); first:ApplyStyle()
+    assert(b.h == 5 and panel.fillColor[4] == 0.65 and tint.fillColor[4] == 0.2, 'pending layout/opacity/colour leaked through callbacks')
+    combat = false; event('PLAYER_REGEN_ENABLED')
+    assert(b.h == 16 and panel.fillColor[4] == 0.25 and tint.fillColor[4] == 1)
+    reset.scripts.OnClick()
+    -- Reuse the same timer with different native custom-icon sizes/crops.
+    huge.scripts.OnClick()
+    local obj = bar('native-icon-reuse'); obj.enlarged = true
+    local icon = _G[obj.frame.name .. 'BarIJIcons']
+    local tag1 = '|Tcustom-first:40:40:0:0:64:64:0:64:0:64|t'
+    local tag2 = '|Tcustom-second:20:24:0:0:64:64:8:56:4:60|t'
+    obj:SetIcon(123,nil,tag1)
+    DBT:CreateBar(10,'native-icon-reuse')
+    local iconObjects,iconHooks = created,hooks
+    assert(obj:SetIcon(321,nil,tag2) == 'native-icon')
+    checked(style,false)
+    local ulx,uly,_,_,urx,_,_,lry = icon:GetTexCoord()
+    assert(icon.w == 24 and icon.h == 20 and ulx == 8/64 and uly == 4/64 and urx == 56/64 and lry == 60/64, 'restored stale custom-icon geometry')
+    assert(icon.path == 'custom-second', 'restoration replaced the latest native artwork')
+    checked(style,true)
+    obj:SetIcon(321,nil,tag1); obj:SetIcon(321,nil,tag2); checked(style,false)
+    assert(icon.w == 24 and icon.h == 20 and created == iconObjects and hooks == iconHooks, 'repeated pooled icon updates lost native sizes or duplicated objects/hooks')
+    -- Known EUI glyph substitutions must also restore the latest native crop.
+    checked(style,true)
+    DBM_COMMON_L = {TANK_ICON = '|Tnative-known:20:24:0:0:64:64:8:56:4:60|t'}
+    obj:SetIcon(321,nil,DBM_COMMON_L.TANK_ICON)
+    assert(icon.path ~= 'native-known')
+    checked(style,false)
+    assert(icon.path == 'native-known' and icon.w == 24 and icon.h == 20)
+    reset.scripts.OnClick(); small.scripts.OnClick(); checked(style,false)
+    local disabledAlphaWrites = tint.alphaWrites
+    b:SetStatusBarColor(0.1,0.2,0.3,0); b.fill:SetVertexColor(0.3,0.2,0.1,0.5)
+    assert(tint.alphaWrites == disabledAlphaWrites, 'restored native type still updated hidden tint')
+    checked(style,true); b.fill:SetVertexColor(table.unpack(original))
+    for key,value in pairs(DBT.Options) do assert(dbtOptions[key] == value, 'audit fixes modified native profile '..key) end
+    print('PASS: DBM native flash alpha, unchanged-alpha fast path, combat callback/new-timer deferral, pooled custom sizes/crops and native restoration')
+end
 -- Disabled skins can save preferences without repainting anything.
 enabled = false
 sidePreview.scripts.OnShow(); assert(not sidePreview.enabled)
@@ -913,6 +1035,9 @@ dropdowns.smallLayout.selectValue('strip'); assert(b.h == 5)
 enabled = false
 warning:SetFont('native', 30); warning:SetText('Disabled |T789:12:12|t')
 assert(warning.font == 'native' and warning.text == 'Disabled |T789:12:12|t')
+local disabledTintWrites = tint.alphaWrites
+b:SetStatusBarColor(0.3,0.4,0.5,0)
+assert(tint.alphaWrites == disabledTintWrites, 'disabled integration still handled native fill colour')
 first:SetVariance(); assert(variance.path == 'native-gradient')
 first:ApplyStyle(); assert(b.fill.path == 'dbm-gloss')
 local skipped = DBT:CreateBar(20, 'disabled'); assert(_G[skipped.frame.name .. 'Bar'].fill.path == 'dbm-gloss')

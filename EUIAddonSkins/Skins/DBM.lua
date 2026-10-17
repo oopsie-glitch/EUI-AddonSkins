@@ -32,14 +32,26 @@ local function HUD(C)
         normalized = settings
         return settings
     end
+    -- Saved choices may change in combat; native callbacks must keep using the
+    -- last applied choices until the deferred refresh can commit them safely.
+    local applied
+    local function ApplySettings()
+        applied = applied or {}
+        local db = Settings()
+        for key in pairs(defaults) do applied[key] = db[key] end
+    end
+    local function AppliedSettings()
+        if not applied then ApplySettings() end
+        return applied
+    end
     local function Allowed(f)
         return H.Allowed(f) and not (f.IsProtected and f:IsProtected())
     end
     local function Styled(obj)
-        return Settings()[obj.enlarged and "hugeEnabled" or "smallEnabled"]
+        return AppliedSettings()[obj.enlarged and "hugeEnabled" or "smallEnabled"]
     end
     local function BorderShown(obj)
-        return ns.AccentBarShown() and Settings()[obj.enlarged and "hugeBorder" or "smallBorder"]
+        return ns.AccentBarShown() and AppliedSettings()[obj.enlarged and "hugeBorder" or "smallBorder"]
     end
     -- Native ApplyStyle restores current profile values. These snapshots supply
     -- the XML anchors, crops and text properties that DBT does not reset.
@@ -92,6 +104,14 @@ local function HUD(C)
         if not d.styled then return end
         d.styled = false
         for _, state in ipairs(d.native) do RestoreRegion(state) end
+        -- SetIcon can change custom mechanic sizes/crops during pooled reuse.
+        -- Prefer that latest native geometry over the session's first snapshot.
+        for icon, size in pairs(d.nativeIconSizes or {}) do
+            if H.Texture(icon) then
+                icon:SetSize(size.width, size.height)
+                if size.crop and not (icon.GetNumMaskTextures and icon:GetNumMaskTextures() > 0) then icon:SetTexCoord(unpack(size.crop)) end
+            end
+        end
         for texture, alpha in pairs(d.hidden or {}) do if H.Texture(texture) then texture:SetAlpha(alpha) end end
         for i = 1, 4 do
             local icon = _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
@@ -110,7 +130,7 @@ local function HUD(C)
         bar:SetStatusBarTexture(d.nativeFill)
         local variance = _G[name .. "BarVariance"]
         if H.Texture(variance) then variance:SetTexture(d.nativeVariance) end
-        d.native, d.mechanicAlpha = nil, nil
+        d.native, d.mechanicAlpha, d.nativeIconSizes = nil, nil, nil
         if type(obj.ApplyStyle) == "function" then obj:ApplyStyle() end
     end
     local function RememberBar(obj, d, name, bar)
@@ -259,7 +279,7 @@ local function HUD(C)
         local rawPath = icon:GetTexture()
         local path = icon.GetTextureFilePath and icon:GetTextureFilePath() or rawPath
         if (issecretvalue and (issecretvalue(path) or issecretvalue(rawPath))) or path == nil then return end
-        if not Settings().hugeGlyphs then NativeGlyph(icon, d); return end
+        if not AppliedSettings().hugeGlyphs then NativeGlyph(icon, d); return end
         d.mechanicGlyphs = d.mechanicGlyphs or {}
         local old = d.mechanicGlyphs[icon]
         -- Reuse identity only while our exact texture remains assigned. Native
@@ -376,7 +396,7 @@ local function HUD(C)
         d.panel:ClearAllPoints()
         d.panel:SetPoint("TOPLEFT", frame, "LEFT", 0, Snap(height / 2, pixel))
         d.panel:SetPoint("BOTTOMRIGHT", frame, "RIGHT", 0, Snap(-height / 2, pixel))
-        d.panel:SetColorTexture(0.13, 0.135, 0.14, Settings()[obj.enlarged and "hugeOpacity" or "smallOpacity"])
+        d.panel:SetColorTexture(0.13, 0.135, 0.14, AppliedSettings()[obj.enlarged and "hugeOpacity" or "smallOpacity"])
         d.panel:SetShown(true)
         d.borderPixel = pixel
         local r, g, b = ns.AccentBarColor(S)
@@ -388,7 +408,7 @@ local function HUD(C)
         local label, timer = _G[name .. "BarName"], _G[name .. "BarTimer"]
         local path, flags = S.GetFont()
         local nativeSize = options.FontSize or 10
-        local layout = Settings()[obj.enlarged and "hugeLayout" or "smallLayout"]
+        local layout = AppliedSettings()[obj.enlarged and "hugeLayout" or "smallLayout"]
         -- Extremely short/narrow rows keep the single-line fallback even when
         -- the saved preference is a name-above-strip layout.
         local twoRow = layout == "strip" and height >= 18 and width >= 150
@@ -458,6 +478,33 @@ local function HUD(C)
             d.inlineBusy = false
         end
     end
+    local function FillAlpha(obj, d, alpha)
+        if not d.styled or obj.isSecret or not d.tint then return end
+        if issecretvalue and issecretvalue(alpha) then return end
+        alpha = alpha or 1
+        if type(alpha) ~= "number" or d.fillAlpha == alpha then return end
+        if not Allowed(obj.frame) or not Allowed(d.tint) then return end
+        d.fillAlpha = alpha
+        d.tint:SetAlpha(alpha)
+    end
+    local function BindFillAlpha(obj, bar, fill, d)
+        d.fill = fill
+        -- DBT flashes via SetStatusBarColor and also accepts direct vertex
+        -- colours. Follow only alpha changes; never recolour native data or
+        -- add a countdown/OnUpdate hook, scan or allocation to these callbacks.
+        if not d.alphaBar then
+            d.alphaBar = bar
+            H.Hook(bar, "SetStatusBarColor", function(_, _, _, _, alpha) FillAlpha(obj, d, alpha) end)
+        end
+        if d.alphaFill ~= fill then
+            d.alphaFill = fill
+            H.Hook(fill, "SetVertexColor", function(_, _, _, _, alpha)
+                if d.fill == fill then FillAlpha(obj, d, alpha) end
+            end)
+        end
+        local _, _, _, alpha = fill:GetVertexColor()
+        FillAlpha(obj, d, alpha)
+    end
     local function PaintBar(obj)
         if not ns.IsEnabled(C.module) or active then return end
         -- Ordinary DBT timer frames are insecure and need styling when created
@@ -513,13 +560,14 @@ local function HUD(C)
             if H.Texture(fill) then
                 if not d.tint then d.tint = bar:CreateTexture(nil, "ARTWORK", nil, 2) end
                 d.tint:SetAllPoints(fill)
-                if Settings()[obj.enlarged and "hugeColour" or "smallColour"] == "accent" then
+                if AppliedSettings()[obj.enlarged and "hugeColour" or "smallColour"] == "accent" then
                     local ar, ag, ab = ns.AccentBarColor(S)
                     d.tint:SetColorTexture(ar, ag, ab, 1)
                 else
                     d.tint:SetColorTexture(obj.enlarged and 0.08 or 0.14, obj.enlarged and 0.08 or 0.14, obj.enlarged and 0.08 or 0.14, obj.enlarged and 0.4 or 0.2)
                 end
                 d.tint:SetShown(true)
+                BindFillAlpha(obj, bar, fill, d)
                 if not d.endpoint then d.endpoint = bar:CreateTexture(nil, "ARTWORK", nil, 3) end
                 d.endpoint:ClearAllPoints()
                 d.endpoint:SetPoint("TOPRIGHT", fill, "TOPRIGHT")
@@ -538,12 +586,39 @@ local function HUD(C)
         end)
         active = false
     end
+    local function NativeIconChanged(obj, _, eventID, custom)
+        if type(obj) ~= "table" or obj.isSecret or not Allowed(obj.frame) then return end
+        local d = bars[obj]
+        if d and d.styled and not (issecretvalue and (issecretvalue(eventID) or issecretvalue(custom))) and not eventID and type(custom) == "string" then
+            d.nativeIconSizes = d.nativeIconSizes or {}
+            local name = obj.frame:GetName()
+            for i = 1, 4 do
+                local icon = name and _G[name .. "BarIJIcons" .. (i == 1 and "" or i)]
+                -- Native SetIcon clears old textures, then sizes only the
+                -- populated custom slots. Do not capture our size on empty slots.
+                if H.Texture(icon) and icon:GetTexture() ~= nil then
+                    local width, height = icon:GetWidth(), icon:GetHeight()
+                    if not (issecretvalue and (issecretvalue(width) or issecretvalue(height))) and type(width) == "number" and type(height) == "number" then
+                        local size = d.nativeIconSizes[icon] or {}
+                        d.nativeIconSizes[icon] = size
+                        size.width, size.height = width, height
+                        if not (icon.GetNumMaskTextures and icon:GetNumMaskTextures() > 0) then
+                            local crop, public = {icon:GetTexCoord()}, true
+                            if issecretvalue then for _, value in ipairs(crop) do if issecretvalue(value) then public = false; break end end end
+                            if public then size.crop = crop end
+                        end
+                    end
+                end
+            end
+        end
+        PaintBar(obj)
+    end
     local function BindBar(obj)
         if type(obj) ~= "table" or obj.isSecret or not Allowed(obj.frame) then return end
         if not bars[obj] then
             bars[obj] = {}
             H.Hook(obj, "ApplyStyle", PaintBar)
-            H.Hook(obj, "SetIcon", PaintBar)
+            H.Hook(obj, "SetIcon", NativeIconChanged)
             H.Hook(obj, "SetVariance", PaintVariance)
             H.Hook(obj, "SetText", FitInlineIcons)
         end
@@ -669,6 +744,7 @@ local function HUD(C)
     local function RefreshBars()
         if not ns.IsEnabled(C.module) then return end
         if InCombatLockdown and InCombatLockdown() then pending = true; return end
+        ApplySettings()
         local dbt = _G.DBT
         if type(dbt) == "table" and dbt.GetBarIterator then
             for obj in dbt:GetBarIterator() do BindBar(obj) end

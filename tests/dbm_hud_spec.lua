@@ -684,7 +684,7 @@ local pageCount, nativePage, nativeArea, dropdowns, nativePreview = 0, nil, nil,
 local prototypes = {}
 local function group(frame) return setmetatable({frame = frame}, {__index = prototypes}) end
 function prototypes:CreateNewPanel(title, kind)
-    assert(title == 'EUI AddonSkins' and kind == 'option')
+    assert(title == 'AddonSkins' and kind == 'option')
     pageCount = pageCount + 1; nativePage = group(CreateFrame('Frame')); return nativePage
 end
 function prototypes:CreateArea(title)
@@ -740,7 +740,7 @@ DBM_GUI_OptionsFrame.ShowTab = function(self, tab)
 end
 event('ADDON_LOADED')
 local sidePreview = DBM_GUI_OptionsFrame.children[1]
-assert(sidePreview and sidePreview.text == 'EUI Bar Styling' and sidePreview.buttonStyled and sidePreview.enabled)
+assert(sidePreview and sidePreview.text == 'Skin Options' and sidePreview.buttonStyled and sidePreview.enabled)
 assert(sidePreview:GetParent() == DBM_GUI_OptionsFrame and sidePreview.points[1][3] == 'TOPRIGHT', 'preview must attach outside the main window')
 assert(pageCount == 0, 'side preview must not require the timer-category APIs')
 local sideButton = sidePreview
@@ -833,10 +833,10 @@ assert(DBT.DefaultOptions == nativeDefaults and nativeDefaults.saved and EUIAddo
 -- End-user side controls: independent styling, native restoration and warm reuse.
 do
     local smallTab, hugeTab = sideControl('Small Bars'), sideControl('Big Bars')
-    local style = sideControl('Apply EUI styling')
-    local border = sideControl('Accent border (follows EUI visibility)')
-    local glyphs = sideControl('EUI mechanic icons (outside Big Bars)')
-    local reset = sideControl('Reset EUI styling')
+    local style = sideControl('Style bars')
+    local border = sideControl('Accent border')
+    local glyphs = sideControl('Use custom mechanic icons')
+    local reset = sideControl('Reset styling')
     local opacity
     for _, child in ipairs(sidePanel.children) do if child.kind == 'Slider' and child.minValue == 0 then opacity = child end end
     local function checked(control, value) control:SetChecked(value); control.scripts.OnClick(control) end
@@ -949,8 +949,8 @@ end
 -- Regression coverage for the three alpha.25 audit findings.
 do
     local small, huge = sideControl('Small Bars'), sideControl('Big Bars')
-    local style = sideControl('Apply EUI styling')
-    local reset = sideControl('Reset EUI styling')
+    local style = sideControl('Style bars')
+    local reset = sideControl('Reset styling')
     local function checked(control,value) control:SetChecked(value); control.scripts.OnClick(control) end
     reset.scripts.OnClick(); small.scripts.OnClick()
     first.enlarged = false; first:ApplyStyle()
@@ -1086,7 +1086,7 @@ do
     local mechanic, spell = _G[obj.frame.name .. 'BarIJIcons'], _G[obj.frame.name .. 'BarIcon1']
     assert(mechanic.path == glyphAtlas and mechanic.crop[1] == 0, 'first bar discovery lost native semantic tag with numeric textures')
     sideControl('Big Bars').scripts.OnClick()
-    local artwork = sideControl('EUI mechanic icons (outside Big Bars)')
+    local artwork = sideControl('Use custom mechanic icons')
     local function useEUI(value) artwork:SetChecked(value); artwork.scripts.OnClick(artwork) end
     local baseObjects,baseHooks = created,hooks
     for i,field in ipairs(fields) do
@@ -1115,10 +1115,10 @@ do
     for _,control in ipairs(sidePanel.children) do
         if control.kind == 'Slider' then if control.minValue == 50 then scale = control else opacity = control end end
     end
-    local accentBox = sideControl('Use EUI accent colour')
-    local customButton = sideControl('Custom mechanic colour')
-    local glyphs = sideControl('EUI mechanic icons (outside Big Bars)')
-    local reset = sideControl('Reset EUI styling')
+    local accentBox = sideControl('Use accent colour')
+    local customButton = sideControl('Choose icon colour')
+    local glyphs = sideControl('Use custom mechanic icons')
+    local reset = sideControl('Reset styling')
     local function checked(c,v) c:SetChecked(v); c.scripts.OnClick(c) end
     assert(sideButton.points[1][3] == 'TOPRIGHT' and sideButton.points[1][4] == 8 and sideButton.points[1][5] == 0, 'styling button is not at DBM top-right')
     reset.scripts.OnClick(); smallTab.scripts.OnClick()
@@ -1410,7 +1410,7 @@ do
     assert(info.children[1].regions[1].fillColor[4] == 0.4, 'frame opacity applied during combat')
     combat = false; event('PLAYER_REGEN_ENABLED')
     assert(info.children[1].regions[1].fillColor[4] == 0.7)
-    sideControl('Reset EUI styling').scripts.OnClick()
+    sideControl('Reset styling').scripts.OnClick()
     assert(EUIAddonSkinsDB.dbm.infoOpacity == 0.85 and info.children[1].regions[1].fillColor[4] == 0.85)
     local oldObjects,oldHooks = created,hooks
     for i=1,10 do sideControl('Small Bars').scripts.OnClick(); framesTab.scripts.OnClick() end

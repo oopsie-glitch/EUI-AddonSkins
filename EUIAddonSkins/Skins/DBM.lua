@@ -891,7 +891,7 @@ local function HUD(C)
             state.notice:SetTextColor(0.9, 0.9, 0.9, 1)
             SideAccent()
             state.layout:SetText("Layout: " .. (db[prefix .. "Layout"] == "strip" and "Name above progress" or "Name over progress"))
-            state.colour:SetText("Progress: " .. (db[prefix .. "Colour"] == "accent" and "EUI accent colour" or "DBM category colours"))
+            state.colour:SetText("Progress: " .. (db[prefix .. "Colour"] == "accent" and "Accent colour" or "DBM category colours"))
             state.opacity:SetValue(db[prefix .. "Opacity"] * 100)
             state.opacityText:SetText("Background opacity: " .. math.floor(db[prefix .. "Opacity"] * 100 + 0.5) .. "%")
             local available = ns.IsEnabled(C.module) and db[prefix .. "Enabled"]
@@ -983,7 +983,7 @@ local function HUD(C)
             }
             state.tabs.frames = Button("Frames", 220, -44, 96, function() state.selected = "frames"; UpdateSide() end)
             state.frameSliders = {}
-            for i, entry in ipairs({{"rangeOpacity", "Range background"}, {"radarOpacity", "Radar background"}, {"infoOpacity", "Info background"}}) do
+            for i, entry in ipairs({{"rangeOpacity", "Text range background"}, {"radarOpacity", "Radar background"}, {"infoOpacity", "Info background"}}) do
                 local key, text = entry[1], entry[2]
                 local label = Text("", -100 - (i - 1) * 68)
                 local slider = CreateFrame("Slider", nil, panel)
@@ -997,7 +997,7 @@ local function HUD(C)
                 end)
                 state.frameSliders[#state.frameSliders + 1] = {slider = slider, label = label, key = key, text = text}
             end
-            state.enabled = Check("Apply EUI styling", "Enabled", -80)
+            state.enabled = Check("Style bars", "Enabled", -80)
             state.layout = Button("", 14, -116, 302, function()
                 local key = state.selected .. "Layout"
                 ChangeSetting(key, Settings()[key] == "strip" and "fill" or "strip")
@@ -1018,8 +1018,8 @@ local function HUD(C)
                 if state.updating or not ns.IsEnabled(C.module) then return end
                 ChangeSetting(state.selected .. "Opacity", math.floor(math.max(0, math.min(100, value)) + 0.5) / 100, true)
             end)
-            state.border = Check("Accent border (follows EUI visibility)", "Border", -239)
-            state.glyphs = Check("EUI mechanic icons (outside Big Bars)", "hugeGlyphs", -271)
+            state.border = Check("Accent border", "Border", -239)
+            state.glyphs = Check("Use custom mechanic icons", "hugeGlyphs", -271)
             state.iconScaleText = Text("", -309)
             state.iconScale = CreateFrame("Slider", nil, panel)
             state.iconScale:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, -330); state.iconScale:SetSize(294, 18)
@@ -1031,8 +1031,8 @@ local function HUD(C)
                 if state.updating or not ns.IsEnabled(C.module) then return end
                 ChangeSetting("hugeIconScale", math.floor(math.max(50, math.min(250, value)) / 5 + 0.5) * 0.05, true)
             end)
-            state.iconAccent = Check("Use EUI accent colour", "hugeIconAccent", -359)
-            state.iconCustom = Button("Custom mechanic colour", 14, -397, 302, function()
+            state.iconAccent = Check("Use accent colour", "hugeIconAccent", -359)
+            state.iconCustom = Button("Choose icon colour", 14, -397, 302, function()
                 local picker, db = _G.ColorPickerFrame, Settings()
                 if not ns.IsEnabled(C.module) or db.hugeIconAccent or not db.hugeGlyphs or not db.hugeEnabled
                     or not picker or type(picker.SetupColorPickerAndShow) ~= "function" or type(picker.GetColorRGB) ~= "function" then return end
@@ -1054,7 +1054,7 @@ local function HUD(C)
 
             state.preview = Button("Preview DBM bars", 14, -310, 147, RunPreview)
             state.preview:SetScript("OnShow", function() PreviewState(state) end)
-            state.reset = Button("Reset EUI styling", 169, -310, 147, function()
+            state.reset = Button("Reset styling", 169, -310, 147, function()
                 if not ns.IsEnabled(C.module) then return end
                 local db = Settings()
                 state.colourSession = nil
@@ -1090,7 +1090,7 @@ local function HUD(C)
             local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
             button:SetSize(160, 26)
             button:SetPoint("TOPLEFT", frame, "TOPRIGHT", 8, 0)
-            button:SetText("EUI Bar Styling")
+            button:SetText("Skin Options")
             button:SetScript("OnClick", OpenSide)
             state = {button = button}; C.dbmPreview = state
             button:SetScript("OnShow", function() button:SetEnabled(ns.IsEnabled(C.module)); UpdateSide(); SideAccent() end)
@@ -1132,7 +1132,7 @@ local function HUD(C)
             or type(category.CreateDropdown) ~= "function" or type(category.CreateButton) ~= "function" or type(category.CreateText) ~= "function" then return end
         local state = C.dbmSettings
         if not state then
-            local page = category:CreateNewPanel("EUI AddonSkins", "option")
+            local page = category:CreateNewPanel("AddonSkins", "option")
             if not page or not Allowed(page.frame) then return end
             state = {page = page, frame = page.frame, controls = {}, menuDirty = true}
             C.dbmSettings = state

@@ -4,16 +4,16 @@ Branch: `skin/dbm-refinement`. This untagged test build does not publish to Curs
 
 ## Bar styling controls
 
-Open DBM options and click **EUI Bar Styling** on the right side of the window. The panel is created on first use and offers separate **Small Bars** and **Big Bars** settings:
+Open DBM options and click **Skin Options** on the right side of the window. The panel is created on first use and offers separate **Small Bars** and **Big Bars** settings:
 
-- Apply EUI styling, with live restoration of native DBM appearance when disabled.
+- Style bars, with live restoration of native DBM appearance when disabled.
 - Layout: name above progress or name over progress. Click the layout button to switch.
 - Progress: native DBM category colours or the EUI Blizzard Skins+ accent colour. Click to switch.
 - Background opacity, from 0% to 100%, independent of DBM row alpha.
 - Accent border: follows **Show accent bar** in Blizzard Skins+ unless hidden for that bar type.
-- Big Bars only: **EUI mechanic icons (outside Big Bars)** swaps tank, damage/sword, healer, interrupt, important, magic, bleed and deadly symbols in the external left gutter. It does not alter spell icons.
+- Big Bars only: **Use custom mechanic icons** swaps tank, damage/sword, healer, interrupt, important, magic, bleed and deadly symbols in the external left gutter. It does not alter spell icons.
 
-**Preview DBM bars** runs the real DBT demo, including on Retail, without replacing DBM's native Test Bars action. **Reset EUI styling** restores both types' EUI defaults and preserves unrelated saved settings. Defaults retain the previous alpha's appearance. Existing choices in **DBM > Timers > EUI AddonSkins** remain available and share the same saved layouts.
+**Preview DBM bars** runs the real DBT demo, including on Retail, without replacing DBM's native Test Bars action. **Reset styling** restores both types' EUI defaults and preserves unrelated saved settings. Defaults retain the previous alpha's appearance. Existing choices in **DBM > Timers > AddonSkins** remain available and share the same saved layouts.
 
 Choices save in EUI AddonSkins, independently of DBM profiles. Changes apply outside combat; combat changes are stored and applied afterward with an on-panel notice. Preview is unavailable in combat or when DBM's demo API is absent. DBM still owns size, position, scale, spacing, timing, categories and icon visibility. Very short/narrow rows retain their readable fallback.
 
@@ -177,3 +177,6 @@ Regressions cover title fit, contained headers, footer show/hide, localized head
 Alpha.33 makes the visible range/radar/info backgrounds interactive outside DBM's original frame rectangle. The existing lower-level background layer forwards left-drag and mouse-down/up events to the native frame's current handlers, with the native frame as self. DBM retains movement-lock checks, position saving, menu ownership and original body/control input. Closing or disabling during a forwarded drag still executes native stop/save. No extra hit frames, polling, GUI refreshes or timer-pool scans are added.
 
 Mock regressions cover all three windows, locked/unlocked movement, native position saving, current/replaced right-click handlers, hidden/disabled/protected guards, native combat behaviour and repeated interactions without new objects/hooks/scans. All 19 suites, syntax and the 38-file ZIP pass; actual in-game hit testing remains unverified. Untagged branch only; no platform upload.
+
+
+Alpha.34 removes EUI branding from the DBM options labels. The opener is **Skin Options**, the native Timers category is **AddonSkins**, and controls use **Style bars**, **Accent border**, **Use custom mechanic icons**, **Use accent colour**, **Choose icon colour**, **Progress: Accent colour** and **Reset styling**. **Text range background** distinguishes the list window from Radar. This is a wording-only change: saved keys, assets, API integration and behaviour are unchanged. Existing label-based regressions and all packaging checks pass. No release tag or platform upload.

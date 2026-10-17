@@ -10,6 +10,15 @@ local function HUD(C)
     local WHITE = "Interface\\Buttons\\WHITE8X8"
     local bars, icons = {}, {}
     local active, pending = false, false
+    local function Settings()
+        EUIAddonSkinsDB = EUIAddonSkinsDB or {}
+        local db = EUIAddonSkinsDB
+        if type(db.dbm) ~= "table" then db.dbm = {} end
+        local settings = db.dbm
+        if settings.smallLayout ~= "strip" and settings.smallLayout ~= "fill" then settings.smallLayout = "strip" end
+        if settings.hugeLayout ~= "strip" and settings.hugeLayout ~= "fill" then settings.hugeLayout = "fill" end
+        return settings
+    end
     local function Allowed(f)
         return H.Allowed(f) and not (f.IsProtected and f:IsProtected())
     end
@@ -225,9 +234,10 @@ local function HUD(C)
         local label, timer = _G[name .. "BarName"], _G[name .. "BarTimer"]
         local path, flags = S.GetFont()
         local nativeSize = options.FontSize or 10
-        -- Small Bars keep the name-above-strip design; Huge Bars use
-        -- the requested single-row name-over-fill layout.
-        local twoRow = not obj.enlarged and height >= 18 and width >= 150
+        local layout = Settings()[obj.enlarged and "hugeLayout" or "smallLayout"]
+        -- Extremely short/narrow rows keep the single-line fallback even when
+        -- the saved preference is a name-above-strip layout.
+        local twoRow = layout == "strip" and height >= 18 and width >= 150
         local fillHeight = twoRow and math.max(pixel, Snap(height * 0.25, pixel)) or math.max(pixel, Snap(height - pad * 2, pixel))
         local labelHeight = twoRow and math.max(pixel, height - pad * 2 - fillHeight - pixel) or height - pad * 2
         d.labelSize = math.max(6, math.min(nativeSize * (obj.enlarged and 1.1 or 1), twoRow and labelHeight * 0.9 or height * 0.55))
@@ -236,7 +246,7 @@ local function HUD(C)
         local available = math.max(pixel, width - contentX - contentRight)
         local timerSpace = math.min(available * 0.4, math.max(20, timerSize * 3.0))
         local trackX = contentX + (twoRow and gap or 0)
-        local trackRight = contentRight + ((twoRow or obj.enlarged) and timerSpace + gap * 2 or 0)
+        local trackRight = contentRight + ((twoRow or layout == "fill" or obj.enlarged) and timerSpace + gap * 2 or 0)
         local trackTop = twoRow and -height / 2 + pad + fillHeight or height / 2 - pad
         bar:ClearAllPoints()
         bar:SetPoint("TOPLEFT", frame, "LEFT", trackX, Snap(trackTop, pixel))
@@ -492,6 +502,93 @@ local function HUD(C)
         for i = 1, 3 do BindWarning(_G["DBMWarning" .. i]) end
         for i = 1, 2 do BindWarning(_G["DBMSpecialWarning" .. i]) end
     end
+    local function RefreshBars()
+        if not ns.IsEnabled(C.module) then return end
+        if InCombatLockdown and InCombatLockdown() then pending = true; return end
+        local dbt = _G.DBT
+        if type(dbt) == "table" and dbt.GetBarIterator then
+            for obj in dbt:GetBarIterator() do BindBar(obj) end
+        end
+    end
+    local function PreviewState(state)
+        if not state.preview or not state.notice then return end
+        local dbm = _G.DBM
+        local inCombat = InCombatLockdown and InCombatLockdown()
+        local available = type(dbm) == "table" and type(dbm.DemoMode) == "function"
+        if state.preview.SetEnabled then state.preview:SetEnabled(available and not inCombat) end
+        if inCombat then state.notice:SetText("Layout changes apply after combat. Preview is unavailable during combat.")
+        elseif not available then state.notice:SetText("Bar preview is unavailable in this DBM version.")
+        else state.notice:SetText("Changes apply immediately. Size, position and spacing remain controlled by DBM.") end
+    end
+    local function SettingsPanel()
+        local gui = _G.DBM_GUI
+        local category = type(gui) == "table" and gui.Cat_Timers
+        if not category or type(category.CreateNewPanel) ~= "function" or type(category.CreateArea) ~= "function"
+            or type(category.CreateDropdown) ~= "function" or type(category.CreateButton) ~= "function" or type(category.CreateText) ~= "function" then return end
+        local state = C.dbmSettings
+        if not state then
+            local page = category:CreateNewPanel("EUI AddonSkins", "option")
+            if not page or not Allowed(page.frame) then return end
+            state = {page = page, frame = page.frame, controls = {}, menuDirty = true}
+            C.dbmSettings = state
+            local area = page:CreateArea("Timer layouts")
+            state.area = area.frame
+            local values = {{text = "Name above progress", value = "strip"}, {text = "Name over progress", value = "fill"}}
+            local binding = {Options = Settings()}
+            local function Dropdown(title, key, y)
+                local control = area:CreateDropdown(title, values, binding, key, function(value)
+                    if value ~= "strip" and value ~= "fill" then return end
+                    local db = Settings()
+                    if db[key] == value then return end
+                    db[key] = value
+                    RefreshBars()
+                    PreviewState(state)
+                end, 220)
+                control:SetPoint("TOPLEFT", area.frame, "TOPLEFT", 20, y)
+                control.myheight = 78
+                state.controls[#state.controls + 1] = control
+                return control
+            end
+            state.small = Dropdown("Small Bars", "smallLayout", -40)
+            state.huge = Dropdown("Huge Bars", "hugeLayout", -108)
+            state.preview = area:CreateButton("Preview DBM bars", 180, 24, function()
+                if InCombatLockdown and InCombatLockdown() then PreviewState(state); return end
+                local dbm = _G.DBM
+                if type(dbm) ~= "table" or type(dbm.DemoMode) ~= "function" then PreviewState(state); return end
+                local duration = dbm:DemoMode(true)
+                if gui.CollapseForPreview and type(duration) == "number" and duration > 0 then gui:CollapseForPreview(duration) end
+            end)
+            state.preview:SetPoint("TOPLEFT", area.frame, "TOPLEFT", 20, -166)
+            state.preview.myheight = 40
+            state.controls[#state.controls + 1] = state.preview
+            state.notice = area:CreateText("", 440, false, GameFontHighlightSmall, "LEFT", 62)
+            state.notice:SetPoint("TOPLEFT", area.frame, "TOPLEFT", 20, -206)
+            H.Script(page.frame, "OnShow", function() PreviewState(state) end)
+        end
+        if not state.styled then
+            C.Panel(state.area)
+            S.Dropdown(state.small); S.Dropdown(state.huge); S.Button(state.preview)
+            state.styled = true
+        end
+        -- Owned controls are excluded from the generic GUI scanner. Updating a
+        -- selector repaints bars directly, without an extra window traversal.
+        for _, frame in ipairs(state.controls) do
+            for _, region in ipairs(H.Regions(frame)) do if region:GetObjectType() == "FontString" then Font(region) end end
+        end
+        for _, region in ipairs(H.Regions(state.area)) do if region:GetObjectType() == "FontString" then Font(region) end end
+        Font(state.notice)
+        PreviewState(state)
+        if state.menuDirty then
+            -- The GUI can already be open when its ADDON_LOADED callback runs.
+            -- Refresh its category list once, after control construction ends.
+            H.Queue(state, function()
+                if InCombatLockdown and InCombatLockdown() then pending = true; return end
+                state.menuDirty = false
+                local frame = Window()
+                if frame and type(frame.UpdateMenuFrame) == "function" and (not frame.IsShown or frame:IsShown()) then frame:UpdateMenuFrame() end
+            end)
+        end
+    end
     local function Refresh()
         if not ns.IsEnabled(C.module) then return end
         if InCombatLockdown and InCombatLockdown() then pending = true; return end
@@ -501,8 +598,9 @@ local function HUD(C)
             H.Hook(dbt, "CreateBar", function(self, _, id)
                 if self.GetBar then BindBar(self:GetBar(id)) end
             end)
-            if dbt.GetBarIterator then for obj in dbt:GetBarIterator() do BindBar(obj) end end
         end
+        RefreshBars()
+        SettingsPanel()
         local auras = _G.DBM and _G.DBM.Auras
         for _, method in ipairs({"PreviewToggle", "OnSettingsChange", "UpdateAuraAnchors", "RegisterAllUnits"}) do
             H.Hook(auras, method, PaintAuras)
@@ -513,9 +611,11 @@ local function HUD(C)
         PaintAuras()
     end
     local events = CreateFrame("Frame")
-    events:RegisterEvent("ADDON_LOADED"); events:RegisterEvent("PLAYER_REGEN_ENABLED")
+    events:RegisterEvent("ADDON_LOADED"); events:RegisterEvent("PLAYER_REGEN_ENABLED"); events:RegisterEvent("PLAYER_REGEN_DISABLED")
     events:SetScript("OnEvent", function(_, event)
-        if event == "ADDON_LOADED" or pending then H.Queue(events, Refresh) end
+        if event == "PLAYER_REGEN_DISABLED" then
+            if C.dbmSettings then PreviewState(C.dbmSettings) end
+        elseif event == "ADDON_LOADED" or pending or event == "PLAYER_REGEN_ENABLED" and C.dbmSettings then H.Queue(events, Refresh) end
     end)
     if S.OnLooksChanged then S.OnLooksChanged(Refresh) end
     C.dbmHUD = Refresh
@@ -568,6 +668,7 @@ ns.RegisterScopedSkin("DBM", "Deadly Boss Mods", {
             return child:GetObjectType() == "ScrollingMessageFrame" or child.mytype == "modelframe"
         end})
         if f and f.searchHighlightFrame then exclude[f.searchHighlightFrame] = true end
+        if C.dbmSettings then exclude[C.dbmSettings.frame] = true end
         -- MinimalTabTemplate has child frames holding the Classic tab artwork.
         -- Skin tabs before generic discovery can assign them a button backdrop.
         for i in ipairs(f and f.tabs or {}) do

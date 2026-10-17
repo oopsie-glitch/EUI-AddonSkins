@@ -2,6 +2,12 @@
 
 Branch: `skin/dbm-refinement`. This untagged test build does not publish to CurseForge or Wago. TOC/Core versions remain at the stable base, `1.4.2`; identify the build by its branch and commit.
 
+## Layout controls
+
+Open **DBM > Timers > EUI AddonSkins**. Small Bars and Huge Bars each offer **Name above progress** or **Name over progress**. Defaults retain alpha.19's appearance: above for Small Bars, over for Huge Bars. Choices save in EUI AddonSkins and repaint existing bars immediately outside combat. Very short/narrow rows retain their readable fallback.
+
+**Preview DBM bars** launches the native DBM demo on Retail and Forever. It leaves DBM's existing Test Bars button unchanged. Preview is disabled during combat or when the native demo API is unavailable. Position, size, scale, spacing and native profiles remain controlled by DBM.
+
 ## Included
 
 - Translucent dark timer panels with one-pixel EUI accent outlines and inset, accent-bordered square spell icons.
@@ -81,3 +87,7 @@ Recognized right-side mechanic symbols use original monochrome glyphs: tank/shie
 The 256x32 RGBA atlas in Media/DBMMechanics.tga is original project artwork under the existing MIT license; no third-party images are bundled. The development-only scripts/build_dbm_icons.py reproduces it using Pillow, which is not an addon/runtime or packaging dependency. Local packaging now explicitly includes and validates the atlas; the existing .pkgmeta already includes runtime Media files. The download contains 37 runtime files and omits development tools.
 
 Regression coverage includes all eight symbol mappings, modern texture-file-path identity, legacy coordinate/accessor fallbacks, unknown/tinted pooled symbols, secret coordinates, masked artwork, empty shown slots, warm reuse, fixed/moving marker anchoring, accent-off visibility and the existing no-countdown-work checks. All 19 suites and packaging validation pass outside WoW. Live client rendering and real in-game performance are not independently verified. This alpha remains untagged and does not publish to CurseForge or Wago.
+
+Alpha.20 adds independent persisted Small/Huge layout selectors and a native preview button under DBM > Timers > EUI AddonSkins. Controls use DBM's category/dropdown/button APIs and EUI's styling primitives. The page is created only when the lazy DBM-GUI timer category is ready; no addon load call or polling is added. A one-time category-list update makes the page discoverable if the GUI was already shown. Owned controls are excluded from the generic scanner; selectors repaint only active DBT bars, skip unchanged values and defer active-bar layout changes until combat ends. Existing alpha.19 defaults and saved data outside EUIAddonSkinsDB.dbm remain intact. No DBT profile/default fields are written.
+
+The preview explicitly invokes DBM:DemoMode(true), then uses the native CollapseForPreview helper when available. The existing DemoMode function and Test Bars action are not replaced. The button and status text explain unavailable/combat states. Regression tests cover an incomplete/late GUI, one-time page/list creation, styled controls, independent live layout changes, persisted choices after UI/theme refreshes, new bars, zero GUI reads on selector changes, repeated no-op selections, native preview arguments/returns, absent demo API, combat deferral, disabled skins and unchanged native option/default tables. All existing suites and packaging checks pass outside WoW; native rendering is not independently verified. The test ZIP remains untagged and is not published to CurseForge or Wago.

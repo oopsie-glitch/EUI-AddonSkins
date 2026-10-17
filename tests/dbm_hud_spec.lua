@@ -96,6 +96,10 @@ local function object(kind, name, parent)
     function o:HookScript(k, fn) local old = self.scripts[k]; self.scripts[k] = function(...) if old then old(...) end; fn(...) end end
     function o:GetChildren() childReads = childReads + 1; return table.unpack(self.children) end
     function o:GetRegions() return table.unpack(self.regions) end
+    function o:CreateFontString(name)
+        local text = object('FontString', name, self); self.regions[#self.regions + 1] = text; return text
+    end
+    function o:SetEnabled(value) self.enabled = value end
     function o:CreateTexture(name, layer, _, sublevel)
         local t = object('Texture', name, self); t.layer, t.sublevel = layer, sublevel; self.regions[#self.regions + 1] = t; return t
     end
@@ -554,6 +558,120 @@ accent = 0.9; for _, fn in ipairs(looks) do fn() end; flush()
 assert(preview.Border.borderColor[1] ~= accent, 'aura refresh should defer during combat')
 combat = false; event('PLAYER_REGEN_ENABLED')
 assert(preview.Border.borderColor[1] == accent, 'deferred theme refresh lost')
+-- Native DBM settings page is built only after the lazy GUI category exists.
+assert(DBM_GUI == nil and EUIAddonSkinsDB.dbm.smallLayout == 'strip' and EUIAddonSkinsDB.dbm.hugeLayout == 'fill')
+local pageCount, nativePage, nativeArea, dropdowns, nativePreview = 0, nil, nil, {}, nil
+local prototypes = {}
+local function group(frame) return setmetatable({frame = frame}, {__index = prototypes}) end
+function prototypes:CreateNewPanel(title, kind)
+    assert(title == 'EUI AddonSkins' and kind == 'option')
+    pageCount = pageCount + 1; nativePage = group(CreateFrame('Frame')); return nativePage
+end
+function prototypes:CreateArea(title)
+    assert(title == 'Timer layouts')
+    nativeArea = group(CreateFrame('Frame', nil, self.frame))
+    nativeArea.frame.mytype = 'area'
+    nativeArea.frame:CreateFontString():SetText(title)
+    return nativeArea
+end
+function prototypes:CreateDropdown(title, values, binding, key, selectValue, width)
+    local control = CreateFrame('DropdownButton', nil, self.frame)
+    control:SetWidth(width); control.mytype = 'dropdown2'; control.values = values
+    control:CreateFontString():SetText(title)
+    control:SetScript('OnShow', function() control.value = binding.Options[key] end)
+    control.selectValue = function(value) control.value = value; selectValue(value) end
+    dropdowns[key] = control
+    return control
+end
+function prototypes:CreateButton(title, width, height, onclick)
+    local control = CreateFrame('Button', nil, self.frame)
+    control:SetSize(width,height); control.label = control:CreateFontString(); control.label:SetText(title)
+    control:SetScript('OnClick', onclick); nativePreview = control
+    return control
+end
+function prototypes:CreateText(value, width)
+    local text = self.frame:CreateFontString(); text:SetText(value); text:SetWidth(width); return text
+end
+S.Panel = function(frame) frame.panelStyled = true end
+S.Dropdown = function(frame) frame.dropdownStyled = true end
+S.Button = function(frame) frame.buttonStyled = true end
+local nativeDemoCalls, collapseDuration = 0, nil
+DBM.DemoMode = function(self, forceOld)
+    assert(self == DBM and forceOld == true, 'preview must explicitly choose native DBM bars on Retail')
+    nativeDemoCalls = nativeDemoCalls + 1
+    local small = DBT:CreateBar(20, 'native-preview-small')
+    local huge = DBT:CreateBar(5, 'native-preview-huge'); huge.enlarged = true; huge:ApplyStyle()
+    assert(_G[small.frame.name .. 'Bar'].fill.path == 'Interface\\Buttons\\WHITE8X8')
+    assert(_G[huge.frame.name .. 'Bar'].fill.path == 'Interface\\Buttons\\WHITE8X8')
+    return 62
+end
+DBM_GUI = {}
+event('ADDON_LOADED'); assert(pageCount == 0, 'incomplete GUI must not create a partial settings page')
+DBM_GUI.Cat_Timers = group(CreateFrame('Frame'))
+DBM_GUI.CollapseForPreview = function(_, duration) collapseDuration = duration end
+local menuUpdates = 0
+DBM_GUI_OptionsFrame = {IsShown = function() return true end, UpdateMenuFrame = function() menuUpdates = menuUpdates + 1 end}
+local originalDemo = DBM.DemoMode
+EUIAddonSkinsDB.extraSettings = {keep = true}
+local dbtOptions = {}; for key,value in pairs(DBT.Options) do dbtOptions[key] = value end
+local nativeDefaults = {saved = true}; DBT.DefaultOptions = nativeDefaults
+event('ADDON_LOADED')
+assert(pageCount == 1 and dropdowns.smallLayout and dropdowns.hugeLayout and nativePreview.enabled and menuUpdates == 1)
+assert(dropdowns.smallLayout.dropdownStyled and dropdowns.hugeLayout.dropdownStyled and nativePreview.buttonStyled)
+assert(DBM.DemoMode == originalDemo, 'default Blizzard/native test action was replaced')
+dropdowns.smallLayout.scripts.OnShow(); dropdowns.hugeLayout.scripts.OnShow()
+assert(dropdowns.smallLayout.value == 'strip' and dropdowns.hugeLayout.value == 'fill')
+local uiCreated, uiHooks = created, hooks
+for _ = 1, 10 do event('ADDON_LOADED'); nativePage.frame.scripts.OnShow() end
+assert(pageCount == 1 and created == uiCreated and hooks == uiHooks and menuUpdates == 1, 'settings controls/hooks or category-list updates duplicated')
+-- Changes repaint existing bars synchronously, without traversing GUI frames.
+first.enlarged = false; first:ApplyStyle()
+local beforeUIReads = childReads
+dropdowns.smallLayout.selectValue('fill')
+assert(EUIAddonSkinsDB.dbm.smallLayout == 'fill' and EUIAddonSkinsDB.dbm.hugeLayout == 'fill')
+assert(b.h == 16 and label.points[1][5] == 0 and childReads == beforeUIReads)
+local unchangedIterations = iteratorCalls
+for _ = 1, 100 do dropdowns.smallLayout.selectValue('fill') end
+assert(iteratorCalls == unchangedIterations, 'unchanged selection repainted active bars')
+dropdowns.hugeLayout.selectValue('strip')
+assert(EUIAddonSkinsDB.dbm.hugeLayout == 'strip' and b.h == 16, 'huge selector modified small layout')
+first.enlarged = true; first:ApplyStyle()
+assert(b.h == 7 and label.points[1][5] > 0, 'huge strip preference not applied')
+dropdowns.smallLayout.selectValue('strip')
+assert(b.h == 7 and EUIAddonSkinsDB.dbm.hugeLayout == 'strip')
+dropdowns.hugeLayout.selectValue('fill'); assert(b.h == 24 and label.points[1][5] == 0)
+first.enlarged = false; first:ApplyStyle(); assert(b.h == 5)
+dropdowns.smallLayout.selectValue('unsupported'); assert(EUIAddonSkinsDB.dbm.smallLayout == 'strip' and b.h == 5)
+-- The selected preferences survive ordinary theme/display refreshes and apply to new bars.
+dropdowns.smallLayout.selectValue('fill'); for _, fn in ipairs(looks) do fn() end; flush()
+dropdowns.smallLayout.scripts.OnShow(); assert(dropdowns.smallLayout.value == 'fill')
+local futureLayout = DBT:CreateBar(20, 'settings-new-small')
+assert(_G[futureLayout.frame.name .. 'Bar'].h == 16)
+dropdowns.smallLayout.selectValue('strip')
+assert(_G[futureLayout.frame.name .. 'Bar'].h == 5)
+nativePreview.scripts.OnClick(); assert(nativeDemoCalls == 1 and collapseDuration == 62)
+-- Missing preview APIs and combat are explicit, safe unavailable states.
+DBM.DemoMode = nil; nativePage.frame.scripts.OnShow(); assert(not nativePreview.enabled)
+nativePreview.scripts.OnClick(); assert(nativeDemoCalls == 1)
+DBM.DemoMode = originalDemo
+combat = true; event('PLAYER_REGEN_DISABLED'); assert(not nativePreview.enabled)
+local combatHeight = b.h
+dropdowns.smallLayout.selectValue('fill')
+assert(EUIAddonSkinsDB.dbm.smallLayout == 'fill' and b.h == combatHeight, 'layout changes must defer during combat')
+nativePreview.scripts.OnClick(); assert(nativeDemoCalls == 1)
+combat = false; event('PLAYER_REGEN_ENABLED')
+assert(nativePreview.enabled and b.h == 16 and label.points[1][5] == 0)
+dropdowns.smallLayout.selectValue('strip'); assert(b.h == 5)
+for key,value in pairs(DBT.Options) do assert(dbtOptions[key] == value, 'native DBM options changed: '..key) end
+for key,value in pairs(dbtOptions) do assert(DBT.Options[key] == value) end
+assert(DBT.DefaultOptions == nativeDefaults and nativeDefaults.saved and EUIAddonSkinsDB.extraSettings.keep)
+-- Disabled skins can save preferences without repainting anything.
+enabled = false
+local disabledIterations, disabledHeight = iteratorCalls, b.h
+dropdowns.smallLayout.selectValue('fill')
+assert(iteratorCalls == disabledIterations and b.h == disabledHeight and EUIAddonSkinsDB.dbm.smallLayout == 'fill')
+enabled = true; modules.DBM.refresh(); flush(); assert(b.h == 16)
+dropdowns.smallLayout.selectValue('strip'); assert(b.h == 5)
 enabled = false
 warning:SetFont('native', 30); warning:SetText('Disabled |T789:12:12|t')
 assert(warning.font == 'native' and warning.text == 'Disabled |T789:12:12|t')
@@ -563,5 +681,5 @@ local skipped = DBT:CreateBar(20, 'disabled'); assert(_G[skipped.frame.name .. '
 assert(#errors == 0, table.concat(errors, '\n'))
 DBM, DBT, C_Secrets, DebuffTypeColor, AuraUtil = nil, nil, nil, nil, nil
 DBMWarning1, DBMSpecialWarning1, issecretvalue = nil, nil, nil
-CreateColor, DBM_COMMON_L = nil, nil
+CreateColor, DBM_COMMON_L, DBM_GUI, DBM_GUI_OptionsFrame = nil, nil, nil, nil
 print('PASS: DBM HUD late/core-only load, timer lifecycle/native colors/actions, reuse, no countdown work, aura previews, restricted guards, theme/combat/toggles')

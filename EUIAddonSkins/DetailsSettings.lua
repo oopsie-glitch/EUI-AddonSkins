@@ -14,34 +14,56 @@ function ns.SetDetailsSetting(key, value)
     if ns.DetailsSettingsChanged then ns.DetailsSettingsChanged(key) end
 end
 
+-- Shared addon settings live here; retain the Details entry points for its menu.
+function ns.RXPSettings()
+    EUIAddonSkinsDB = EUIAddonSkinsDB or {}
+    local db = EUIAddonSkinsDB
+    db.rxp = db.rxp or {}
+    if db.rxp.arrow == nil then db.rxp.arrow = true end
+    return db.rxp
+end
+
+function ns.SetRXPSetting(key, value)
+    if key ~= "arrow" then return end
+    value = value == true
+    local db = ns.RXPSettings()
+    if db[key] == value then return end
+    db[key] = value
+    if ns.RXPSettingsChanged then ns.RXPSettingsChanged() end
+end
+
 local panel, category
 function ns.CreateDetailsSettingsPanel()
     if panel then return panel end
     panel = CreateFrame("Frame", "EUIAddonSkinsDetailsSettings", UIParent)
-    panel.name = "EUI AddonSkins: Details"
+    panel.name = "EUI AddonSkins"
     local function Text(value, template, y)
         local text = panel:CreateFontString(nil, "ARTWORK", template)
         text:SetPoint("TOPLEFT", 16, y); text:SetText(value)
         return text
     end
     Text(panel.name, "GameFontNormalLarge", -16)
-    Text("Choose which parts of Details use EUI styling.", "GameFontHighlight", -46)
-    local function Check(key, label, description, y)
+    Text("Appearance options for supported addons.", "GameFontHighlight", -46)
+    local function Check(key, label, description, y, get, set)
+        get, set = get or ns.DetailsSettings, set or ns.SetDetailsSetting
         local button = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
         button:SetPoint("TOPLEFT", 16, y)
         local text = button:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         text:SetPoint("LEFT", button, "RIGHT", 4, 0); text:SetText(label)
-        button:SetScript("OnClick", function(self) ns.SetDetailsSetting(key, self:GetChecked() == true) end)
-        button:HookScript("OnShow", function(self) self:SetChecked(ns.DetailsSettings()[key] == true) end)
+        button:SetScript("OnClick", function(self) set(key, self:GetChecked() == true) end)
+        button:HookScript("OnShow", function(self) self:SetChecked(get()[key] == true) end)
         Text(description, "GameFontHighlightSmall", y - 34)
         return button
     end
-    panel.menus = Check("menus", "Skin menus and options", "Styles Details dialogs, dropdowns and options. Reload after changing this setting.", -76)
-    panel.meter = Check("meter", "Match EUI meter appearance", "Manages meter fonts, bars, headers and spacing. Off by default.", -166)
-    panel.tiny = Check("tiny", "Style Tiny Threat", "Independent styling for Tiny Threat rows and their Details window.", -256)
-    Text("Turning meter matching off restores the visual settings captured when it was enabled.", "GameFontHighlightSmall", -342)
-    Text("Window positions, sizes, groups, statistics and interactions remain controlled by Details.", "GameFontHighlightSmall", -366)
-    Text("Quick access: hover the meter settings icon > EUI AddonSkins.", "GameFontHighlightSmall", -400)
+    Text("RestedXP", "GameFontNormal", -82)
+    panel.rxpArrow = Check("arrow", "Skin navigation arrow", "Use the themed arrow. Turn off to restore RestedXP's original arrow appearance.", -104, ns.RXPSettings, ns.SetRXPSetting)
+    Text("Details!", "GameFontNormal", -190)
+    panel.menus = Check("menus", "Skin menus and options", "Styles Details dialogs, dropdowns and options. Reload after changing this setting.", -216)
+    panel.meter = Check("meter", "Match EUI meter appearance", "Manages meter fonts, bars, headers and spacing. Off by default.", -306)
+    panel.tiny = Check("tiny", "Style Tiny Threat", "Independent styling for Tiny Threat rows and their Details window.", -396)
+    Text("Turning meter matching off restores the visual settings captured when it was enabled.", "GameFontHighlightSmall", -482)
+    Text("Window positions, sizes, groups, statistics and interactions remain controlled by Details.", "GameFontHighlightSmall", -506)
+    Text("Quick access: hover the meter settings icon > EUI AddonSkins.", "GameFontHighlightSmall", -540)
     if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
         category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
         Settings.RegisterAddOnCategory(category)
@@ -57,7 +79,7 @@ function ns.OpenDetailsSettings()
 end
 SlashCmdList.EUIDETAILS = ns.OpenDetailsSettings
 
--- Always register the controls, including when the Details skin itself is off.
+-- Register the shared controls even when Details is absent or its skin is off.
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 events:SetScript("OnEvent", function() ns.CreateDetailsSettingsPanel() end)

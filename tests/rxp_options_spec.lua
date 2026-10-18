@@ -307,17 +307,25 @@ RXP={v2={state={},GetTheme=function()return {}end,GetGuideWindow=function(self)r
 assert(loadfile('EUIAddonSkins/Skins/RXPGuides.lua'))('EUIAddonSkins',ns)
 local m=modules.RXPGuides
 local arrow=frame('Frame',nil,UIParent);arrow:SetSize(32,32);arrow:SetPoint('TOP',UIParent,'TOP',0,-20)
-arrow.texture=art(arrow);arrow.text=label(arrow,'Step 2\n(71yd)')
+arrow.texture=art(arrow);arrow.texture:SetPoint('TOPLEFT',arrow,'TOPLEFT',0,0)
+arrow.texture:SetPoint('BOTTOMRIGHT',arrow,'BOTTOMRIGHT',0,0);arrow.texture:SetSize(32,32)
+arrow.texture.GetNumPoints=function(self)return #self.points end
+arrow.texture.GetPoint=function(self,i)return table.unpack(self.points[i])end
+arrow.text=label(arrow,'Step 2\n(71yd)')
+arrow.text.GetFont=function(self)return self.font,self.size or 12,''end
+arrow.text.SetFont=function(self,path,size)self.font=path;self.size=size or self.size;self.fontWrites=(self.fontWrites or 0)+1 end
 local textureWrites,rotations=0,0
 local nativeSetTexture=arrow.texture.SetTexture
 arrow.texture.SetTexture=function(self,value)textureWrites=textureWrites+1;nativeSetTexture(self,value)end
 arrow.texture.GetTexCoord=function(self)return table.unpack(self.crop or {0,1,0,1})end
 arrow.texture.SetRotation=function(self,value)self.rotation=value;rotations=rotations+1 end
 arrow.texture:SetRotation(.75)
-arrow.UpdateVisuals=function(self)self.texture:SetTexture('native-arrow');return 'visual-native'end
+local nativeArrowPath='native-arrow'
+arrow.texture:SetTexture(nativeArrowPath);arrow.orientation=.75
+arrow.UpdateVisuals=function(self)self.texture:SetTexture(nativeArrowPath);return 'visual-native'end
 RXP.arrowFrame=arrow
 RXP.DrawArrow=function(self)
-    self.texture:SetRotation(.5);self.text:SetText('Step 3\n(32yd)');self.distance=32
+    self.orientation=.5;self.texture:SetRotation(.5);self.text:SetText('Step 3\n(32yd)');self.distance=32
     return 'direction-native'
 end
 RXP.SetupArrow=function()
@@ -333,7 +341,12 @@ ns.CreateSkinHelper=function(...)
     h.Scan=function(...)scans=scans+1;return scan(...)end
     return h
 end
+EUIAddonSkinsDB={details={menus=true,meter=false,tiny=false},rxp={arrow=false},other='preserved'}
+assert(loadfile('EUIAddonSkins/DetailsSettings.lua'))('EUIAddonSkins',ns)
 m.install(S,m);flush()
+assert(arrow.texture.path==nativeArrowPath and arrow.text.font=='native-font' and #arrow.texture.points==2,
+    'saved arrow-off preference was ignored during initialization')
+ns.SetRXPSetting('arrow',true)
 local arrowPath='Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationChevronSmooth.tga'
 assert(arrow.texture.crop[1]==.1 and arrow.texture.crop[2]==.9 and arrow.texture.crop[3]==.1 and arrow.texture.crop[4]==.9,
     'shallow chevron proportions changed')
@@ -355,6 +368,60 @@ assert(arrow.text.text=='Step 3\n(32yd)' and arrow.distance==32)
 local setup,empty,tail=RXP.SetupArrow()
 assert(setup=='setup-native' and empty==nil and tail=='setup-tail' and arrow.texture.path==arrowPath and arrow.text.font=='eui')
 assert(arrow:UpdateVisuals()=='visual-native' and arrow.texture.path==arrowPath,'native theme reset lost arrow styling')
+arrow.text:SetFont('eui',17)
+ns.SetRXPSetting('arrow',false)
+assert(select(2,arrow.text:GetFont())==17,'arrow-off reset the configured text size')
+ns.SetRXPSetting('arrow',true)
+arrow.text:SetFont('eui',12)
+local arrowObjects,arrowScans=objects,scans
+for i=1,20 do
+    ns.SetRXPSetting('arrow',false)
+    assert(arrow.texture.path==nativeArrowPath and arrow.texture.color[1]==1 and arrow.texture.color[4]==1,
+        'arrow-off failed to restore native artwork/tint')
+    assert(#arrow.texture.points==2 and arrow.texture.points[1][1]=='TOPLEFT'
+        and arrow.texture.points[2][1]=='BOTTOMRIGHT' and arrow.texture.points[1][2]==arrow,
+        'arrow-off failed to restore native anchors')
+    assert(arrow.texture.crop[1]==0 and arrow.texture.crop[2]==1 and arrow.texture.rotation==arrow.orientation,
+        'arrow-off retained cropped UVs or changed bearing')
+    assert(arrow.text.font=='native-font' and arrow.text.text=='Step 3\n(32yd)',
+        'arrow-off failed to restore native label styling or changed its text')
+    ns.SetRXPSetting('arrow',true)
+    assert(arrow.texture.path==arrowPath and math.abs(arrow.texture.width-35.2)<.00001)
+end
+assert(objects==arrowObjects and scans==arrowScans and #timers==0,
+    'arrow toggles allocated visuals, scanned a guide or queued refreshes')
+ns.SetRXPSetting('arrow',false)
+local offSetup,offNil,offTail=RXP.SetupArrow()
+assert(offSetup=='setup-native' and offNil==nil and offTail=='setup-tail'
+    and arrow.texture.path==nativeArrowPath and arrow.text.font=='native-font',
+    'native SetupArrow while opted out lost its appearance or return values')
+nativeArrowPath='native-current-theme';arrow:UpdateVisuals()
+for _,fn in ipairs(looks)do fn()end;flush()
+assert(arrow.texture.path==nativeArrowPath,'accent/theme change overrode arrow-off')
+arrow:SetSize(48,48);arrow.hooks.OnSizeChanged(arrow)
+assert(#arrow.texture.points==2 and arrow.width==48 and arrow.texture.path==nativeArrowPath,
+    'arrow-off did not preserve native sizing')
+ns.SetRXPSetting('arrow',true)
+assert(math.abs(arrow.texture.width-52.8)<.00001,'arrow-on ignored current native scale')
+ns.SetRXPSetting('arrow',false)
+assert(arrow.texture.path==nativeArrowPath,'arrow-off restored a stale theme path')
+nativeArrowPath='native-arrow';arrow:UpdateVisuals();arrow:SetSize(32,32)
+ns.SetRXPSetting('arrow',true)
+assert(arrow.hooks.OnUpdate==nativeDraw and RXP.DrawArrow==nativeDraw and arrow.hooks.OnMouseDown()=='drag-native',
+    'arrow toggle replaced native update or dragging handlers')
+assert(EUIAddonSkinsDB.other=='preserved' and EUIAddonSkinsDB.details.tiny==false,
+    'arrow toggle changed unrelated settings')
+combat=true;ns.SetRXPSetting('arrow',false)
+assert(arrow.texture.path==arrowPath,'arrow toggled off during combat')
+combat=false
+for _,f in ipairs(events)do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f,'PLAYER_REGEN_ENABLED')end end
+flush();assert(arrow.texture.path==nativeArrowPath,'combat-deferred arrow-off lost')
+combat=true;ns.SetRXPSetting('arrow',true)
+assert(arrow.texture.path==nativeArrowPath,'arrow toggled on during combat')
+combat=false
+for _,f in ipairs(events)do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f,'PLAYER_REGEN_ENABLED')end end
+flush();assert(arrow.texture.path==arrowPath,'combat-deferred arrow-on lost')
+
 assert(targetPerf.title.width==#'Active Targets'*8+12 and targetPerf.title.text.text=='Active Targets'
     and targetPerf.width>=targetPerf.title.width+10,'initial target title clipped before first click')
 assert(root.frame.icon.alpha==1 and root.frame.icon.path=='RXP logo','branding changed')

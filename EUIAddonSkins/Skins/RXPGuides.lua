@@ -757,13 +757,58 @@ end, function(S, module)
         end)
     end
     for _, name in ipairs({"CreateActiveItemFrame", "UpdateItemFrame"}) do H.Hook(addon, name, QueueItems) end
-    local arrowTextureSeen, arrowWidth, arrowHeight
+    local arrowTextureSeen, arrowWidth, arrowHeight, originalArrow, restoringArrow, arrowWaiting
+    local function RestoreArrow()
+        local saved = originalArrow
+        if not saved then return end
+        originalArrow, arrowTextureSeen, arrowWidth, arrowHeight = nil, nil, nil, nil
+        local texture, frame = saved.texture, saved.frame
+        texture:ClearAllPoints()
+        texture:SetSize(saved.width, saved.height)
+        if #saved.points > 0 then
+            for _, point in ipairs(saved.points) do texture:SetPoint(unpack(point)) end
+        else texture:SetAllPoints(frame) end
+        texture:SetTexCoord(0, 1, 0, 1)
+        texture:SetVertexColor(unpack(saved.tint))
+        if saved.font and saved.font[1] then
+            local _, size = saved.text:GetFont()
+            saved.text:SetFont(saved.font[1], size or saved.font[2], saved.font[3])
+        end
+        if saved.color then saved.text:SetTextColor(unpack(saved.color)) end
+        -- Ask RXP for its current theme artwork, not a stale saved texture path.
+        restoringArrow = true
+        if type(frame.UpdateVisuals) == "function" then H.Safe(frame.UpdateVisuals, frame)
+        else texture:SetTexture(saved.path) end
+        restoringArrow = false
+        -- Native DrawArrow caches this bearing. Keep it when resetting the UVs,
+        -- including the stationary/wrong-continent cases that may not redraw.
+        if texture.SetRotation then texture:SetRotation(frame.wrongContinent and 0 or frame.orientation or 0) end
+    end
     local function ApplyArrow()
+        if restoringArrow then return end
         local frame = addon.arrowFrame
         if not H.Allowed(frame) then return end
-        if CombatLocked() then applyWaiting = true; return end
+        if CombatLocked() then arrowWaiting = true; return end
+        arrowWaiting = false
+        H.Hook(frame, "UpdateVisuals", ApplyArrow)
+        H.Script(frame, "OnSizeChanged", ApplyArrow)
+        if not ns.IsEnabled(module) or ns.RXPSettings and ns.RXPSettings().arrow == false then
+            RestoreArrow()
+            return
+        end
         local texture = H.Texture(frame.texture)
         if texture then
+            if not originalArrow or originalArrow.texture ~= texture then
+                originalArrow = {frame = frame, texture = texture, path = texture:GetTexture(),
+                    width = texture:GetWidth(), height = texture:GetHeight(), points = {}, tint = {texture:GetVertexColor()}}
+                if texture.GetNumPoints and texture.GetPoint then
+                    for i = 1, texture:GetNumPoints() do originalArrow.points[i] = {texture:GetPoint(i)} end
+                end
+                if H.Allowed(frame.text) and frame.text.GetFont then
+                    originalArrow.text = frame.text
+                    originalArrow.font, originalArrow.color = {frame.text:GetFont()}, {frame.text:GetTextColor()}
+                end
+            end
             local path = "Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationChevronSmooth.tga"
             if texture:GetTexture() ~= path or arrowTextureSeen ~= texture then
                 texture:SetTexture(path)
@@ -785,9 +830,8 @@ end, function(S, module)
             if cr ~= r or cg ~= g or cb ~= b or ca ~= 1 then texture:SetVertexColor(r, g, b, 1) end
         end
         Font(frame.text, 0.9, 0.9, 0.92)
-        H.Hook(frame, "UpdateVisuals", ApplyArrow)
-        H.Script(frame, "OnSizeChanged", ApplyArrow)
     end
+    ns.RXPSettingsChanged = ApplyArrow
     H.Hook(addon, "SetupArrow", ApplyArrow)
     local guideWindowSeen
     local function V2Chrome(window)
@@ -928,6 +972,7 @@ end, function(S, module)
         if themeWaiting then UpdateTheme()
         elseif applyWaiting then refresh() end
         if module.optionsWaiting then refreshOptions() end
+        if arrowWaiting then ApplyArrow() end
     end)
     if ns.BindPopupOwner then
         H.Hook(addon, "ShowMenu", function(_, _, owner)

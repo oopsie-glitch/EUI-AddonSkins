@@ -157,7 +157,7 @@ for _, id in ipairs(ids) do assert(modules[id].available()); modules[id].install
 flush()
 assert(WhatsTrainingFrame.shellOptions.noBorder and WhatsTrainingFrame.shellOptions.noTopBar, 'Whats Training soft shell missing')
 assert(KiwiFarm.shellOptions.noBorder and KiwiFarm.shellOptions.noTopBar, 'KiwiFarm soft shell missing')
-assert(lib.MainFrame.shellOptions.noBorder and lib.MainFrame.shellOptions.bottomBar == 38 and input.inputOptions.noBorder, 'Myslot soft shell/input missing')
+assert(lib.MainFrame.shellOptions.noBorder and lib.MainFrame.shellOptions.bottomBar == nil and input.inputOptions.noBorder, 'Myslot continuous shell/input missing')
 assert(input.padded and exportText.font == 'eui-font' and exportText.content == 'encoded-profile' and not exportText.padded)
 assert(inv.regions[1].square and not inv.checkSkin and secure.attributes.macro == 'equip')
 assert(ItemRackOptTab1.tab and ItemRackOptTab1.selected)

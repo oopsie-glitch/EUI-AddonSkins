@@ -1,6 +1,6 @@
 -- Source-shaped Myslot 6.2.0 UI. No import/clear operation is executed by skinning.
 local timers,events,errors,modules,looks={},{},{},{},{}
-local enabled,combat=true,false
+local enabled,combat,accent=true,false,.7
 local ns={IsEnabled=function()return enabled end,AttachAccent=function(_,f)f.accent=true end}
 function ns.RegisterModule(id,_,available,install)modules[id]={available=available,install=install}end
 C_Timer.After=function(_,fn)timers[#timers+1]=fn end
@@ -28,6 +28,9 @@ local function region(kind)
  function r:SetWidth(w)self.w=w end
  function r:SetAllPoints()end
  function r:SetPoint(...)self.point={...}end
+ function r:GetPoint()return table.unpack(self.point or{})end
+ function r:ClearAllPoints()self.point=nil end
+ function r:SetRotation(v)self.rotation=v end
  function r:SetTexture(v)self.path=v;self.atlas=nil end
  function r:GetTexture()return self.path end
  function r:SetAtlas(v)self.atlas=v end
@@ -90,10 +93,10 @@ end
 CreateFrame=function(kind,_,parent)local f=frame(kind,parent);events[#events+1]=f;return f end
 local function label(f,value)local t=f:CreateFontString();t:SetText(value);return t end
 local function button(parent,text,callback)local f=frame('Button',parent);f.label=label(f,text);f.w=120;f.scripts.OnClick=callback;return f end
-local S={GetFont=function()return'eui',''end,GetAccentColor=function()return .7,.5,.3 end,OnLooksChanged=function(fn)looks[#looks+1]=fn end}
+local S={GetFont=function()return'eui',''end,GetAccentColor=function()return accent,.5,.3 end,OnLooksChanged=function(fn)looks[#looks+1]=fn end}
 S.Font=function(t,r,g,b)if t.SetFont then t:SetFont('eui',12,'')end;if r then t:SetTextColor(r,g,b)end end
 S.Shell=function(f,opts)f.shell=opts end
-S.Panel=function(f)f.panel=true end
+S.Panel=function(f,opts)f.panel=true;f.panelOptions=opts end
 S.Button=function(f,keys)f.button=true;f.keep=keys;local keep={};for _,key in ipairs(keys or{})do keep[f[key]]=true end;for _,r in ipairs(f.regions)do if r.kind=='Texture'and not keep[r]then r.alpha=0 end end end
 S.Dropdown=function(f)S.Button(f);f.dropdown=true;f.arrow=f:CreateTexture(nil,'OVERLAY');f.arrow:SetAtlas('Azerite-PointingArrow')end
 S.Checkbox=function(f)f.checkbox=true end
@@ -107,8 +110,12 @@ LibStub=function(name)if name=='Myslot-5.0'then return lib end end
 C_AddOns={IsAddOnLoaded=function()return true end}
 local panel=frame();panel.name='Myslot';panel.shown=false
 local category={GetName=function()return'Myslot'end}
-Settings={GetCategory=function(name)if name=='Myslot'then return category end end,RegisterCanvasLayoutCategory=function(f,name)return 'native-category',nil,5 end}
-SettingsPanel={GetLayout=function(_,cat)if cat==category then return{GetFrame=function()return panel end}end end,DisplayCategory=function()return'display-native',nil,3 end}
+local holder=frame();holder.shown=false
+Settings={GetCategory=function()return category end,RegisterCanvasLayoutCategory=function(f,name)return 'native-category',nil,5 end}
+SettingsPanel={Container={SettingsCanvas=holder},GetSettingsCanvas=function()return holder end,
+ GetLayout=function()error('category layout is not accessible on this client')end,
+ DisplayLayout=function()panel.parent=holder;holder.children={panel};panel.shown=true;holder:Show();return'layout-native',nil,4 end,
+ DisplayCategory=function(self)self:DisplayLayout();return'display-native',nil,3 end}
 local manager={OpenMenu=function(self,owner,list)list.owner=owner;self.list=list;return'open-native',nil,9 end,GetOpenMenu=function(self)return self.list end}
 Menu={GetManager=function()return manager end}
 local bindings,owners=0,{}
@@ -117,10 +124,10 @@ ns.BindPopupList=function(_,_,owner,list)assert(owner==list.owner);bindings=bind
 local imports,exports,clears=0,0,0
 local export=button(main,'Export',function()exports=exports+1;return'export-native'end)
 local import=button(main,'Import',function()imports=imports+1;return'import-native'end)
-local split=frame('Button',main);split.label=label(split,'');split.art=split:CreateTexture();split.art:SetTexture('Interface\\ChatFrame\\ChatFrameExpandArrow')
-local profile=frame('Button',main);profile.w=240;profile.labelText=label(profile,'Select a profile');profile.art=profile:CreateTexture();profile.art:SetTexture('Interface\\Icons\\inv_scroll_03')
-local share=frame('Button',main);share.art=share:CreateTexture();share.art:SetTexture('Interface\\ChatFrame\\UI-ChatIcon-Chat-Up')
-share.disabledArt=share:CreateTexture();share.disabledArt:SetTexture('Interface\\ChatFrame\\UI-ChatIcon-Chat-Up');share.disabledArt:SetAlpha(.5)
+local split=frame('Button',main);split.label=label(split,'');split.art=split:CreateTexture();split.art:SetTexture(123456);split:SetPoint('LEFT',import,'RIGHT',0,0)
+local profile=frame('Button',main);profile.w=240;profile.labelText=label(profile,'Select a profile');profile.art=profile:CreateTexture();profile.art:SetTexture(234567);profile.art:SetPoint('LEFT',profile,'LEFT',8,0)
+local share=frame('Button',main);share.art=share:CreateTexture();share.art:SetTexture(345678);share.GetNormalTexture=function()return share.art end
+share.disabledArt=share:CreateTexture();share.disabledArt:SetTexture(345678);share.disabledArt:SetAlpha(.5);share.GetDisabledTexture=function()return share.disabledArt end
 local title=label(main,'Myslot');local unsaved=label(profile,'');local talents=label(main,'Talents:')
 local status=label(main,'|cffff0000Talents differ|r')
 local editorPanel=frame('Frame',main);editorPanel.backdrop={bgFile='native'}
@@ -128,6 +135,10 @@ local scroll=frame('ScrollFrame',editorPanel)
 local editor=frame('EditBox',scroll);editor.multiline=true;editor.content='encoded\nprofile|cffffff00NOT A HEADING|r';editor.maxLetters=99999999
 local nativeChange=function()return'changed-native'end;editor.scripts.OnTextChanged=nativeChange;editor.scripts.OnChar=nativeChange
 local slider=frame('Slider',editorPanel);slider.thumb=slider:CreateTexture();slider.thumb:SetSize(16,32)
+slider.name='TestMyslotScrollbar'
+local up=button(slider,'',function()return'up-native'end)
+local down=button(slider,'',function()return'down-native'end)
+TestMyslotScrollbarScrollUpButton,TestMyslotScrollbarScrollDownButton=up,down
 local open=button(panel,'Open Myslot',function()main:Show();return'open-native'end)
 local danger=label(panel,'|cffff0000DANGEROUS|r')
 local clear=button(panel,'Remove all Macros',function()clears=clears+1;return'confirmation-native'end)
@@ -140,18 +151,26 @@ assert(loadfile('EUIAddonSkins/Scoped.lua'))('EUIAddonSkins',ns)
 assert(loadfile('EUIAddonSkins/Skins/Myslot.lua'))('EUIAddonSkins',ns)
 local m=modules.Myslot;assert(m.available());m.install(S,m);flush()
 assert(imports==0 and exports==0 and clears==0,'skinning executed a data/clear operation')
-assert(main.shell.noAccent and main.shell.noTopBar and not main.accent)
-assert(open.button and clear.button and checkbox.checkbox,'Myslot options canvas missed')
-assert(split.glyph=='v'and profile.dropdown and profile.art.alpha==1,'split/profile menu affordances lost')
-assert(share.button and share.art.alpha==1 and share.disabledArt.alpha==.5 and #share.keep==2,'sharing icon or disabled appearance lost')
-assert(profile.arrow.path:match('eui%-arrow%-down3.png'),'profile dropdown has native arrow')
+assert(main.shell.noAccent and main.shell.noTopBar and not main.shell.bottomBar and not main.accent)
+local function visual(f)for _,child in ipairs(f.children)do if child.panel then return child end end end
+assert(not visual(open),'hidden unregistered canvas was guessed')
+SettingsPanel:DisplayCategory(category);flush()
+assert(visual(open) and visual(clear) and checkbox.checkbox,'visible Myslot canvas fallback missed')
+assert(visual(open).panelOptions.noBorder and visual(open).panelOptions.inset==false,'Myslot buttons retain boxed borders')
+open.hooks.OnEnter(open);assert(visual(open).hover.alpha==1,'matte action lacks hover feedback')
+open.hooks.OnLeave(open);assert(visual(open).hover.alpha==0)
+assert(visual(split).glyph and visual(profile).glyph and profile.art.alpha==1,'numeric-art split/profile affordances lost')
+assert(visual(share) and share.art.alpha==1 and share.disabledArt.alpha==.5,'numeric sharing icon or disabled appearance lost')
+assert(visual(profile).glyph.path:match('eui%-arrow%-down3.png'),'profile dropdown has native arrow')
 unsaved:SetText('|cffffff00Unsaved|r')
 assert(unsaved.text=='Unsaved'and unsaved.color[1]==.7 and talents.color[1]==.7 and title.color[1]==.7)
 assert(status.text=='|cffff0000Talents differ|r'and danger.text=='|cffff0000DANGEROUS|r','semantic warnings changed')
 assert(checkbox.text.text:find('|cffff0000CLEAR|r',1,true)and checkbox.checked)
-assert(editorPanel.panel and editor.content=='encoded\nprofile|cffffff00NOT A HEADING|r'and not editor.input and editor.maxLetters==99999999)
+assert(editorPanel.panel and editorPanel.panelOptions.inset==false and editor.content=='encoded\nprofile|cffffff00NOT A HEADING|r'and not editor.input and editor.maxLetters==99999999)
 assert(editor.scripts.OnTextChanged==nativeChange and editor.scripts.OnChar==nativeChange,'native editor callbacks replaced')
 assert(slider.thumb.w==16 and slider.thumb.h==32 and slider.thumb.alpha==0,'native scrollbar hit area resized')
+assert(visual(up).glyph.rotation==math.pi and visual(down).glyph.path:match('eui%-arrow%-down3.png'),
+ 'legacy globally named scrollbar arrows are not proper glyphs')
 local grip=slider.regions[#slider.regions];slider.thumb:Hide();assert(grip.alpha==0,'hidden native thumb left a floating grip')
 slider.thumb:Show();assert(grip.alpha==1,'native thumb reappearance lost styled grip')
 local na,nb,nc=SettingsPanel:DisplayCategory(category);assert(na=='display-native'and nb==nil and nc==3)
@@ -162,11 +181,32 @@ for i=1,100 do
 end
 flush();assert(scans==0 and objects==stableObjects and imports==0 and exports==0 and clears==0,'data/menu activity rescans or mutates profiles')
 local list=frame();list.GetOwnerRegion=function(self)return self.owner end
+local radio={initializers={},IsRadio=function()return true end,IsCheckbox=function()return false end}
+function radio:AddInitializer(fn)self.initializers[#self.initializers+1]=fn end
+local radioRow=frame('Button',list)
+radioRow.GetElementDescription=function()return radio end
+radioRow.arrow=region();radioRow.leftTexture1=region();radioRow.leftTexture2=region()
+function radioRow:CreateTexture()error('restricted compositor CreateTexture indexed/called')end
+function list:EnumerateElementDescriptions(fn)fn(1,radio)end
 local a,b,c=manager:OpenMenu(split,list);assert(a=='open-native'and b==nil and c==9 and bindings==1)
+assert(radioRow.arrow.path:match('eui%-arrow%-right.png')and radioRow.leftTexture1.color[1]==.18
+ and radioRow.leftTexture2.w==7 and radioRow.leftTexture2.color[1]==.7,'native modern menu artwork not themed')
+assert(#radio.initializers==1,'modern menu art initializer missing')
+for i=1,20 do
+ radioRow.arrow:SetTexture(123);radioRow.leftTexture2=region()
+ for _,fn in ipairs(radio.initializers)do fn(radioRow,radio,list)end
+ assert(radioRow.arrow.path:match('eui%-arrow%-right.png')and radioRow.leftTexture2.w==7,'checkbox/radio rebuild lost styling')
+end
 local foreign=frame();manager:OpenMenu(foreign,list);assert(bindings==1,'foreign menu bound as Myslot')
+radioRow.arrow:SetTexture(555)
+for _,fn in ipairs(radio.initializers)do fn(radioRow,radio,list)end
+assert(radioRow.arrow.path==555,'stale modern initializer touched another owner')
 manager:OpenMenu(profile,list);assert(bindings==2)
+assert(#radio.initializers==1,'reopening duplicated modern menu art initializer')
+accent=.4;for _,fn in ipairs(looks)do fn()end;flush()
+assert(radioRow.leftTexture2.color[1]==.4,'open modern menu did not follow accent change')
 for i=1,20 do main:Show();flush()end
-assert(objects==stableObjects+2,'reopening allocated skin objects')
+assert(objects==stableObjects+3,'reopening allocated skin objects')
 local current=objects;local nativeClick=import.scripts.OnClick
 m.refresh();flush();assert(objects==current and import.scripts.OnClick==nativeClick)
 assert(import.scripts.OnClick()=='import-native'and imports==1)
@@ -178,7 +218,7 @@ combat=false;for _,event in ipairs(events)do if event.events and event.events.PL
 assert(scans>0 and #errors==0,table.concat(errors,'\n'))
 local latePanel=frame();local lateAction=button(latePanel,'Open Myslot',function()return'late-native'end)
 local ra,rb,rc=Settings.RegisterCanvasLayoutCategory(latePanel,'Myslot');flush()
-assert(ra=='native-category'and rb==nil and rc==5 and lateAction.button,'late options registration lost styling or native returns')
+assert(ra=='native-category'and rb==nil and rc==5 and visual(lateAction),'late options registration lost styling or native returns')
 local oldLib=lib;lib=nil;C_AddOns.IsAddOnLoaded=function()return false end
 assert(not m.available(),'missing Myslot reported available');lib=oldLib
 print('PASS: Myslot modern canvas, native actions/editor/warnings, split/dropdown glyphs, menus, reuse/toggles/combat')

@@ -108,6 +108,35 @@ local function OptionsSkin(S, H, module, addon)
     local function Neutral(d, text, disabled)
         Font(d, text, disabled and 0.5 or 0.9, disabled and 0.5 or 0.9, disabled and 0.52 or 0.92, 1)
     end
+    local function ButtonLabel(d, widget, button, text)
+        if not H.Allowed(button) or not H.Allowed(text) then return end
+        d.buttons = d.buttons or {}
+        local state = d.buttons[button]
+        if not state then
+            state = {}; d.buttons[button] = state
+            state.reflect = function()
+                if not d.active or not ns.IsEnabled(module) or not Owned(widget) then return end
+                if InCombatLockdown and InCombatLockdown() then module.optionsWaiting = true; return end
+                local disabled = widget.disabled
+                if button.IsEnabled then disabled = not button:IsEnabled() end
+                Neutral(d, state.text, disabled)
+            end
+            -- Native button font objects can replace our label after a page
+            -- refresh, hover or press. Repair only this label, never rescan.
+            local function Reflect() H.Safe(state.reflect) end
+            for _, event in ipairs({'OnEnable', 'OnDisable', 'OnEnter', 'OnLeave', 'OnMouseDown', 'OnMouseUp'}) do
+                -- Layer already owns H.Script's hover slot; add this separate
+                -- callback once so the hover visual and label both update.
+                if button.HookScript and (not button.HasScript or button:HasScript(event)) then
+                    button:HookScript(event, Reflect)
+                end
+            end
+            -- AceGUI may call Enable again without an OnEnable transition.
+            H.Hook(widget, 'SetDisabled', state.reflect)
+        end
+        state.text = text
+        state.reflect()
+    end
     local function Slider(d, slider)
         if not H.Allowed(slider) then return end
         local thumb = slider.GetThumbTexture and H.Texture(slider:GetThumbTexture())
@@ -230,7 +259,7 @@ local function OptionsSkin(S, H, module, addon)
             local r, g, b = S.GetAccentColor(); Font(d, widget.label, r, g, b)
         elseif kind == 'Button' then
             Fade(d, frame); Layer(d, 'button', frame, 'Button')
-            Neutral(d, widget.text or frame.GetFontString and frame:GetFontString(), widget.disabled)
+            ButtonLabel(d, widget, frame, widget.text or frame.GetFontString and frame:GetFontString())
         elseif kind == 'CheckBox' and widget.checkbg and widget.check then
             Fade(d, frame, {[widget.checkbg] = true, [widget.check] = true})
             -- Keep native checked/tristate visibility and hit rectangles.
@@ -267,11 +296,14 @@ local function OptionsSkin(S, H, module, addon)
             Neutral(d, widget.label, widget.disabled)
             if H.Allowed(widget.button) then
                 Fade(d, widget.button); Layer(d, 'key', widget.button, 'Button')
-                Neutral(d, widget.button:GetFontString(), widget.disabled)
+                ButtonLabel(d, widget, widget.button, widget.button:GetFontString())
             end
         elseif kind == 'EditBox' then
             Input(d, widget.editbox or frame); Neutral(d, widget.label, widget.disabled)
-            if H.Allowed(widget.button) then Fade(d, widget.button); Layer(d, 'accept', widget.button, 'Button') end
+            if H.Allowed(widget.button) then
+                Fade(d, widget.button); Layer(d, 'accept', widget.button, 'Button')
+                ButtonLabel(d, widget, widget.button, widget.button:GetFontString())
+            end
         elseif kind == 'ScrollFrame' then
             Slider(d, widget.scrollbar or widget.scrollBar)
         elseif kind == 'Label' then

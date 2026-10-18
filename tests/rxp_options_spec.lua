@@ -77,7 +77,7 @@ local function frame(kind, name, parent)
     function f:IsProtected() return self.protected end
     function f:GetChildren() return table.unpack(self.children) end
     function f:GetRegions() return table.unpack(self.regions) end
-    function f:HookScript(event, fn) local old = self.hooks[event]; self.hooks[event] = function(...) if old then old(...) end; fn(...) end end
+    function f:HookScript(event, fn) self.hookCounts=self.hookCounts or {};self.hookCounts[event]=(self.hookCounts[event] or 0)+1; local old = self.hooks[event]; self.hooks[event] = function(...) if old then old(...) end; fn(...) end end
     function f:RegisterEvent(e) self.events = self.events or {}; self.events[e] = true end
     function f:SetScript(e, fn) self.hooks[e] = fn end
     function f:GetBackdrop() return self.backdrop end
@@ -182,7 +182,7 @@ local function surface(f,method)
     f.markerMethod=method
 end
 S.Panel=function(f,opts) surface(f,'Panel');f.panelOptions=opts end
-S.Button=function(f) surface(f,'Button') end
+S.Button=function(f) surface(f,'Button');f.hover=art(f,'HIGHLIGHT') end
 S.Dropdown=function(f) surface(f,'Dropdown');f.arrow=art(f,'OVERLAY');f.arrow:SetPoint('RIGHT',f,'RIGHT',-6,0) end
 S.EditBox=function(f,opts) surface(f,'EditBox');f.inputOptions=opts end
 S.PageButton=function(f,glyph) surface(f,'PageButton');f.glyph=glyph end
@@ -214,6 +214,45 @@ local checkbox=widget('CheckBox',page);checkbox.checkbg=art(checkbox.frame);chec
 checkbox.SetValue=function(self,value)self.checked=value;self.check:SetShown(value);self.check.hidden=not value;return 'check-native' end
 checkbox:SetValue(true)
 local button=widget('Button',page);button.text=label(button.frame,'Apply');button.native=art(button.frame);button.frame.hooks.OnClick=function()button.clicks=(button.clicks or 0)+1;return 'button-native'end
+-- Model native Button font-object switches: Enable/Disable can replace the
+-- label font/colour after the page was painted, including a no-op Enable call.
+local function nativeButton(w)
+    w.frame.kind='Button';w.frame.label=w.text
+    local function state(f,disabled)
+        local changed=(not not f.disabled)~=disabled;f.disabled=disabled
+        f.label:SetFont('native-font');f.label:SetTextColor(.12,.12,.12,.15)
+        local event=disabled and 'OnDisable' or 'OnEnable'
+        if changed and f.hooks[event] then f.hooks[event](f)end
+    end
+    w.frame.Enable=function(self)state(self,false);return 'enable-native'end
+    w.frame.Disable=function(self)state(self,true);return 'disable-native'end
+    w.SetDisabled=function(self,value)
+        self.disabled=value
+        if value then self.frame:Disable()else self.frame:Enable()end
+        return 'state-native',nil,self
+    end
+    for _,event in ipairs({'OnEnter','OnLeave','OnMouseDown','OnMouseUp'})do
+        w.frame.hooks[event]=function()w.text:SetFont('native-font');w.text:SetTextColor(.12,.12,.12,.15)end
+    end
+end
+nativeButton(button)
+local resetButton=widget('Button',page);resetButton.text=label(resetButton.frame,'Reset Arrow Position');nativeButton(resetButton)
+local unavailable=widget('Button',page);unavailable.text=label(unavailable.frame,'Apply');nativeButton(unavailable);unavailable:SetDisabled(true)
+button.frame.hooks.OnClick=function()
+    button.clicks=(button.clicks or 0)+1
+    -- AceGUI refreshes neighbouring states, not only the clicked control.
+    button:SetDisabled(false);resetButton:SetDisabled(false);unavailable:SetDisabled(true)
+    return 'button-native'
+end
+local auxiliaryButtons={}
+for _,kind in ipairs({'Keybinding','EditBox'})do
+    local w=widget(kind,page);w.label=label(w.frame,kind)
+    w.button=frame('Button',nil,w.frame);w.button.label=label(w.button,'Accept')
+    local native={frame=w.button,text=w.button.label};nativeButton(native)
+    w.SetDisabled=function(self,value)self.disabled=value;return native:SetDisabled(value)end
+    if kind=='EditBox' then w.editbox=frame('EditBox',nil,w.frame)end
+    auxiliaryButtons[#auxiliaryButtons+1]=w
+end
 local slider=widget('Slider',page);slider.slider=frame('Slider',nil,slider.frame);slider.slider.thumb=art(slider.slider);slider.slider.thumb:SetSize(30,30)
 slider.slider.backdrop={edgeFile='native'};slider.slider.color={0,0,0,1};slider.slider.border={1,1,1,1}
 slider.editbox=frame('EditBox',nil,slider.frame);slider.editbox.value='100%';slider.editbox.width=70;slider.editbox.height=14
@@ -316,16 +355,50 @@ assert(swatch.color.alpha==1 and swatch.color.color[2]==.2,'semantic swatch chan
 local out,empty,tail=dialog:FeedGroup('RestedXP Guides',{},page,root,{})
 assert(out=='feed-native' and empty==nil and tail==page)
 assert(button.frame.hooks.OnClick()=='button-native' and button.clicks==1)
+assert(button.text.textColor[1]==.9 and resetButton.text.textColor[1]==.9
+    and button.text.textColor[4]==1 and resetButton.text.textColor[4]==1,
+    'click-triggered native state refresh darkened enabled neighbouring buttons')
+assert(unavailable.frame.disabled and unavailable.text.textColor[1]==.5 and unavailable.text.textColor[4]==1,
+    'genuinely unavailable button lost its disabled state/readable grey')
+local stateResult,stateEmpty,stateSelf=button:SetDisabled(true)
+assert(stateResult=='state-native' and stateEmpty==nil and stateSelf==button and button.frame.disabled
+    and button.text.textColor[1]==.5,'SetDisabled result/state changed')
+button:SetDisabled(false)
+assert(button.frame:IsEnabled() and button.text.textColor[1]==.9)
+assert(button.frame:Disable()=='disable-native' and button.text.textColor[1]==.5)
+assert(button.frame:Enable()=='enable-native' and button.text.textColor[1]==.9)
+for _,event in ipairs({'OnEnter','OnLeave','OnMouseDown','OnMouseUp'})do
+    button.frame.hooks[event](button.frame)
+    assert(button.text.font=='eui' and button.text.textColor[1]==.9 and button.text.textColor[4]==1,
+        event..' restored the native unreadable font state')
+end
+for _,w in ipairs(auxiliaryButtons)do
+    w:SetDisabled(true)
+    assert(not w.button:IsEnabled() and w.button.label.textColor[1]==.5,'auxiliary disabled label/state lost')
+    w:SetDisabled(false);w.button.hooks.OnEnter(w.button)
+    assert(w.button:IsEnabled() and w.button.label.font=='eui' and w.button.label.textColor[1]==.9,
+        'keybinding/input accept label darkened')
+end
+local stateObjects,stateScans=objects,scans
+for i=1,100 do button:SetDisabled(i%2==0)end
+button:SetDisabled(false)
+assert(objects==stateObjects and scans==stateScans and #timers==0,
+    'button-state updates allocate visuals, scan hierarchies or queue page refreshes')
+
 dropdown.button.hooks.OnClick();dropdown.button_cover.hooks.OnClick();assert(dropdown.clicks==2,'dropdown handler lost')
-button.disabled=true;button.text:SetTextColor(.5,.5,.5,.1)
+button:SetDisabled(true);button.text:SetTextColor(.5,.5,.5,.1)
 dialog:FeedGroup('RestedXP Guides',{},page,root,{})
 assert(button.text.textColor[1]==.5 and button.text.textColor[4]==1,'disabled label remained nearly invisible')
-button.disabled=false
+button:SetDisabled(false)
 dialog:FeedGroup('RestedXP Guides',{},page,root,{})
 local total=objects;local feedHook=dialog.FeedGroup;local initialWrites=writes
 for i=1,25 do dialog:FeedGroup('RestedXP Guides',{},page,root,{})end
 flush();assert(objects==total and dialog.FeedGroup==feedHook and scans==0,'page navigation allocates layers/hooks or scans guide')
 assert(writes==initialWrites,'unchanged navigation rewrites fonts')
+for _,event in ipairs({'OnEnable','OnDisable','OnEnter','OnLeave','OnMouseDown','OnMouseUp'})do
+    local expected=(event=='OnEnter' or event=='OnLeave') and 2 or 1 -- hover layer + label state
+    assert(button.frame.hookCounts[event]==expected,'duplicate/missing button state hook: '..event)
+end
 dialog:FeedGroup('Other addon',{},foreign,foreign,{})
 assert(foreign.native.alpha==1 and foreign.text.font=='native-font','foreign options styled')
 assert(popup:Open()=='open-native' and popup.frame:GetBackdrop()==nil and popup.items[1].text.font=='eui')
@@ -337,20 +410,32 @@ assert(objects==popupObjects,'reopening menu allocates more layers')
 popup.userdata.obj=foreign;popup:Open()
 assert(popup.frame:GetBackdrop().edgeFile=='native' and popup.items[1].text.font=='native-font','pooled menu leaked')
 popup.userdata.obj=dropdown
+button.userdata.appName='Other addon'
+button:SetDisabled(false);button.frame.hooks.OnMouseUp(button.frame)
+assert(button.text.font=='native-font' and button.text.textColor[1]==.12,
+    'active state callback ignored foreign widget ownership')
+button.userdata.appName='RestedXP Guides'
 button.frame:Hide();assert(button.native.alpha==1 and button.text.font=='native-font','pooled button not restored')
 button.userdata={} -- standalone AceGUI users do not necessarily inject appName
 button.parent=nil;button.frame.hidden=false
 if button.frame.hooks.OnShow then button.frame.hooks.OnShow(button.frame)end
-assert(button.native.alpha==1,'pooled button restyled for another addon')
+button:SetDisabled(false);button.frame.hooks.OnEnter(button.frame)
+assert(button.native.alpha==1 and button.text.font=='native-font' and button.text.textColor[1]==.12,
+    'pooled button state hooks restyled another addon')
 button.userdata.appName='RestedXP Guides';button.parent=page;dialog:FeedGroup('RestedXP Guides',{},page,root,{})
 assert(button.native.alpha==0)
 combat=true
+button:SetDisabled(true)
+assert(button.text.font=='native-font' and button.text.textColor[1]==.12,'button state changed styling during combat')
 local late=widget('Button',page);late.text=label(late.frame,'Late');late.native=art(late.frame)
 dialog:FeedGroup('RestedXP Guides',{},page,root,{})
 assert(late.native.alpha==1,'new control modified during combat')
 combat=false
 for _,f in ipairs(events)do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f,'PLAYER_REGEN_ENABLED')end end
 flush();assert(late.native.alpha==0,'combat-deferred options lost')
+assert(button.frame.disabled and button.text.font=='eui' and button.text.textColor[1]==.5,
+    'combat-deferred button state lost')
+button:SetDisabled(false)
 accent=.8;for _,fn in ipairs(looks)do fn()end;flush()
 assert(tab.Text.textColor[1]==.8 and arrow.texture.color[1]==.8,'theme refresh lost selected accent/arrow tint')
 arrow:SetSize(48,48);arrow.hooks.OnSizeChanged(arrow)
@@ -366,6 +451,8 @@ flush();assert(arrow.texture.path==arrowPath,'combat-deferred arrow styling lost
 enabled=false;for _,fn in ipairs(looks)do fn()end;flush()
 assert(button.native.alpha==1 and slider.slider.thumb.alpha==1 and slider.editbox.insets[3]==3,'disable did not restore native pooled controls')
 assert(button.frame.hooks.OnClick()=='button-native' and checkbox:SetValue(false)=='check-native')
+assert(button.text.font=='native-font' and button.text.textColor[1]==.12,
+    'disabled skin still repaints native button states')
 arrow:UpdateVisuals();assert(arrow.texture.path=='native-arrow','disabled skin still restyled arrow')
 -- Known guide/item visuals remain local and never enroll secure action frames.
 enabled=true

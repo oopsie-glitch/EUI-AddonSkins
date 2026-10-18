@@ -213,6 +213,7 @@ end
 local function widget(kind,parent)
     local w={type=kind,frame=frame('Frame',nil,parent and parent.frame),children={},parent=parent,userdata={appName='RestedXP Guides'}}
     if parent then parent.children[#parent.children+1]=w end
+    function w:Fire(event, ...) if self.callback then return self.callback(self,event,...) end end
     return w
 end
 UIParent=frame('Frame')
@@ -286,6 +287,8 @@ popup.items[1]={text=label(itemFrame,'Option'),check=art(itemFrame)}
 popup.items[1].text:SetTextColor(.5,.5,.5,.8)
 local swatch=widget('ColorPicker',page);swatch.color=art(swatch.frame);swatch.color:SetVertexColor(1,.2,.1,.7)
 local foreign=widget('Button');foreign.userdata.appName='Other addon';foreign.text=label(foreign.frame);foreign.native=art(foreign.frame)
+local dialogCalls={}
+ns.StyleTextureDialog=function(_,_,f,active) dialogCalls[#dialogCalls+1]={frame=f,active=active} end
 local dialog={BlizOptions={['RestedXP Guides']={['']=root}},OpenFrames={}}
 dialog.FeedGroup=function(_,app,_,container)return 'feed-native',nil,container end
 dialog.Open=function(_,app,container)return 'open-native'end
@@ -434,6 +437,17 @@ assert(slider.editbox.insets[1]==6 and slider.editbox.insets[3]==0 and slider.ed
 assert(swatch.color.alpha==1 and swatch.color.color[2]==.2,'semantic swatch changed')
 local out,empty,tail=dialog:FeedGroup('RestedXP Guides',{},page,root,{})
 assert(out=='feed-native' and empty==nil and tail==page)
+local confirmation=frame('Frame');confirmation.hidden=true;dialog.popup=confirmation
+button.callback=function() confirmation:Show();return 'native-confirm',nil,17 end
+local confirmA,confirmB,confirmC=button:Fire('OnClick')
+assert(confirmA=='native-confirm' and confirmB==nil and confirmC==17)
+assert(dialogCalls[#dialogCalls].frame==confirmation and dialogCalls[#dialogCalls].active,
+    'RXP confirmation was not routed after its native action')
+button.userdata.appName='Foreign addon'
+button:Fire('OnClick')
+assert(not dialogCalls[#dialogCalls].active,'pooled foreign widget inherited RXP confirmation styling')
+button.userdata.appName='RestedXP Guides';button.callback=nil;confirmation:Hide();dialog.popup=nil
+
 assert(button.frame.hooks.OnClick()=='button-native' and button.clicks==1)
 assert(button.text.textColor[1]==.9 and resetButton.text.textColor[1]==.9
     and button.text.textColor[4]==1 and resetButton.text.textColor[4]==1,

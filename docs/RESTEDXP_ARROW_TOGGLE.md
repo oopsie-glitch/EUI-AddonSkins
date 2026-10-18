@@ -21,3 +21,20 @@ Only arrow visuals are refreshed by the setting. Combat changes wait for PLAYER_
 `python3 scripts/package.py` passes Lua syntax, all 21 regression suites and the existing 39-file installation package checks. Expanded RXP tests cover saved-off startup, repeated on/off restoration, native setup/theme changes, current scale/bearing, label size preservation, combat deferral and native handler/return preservation. Twenty toggle cycles allocate no UI objects, scan no guide and schedule no refresh in the mock.
 
 `tests/settings_spec.lua` covers both settings registration APIs, one category registration, checkbox wiring/state refresh, persistence across simulated loads, missing targets and separation of the Details and RXP settings callbacks. Existing Details tests remain unchanged and pass. Automated mocks do not establish actual in-game rendering or taint behaviour.
+
+## Confirmation textures
+
+The same alpha also opts RestedXP settings confirmations and validation errors
+into `ns.StyleTextureDialog` in Menus.lua. This reusable helper changes native
+background/border/button artwork only. It never changes dialog fonts, text
+colours, actions, hit areas or layout. Native artwork is restored on hide and on
+fresh acquisition before another addon uses AceConfig's shared popup. Layers
+are reused; protected dialogs and changes during combat are skipped. Other
+integrations are unaffected unless explicitly opted in.
+
+This covers the Preview Frame Positions and Apply/reload confirmations. Separate
+Blizzard StaticPopup dialogs and feedback/export windows are not opted in by this
+change. Their coverage remains separate from AceConfig's shared confirmation.
+Automated tests cover ownership routing after native callbacks, fonts/actions,
+reopening, allocation stability, disabled skins and combat/protected guards.
+Actual WoW rendering and taint behaviour have not been verified in this environment.

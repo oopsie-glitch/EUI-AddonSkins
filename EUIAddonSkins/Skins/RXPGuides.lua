@@ -219,6 +219,19 @@ local function OptionsSkin(S, H, module, addon)
     Paint = function(widget, popup)
         local frame = type(widget) == 'table' and widget.frame
         if not H.Allowed(frame) then return end
+        -- AceConfig's confirmation/validation popup is not an AceGUI child.
+        -- Fire returns after its native action has built the complete popup.
+        -- Recheck ownership because AceGUI widgets are pooled across addons.
+        if ns.StyleTextureDialog then
+            H.Hook(widget, 'Fire', function(_, event)
+                if event ~= 'OnClick' and event ~= 'OnValueChanged' and event ~= 'OnEnterPressed' then return end
+                local dialog = LibStub and LibStub('AceConfigDialog-3.0', true)
+                local confirmation = dialog and dialog.popup
+                if confirmation and confirmation:IsShown() then
+                    ns.StyleTextureDialog(S, module, confirmation, Owned(widget))
+                end
+            end)
+        end
         local d = states[widget]
         if not d then
             d = {layers = {}, saved = {}}; states[widget] = d

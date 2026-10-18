@@ -37,3 +37,25 @@ archive contains the original runtime assets and MIT license in one addon folder
 
 Actual in-game appearance, renderer ordering on every client version, performance
 and taint safety have not been independently verified in this environment.
+
+## Visual follow-up
+
+KiwiFarm opts into the shared menu helper's new optional `noAccent`, `chevrons`
+and `isHeading` settings. Existing callers omit these options and retain their
+previous appearance. The RXP confirmation helper is on a separate branch and
+is not part of this change.
+
+- Remove repeated menu/stat-window top accent strips.
+- Replace gold submenu artwork with EUI's existing neutral right chevron.
+- Cover legacy globally named Check/UnCheck art with the existing flat markers.
+- Apply the current accent to localized menu headings only, retaining quality,
+  status and disabled text colours. Restore heading colour and artwork on reuse.
+- Apply EUI typography without the heavy native outline to the two stats labels.
+  Preserve user-selected size, text content, native anchors and alignment.
+  Native LayoutFrame SetFont calls are repaired locally; SetText/timer updates
+  trigger no skin work. Native stats fonts are restored on disabling the skin.
+
+The more restrained font treatment improves separation without resizing or
+repositioning the stats window. Tests cover 100 data updates with zero extra
+font writes, font-size/return preservation, native font resets and restoration,
+heading-row reuse, original artwork restoration and bounded marker allocations.

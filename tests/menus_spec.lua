@@ -259,12 +259,28 @@ assert(kiwiConfig and not kiwiConfig.available(), 'missing KiwiFarm reported ava
 local kiwiModule = {enabled=true}
 local fullRefreshes, nativeOpens = 0, 0
 KiwiFarm = frame('Frame', 'KiwiFarm')
+local statsText=region('FontString');KiwiFarm.regions={statsText}
+local statsWrites=0
+function statsText:SetFont(...)statsWrites=statsWrites+1;self.font={...};return true,nil,19 end
+function statsText:SetText(value)self.text=value;return 'stats-native'end
 KiwiFarmPopupMenu = frame('Frame', 'KiwiFarmPopupMenu')
 local kiwiOwner = KiwiFarmPopupMenu
 local kiwiList = frame('Frame', 'DropDownList1')
 kiwiList.MenuBackdrop = frame('Frame', nil, kiwiList)
 local kiwiRow = frame('Button', nil, kiwiList)
 local kiwiText = region('FontString');kiwiRow.regions={kiwiText}
+function kiwiText:GetTextColor()return table.unpack(self.color)end
+function kiwiText:SetTextColor(...)self.color={...}end
+function kiwiText:GetText()return self.text end
+local nativeArrow=region();kiwiRow.ExpandArrow=nativeArrow
+local previousCreate=kiwiRow.CreateTexture
+function kiwiRow:CreateTexture(...)
+    local texture=previousCreate(self,...)
+    function texture:SetTexture(value)self.path=value end
+    return texture
+end
+kiwiRow.name='KiwiTestRow'
+KiwiTestRowCheck=region();KiwiTestRowUnCheck=region();KiwiTestRowUnCheck.shown=false
 kiwiRow.GetFontString=function()return kiwiText end
 kiwiRow.callback=function()return 'session-native',nil,23 end
 local kiwiSub = frame('Frame', 'DropDownList2')
@@ -283,16 +299,33 @@ function KiwiFarm:ShowMenu(newOwner)
 end
 function KiwiFarm:PLAYER_REGEN_ENABLED()return 'native-combat-end'end
 local H=ns.CreateSkinHelper(S,kiwiModule)
-local C={H=H,MenuOwner=function(owner)ns.BindPopupOwner(S,kiwiModule,owner)end}
+local C={H=H,S=S,module=kiwiModule,MenuOwner=function(owner)ns.BindPopupOwner(S,kiwiModule,owner)end}
 local function fullRefresh()fullRefreshes=fullRefreshes+1 end
 kiwiConfig.hooks(C,fullRefresh)
+assert(statsText.font[1]=='eui-font'and statsText.font[2]==13 and statsText.font[3]=='',
+    'KiwiFarm stats font retains heavy outline or changes chosen size')
+local fa,fb,fc=statsText:SetFont('user-font',20,'OUTLINE')
+assert(fa==true and fb==nil and fc==19 and statsText.font[1]=='eui-font'and statsText.font[2]==20 and statsText.font[3]=='',
+    'native layout font reset lost themed font, size or return values')
+local stableFontWrites=statsWrites
+for i=1,100 do assert(statsText:SetText('Session '..i)=='stats-native')end
+assert(statsWrites==stableFontWrites,'recurring stats data triggered font work')
 assert(kiwiConfig.available())
 local x,y,z=KiwiFarm:ShowMenu()
 assert(x=='kiwi-native'and y==nil and z==1,'KiwiFarm ShowMenu native returns changed')
 assert(kiwiText.font[1]=='eui-font'and subText.font[1]=='eui-font','KiwiFarm completed menu did not repaint')
 assert(fullRefreshes==0,'KiwiFarm menu unnecessarily refreshes main stats window')
 local ownLayer=kiwiList.children[#kiwiList.children]
+assert(not ownLayer.accent,'KiwiFarm menu retains repeated top accent bars')
+assert(nativeArrow.alpha==0 and KiwiTestRowCheck.alpha==0,'native gold arrow/checkbox was not replaced')
+local chevron=kiwiRow.regions[2]
+assert(chevron.path:match('eui%-arrow%-right.png')and chevron.color[1]==0.75,'EUI neutral chevron missing')
+kiwiText.text='Settings';ns.RefreshPopupMenusNow()
+assert(kiwiText.color[1]==accent and kiwiText.color[2]==0.5,'KiwiFarm heading does not follow accent')
+kiwiText.text='Session';ns.RefreshPopupMenusNow()
+assert(kiwiText.color[2]==0.82,'pooled heading row did not recover native text colour')
 local stableChildren=#kiwiList.children+#kiwiSub.children
+local stableMarkers=#kiwiRow.regions
 local stableShowHook=KiwiFarm.ShowMenu
 for i=1,100 do
     kiwiList:Hide();kiwiSub:Hide();flush()
@@ -305,6 +338,7 @@ for i=1,100 do
 end
 assert(KiwiFarm.ShowMenu==stableShowHook and #kiwiList.children+#kiwiSub.children==stableChildren,
     'KiwiFarm repeated opens duplicated hooks or visual layers')
+assert(#kiwiRow.regions==stableMarkers,'KiwiFarm repeated opens allocated chevrons/checkbox markers')
 assert(fullRefreshes==0,'KiwiFarm repeated opens queued stats scans')
 local dynamicRow=frame('Button',nil,kiwiSub)
 local dynamicText=region('FontString');dynamicRow.regions={dynamicText}
@@ -318,6 +352,9 @@ assert(kiwiList.dropdown==replacement and kiwiText.font[1]=='eui-font','actual K
 assert(KiwiFarm:PLAYER_REGEN_ENABLED()=='native-combat-end'and fullRefreshes==0)
 kiwiList:Hide();kiwiSub:Hide();flush()
 kiwiModule.enabled=false;KiwiFarm:ShowMenu()
+for _,fn in ipairs(looks)do fn()end;flush()
+assert(statsText.font[1]=='user-font'and statsText.font[2]==20 and statsText.font[3]=='OUTLINE',
+    'disabled KiwiFarm did not restore native stats typography')
 assert(kiwiText.font[1]=='native-font'and ownLayer.alpha==0,'disabled KiwiFarm menu styled')
 kiwiList:Hide();kiwiSub:Hide();flush();kiwiModule.enabled=true;combat=true
 KiwiFarm:ShowMenu()
@@ -328,6 +365,8 @@ kiwiList:Hide();kiwiSub:Hide();flush()
 kiwiList.dropdown,kiwiList.shown=unrelated,true
 ns.RefreshPopupMenusNow()
 assert(kiwiText.font[1]=='native-font'and ownLayer.alpha==0,'unrelated menu inherited KiwiFarm skin')
+assert(nativeArrow.alpha==0.8 and KiwiTestRowCheck.alpha==0.8 and chevron.alpha==0,
+    'native menu artwork not restored for unrelated owner')
 local aa,bb,cc=kiwiRow.callback();assert(aa=='session-native'and bb==nil and cc==23)
 assert(kiwiText.color[2]==0.82,'KiwiFarm semantic text colours changed')
 assert(#errors==0,table.concat(errors,'\n'))

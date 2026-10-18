@@ -247,3 +247,89 @@ assert(modernText:GetFontObject() == nativeFont and modern.NineSlice.alpha == 1,
 flush()
 assert(#errors == 0, table.concat(errors, '\n'))
 print('PASS: scoped legacy/library popup/submenu styling, native reuse/restoration, preserved emotes/actions/colors, live accents, independent toggles and combat deferral')
+
+-- KiwiFarm completion must repaint reused lists after native reconstruction,
+-- without queuing a full stats-window scan. Use the real guarded hook helper.
+assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
+local kiwiConfig
+KiwiFarm = nil
+ns.RegisterScopedSkin = function(id, _, config) if id == 'KiwiFarm' then kiwiConfig = config end end
+assert(loadfile('EUIAddonSkins/Skins/KiwiFarm.lua'))('EUIAddonSkins', ns)
+assert(kiwiConfig and not kiwiConfig.available(), 'missing KiwiFarm reported available')
+local kiwiModule = {enabled=true}
+local fullRefreshes, nativeOpens = 0, 0
+KiwiFarm = frame('Frame', 'KiwiFarm')
+KiwiFarmPopupMenu = frame('Frame', 'KiwiFarmPopupMenu')
+local kiwiOwner = KiwiFarmPopupMenu
+local kiwiList = frame('Frame', 'DropDownList1')
+kiwiList.MenuBackdrop = frame('Frame', nil, kiwiList)
+local kiwiRow = frame('Button', nil, kiwiList)
+local kiwiText = region('FontString');kiwiRow.regions={kiwiText}
+kiwiRow.GetFontString=function()return kiwiText end
+kiwiRow.callback=function()return 'session-native',nil,23 end
+local kiwiSub = frame('Frame', 'DropDownList2')
+kiwiSub.MenuBackdrop=frame('Frame',nil,kiwiSub)
+local subRow=frame('Button',nil,kiwiSub);local subText=region('FontString');subRow.regions={subText}
+function KiwiFarm:ShowMenu(newOwner)
+    nativeOpens=nativeOpens+1
+    if newOwner then kiwiOwner=newOwner end
+    kiwiList.dropdown,kiwiList.shown=kiwiOwner,true
+    if kiwiList.hooks.OnShow then kiwiList.hooks.OnShow()end
+    -- Renderer rebuilding after OnShow can overwrite an early skin pass.
+    kiwiText:SetFont('native-font',13,'OUTLINE')
+    kiwiSub.dropdown,kiwiSub.shown=kiwiRow,true
+    subText:SetFont('native-font',13,'OUTLINE')
+    return 'kiwi-native',nil,nativeOpens
+end
+function KiwiFarm:PLAYER_REGEN_ENABLED()return 'native-combat-end'end
+local H=ns.CreateSkinHelper(S,kiwiModule)
+local C={H=H,MenuOwner=function(owner)ns.BindPopupOwner(S,kiwiModule,owner)end}
+local function fullRefresh()fullRefreshes=fullRefreshes+1 end
+kiwiConfig.hooks(C,fullRefresh)
+assert(kiwiConfig.available())
+local x,y,z=KiwiFarm:ShowMenu()
+assert(x=='kiwi-native'and y==nil and z==1,'KiwiFarm ShowMenu native returns changed')
+assert(kiwiText.font[1]=='eui-font'and subText.font[1]=='eui-font','KiwiFarm completed menu did not repaint')
+assert(fullRefreshes==0,'KiwiFarm menu unnecessarily refreshes main stats window')
+local ownLayer=kiwiList.children[#kiwiList.children]
+local stableChildren=#kiwiList.children+#kiwiSub.children
+local stableShowHook=KiwiFarm.ShowMenu
+for i=1,100 do
+    kiwiList:Hide();kiwiSub:Hide();flush()
+    assert(kiwiText.font[1]=='native-font' and ownLayer.alpha==0,'KiwiFarm hide failed native restoration')
+    kiwiConfig.hooks(C,fullRefresh)
+    local result,empty,count=KiwiFarm:ShowMenu()
+    assert(result=='kiwi-native'and empty==nil and count==i+1)
+    assert(kiwiText.font[1]=='eui-font'and subText.font[1]=='eui-font'and ownLayer.alpha==1,
+        'KiwiFarm second/repeated open exposed native menu')
+end
+assert(KiwiFarm.ShowMenu==stableShowHook and #kiwiList.children+#kiwiSub.children==stableChildren,
+    'KiwiFarm repeated opens duplicated hooks or visual layers')
+assert(fullRefreshes==0,'KiwiFarm repeated opens queued stats scans')
+local dynamicRow=frame('Button',nil,kiwiSub)
+local dynamicText=region('FontString');dynamicRow.regions={dynamicText}
+UIDropDownMenu_AddButton()
+assert(dynamicText.font[1]=='eui-font'and fullRefreshes==0,'dynamic KiwiFarm submenu row missed styling')
+-- Named global and active launcher can differ after native recreation.
+kiwiList:Hide();kiwiSub:Hide();flush()
+local replacement=frame('Frame');replacement.name='KiwiFarmPopupMenu'
+KiwiFarm:ShowMenu(replacement)
+assert(kiwiList.dropdown==replacement and kiwiText.font[1]=='eui-font','actual KiwiFarm owner not registered')
+assert(KiwiFarm:PLAYER_REGEN_ENABLED()=='native-combat-end'and fullRefreshes==0)
+kiwiList:Hide();kiwiSub:Hide();flush()
+kiwiModule.enabled=false;KiwiFarm:ShowMenu()
+assert(kiwiText.font[1]=='native-font'and ownLayer.alpha==0,'disabled KiwiFarm menu styled')
+kiwiList:Hide();kiwiSub:Hide();flush();kiwiModule.enabled=true;combat=true
+KiwiFarm:ShowMenu()
+assert(kiwiText.font[1]=='native-font','KiwiFarm menu styled during combat')
+combat=false;events.scripts.OnEvent(events,'PLAYER_REGEN_ENABLED');flush()
+assert(kiwiText.font[1]=='eui-font'and fullRefreshes==0,'KiwiFarm combat recovery lost styling')
+kiwiList:Hide();kiwiSub:Hide();flush()
+kiwiList.dropdown,kiwiList.shown=unrelated,true
+ns.RefreshPopupMenusNow()
+assert(kiwiText.font[1]=='native-font'and ownLayer.alpha==0,'unrelated menu inherited KiwiFarm skin')
+local aa,bb,cc=kiwiRow.callback();assert(aa=='session-native'and bb==nil and cc==23)
+assert(kiwiText.color[2]==0.82,'KiwiFarm semantic text colours changed')
+assert(#errors==0,table.concat(errors,'\n'))
+print('BENCH KiwiFarm 100 repeated opens: full-window refreshes=0; new layers=0; duplicate hooks=0 (mock)')
+print('PASS: KiwiFarm repeat opens/submenus/owner recreation, native actions/returns/colours, disable/combat, bounded layers/hooks')

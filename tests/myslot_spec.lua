@@ -78,6 +78,9 @@ local function frame(kind,parent)
  function f:GetPoint()return table.unpack(self.points[1]or{})end
  function f:SetText(v)if self.label then self.label:SetText(v)end end
  function f:IsEnabled()return self.enabled end
+ function f:Enable()self.enabled=true end
+ function f:Disable()self.enabled=false end
+ function f:SetEnabled(v)self.enabled=v end
  function f:IsMultiLine()return self.multiline end
  function f:GetFont()return table.unpack(self.font or{'native',12,''})end
  function f:SetFont(...)self.font={...};writes=writes+1 end
@@ -99,7 +102,7 @@ S.Shell=function(f,opts)f.shell=opts end
 S.Panel=function(f,opts)f.panel=true;f.panelOptions=opts end
 S.Button=function(f,keys)f.button=true;f.keep=keys;local keep={};for _,key in ipairs(keys or{})do keep[f[key]]=true end;for _,r in ipairs(f.regions)do if r.kind=='Texture'and not keep[r]then r.alpha=0 end end end
 S.Dropdown=function(f)S.Button(f);f.dropdown=true;f.arrow=f:CreateTexture(nil,'OVERLAY');f.arrow:SetAtlas('Azerite-PointingArrow')end
-S.Checkbox=function(f)f.checkbox=true end
+S.Checkbox=function(f,options)f.checkbox=true;f.checkboxOptions=options end
 S.PageButton=function(f,glyph)f.glyph=glyph;S.Button(f)end
 S.StateButtonLabel=function()end
 S.EditBox=function(f,opts)f.input=opts end
@@ -144,6 +147,11 @@ local danger=label(panel,'|cffff0000DANGEROUS|r')
 local clear=button(panel,'Remove all Macros',function()clears=clears+1;return'confirmation-native'end)
 local checkbox=frame('CheckButton',panel);checkbox.text=label(checkbox,'Allow |cffff0000CLEAR|r before Import');checkbox.checked=true
 checkbox.scripts.OnClick=function()checkbox.checked=not checkbox.checked;return'check-native'end
+local checkedMark,disabledMark=checkbox:CreateTexture(),checkbox:CreateTexture()
+checkedMark:Show();disabledMark:Hide()
+checkbox.GetCheckedTexture=function()return checkedMark end
+checkbox.GetDisabledCheckedTexture=function()return disabledMark end
+
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins',ns)
 local baseHelper=ns.CreateSkinHelper;local scans=0
 ns.CreateSkinHelper=function(...)local H=baseHelper(...);local scan=H.Scan;H.Scan=function(...)scans=scans+1;return scan(...)end;return H end
@@ -172,6 +180,16 @@ unsaved:SetText('|cffffff00Unsaved|r')
 assert(unsaved.text=='Unsaved'and unsaved.color[1]==.7 and talents.color[1]==.7 and title.color[1]==.7)
 assert(status.text=='|cffff0000Talents differ|r'and danger.text=='|cffff0000DANGEROUS|r','semantic warnings changed')
 assert(checkbox.text.text:find('|cffff0000CLEAR|r',1,true)and checkbox.checked)
+assert(checkbox.checkboxOptions.borderInset==4 and checkbox.checkboxOptions.hover==.05)
+assert(checkedMark.color[1]==accent and disabledMark.color[1]==.4 and checkedMark.point[4]==-6)
+assert(checkedMark:IsShown()and not disabledMark:IsShown(),'skin changed native check visibility')
+local checkScans,checkRegions,checkEnable=scans,#checkbox.regions,checkbox.Enable
+for i=1,100 do
+ checkbox:Disable();assert(checkbox.text.color[1]==.5)
+ checkbox:Enable();assert(checkbox.text.color[1]==.9)
+end
+flush();assert(scans==checkScans and #checkbox.regions==checkRegions,'checkbox state changes scanned or allocated')
+
 assert(editorPanel.panel and editorPanel.panelOptions.inset==false and editor.content=='encoded\nprofile|cffffff00NOT A HEADING|r'and not editor.input and editor.maxLetters==99999999)
 assert(editor.scripts.OnTextChanged==nativeChange and editor.scripts.OnChar==nativeChange,'native editor callbacks replaced')
 assert(slider.thumb.w==16 and slider.thumb.h==32 and slider.thumb.alpha==0,'native scrollbar hit area resized')
@@ -211,6 +229,7 @@ manager:OpenMenu(profile,list);assert(bindings==2)
 assert(#radio.initializers==1,'reopening duplicated modern menu art initializer')
 accent=.4;for _,fn in ipairs(looks)do fn()end;flush()
 assert(radioRow.leftTexture2.color[1]==.4,'open modern menu did not follow accent change')
+assert(checkedMark.color[1]==.4 and checkbox.Enable==checkEnable,'checkbox theme or hook reuse failed')
 for i=1,20 do main:Show();flush()end
 assert(objects==stableObjects+3,'reopening allocated skin objects')
 local current=objects;local nativeClick=import.scripts.OnClick
@@ -218,8 +237,8 @@ m.refresh();flush();assert(objects==current and import.scripts.OnClick==nativeCl
 assert(import.scripts.OnClick()=='import-native'and imports==1)
 assert(clear.scripts.OnClick()=='confirmation-native'and clears==1)
 local old=checkbox.checked;assert(checkbox.scripts.OnClick()=='check-native'and checkbox.checked~=old)
-enabled=false;local saved=bindings;manager:OpenMenu(profile,list);assert(bindings==saved,'disabled Myslot menu processed')
-enabled=true;combat=true;scans=0;m.refresh();flush();assert(scans==0,'combat scanned Myslot')
+enabled=false;checkbox:Disable();assert(checkbox.text.color[1]==.9,'disabled skin repainted checkbox');local saved=bindings;manager:OpenMenu(profile,list);assert(bindings==saved,'disabled Myslot menu processed')
+enabled=true;combat=true;checkbox:Enable();assert(checkbox.text.color[1]==.9);scans=0;m.refresh();flush();assert(scans==0,'combat scanned Myslot')
 combat=false;for _,event in ipairs(events)do if event.events and event.events.PLAYER_REGEN_ENABLED then event.scripts.OnEvent(event,'PLAYER_REGEN_ENABLED')end end;flush()
 assert(scans>0 and #errors==0,table.concat(errors,'\n'))
 local latePanel=frame();local lateAction=button(latePanel,'Open Myslot',function()return'late-native'end)

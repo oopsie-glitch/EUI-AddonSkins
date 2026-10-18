@@ -256,8 +256,34 @@ ns.RegisterScopedSkin('Myslot','Myslot',{
             return true
         end
         if kind=='CheckButton' then
-            if not painted[f]then C.S.Checkbox(f);painted[f]=true end
-            if f.text and f.text.SetTextColor then f.text:SetTextColor(.9,.9,.92)end
+            if not painted[f]then
+                local function PaintCheck()
+                    if InCombatLockdown and InCombatLockdown()then C.module.refresh();return end
+                    local r,g,b=C.S.GetAccentColor()
+                    for i,getter in ipairs({'GetCheckedTexture','GetDisabledCheckedTexture'})do
+                        local mark=f[getter]and C.H.Texture(f[getter](f))
+                        if mark then
+                            -- Reuse native visibility, including disabled checked state.
+                            mark:SetVertexColor(1,1,1,1)
+                            if i==1 then mark:SetColorTexture(r,g,b,1)
+                            else mark:SetColorTexture(.4,.4,.4,.8)end
+                            mark:ClearAllPoints()
+                            mark:SetPoint('TOPLEFT',f,'TOPLEFT',6,-6)
+                            mark:SetPoint('BOTTOMRIGHT',f,'BOTTOMRIGHT',-6,6)
+                        end
+                    end
+                    local name=f.GetName and f:GetName()
+                    local text=f.text or f.Text or name and _G[name..'Text']
+                    if C.H.Allowed(text)and text.SetTextColor then
+                        if f.IsEnabled and not f:IsEnabled()then text:SetTextColor(.5,.5,.5)
+                        else text:SetTextColor(.9,.9,.92)end
+                    end
+                end
+                C.S.Checkbox(f,{borderInset=4,hover=.05});painted[f]=PaintCheck
+                -- Repaint only this control; never rescan the editor on state changes.
+                for _,method in ipairs({'Enable','Disable','SetEnabled'})do C.H.Hook(f,method,PaintCheck)end
+            end
+            painted[f]()
             return true
         end
         if kind=='Button' then

@@ -721,11 +721,11 @@ end, function(S, module)
         if CombatLocked() then applyWaiting = true; return end
         local texture = H.Texture(frame.texture)
         if texture then
-            local path = "Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationArrow.tga"
+            local path = "Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationChevron.tga"
             if texture:GetTexture() ~= path or arrowTextureSeen ~= texture then
                 texture:SetTexture(path)
-                -- Original 64px north-up pointer, like RXP's native canvas.
-                -- Keep its full silhouette and RXP's own rotation/size driver.
+                -- High-resolution north-up chevron on the full square canvas.
+                -- Keep RXP's own rotation, center and configured size.
                 texture:SetTexCoord(0, 1, 0, 1)
                 arrowTextureSeen = texture
             end

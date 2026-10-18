@@ -53,8 +53,12 @@ These are traversal/write/allocation counts from mocks. They do not establish ac
 
 ## Navigation arrow
 
-- Original north-up filled arrowhead with a rear notch and dark outline. A neutral white fill takes the live accent tint; the dark outline maintains contrast on bright scenery. `scripts/build_navigation_arrow.py` regenerates the uncompressed 64 x 64 RGBA TGA using Pillow (development only).
-- Use the full canvas, retaining RestedXP's size/rotation center. At its default 32-unit size the visible pointer is approximately 30 x 30 units, close to the original's 30 x 32. No independent size multiplier or extra padding shrinks the arrow. Native scaling still applies.
+- Original north-up open chevron with long legs and a fine dark edge. A neutral white stroke takes the live accent tint; its center remains transparent. `scripts/build_navigation_arrow.py` regenerates the uncompressed 128 x 128 RGBA TGA using Pillow (development only).
+- Use the full canvas, retaining RestedXP's size/rotation center. At its default 32-unit size the visible pointer is approximately 30 x 27 units, close to the original's 30 x 32. No independent size multiplier or extra padding shrinks the arrow. Native scaling still applies.
 - Use the public font preference for the existing step/distance label, preserving native text, inline quest colours and configured font size. No background panel or extra arrow frames/textures are created.
 - Reapply after native `arrowFrame:UpdateVisuals` and `SetupArrow`, or a full theme refresh; defer combat work through the existing dirty flag. RestedXP retains its direction/rotation, distance, wrong-continent/visibility logic, size, position, dragging and OnUpdate callback. No setter hooks are added to rotation or distance updates.
 - Regression checks cover the full-canvas coordinates, native setup return values, rotation and text ownership, native scale/drag actions, theme restoration/accent changes, disabled styling and combat deferral. One hundred mocked direction ticks perform no additional texture/font writes, allocate no visuals and queue no skin refresh. Packaging validates and includes the new TGA; development scripts remain outside the ZIP.
+
+The open chevron replaces the filled-pointer experiment. It uses purpose-drawn 128px artwork instead of enlarging EUI's 30px menu caret, with taller proportions to retain near-native visual size. Rendering and rotation remain native; no runtime objects, callbacks or scaling overrides were added.
+
+The replacement uses `Media/NavigationChevron.tga` so an already-running client does not reuse the filled-pointer texture cached under the previous filename. The install ZIP contains only the current artwork.

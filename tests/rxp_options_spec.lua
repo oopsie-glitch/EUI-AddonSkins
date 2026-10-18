@@ -281,7 +281,7 @@ ns.CreateSkinHelper=function(...)
     return h
 end
 m.install(S,m);flush()
-local arrowPath='Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationArrow.tga'
+local arrowPath='Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationChevron.tga'
 assert(arrow.texture.crop[1]==0 and arrow.texture.crop[2]==1 and arrow.texture.crop[3]==0 and arrow.texture.crop[4]==1,
     'pointer canvas was cropped or stretched')
 assert(arrow.texture.path==arrowPath and arrow.texture.color[1]==accent and arrow.texture.rotation==.75,

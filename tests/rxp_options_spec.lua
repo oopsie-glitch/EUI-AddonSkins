@@ -282,7 +282,7 @@ ns.CreateSkinHelper=function(...)
     return h
 end
 m.install(S,m);flush()
-local arrowPath='Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationCaret.tga'
+local arrowPath='Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationCaretOutlined.tga'
 assert(arrow.texture.crop[1]==.1 and arrow.texture.crop[2]==.9 and arrow.texture.crop[3]==.1 and arrow.texture.crop[4]==.9,
     'shallow chevron proportions changed')
 assert(math.abs(arrow.texture.width-35.2)<.00001 and math.abs(arrow.texture.height-35.2)<.00001,

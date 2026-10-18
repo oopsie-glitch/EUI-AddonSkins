@@ -281,9 +281,9 @@ ns.CreateSkinHelper=function(...)
     return h
 end
 m.install(S,m);flush()
-local arrowPath='Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationChevron.tga'
-assert(arrow.texture.crop[1]==0 and arrow.texture.crop[2]==1 and arrow.texture.crop[3]==0 and arrow.texture.crop[4]==1,
-    'pointer canvas was cropped or stretched')
+local arrowPath='Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-up3.png'
+assert(arrow.texture.crop[1]==.1 and arrow.texture.crop[2]==.9 and arrow.texture.crop[3]==.1 and arrow.texture.crop[4]==.9,
+    'original EUI chevron proportions changed')
 assert(arrow.texture.path==arrowPath and arrow.texture.color[1]==accent and arrow.texture.rotation==.75,
     'arrow artwork/accent changed its bearing')
 assert(arrow.text.font=='eui' and arrow.text.text=='Step 2\n(71yd)' and arrow.width==32 and arrow.height==32,

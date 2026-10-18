@@ -286,7 +286,7 @@ local function Style(f, binding, owner)
             if binding.options and binding.options.chevrons then Chevron(r, button, arrow)
             else Tint(r, arrow, red, green, blue, 1) end
             local highlight = button.Highlight or (button.GetHighlightTexture and button:GetHighlightTexture())
-            Tint(r, highlight, 1, 1, 1, 0.1)
+            Tint(r, highlight, 1, 1, 1, binding.options and binding.options.hoverAlpha or 0.1)
             local check, uncheck = button.Check, button.UnCheck
             if binding.options and binding.options.chevrons then
                 local buttonName = button.GetName and button:GetName()

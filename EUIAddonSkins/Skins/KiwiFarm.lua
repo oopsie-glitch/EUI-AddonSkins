@@ -2,7 +2,7 @@ local ADDON, ns = ...
 local function DefineSkin()
 local context, looksBound
 local fonts = setmetatable({}, {__mode = 'k'})
-local menuOptions = {noAccent = true, chevrons = true}
+local menuOptions = {noAccent = true, chevrons = true, hoverAlpha = 0.25}
 local headingKeys = {'Kiwi Farm [/kfarm]', 'Statistics', 'Settings'}
 local headingLabels = {}
 local function StatsFont(S, text)

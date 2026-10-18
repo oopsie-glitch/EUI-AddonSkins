@@ -273,6 +273,7 @@ function kiwiText:GetTextColor()return table.unpack(self.color)end
 function kiwiText:SetTextColor(...)self.color={...}end
 function kiwiText:GetText()return self.text end
 local nativeArrow=region();kiwiRow.ExpandArrow=nativeArrow
+local kiwiHighlight=region();kiwiRow.GetHighlightTexture=function()return kiwiHighlight end
 local previousCreate=kiwiRow.CreateTexture
 function kiwiRow:CreateTexture(...)
     local texture=previousCreate(self,...)
@@ -317,6 +318,7 @@ assert(kiwiText.font[1]=='eui-font'and subText.font[1]=='eui-font','KiwiFarm com
 assert(fullRefreshes==0,'KiwiFarm menu unnecessarily refreshes main stats window')
 local ownLayer=kiwiList.children[#kiwiList.children]
 assert(not ownLayer.accent,'KiwiFarm menu retains repeated top accent bars')
+assert(kiwiHighlight.color[4]==0.25,'KiwiFarm hover contrast did not increase')
 assert(nativeArrow.alpha==0 and KiwiTestRowCheck.alpha==0,'native gold arrow/checkbox was not replaced')
 local chevron=kiwiRow.regions[2]
 assert(chevron.path:match('eui%-arrow%-right.png')and chevron.color[1]==0.75,'EUI neutral chevron missing')
@@ -367,6 +369,7 @@ ns.RefreshPopupMenusNow()
 assert(kiwiText.font[1]=='native-font'and ownLayer.alpha==0,'unrelated menu inherited KiwiFarm skin')
 assert(nativeArrow.alpha==0.8 and KiwiTestRowCheck.alpha==0.8 and chevron.alpha==0,
     'native menu artwork not restored for unrelated owner')
+assert(kiwiHighlight.color[4]==1,'KiwiFarm hover tint leaked to an unrelated menu')
 local aa,bb,cc=kiwiRow.callback();assert(aa=='session-native'and bb==nil and cc==23)
 assert(kiwiText.color[2]==0.82,'KiwiFarm semantic text colours changed')
 assert(#errors==0,table.concat(errors,'\n'))

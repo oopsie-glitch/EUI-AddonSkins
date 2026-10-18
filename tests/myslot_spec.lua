@@ -157,6 +157,12 @@ assert(not visual(open),'hidden unregistered canvas was guessed')
 SettingsPanel:DisplayCategory(category);flush()
 assert(visual(open) and visual(clear) and checkbox.checkbox,'visible Myslot canvas fallback missed')
 assert(visual(open).panelOptions.noBorder and visual(open).panelOptions.inset==false,'Myslot buttons retain boxed borders')
+assert(#visual(open).optionsEdges==4 and visual(open).optionsEdges[1].h==1
+ and visual(open).optionsEdges[3].w==1 and visual(clear).optionsEdges[1].alpha==1,
+ 'Interface options action buttons lack subtle outlines')
+for _,action in ipairs({export,import,split,profile,share})do
+ assert(not visual(action).optionsEdges,'Interface-only outlines leaked to the main Myslot window')
+end
 open.hooks.OnEnter(open);assert(visual(open).hover.alpha==1,'matte action lacks hover feedback')
 open.hooks.OnLeave(open);assert(visual(open).hover.alpha==0)
 assert(visual(split).glyph and visual(profile).glyph and profile.art.alpha==1,'numeric-art split/profile affordances lost')

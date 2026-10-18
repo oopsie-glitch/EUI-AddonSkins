@@ -99,6 +99,26 @@ local function Control(C,f,glyph,keep)
         Label()
     end
     layer:SetFrameLevel(math.max(0,f:GetFrameLevel()-1))
+    local parent=f.GetParent and f:GetParent()
+    local optionsButton=false
+    for _=1,12 do
+        if not parent then break end
+        if parent==canvas then optionsButton=true;break end
+        parent=parent.GetParent and parent:GetParent()
+    end
+    if optionsButton and not layer.optionsEdges then
+        layer.optionsEdges={}
+        for _,side in ipairs({'TOP','BOTTOM','LEFT','RIGHT'})do
+            local edge=layer:CreateTexture(nil,'BORDER');edge:SetColorTexture(.26,.26,.26,1)
+            if side=='TOP'or side=='BOTTOM'then
+                edge:SetPoint(side..'LEFT',layer,side..'LEFT');edge:SetPoint(side..'RIGHT',layer,side..'RIGHT');edge:SetHeight(1)
+            else
+                edge:SetPoint('TOP'..side,layer,'TOP'..side);edge:SetPoint('BOTTOM'..side,layer,'BOTTOM'..side);edge:SetWidth(1)
+            end
+            layer.optionsEdges[#layer.optionsEdges+1]=edge
+        end
+    end
+    for _,edge in ipairs(layer.optionsEdges or {})do edge:SetAlpha(optionsButton and 1 or 0)end
     return layer
 end
 local function Captions(C, f)

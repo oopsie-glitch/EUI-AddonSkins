@@ -12,6 +12,8 @@ Wago publication. RXP and KiwiFarm alpha changes remain separate.
 - Render borderless action controls through owned, mouse-transparent public
   skinning-API Panel layers with a readable hover fill. Keep backgrounds below
   text after reparenting/frame-level changes. Preserve native button states/actions.
+- Add a subtle one-unit grey outline only to action buttons descended from the
+  Myslot Interface options canvas. Main-window and menu controls remain borderless.
 - Remove both top and bottom window strips. Use a non-inset editor panel so the
   editor does not become a large black block against the shell.
 - Accent the title, Unsaved and Talents captions. Keep danger/CLEAR, talent-status,

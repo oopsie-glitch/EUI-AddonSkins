@@ -479,6 +479,11 @@ local function buttonLayer(w)
     for _,child in ipairs(w.frame.children)do if child.skinMethod=='Button' then return child end end
     error('missing button background')
 end
+local actionEdges=buttonLayer(button).rxpActionEdges
+assert(#actionEdges==4 and actionEdges[1].height==1 and actionEdges[3].width==1,
+    'RXP options action lacks a thin rectangular outline')
+assert(actionEdges[1].color[1]==0.26 and actionEdges[1].color[4]==1,
+    'RXP action outline is not the intended subtle neutral grey')
 local function readableLayer(w)
     assert(buttonLayer(w):GetFrameLevel()<w.frame:GetFrameLevel(),
         'preview rebuild left a dark background above clickable button text')
@@ -543,6 +548,8 @@ assert(button.text.font=='native-font' and button.text.textColor[1]==.12,
     'active state callback ignored foreign widget ownership')
 button.userdata.appName='RestedXP Guides'
 button.frame:Hide();assert(button.native.alpha==1 and button.text.font=='native-font','pooled button not restored')
+assert(buttonLayer(button).alpha==0 and buttonLayer(button).rxpActionEdges==actionEdges,
+    'RXP action outline leaked after pooling or was recreated')
 button.userdata={} -- standalone AceGUI users do not necessarily inject appName
 button.parent=nil;button.frame.hidden=false
 if button.frame.hooks.OnShow then button.frame.hooks.OnShow(button.frame)end

@@ -88,6 +88,24 @@ local function OptionsSkin(S, H, module, addon)
             layer = CreateFrame(method == 'PageButton' and 'Button' or 'Frame', nil, host)
             layer:SetAllPoints(host); layer:EnableMouse(false)
             S[method or 'Panel'](layer, options or {noBorder = true})
+            if method == 'Button' then
+                -- Options actions need a quiet outline against the page fill,
+                -- like EUI's Escape-menu buttons. Keep it on our disposable
+                -- visual layer so pooled native buttons remain untouched.
+                layer.rxpActionEdges = {}
+                for _, side in ipairs({'TOP', 'BOTTOM', 'LEFT', 'RIGHT'}) do
+                    local edge = layer:CreateTexture(nil, 'BORDER')
+                    edge:SetColorTexture(0.26, 0.26, 0.26, 1)
+                    if side == 'TOP' or side == 'BOTTOM' then
+                        edge:SetPoint(side .. 'LEFT', layer, side .. 'LEFT')
+                        edge:SetPoint(side .. 'RIGHT', layer, side .. 'RIGHT'); edge:SetHeight(1)
+                    else
+                        edge:SetPoint('TOP' .. side, layer, 'TOP' .. side)
+                        edge:SetPoint('BOTTOM' .. side, layer, 'BOTTOM' .. side); edge:SetWidth(1)
+                    end
+                    layer.rxpActionEdges[#layer.rxpActionEdges + 1] = edge
+                end
+            end
             d.layers[key] = layer
             -- AceGUI reparents pooled controls during Open/confirmation rebuilds.
             -- Keep the owned background below native text after hierarchy changes.

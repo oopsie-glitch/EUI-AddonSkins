@@ -38,3 +38,10 @@ change. Their coverage remains separate from AceConfig's shared confirmation.
 Automated tests cover ownership routing after native callbacks, fonts/actions,
 reopening, allocation stability, disabled skins and combat/protected guards.
 Actual WoW rendering and taint behaviour have not been verified in this environment.
+
+## Options button contrast
+
+RXP options action buttons now have a neutral grey, one-unit outline inspired by
+EUI's Escape-menu controls. The four edges belong to each existing owned visual
+layer, are created once and disappear with it on pooled reuse. Button actions,
+text, hit areas, inputs/dropdowns and confirmation-dialog styling are unchanged.

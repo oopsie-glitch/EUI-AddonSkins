@@ -8,6 +8,103 @@ local applying = false
 local menuFonts, fontSerial = {}, 0
 local modernInitializers = setmetatable({}, {__mode = "k"})
 
+-- Opt-in, texture-only decoration for shared confirmation dialogs. Native
+-- controls, fonts, scripts and layout stay owned by the dialog's library.
+local dialogRecords = setmetatable({}, {__mode = "k"})
+function ns.StyleTextureDialog(S, module, frame, active)
+    if not frame or not frame.GetObjectType then return end
+    local d = dialogRecords[frame]
+    local function RestoreDialog()
+        if not d or not d.active then return end
+        for region, alpha in pairs(d.alpha) do region:SetAlpha(alpha) end
+        for host, saved in pairs(d.backdrops) do
+            host:SetBackdrop(saved.value)
+            if saved.bg then host:SetBackdropColor(unpack(saved.bg)) end
+            if saved.edge then host:SetBackdropBorderColor(unpack(saved.edge)) end
+        end
+        for _, layer in pairs(d.layers) do layer:SetAlpha(0) end
+        for _, hover in ipairs(d.hovers) do hover:SetAlpha(0) end
+        d.active, d.alpha, d.backdrops = false, {}, {}
+    end
+    if not active or not ns.IsEnabled(module) then RestoreDialog(); return end
+    if InCombatLockdown and InCombatLockdown() then return end
+    if (frame.IsForbidden and frame:IsForbidden()) or (frame.IsProtected and frame:IsProtected()) then return end
+    if not d then
+        d = {alpha = {}, backdrops = {}, layers = {}, hovers = {}, looks = {}}
+        dialogRecords[frame] = d
+        -- A shared popup must start native on every acquisition, including one
+        -- from an addon which has never opted in to this helper.
+        -- Show may be called again while already visible; OnShow alone would
+        -- miss a different addon replacing the current confirmation in place.
+        hooksecurefunc(frame, 'Show', RestoreDialog)
+        frame:HookScript('OnHide', RestoreDialog)
+    end
+    d.S, d.module = S, module
+    if S.OnLooksChanged and not d.looks[S] then
+        d.looks[S] = true
+        S.OnLooksChanged(function()
+            if d.active and d.S == S then ns.StyleTextureDialog(S, d.module, frame, true) end
+        end)
+    end
+    d.active = true
+    local function FadeArt(host)
+        if not host or not host.GetRegions then return end
+        if (host.IsForbidden and host:IsForbidden()) or (host.IsProtected and host:IsProtected()) then return end
+        for _, region in ipairs({host:GetRegions()}) do
+            if region.GetObjectType and region:GetObjectType() == 'Texture' then
+                if d.alpha[region] == nil then d.alpha[region] = region:GetAlpha() end
+                region:SetAlpha(0)
+            end
+        end
+        if host.GetBackdrop and host.SetBackdrop and not d.backdrops[host] then
+            local value = host:GetBackdrop()
+            if value then
+                d.backdrops[host] = {value = value,
+                    bg = host.GetBackdropColor and {host:GetBackdropColor()},
+                    edge = host.GetBackdropBorderColor and {host:GetBackdropBorderColor()}}
+                host:SetBackdrop(nil)
+            end
+        end
+    end
+    local function Layer(host, button)
+        local layer = d.layers[host]
+        if not layer then
+            layer = CreateFrame('Frame', nil, host)
+            layer:SetAllPoints(host); layer:EnableMouse(false)
+            S.Panel(layer, {noBorder = true})
+            d.layers[host] = layer
+            if button then
+                local hover = layer:CreateTexture(nil, 'OVERLAY')
+                d.hovers[#d.hovers + 1] = hover
+                hover:SetAllPoints(layer); hover:SetColorTexture(1, 1, 1, 0.08); hover:SetAlpha(0)
+                host:HookScript('OnEnter', function() if d.active then hover:SetAlpha(1) end end)
+                host:HookScript('OnLeave', function() hover:SetAlpha(0) end)
+                host:HookScript('OnHide', function() hover:SetAlpha(0) end)
+            end
+        end
+        layer:SetFrameLevel(math.max(0, host:GetFrameLevel() - 1))
+        layer:SetAlpha(1)
+    end
+    -- AceConfig's anonymous DialogBorderOpaqueTemplate child contains the
+    -- frame art. Never traverse buttons or their FontStrings.
+    FadeArt(frame)
+    for _, child in ipairs({frame:GetChildren()}) do
+        if child ~= frame.accept and child ~= frame.cancel and not d.layers[child]
+            and child:GetObjectType() == 'Frame' then
+            local ownLayer = false
+            for _, layer in pairs(d.layers) do if child == layer then ownLayer = true; break end end
+            if not ownLayer then
+                FadeArt(child)
+                if child.NineSlice then FadeArt(child.NineSlice) end
+            end
+        end
+    end
+    Layer(frame)
+    for _, button in pairs({accept = frame.accept, cancel = frame.cancel}) do
+        FadeArt(button); Layer(button, true)
+    end
+end
+
 local function Allowed(f)
     return f and f.GetObjectType and not (f.IsForbidden and f:IsForbidden())
         and not (f.IsProtected and f:IsProtected())

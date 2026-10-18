@@ -247,3 +247,50 @@ assert(modernText:GetFontObject() == nativeFont and modern.NineSlice.alpha == 1,
 flush()
 assert(#errors == 0, table.concat(errors, '\n'))
 print('PASS: scoped legacy/library popup/submenu styling, native reuse/restoration, preserved emotes/actions/colors, live accents, independent toggles and combat deferral')
+
+-- Shared confirmation dialogs: texture-only, no font or action setters.
+local popup = frame('Frame')
+function popup:Show() self.shown = true end
+popup.accept = frame('Button', nil, popup)
+popup.cancel = frame('Button', nil, popup)
+local border = frame('Frame', nil, popup)
+local edge, red = region(), region()
+border.regions = {edge}; popup.accept.regions = {red}
+local text = region('FontString'); popup.regions = {text}
+function text:SetFont() error('confirmation font must remain native') end
+function text:SetTextColor() error('confirmation colour must remain native') end
+local action = function() return 'accepted', nil, 7 end
+popup.accept.scripts.OnClick = action
+local panels = 0
+local dialogLooks = {}
+local dialogSkin = {
+    Panel = function(layer) panels = panels + 1 end,
+    OnLooksChanged = function(fn) dialogLooks[#dialogLooks+1] = fn end,
+}
+module.enabled = true; combat = false; popup.shown = true
+ns.StyleTextureDialog(dialogSkin, module, popup, true)
+assert(edge.alpha == 0 and red.alpha == 0 and text.alpha == 0.8)
+assert(panels == 3 and popup.accept.scripts.OnClick == action)
+local a,b,c = popup.accept.scripts.OnClick(); assert(a=='accepted' and b==nil and c==7)
+for _=1,30 do
+    ns.StyleTextureDialog(dialogSkin, module, popup, true)
+    popup:Hide()
+    assert(edge.alpha==0.8 and red.alpha==0.8)
+    popup:Show()
+    ns.StyleTextureDialog(dialogSkin, module, popup, true)
+end
+assert(panels==3 and #dialogLooks==1, 'popup reopening allocated layers/hooks')
+popup:Show()
+assert(edge.alpha==0.8 and red.alpha==0.8, 'visible popup replacement retained previous owner skin')
+ns.StyleTextureDialog(dialogSkin, module, popup, true)
+ns.StyleTextureDialog(dialogSkin, module, popup, false)
+assert(edge.alpha==0.8 and red.alpha==0.8, 'foreign owner retained dialog skin')
+combat=true;ns.StyleTextureDialog(dialogSkin,module,popup,true)
+assert(edge.alpha==0.8 and panels==3, 'combat created or styled popup')
+combat=false;ns.StyleTextureDialog(dialogSkin,module,popup,true)
+module.enabled=false;dialogLooks[1]()
+assert(edge.alpha==0.8, 'disabled popup skin not restored')
+module.enabled=true;popup.protected=true
+ns.StyleTextureDialog(dialogSkin,module,popup,true)
+assert(edge.alpha==0.8, 'protected popup styled')
+print('PASS: texture-only dialogs preserve fonts/actions; restore ownership/toggle/hide; reuse layers and skip combat/protected frames')

@@ -764,7 +764,7 @@ end, function(S, module)
         if CombatLocked() then applyWaiting = true; return end
         local texture = H.Texture(frame.texture)
         if texture then
-            local path = "Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationChevronStraight.tga"
+            local path = "Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationChevronSmooth.tga"
             if texture:GetTexture() ~= path or arrowTextureSeen ~= texture then
                 texture:SetTexture(path)
                 -- High-resolution shallow chevron; preserve the initial proportions.

@@ -140,6 +140,7 @@ frame = function(kind, name, parent)
     f.color,f.border={0,0,0,1},{1,1,1,1}
     function f:GetFrameLevel() return 6 end
     function f:GetWidth() return self.width or 24 end
+    function f:GetHeight() return self.height or 24 end
     function f:SetFrameLevel(n) self.level=n end
     function f:SetAllPoints(target) self.allPoints=target end
     function f:EnableMouse(value) self.mouse=value end
@@ -281,9 +282,13 @@ ns.CreateSkinHelper=function(...)
     return h
 end
 m.install(S,m);flush()
-local arrowPath='Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-up3.png'
+local arrowPath='Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationCaret.tga'
 assert(arrow.texture.crop[1]==.1 and arrow.texture.crop[2]==.9 and arrow.texture.crop[3]==.1 and arrow.texture.crop[4]==.9,
-    'original EUI chevron proportions changed')
+    'shallow chevron proportions changed')
+assert(math.abs(arrow.texture.width-35.2)<.00001 and math.abs(arrow.texture.height-35.2)<.00001,
+    'artwork is not exactly 10% larger')
+assert(#arrow.texture.points==1 and arrow.texture.points[1][1]=='CENTER' and arrow.texture.points[1][2]==arrow,
+    'enlarged artwork shifted the rotation center')
 assert(arrow.texture.path==arrowPath and arrow.texture.color[1]==accent and arrow.texture.rotation==.75,
     'arrow artwork/accent changed its bearing')
 assert(arrow.text.font=='eui' and arrow.text.text=='Step 2\n(71yd)' and arrow.width==32 and arrow.height==32,
@@ -348,7 +353,10 @@ for _,f in ipairs(events)do if f.events and f.events.PLAYER_REGEN_ENABLED then f
 flush();assert(late.native.alpha==0,'combat-deferred options lost')
 accent=.8;for _,fn in ipairs(looks)do fn()end;flush()
 assert(tab.Text.textColor[1]==.8 and arrow.texture.color[1]==.8,'theme refresh lost selected accent/arrow tint')
-arrow:SetSize(48,48);arrow:UpdateVisuals()
+arrow:SetSize(48,48);arrow.hooks.OnSizeChanged(arrow)
+assert(math.abs(arrow.texture.width-52.8)<.00001 and math.abs(arrow.texture.height-52.8)<.00001,
+    'native size change did not retain 10% enlargement')
+arrow:UpdateVisuals()
 assert(arrow.width==48 and arrow.height==48,'arrow skin overrode native scale setting')
 combat=true
 arrow:UpdateVisuals();assert(arrow.texture.path=='native-arrow','arrow themed during combat')

@@ -714,20 +714,28 @@ end, function(S, module)
         end)
     end
     for _, name in ipairs({"CreateActiveItemFrame", "UpdateItemFrame"}) do H.Hook(addon, name, QueueItems) end
-    local arrowTextureSeen
+    local arrowTextureSeen, arrowWidth, arrowHeight
     local function ApplyArrow()
         local frame = addon.arrowFrame
         if not H.Allowed(frame) then return end
         if CombatLocked() then applyWaiting = true; return end
         local texture = H.Texture(frame.texture)
         if texture then
-            local path = "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-up3.png"
+            local path = "Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationCaret.tga"
             if texture:GetTexture() ~= path or arrowTextureSeen ~= texture then
                 texture:SetTexture(path)
-                -- Use the original house chevron and its original proportions.
-                -- RXP keeps its own rotation, center and configured frame size.
+                -- High-resolution shallow chevron; preserve the initial proportions.
                 texture:SetTexCoord(0.1, 0.9, 0.1, 0.9)
                 arrowTextureSeen = texture
+                arrowWidth, arrowHeight = nil, nil
+            end
+            local width, height = frame:GetWidth(), frame:GetHeight()
+            if arrowWidth ~= width or arrowHeight ~= height then
+                -- Enlarge artwork only; keep native hit area, label and scale setting.
+                texture:ClearAllPoints()
+                texture:SetPoint("CENTER", frame, "CENTER", 0, 0)
+                texture:SetSize(width * 1.1, height * 1.1)
+                arrowWidth, arrowHeight = width, height
             end
             local r, g, b = S.GetAccentColor()
             local cr, cg, cb, ca = texture:GetVertexColor()
@@ -735,6 +743,7 @@ end, function(S, module)
         end
         Font(frame.text, 0.9, 0.9, 0.92)
         H.Hook(frame, "UpdateVisuals", ApplyArrow)
+        H.Script(frame, "OnSizeChanged", ApplyArrow)
     end
     H.Hook(addon, "SetupArrow", ApplyArrow)
     local guideWindowSeen

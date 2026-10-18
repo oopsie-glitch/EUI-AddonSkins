@@ -20,7 +20,7 @@ Reviewed RestedXP v4.11.23 (`41fc6f6fc96b4b9cf2bd4c396634afa5e836b9aa`), matchin
 
 ## Verification
 
-`python3 scripts/package.py` validates Lua syntax, all 20 regression suites, manifests/version consistency and the 38-file, single-folder installation ZIP including MIT LICENSE.
+`python3 scripts/package.py` validates Lua syntax, all 20 regression suites, manifests/version consistency and the 39-file, single-folder installation ZIP including MIT LICENSE.
 
 `tests/rxp_options_spec.lua` exercises native actions/returns, dropdown cover/arrow clicks, pooled widget/popup restoration and foreign reuse, unchanged input geometry/values, semantic colours/branding, repeated hook/layer reuse, guide checkbox actions, item-frame separation, live accents, disabled state and combat deferral. In its mock, 25 warm page callbacks create no additional visual layers, rewrite no unchanged fonts and perform no guide hierarchy scans. These are simulated operation counts, not measured WoW CPU, memory or FPS improvements.
 
@@ -53,8 +53,8 @@ These are traversal/write/allocation counts from mocks. They do not establish ac
 
 ## Navigation arrow
 
-- Use the installed EllesmereUI `media/icons/eui-arrow-up3.png` chevron with its original proportions and the live accent tint. This restores the first arrow design; the taller and filled custom-artwork experiments are retired. No custom arrow texture or generator is needed in this branch.
-- Retain the native configured frame size and rotation center. The original centered square texture crop is 0.1–0.9 on both axes; no new angle, stroke or independent scale multiplier changes its shape.
+- Retain the initial shallow, round-ended chevron shape with a new original 256×256 RGBA texture (`Media/NavigationCaret.tga`), drawn from simple geometry by `scripts/build_navigation_chevron.py`. This avoids magnifying the installed 30-pixel image; no third-party artwork is bundled. The live accent tint remains unchanged.
+- Enlarge only the artwork by 10% around the native rotation center, retaining the 22:12 shallow footprint and original 0.1–0.9 texture crop. Preserve the configured frame/hit area and label geometry. A guarded size-change hook retains the multiplier when RestedXP changes its arrow size; no per-frame styling is added.
 - Use the public font preference for the existing step/distance label, preserving native text, inline quest colours and configured font size. No background panel or extra arrow frames/textures are created.
 - Reapply after native `arrowFrame:UpdateVisuals` and `SetupArrow`, or a full theme refresh; defer combat work through the existing dirty flag. RestedXP retains its direction/rotation, distance, wrong-continent/visibility logic, size, position, dragging and OnUpdate callback. No setter hooks are added to rotation or distance updates.
-- Regression checks cover original texture/crop selection, native setup return values, rotation and text ownership, native scale/drag actions, theme restoration/accent changes, disabled styling and combat deferral. One hundred mocked direction ticks perform no additional texture/font writes, allocate no visuals and queue no skin refresh.
+- Regression checks cover high-resolution texture/crop selection, exact 10% artwork enlargement at native sizes, native setup return values, rotation and text ownership, native scale/drag actions, theme restoration/accent changes, disabled styling and combat deferral. One hundred mocked direction ticks perform no additional texture/font writes, allocate no visuals and queue no skin refresh.

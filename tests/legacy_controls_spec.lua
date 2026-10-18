@@ -1766,6 +1766,7 @@ enabled = false; local untouched = frame('CheckButton', nil, atlasRoot)
 atlasGUI:Toggle(); flush(); assert(not untouched.checkbox)
 enabled = true
 print('PASS: AtlasLoot windows, synchronous pooled menus, selectors, colours/overlays/maps/models, dynamic controls and idempotence')
+do
 -- GTFO: skin only its settings canvases; sound/gameplay methods stay untouched.
 GTFO = nil
 assert(loadfile('EUIAddonSkins/Skins/GTFO.lua'))('EUIAddonSkins', ns)
@@ -1780,7 +1781,23 @@ end
 GTFO_RefreshOptions = function() return 'refresh-native' end
 modules.GTFO.install(S, modules.GTFO); flush()
 assert(GTFO_RenderOptions() == 'settings-native')
-local gtfoCheck = frame('CheckButton', nil, GTFO_MainFrame); gtfoCheck.checked = true
+local gtfoCheck = frame('CheckButton', 'GTFO_EnabledButton', GTFO_MainFrame); gtfoCheck.checked = true
+GTFO_EnabledButtonText = gtfoCheck:CreateFontString(nil, 'ARTWORK', 'GameFontNormal')
+local checkedMark, disabledMark = gtfoCheck:CreateTexture(), gtfoCheck:CreateTexture()
+checkedMark:SetShown(true); disabledMark:SetShown(false)
+gtfoCheck.GetCheckedTexture = function() return checkedMark end
+gtfoCheck.GetDisabledCheckedTexture = function() return disabledMark end
+local gtfoTitle = GTFO_MainFrame:CreateFontString(nil, 'ARTWORK', 'GameFontNormalLarge')
+gtfoTitle:SetText('GTFO 6.12.2'); gtfoTitle.GetText = function(self) return self.text end
+local gtfoValue = GTFO_MainFrame:CreateFontString(nil, 'ARTWORK', 'GameFontNormal')
+gtfoValue:SetText('3: Normal'); gtfoValue.GetText = function(self) return self.text end
+local restrictions = frame('Frame', 'GTFO_BrokenExplanationBox', GTFO_MainFrame)
+restrictions.backdrop = {bgFile = 'native'}
+local warning = restrictions:CreateFontString(nil, 'ARTWORK', 'GameFontNormalLarge')
+warning:SetText('Addon Restrictions'); warning.GetText = function(self) return self.text end
+GTFOLocal = {UI_BrokenExplanation_Header = 'Addon Restrictions'}
+local warningBody = restrictions:CreateFontString(nil, 'ARTWORK', 'GameFontHighlightSmall')
+warningBody:SetText('Native restriction explanation')
 local testButton = frame('Button', nil, GTFO_MainFrame)
 testButton.label = testButton:CreateFontString(nil, 'ARTWORK', 'GameFontNormal')
 testButton.action = function() return GTFO.PlaySound() end
@@ -1795,18 +1812,38 @@ volume:SetScript('OnValueChanged', function() sliderChanges = sliderChanges + 1 
 local valueHandler = volume.hooks.OnValueChanged
 local ignore = frame('CheckButton', nil, GTFO_IgnoreOptionsFrame)
 local gtfoInput = frame('EditBox', nil, GTFO_MainFrame)
-flush()
+GTFO_RefreshOptions(); flush()
 assert(gtfoInput.inputOptions.noBorder, 'GTFO soft input missing')
-assert(GTFO_MainFrame.accent and not GTFO_MainFrame.shell and not GTFO_IgnoreOptionsFrame.shell)
+assert(not GTFO_MainFrame.accent and not GTFO_IgnoreOptionsFrame.accent and not GTFO_MainFrame.shell and not GTFO_IgnoreOptionsFrame.shell)
+assert(checkedMark.path == 'solid' and checkedMark.color[1] == accent and disabledMark.color[1] == 0.4)
+assert(checkedMark.points[1][4] == 6 and checkedMark.points[2][4] == -6, 'GTFO check marker must match DBM inset')
+assert(checkedMark:IsShown() and not disabledMark:IsShown(), 'skin changed native check visibility')
+assert(gtfoTitle.textColor[1] == accent and gtfoValue.textColor[1] == 0.88)
+assert(restrictions.panel and warning.textColor[1] == accent and warningBody.text == 'Native restriction explanation')
+local gtfoScans = auditScans[GTFO_MainFrame]
+for _ = 1, 10 do
+    gtfoCheck:Disable(); assert(GTFO_EnabledButtonText.textColor[1] == 0.5)
+    gtfoCheck:Enable(); assert(GTFO_EnabledButtonText.textColor[1] == 0.88)
+    gtfoCheck:SetChecked(false); gtfoCheck.hooks.OnClick(gtfoCheck)
+    testButton.hooks.OnClick(testButton)
+end
+flush()
+assert(auditScans[GTFO_MainFrame] == gtfoScans, 'ordinary GTFO interactions scanned whole page')
+gtfoCheck:SetChecked(true)
+volume:Disable(); assert(thumb.color[1] == 0.4)
+volume:Enable(); assert(thumb.color[1] == accent)
+assert(volume.hooks.OnValueChanged == valueHandler)
 assert(gtfoCheck.checkbox and gtfoCheck.checked and ignore.checkbox and testButton.button and testButton.action() == 'alert-native')
 assert(thumb.width == 8 and thumb.height == 14 and nativeSliderEdge.alpha == 0, 'GTFO slider geometry/chrome incorrect')
 nativeSliderEdge:SetAlpha(1); assert(nativeSliderEdge.alpha == 0, 'GTFO slider native border returned')
 assert(volume.hooks.OnValueChanged == valueHandler and sliderChanges == 0, 'GTFO slider action changed')
 assert(volume.value == 3 and GTFO.Settings.Volume == 3 and GTFO.Settings.Enabled)
 local gtfoHook, objects = GTFO_RefreshOptions, #volume.regions
-accent = 0.35; assert(GTFO_RefreshOptions() == 'refresh-native'); flush(); assert(thumb.color[1] == accent)
+local buttonObjects, checkObjects, enableHook = #testButton.regions, #gtfoCheck.regions, gtfoCheck.Enable
+accent = 0.35; assert(GTFO_RefreshOptions() == 'refresh-native'); flush(); assert(thumb.color[1] == accent and checkedMark.color[1] == accent and gtfoTitle.textColor[1] == accent)
 for _ = 1, 5 do modules.GTFO.refresh(); flush() end
 assert(GTFO_RefreshOptions == gtfoHook and #volume.regions == objects)
+assert(#testButton.regions == buttonObjects and #gtfoCheck.regions == checkObjects and gtfoCheck.Enable == enableHook, 'GTFO duplicated art/hooks on refresh')
 combat = true; local deferred = frame('CheckButton', nil, GTFO_IgnoreOptionsFrame)
 GTFO_RefreshOptions(); flush(); assert(not deferred.checkbox)
 combat = false
@@ -1815,7 +1852,8 @@ flush(); assert(deferred.checkbox)
 enabled = false; local skipped = frame('CheckButton', nil, GTFO_MainFrame)
 GTFO_RefreshOptions(); flush(); assert(not skipped.checkbox)
 enabled = true
-print('PASS: GTFO late options, settings-only roots, preserved sound/actions/values, themes, combat/toggles and idempotence')
+print('PASS: GTFO native check states, local callbacks, late options, restrictions, sound/actions/values, themes, combat/toggles and idempotence')
+end
 local fills = 0; S.ApplyBarFill = function() fills = fills + 1 end
 -- Gargul's SetFont(rem, flags) overload must never receive a font path.
 Gargul = nil

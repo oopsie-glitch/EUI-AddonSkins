@@ -25,7 +25,10 @@ assert int.from_bytes(glyph_header[14:16],'little')==32 and glyph_header[16]==32
 radar_header=(addon/'Media/DBMRadar.tga').read_bytes()[:18]
 assert radar_header[2]==2 and int.from_bytes(radar_header[12:14],'little')==128
 assert int.from_bytes(radar_header[14:16],'little')==128 and radar_header[16]==32
-files=[toc]+[addon/p for p in runtime]+[addon/'LICENSE',addon/'Media/Icon.tga',addon/'Media/DBMMechanics.tga',addon/'Media/DBMRadar.tga']
+arrow_header=(addon/'Media/NavigationArrow.tga').read_bytes()[:18]
+assert arrow_header[2]==2 and int.from_bytes(arrow_header[12:14],'little')==64
+assert int.from_bytes(arrow_header[14:16],'little')==64 and arrow_header[16]==32
+files=[toc]+[addon/p for p in runtime]+[addon/'LICENSE',addon/'Media/Icon.tga',addon/'Media/DBMMechanics.tga',addon/'Media/DBMRadar.tga',addon/'Media/NavigationArrow.tga']
 for flavor in ['Camelot','Mainline']:
     alias=addon/f'EUIAddonSkins_{flavor}.toc'
     assert alias.read_bytes()==toc.read_bytes(),f'Stale client manifest: {alias}'

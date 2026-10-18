@@ -721,12 +721,12 @@ end, function(S, module)
         if CombatLocked() then applyWaiting = true; return end
         local texture = H.Texture(frame.texture)
         if texture then
-            local path = "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-up3.png"
+            local path = "Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationArrow.tga"
             if texture:GetTexture() ~= path or arrowTextureSeen ~= texture then
                 texture:SetTexture(path)
-                -- Centered square crop retains the native north-up orientation.
-                -- RXP's SetRotation remains the only direction driver.
-                texture:SetTexCoord(0.1, 0.9, 0.1, 0.9)
+                -- Original 64px north-up pointer, like RXP's native canvas.
+                -- Keep its full silhouette and RXP's own rotation/size driver.
+                texture:SetTexCoord(0, 1, 0, 1)
                 arrowTextureSeen = texture
             end
             local r, g, b = S.GetAccentColor()

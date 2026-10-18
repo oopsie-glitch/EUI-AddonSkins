@@ -57,6 +57,10 @@ function S.SetTabSelection(f, selected) f.selected = selected end
 function S.Button(f) f.buttonSkinned = true end
 function S.EditBox(f, opts) f.inputOptions = opts end
 function S.SquareIcon(t, f) t.borderParent = f end
+function S.Panel(f, opts)
+    shells[#shells + 1] = f; f.shellOptions = opts; f.style = style
+    looks[#looks + 1] = function() f.style = style end
+end
 function S.ApplyBarFill(f) f.fillSkinned = true end
 function S.SortHeaderBar(f) f.headersSkinned = true end
 for _, key in ipairs({'Font', 'Checkbox', 'Dropdown', 'ScrollBar', 'StateButtonLabel', 'CloseButton'}) do S[key] = function() end end
@@ -90,7 +94,7 @@ RXP = {RXPFrame = legacy, settings = {profile = {activeTheme = 'Custom'}}, LoadA
     end, SetFrameBackdropShown = function(_, f, shown) f.rxpBackground:SetShown(shown) end}}}
 modules.RXPGuides.install(S, modules.RXPGuides); flush()
 assert(#shells == 3 and legacy.BottomFrame.color[4] == 0 and step.color[4] == 0 and upper.rxpBackground.alpha == 0)
-assert(shells[1] ~= legacy.BottomFrame and shells[1].shellOptions.noBorder and shells[1].shellOptions.noTopBar)
+assert(shells[1] ~= legacy.BottomFrame and shells[1].shellOptions.noBorder and shells[1].shellOptions.inset == false)
 local upperLayer = shells[3]; assert(upperLayer.alpha == 0.6, 'V2 opacity not preserved')
 legacy.BottomFrame:SetBackdropColor(0.2, 0.2, 0.2, 0.4)
 assert(shells[1].alpha == 0.4 and legacy.BottomFrame.color[4] == 0)

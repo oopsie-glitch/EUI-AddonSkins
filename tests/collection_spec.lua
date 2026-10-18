@@ -225,8 +225,8 @@ guide.ScrollFrame = {ScrollBar = scrollbar}
 guide.UpdateScrollBar = function() thumb.color = {1, 1, 1}; return 'scroll-native' end
 guide.protected = true
 enabled = true; modules.RXPGuides.refresh(); flush()
-assert(header.icon.width == 28 and header.classIcon.width == 12 and header.icon.points[1] == 'TOPLEFT')
-assert(header.icon.square and header.classIcon.square and thumb.color[1] == 0.1)
+assert(header.icon.alpha == 0 and header.classIcon.alpha == 0, 'guide branding remains visible')
+assert(thumb.color[1] == 0.1, 'logo removal changed scrollbar styling')
 local scrollbarReturn = guide.UpdateScrollBar()
 assert(scrollbarReturn == 'scroll-native' and thumb.color[1] == 0.1,
     'RXP scrollbar must skin before the callback returns: ' .. tostring(scrollbarReturn) .. '/' .. tostring(thumb.color[1]) .. '/' .. table.concat(errors, '\n'))

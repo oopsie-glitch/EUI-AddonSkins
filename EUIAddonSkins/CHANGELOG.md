@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.1 — RestedXP and Gargul Improvements
+
+- Refined RestedXP guide headers, backgrounds and Active Targets/Items windows; fixed clipped titles and matched auxiliary-window opacity.
+- Updated RestedXP options controls and fixed dark button labels after state changes and preview/page rebuilds.
+- Added an accent-coloured navigation arrow with sharper artwork, a thin black outline and smoother edges when rotated.
+- Reduced redundant RestedXP guide scans, options refreshes and font updates.
+- Improved Gargul settings performance with page-local refreshes.
+- Refined Gargul's roll organizer, MS/OS/PASS window and accepted-roll notification.
+- Fixed Gargul dropdown arrow click areas, input alignment, overlapping controls and oversized slider grips.
+
 ## 1.5.0 — DBM Skin and Performance Improvements
 
 - Redesigned DBM timer bars with separate Small and Big Bar styling, clearer progress, countdowns and mechanic icons.

@@ -75,15 +75,25 @@ local function OptionsSkin(S, H, module, addon)
             if cr ~= r or cg ~= g or cb ~= b or ca ~= alpha then text:SetTextColor(r, g, b, alpha) end
         end
     end
+    local function LayerLevel(d, layer, host)
+        if not d.active or not ns.IsEnabled(module) then return end
+        if InCombatLockdown and InCombatLockdown() then module.optionsWaiting = true; return end
+        local level = math.max(0, host:GetFrameLevel() - 1)
+        if layer:GetFrameLevel() ~= level then layer:SetFrameLevel(level) end
+    end
     local function Layer(d, key, host, method, options)
         if not H.Allowed(host) then return end
         local layer = d.layers[key]
         if not layer then
             layer = CreateFrame(method == 'PageButton' and 'Button' or 'Frame', nil, host)
             layer:SetAllPoints(host); layer:EnableMouse(false)
-            layer:SetFrameLevel(math.max(0, host:GetFrameLevel() - 1))
             S[method or 'Panel'](layer, options or {noBorder = true})
             d.layers[key] = layer
+            -- AceGUI reparents pooled controls during Open/confirmation rebuilds.
+            -- Keep the owned background below native text after hierarchy changes.
+            local function SyncLevel() LayerLevel(d, layer, host) end
+            H.Hook(host, 'SetParent', SyncLevel)
+            H.Hook(host, 'SetFrameLevel', SyncLevel)
             if method == 'Dropdown' then
                 for _, region in ipairs(H.Regions(layer)) do
                     if region.GetAtlas and region:GetAtlas() == 'Azerite-PointingArrow' then
@@ -102,6 +112,7 @@ local function OptionsSkin(S, H, module, addon)
                 end
             end
         end
+        LayerLevel(d, layer, host)
         layer:SetAlpha(1)
         return layer
     end

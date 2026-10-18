@@ -138,10 +138,23 @@ local oldFrame = frame
 frame = function(kind, name, parent)
     local f = oldFrame(kind,name,parent)
     f.color,f.border={0,0,0,1},{1,1,1,1}
-    function f:GetFrameLevel() return 6 end
+    function f:GetFrameLevel() return self.level or 6 end
     function f:GetWidth() return self.width or 24 end
     function f:GetHeight() return self.height or 24 end
-    function f:SetFrameLevel(n) self.level=n end
+    function f:SetFrameLevel(n)
+        self.level=n
+    end
+    function f:SetParent(parent)
+        self.parent=parent;self.level=parent and parent:GetFrameLevel()+1 or 0
+        -- Exercise hierarchy rebasing: custom child frames can end up above
+        -- native parent FontStrings even though the label colour is correct.
+        for _,child in ipairs(self.children)do child.level=self.level+1 end
+        return 'parent-native'
+    end
+    function f:Show()
+        local hidden=self.hidden;self.hidden=false
+        if hidden and self.hooks.OnShow then self.hooks.OnShow(self)end
+    end
     function f:SetAllPoints(target) self.allPoints=target end
     function f:EnableMouse(value) self.mouse=value end
     function f:GetAlpha() return self.alpha or 1 end
@@ -379,6 +392,39 @@ for _,w in ipairs(auxiliaryButtons)do
     assert(w.button:IsEnabled() and w.button.label.font=='eui' and w.button.label.textColor[1]==.9,
         'keybinding/input accept label darkened')
 end
+-- Preview's confirmation calls AceConfigDialog:Open, releasing/reparenting
+-- pooled widgets. The old fixture had one constant level for every frame.
+local function buttonLayer(w)
+    for _,child in ipairs(w.frame.children)do if child.skinMethod=='Button' then return child end end
+    error('missing button background')
+end
+local function readableLayer(w)
+    assert(buttonLayer(w):GetFrameLevel()<w.frame:GetFrameLevel(),
+        'preview rebuild left a dark background above clickable button text')
+    assert(w.text.textColor[1]==.9 and w.text.textColor[4]==1 and w.frame:IsEnabled(),
+        'preview rebuild changed native enabled state or label colour')
+end
+local previewObjects,previewScans=objects,scans
+local parentHook,levelHook=button.frame.SetParent,button.frame.SetFrameLevel
+for cycle=1,10 do
+    for _,w in ipairs({button,resetButton})do
+        w.frame:Hide();w.userdata={};w.frame:SetParent(nil)
+        w.userdata.appName='RestedXP Guides';w.parent=page
+        assert(w.frame:SetParent(page.frame)=='parent-native')
+        w:SetDisabled(false);w.frame:Show()
+    end
+    dialog:FeedGroup('RestedXP Guides',{},page,root,{})
+    assert(dialog:Open('RestedXP Guides',root)=='open-native')
+    readableLayer(button);readableLayer(resetButton)
+end
+assert(objects==previewObjects and scans==previewScans,'preview rebuild allocated layers or scanned the guide')
+assert(button.frame.SetParent==parentHook and button.frame.SetFrameLevel==levelHook,
+    'preview rebuild duplicated hierarchy hooks')
+-- Late level changes need the same ordering without rebuilding the whole page.
+button.frame:SetFrameLevel(3);readableLayer(button)
+assert(button.frame:GetFrameLevel()==3,'skin raised the native control instead of lowering its background')
+assert(button.frame:SetParent(page.frame)=='parent-native');readableLayer(button)
+assert(button.frame:GetParent()==page.frame,'skin changed native parent')
 local stateObjects,stateScans=objects,scans
 for i=1,100 do button:SetDisabled(i%2==0)end
 button:SetDisabled(false)
@@ -422,10 +468,18 @@ if button.frame.hooks.OnShow then button.frame.hooks.OnShow(button.frame)end
 button:SetDisabled(false);button.frame.hooks.OnEnter(button.frame)
 assert(button.native.alpha==1 and button.text.font=='native-font' and button.text.textColor[1]==.12,
     'pooled button state hooks restyled another addon')
-button.userdata.appName='RestedXP Guides';button.parent=page;dialog:FeedGroup('RestedXP Guides',{},page,root,{})
+local foreignLayer=buttonLayer(button)
+button.frame:SetParent(foreign.frame)
+assert(foreignLayer.alpha==0 and foreignLayer:GetFrameLevel()==button.frame:GetFrameLevel()+1,
+    'inactive pooled layer was adjusted for a foreign app')
+button.userdata.appName='RestedXP Guides';button.parent=page;button.frame:SetParent(page.frame)
+dialog:FeedGroup('RestedXP Guides',{},page,root,{})
 assert(button.native.alpha==0)
 combat=true
 button:SetDisabled(true)
+local combatLayer=buttonLayer(button);combatLayer.level=30
+button.frame:SetFrameLevel(4)
+assert(combatLayer:GetFrameLevel()==30 and button.frame:GetFrameLevel()==4,'layer hierarchy modified during combat')
 assert(button.text.font=='native-font' and button.text.textColor[1]==.12,'button state changed styling during combat')
 local late=widget('Button',page);late.text=label(late.frame,'Late');late.native=art(late.frame)
 dialog:FeedGroup('RestedXP Guides',{},page,root,{})
@@ -435,6 +489,7 @@ for _,f in ipairs(events)do if f.events and f.events.PLAYER_REGEN_ENABLED then f
 flush();assert(late.native.alpha==0,'combat-deferred options lost')
 assert(button.frame.disabled and button.text.font=='eui' and button.text.textColor[1]==.5,
     'combat-deferred button state lost')
+assert(combatLayer:GetFrameLevel()==3 and button.frame:GetFrameLevel()==4,'combat-deferred background order lost')
 button:SetDisabled(false)
 accent=.8;for _,fn in ipairs(looks)do fn()end;flush()
 assert(tab.Text.textColor[1]==.8 and arrow.texture.color[1]==.8,'theme refresh lost selected accent/arrow tint')
@@ -453,6 +508,10 @@ assert(button.native.alpha==1 and slider.slider.thumb.alpha==1 and slider.editbo
 assert(button.frame.hooks.OnClick()=='button-native' and checkbox:SetValue(false)=='check-native')
 assert(button.text.font=='native-font' and button.text.textColor[1]==.12,
     'disabled skin still repaints native button states')
+local disabledLayer=buttonLayer(button);local disabledLevel=disabledLayer:GetFrameLevel()
+button.frame:SetFrameLevel(2)
+assert(disabledLayer:GetFrameLevel()==disabledLevel and disabledLayer.alpha==0,
+    'disabled skin still adjusts a hidden options layer')
 arrow:UpdateVisuals();assert(arrow.texture.path=='native-arrow','disabled skin still restyled arrow')
 -- Known guide/item visuals remain local and never enroll secure action frames.
 enabled=true

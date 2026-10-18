@@ -47,3 +47,20 @@ The source-shaped fixtures cover real grid Background/Name/IconBorder fields, it
 Checked against `Thaoky/Altoholic_Forever` Agenda/calendar templates at `873969817e8aa1a4f37cf1fe3d9e7f88218a9a2d` and EUI's Blizzard calendar implementation. Altoholic's calendar contains event counts rather than Blizzard's holiday illustrations; no new event data or actions are introduced.
 
 Automated fixtures cover late Agenda loading, all 42 days, public primitive-created tab backgrounds, current/adjacent month colours, today/accent changes, weekday art, heading/filter alignment, original day geometry and actions, event visibility/colours, navigation/return values, combat deferral and disabled skins. Twenty mocked month updates retain the same objects/hooks, execute exactly the native 42 day updates per month, and perform no main-window or Agenda-tab scans. All 16 suites and the 35-file MIT-licensed one-folder package checks pass. Actual client layout, hit-testing and taint remain unverified.
+
+
+## Controls and Retail achievement follow-up
+
+Untagged `skin/altoholic-controls`, based on v1.5.1. No version or release changelog change.
+
+- Use DBM-style inset accent squares on native options checkboxes, retaining native checked/disabled visibility and actions. Checkbox clicks and state changes repaint only that control.
+- Replace scroll-stepper text glyphs with image chevrons, preserving button geometry, scroll actions and disabled feedback.
+- Use neutral sidebar labels and accent selected labels. Remove embedded decorative colour codes only within category labels; leave character, item, achievement and status data colours alone.
+- Flatten Retail achievement-name rows with a 12% hover wash. Preserve native tooltip callbacks, account-wide cyan names, completion overlays and all item/class borders. Row updates repaint the name only.
+- Soften Reset/Apply controls and options separators. Retain full shortcut-logo artwork with a small inset inside the original hit area. Dedicated mouse-disabled border children survive texture refreshes.
+
+Sources inspected: Thaoky/Altoholic_Retail `Altoholic/Main.xml`, `Altoholic_Options/TabOptions.xml`, `Altoholic_Achievements/Templates/AchievementRow.lua` and `.xml`; Thaoky/AddonFactory `Templates/AuctionHouseUI/CategoriesList.lua` and `Templates/ScrollFrames.lua` / `.xml`. No upstream code or assets are bundled.
+
+The tab definitions explicitly load each module on demand. First-open work includes native module/data initialization and initial skin setup; later openings reuse controls. The relative cost of those parts has not been measured in WoW. Hidden-tab exclusions and synchronous selected-tab styling remain intact; no eager loading or polling was added.
+
+Validation: `python3 scripts/package.py` runs all regression suites and validates the 39-file single-folder ZIP. Added source-shaped cases cover accent/disabled checkmarks, category colour-code cleanup, chevron redraw/state reuse, Retail achievement rows, logo cropping, action boundaries, native returns, protected controls and unchanged settings/actions. One hundred achievement-row updates plus one hundred checkbox click/disable/enable cycles perform zero full-window scans and allocate no additional UI objects in the mock. Warm refreshes retain the same objects/hooks. These checks do not establish actual client rendering, FPS or taint behaviour.

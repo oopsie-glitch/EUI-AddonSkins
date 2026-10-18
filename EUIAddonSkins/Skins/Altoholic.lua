@@ -1,5 +1,13 @@
 local ADDON, ns = ...
 local function DefineSkin()
+local function AchievementName(f)
+    local row = f.GetParent and f:GetParent()
+    return row and row.Name == f and row.Item1 and type(row.Name_OnEnter) == "function"
+end
+local function OptionAction(f)
+    local parent = f.GetParent and f:GetParent()
+    return parent and (parent.ResetButton == f or parent.ApplyButton == f)
+end
 ns.RegisterScopedSkin("Altoholic", "Altoholic", {
     softBorders = true,
     panels = false,
@@ -7,7 +15,7 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
     immediateShow = true,
     borderlessButtons = function(f)
         local parent = f.GetParent and f:GetParent()
-        return type(f.SetCategory) == "function" or type(f.SetColumnData) == "function" or type(f.SetColumnTotal) == "function"
+        return AchievementName(f) or OptionAction(f) or (f.url and f.iconFile) or type(f.SetCategory) == "function" or type(f.SetColumnData) == "function" or type(f.SetColumnTotal) == "function"
             or type(f.DrawArrow) == "function" or (parent and type(parent.DrawRealmLine) == "function")
     end,
     available = function() return _G.Altoholic ~= nil end,
@@ -18,6 +26,7 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
             local surfaces, clear, zones = {}, {}, {}
             local primitives, edges, tabLabels, dropdowns, tabPaints = {}, {}, {}, {}, {}
             local calendarDays, calendarBorders, calendarLayouts = {}, {}, {}
+            local checkPaints, arrows, optionEdges = {}, {}, {}
             local atlasIcons, square = {}, S.SquareIcon
             S.SquareIcon = function(icon, parent)
                 if not atlasIcons[icon] then return square(icon, parent) end
@@ -255,6 +264,62 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
                     fill:SetAllPoints(layer); fill:SetColorTexture(1, 1, 1, 0.02)
                 end
             end
+            C.Check = function(f)
+                if not checkPaints[f] then
+                    S.Checkbox(f, {borderInset = 4, hover = 0.05})
+                    local function PaintCheck()
+                        if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                        local r, g, b = S.GetAccentColor()
+                        for i, getter in ipairs({"GetCheckedTexture", "GetDisabledCheckedTexture"}) do
+                            local mark = f[getter] and H.Texture(f[getter](f))
+                            if mark then
+                                mark:SetVertexColor(1, 1, 1, 1)
+                                if i == 1 then mark:SetColorTexture(r, g, b, 1)
+                                else mark:SetColorTexture(0.4, 0.4, 0.4, 0.8) end
+                                mark:ClearAllPoints()
+                                mark:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -6)
+                                mark:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -6, 6)
+                            end
+                        end
+                        local shade = f.IsEnabled and not f:IsEnabled() and 0.5 or 0.88
+                        H.Font(f.Text, shade, shade, shade)
+                    end
+                    checkPaints[f] = PaintCheck
+                    for _, method in ipairs({"Enable", "Disable", "SetEnabled"}) do H.Hook(f, method, PaintCheck) end
+                    -- These state events need only this control, not both tab trees.
+                    H.Script(f, "OnEnable", PaintCheck); H.Script(f, "OnDisable", PaintCheck)
+                    H.Script(f, "OnClick", PaintCheck)
+                end
+                checkPaints[f]()
+            end
+            C.Stepper = function(button, up)
+                if not H.Allowed(button) then return end
+                if not arrows[button] then
+                    local arrow = button:CreateTexture(nil, "OVERLAY")
+                    button.euiAltoArrow = arrow
+                    H.Action(button, {"euiAltoArrow"})
+                    for _, region in ipairs(H.Regions(button)) do
+                        if region:GetObjectType() == "FontString" then H.Fade(region) end
+                    end
+                    arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
+                    arrow:SetSize(10, 7); arrow:SetPoint("CENTER", button, "CENTER")
+                    if up then arrow:SetRotation(math.pi) end
+                    local function PaintArrow()
+                        if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                        local shade = button.IsEnabled and not button:IsEnabled() and 0.35 or 0.8
+                        arrow:SetVertexColor(shade, shade, shade, 1)
+                    end
+                    arrows[button] = PaintArrow
+                    for _, method in ipairs({"Enable", "Disable", "SetEnabled"}) do H.Hook(button, method, PaintArrow) end
+                    H.Script(button, "OnEnable", PaintArrow); H.Script(button, "OnDisable", PaintArrow)
+                end
+                arrows[button]()
+            end
+            C.IsStepper = function(f) return arrows[f] ~= nil end
+            C.AchievementRow = function(row)
+                if InCombatLockdown and InCombatLockdown() then refresh(); return end
+                C.AchievementName(row.Name)
+            end
             C.StyleCell = function(button) C.FlatAction(button) end
             C.StyleHeader = function(button) C.FlatAction(button, {"Arrow"}) end
             C.FlatAction = function(button, keep, selected)
@@ -283,10 +348,50 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
                     else entry[1]:SetColorTexture(1, 1, 1, 0.06) end
                 end
             end
+            C.AchievementName = function(button)
+                C.FlatAction(button)
+                for _, entry in ipairs(surfaces[button] or {}) do
+                    if entry[2] == "HIGHLIGHT" then entry[1]:SetColorTexture(1, 1, 1, 0.12) end
+                end
+                H.Font(button.Text) -- account-wide cyan is semantic, not decoration.
+            end
+            C.OptionAction = function(button)
+                C.FlatAction(button)
+                for _, entry in ipairs(surfaces[button] or {}) do
+                    if entry[2] == "BACKGROUND" then entry[1]:SetColorTexture(0.075, 0.075, 0.085, 1)
+                    else entry[1]:SetColorTexture(1, 1, 1, 0.12) end
+                end
+                if not optionEdges[button] then
+                    local host = CreateFrame("Frame", nil, button)
+                    optionEdges[button] = host
+                    host:SetAllPoints(button); host:EnableMouse(false)
+                    if host.SetFrameLevel and button.GetFrameLevel then host:SetFrameLevel(button:GetFrameLevel() + 1) end
+                    for _, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+                        local edge = host:CreateTexture(nil, "OVERLAY")
+                        edge:SetColorTexture(0.22, 0.22, 0.22, 0.6)
+                        if side == "TOP" or side == "BOTTOM" then
+                            edge:SetPoint(side .. "LEFT", button, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", button, side .. "RIGHT"); edge:SetHeight(1)
+                        else
+                            edge:SetPoint("TOP" .. side, button, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, button, "BOTTOM" .. side); edge:SetWidth(1)
+                        end
+                    end
+                end
+            end
             local function Paint(button)
                 if not H.Allowed(button) then return end
                 if InCombatLockdown and InCombatLockdown() then refresh(); return end
-                C.FlatAction(button, nil, button.data and button.data.isSelected == true or false)
+                local selected = button.data and button.data.isSelected == true or false
+                C.FlatAction(button, nil, selected)
+                local text = button.Text
+                if H.Allowed(text) then
+                    local value = text.GetText and text:GetText()
+                    if type(value) == "string" then
+                        local plain = value:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+                        if plain ~= value then text:SetText(plain) end
+                    end
+                    if selected then H.Font(text, S.GetAccentColor())
+                    else H.Font(text, 0.86, 0.86, 0.88) end
+                end
                 for _, key in ipairs({"NormalTexture", "SelectedTexture", "HighlightTexture", "Lines"}) do H.Fade(button[key]) end
             end
             C.StyleCategory = function(button)
@@ -326,6 +431,13 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
             C.Calendar(f)
         end
         if kind == "Button" and C.IsCalendarDay(f) then C.CalendarDay(f); return true end
+        if kind == "Button" and f.Name and f.Item1 and type(f.Name_OnEnter) == "function" then
+            H.Hook(f, "Update", C.AchievementRow); C.AchievementRow(f)
+        end
+        if kind == "Button" and AchievementName(f) then C.AchievementName(f); return true end
+        if kind == "Frame" and H.Allowed(f.Title) and H.Texture(f.Separator) then
+            f.Separator:SetColorTexture(0.16, 0.16, 0.17, 0.65)
+        end
         if kind == "Button" and H.Texture(f.Background) and H.Texture(f.IconBorder) and f.Name then
             C.Item(f, f.Background); return true
         end
@@ -359,6 +471,9 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
             if H.Allowed(f.Backdrop) then C.ClearInset(f.Backdrop) end
             H.LegacySlider(f)
             if f.GetOrientation and f:GetOrientation() == "VERTICAL" then
+                local name = f.GetName and f:GetName()
+                C.Stepper(f.ScrollUpButton or name and _G[name .. "ScrollUpButton"], true)
+                C.Stepper(f.ScrollDownButton or name and _G[name .. "ScrollDownButton"], false)
                 local thumb = f.GetThumbTexture and H.Texture(f:GetThumbTexture())
                 if thumb then thumb:SetTexCoord(0, 1, 0, 1); thumb:SetSize(4, 18); thumb:SetColorTexture(1, 1, 1, 0.3) end
             elseif f.GetOrientation and f:GetOrientation() == "HORIZONTAL" then
@@ -417,15 +532,7 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
         end
         H.Resize(f, resize)
         if kind == "CheckButton" and (f.locLabel or f.module and f.option) then
-            S.Checkbox(f, {borderInset = 4, hover = 0.06})
-            local check = f.GetCheckedTexture and H.Texture(f:GetCheckedTexture())
-            if check then
-                if check.SetDesaturated then check:SetDesaturated(true) end
-                check:ClearAllPoints(); check:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4); check:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -4, 4)
-                local r, g, b = S.GetAccentColor(); check:SetVertexColor(r, g, b, 1)
-            end
-            local shade = f.IsEnabled and not f:IsEnabled() and 0.5 or 0.88
-            H.Font(f.Text, shade, shade, shade); return true
+            C.Check(f); return true
         end
         if kind == "EditBox" and main and f == main.SearchBox then
             local icon = H.Texture(f.searchIcon) or H.Texture(f.SearchIcon)
@@ -466,7 +573,17 @@ ns.RegisterScopedSkin("Altoholic", "Altoholic", {
             if H.Allowed(f.Button) and H.Allowed(f.Text) and f.Left and f.Middle and f.Right then C.Dropdown(f); return true end
         end
         if kind == "Button" then
-            if C.DropChild(f) then return true end
+            if C.IsStepper(f) or C.DropChild(f) then return true end
+            if OptionAction(f) then C.OptionAction(f); return true end
+            if f.url and f.iconFile and H.Texture(f.Icon) then
+                C.Item(f, f.Icon, true) -- preserve the logo's complete texture coordinates.
+                H.Action(f, {"Icon"})
+                -- Logos retain their full artwork inside a restrained inset.
+                f.Icon:SetTexCoord(0, 1, 0, 1); f.Icon:ClearAllPoints()
+                f.Icon:SetPoint("TOPLEFT", f, "TOPLEFT", 3, -3)
+                f.Icon:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -3, 3)
+                return true
+            end
             local parent = f:GetParent()
             if parent and (parent.PrevMonth == f or parent.NextMonth == f) then
                 S.SoftPageButton(f, parent.NextMonth == f and ">" or "<", 16); return true

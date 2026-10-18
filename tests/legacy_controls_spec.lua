@@ -298,6 +298,13 @@ modules.Altoholic.refresh(); flush()
 for _, key in ipairs({'scrollBorderTop', 'scrollBorderMiddle', 'scrollBorderBottom', 'scrollFrameScrollBarBackground'}) do assert(altoScroll[key].alpha == 0, 'Altoholic retained native scroll border') end
 assert(altoThumb.width == 4 and altoThumb.height == 18 and altoThumb.crop[1] == 0 and altoThumb.crop[2] == 1 and altoThumb.path == 'solid')
 assert(altoBar.ScrollUpButton.glyph == '^' and altoBar.ScrollDownButton.glyph == 'v')
+assert(altoBar.ScrollUpButton.euiAltoArrow.path:find('eui%-arrow%-down3') and altoBar.ScrollUpButton.euiAltoArrow.rotation == math.pi)
+assert(altoBar.ScrollDownButton.euiAltoArrow.rotation == nil)
+local arrowCount = #altoBar.ScrollUpButton.regions
+altoBar.ScrollUpButton:Disable(); assert(altoBar.ScrollUpButton.euiAltoArrow.color[1] == 0.35)
+altoBar.ScrollUpButton:Enable(); assert(altoBar.ScrollUpButton.euiAltoArrow.color[1] == 0.8)
+modules.Altoholic.refresh(); flush()
+assert(altoBar.ScrollUpButton.euiAltoArrow.alpha == 1 and #altoBar.ScrollUpButton.regions == arrowCount, 'stepper redraw lost/duplicated arrow')
 altoBar.ScrollUpButton.hooks.OnClick(); assert(altoBar.value == 0, 'native scroll-up action changed')
 altoBar.ScrollDownButton.hooks.OnClick(); assert(altoBar.value == 12 and altoBar.maximum == 300 and altoBar.points[1][4] == -20, 'native scrolling range or anchors changed')
 assert(not realmRow.Item11:IsShown() and not realmRow.Item12:IsShown() and realmRow.Item1:IsShown())
@@ -358,6 +365,9 @@ do
         assert(b.euiSelection.color[4] == (i == 1 and 0.2 or 0), 'category selection was lost')
     end
     local category = categories.Buttons[2]
+    category.Text.GetText = function(self) return self.text end
+    category:SetCategory('|cffffff00Activity|r')
+    assert(category.Text.text == 'Activity' and category.Text.textColor[1] == 0.86)
     assert(category:SetSubCategory('Experience') == 'subcategory-native' and category.NormalTexture.alpha == 0 and category.Text.font == 'eui')
     assert(category.Text.points[#category.Text.points][4] == 18, 'subcategory indentation changed')
     assert(category:SetSubSubCategory('Nested') == 'nested-native' and category.Text.points[#category.Text.points][4] == 26)
@@ -621,7 +631,11 @@ do
     assert(slider.Backdrop.backdrop == nil and thumb.width == 8 and thumb.height == 12
         and slider.Text.fontSize == 10 and slider.Low.fontSize == 9 and slider.Text.points[1][5] == 5
         and slider.Low.points[1][5] == -4 and slider.maximum == 360 and slider.value == 180 and slider.hooks.OnValueChanged() == 'value-native')
-    assert(check.checked and tick.desaturated and tick.color[1] == accent and check.Text.textColor[1] == 0.88 and check.action() == 'check-native')
+    assert(check.checked and tick.path == 'solid' and tick.color[1] == accent and tick.points[1][4] == 6 and tick.points[2][4] == -6 and check.Text.textColor[1] == 0.88 and check.action() == 'check-native')
+    local checkScans = auditScans[root] or 0
+    check:Disable(); assert(check.Text.textColor[1] == 0.5)
+    check:Enable(); assert(check.Text.textColor[1] == 0.88)
+    flush(); assert((auditScans[root] or 0) == checkScans, 'checkbox state rescanned Altoholic')
     assert(tab.label.alpha == 0 and euiLabel.textColor[1] == accent and page.NextPage.glyph == '>' and page.PrevPage.glyph == '<' and page.NextPage.action() == 'next-native')
     euiLabel:SetTextColor(1, 1, 1, 1); assert(euiLabel.textColor[1] == accent, 'EUI tab repaint reset the accent tint')
     local a, b, c = row:Update(true); assert(a == 'grid-native' and b == nil and c == 13)
@@ -637,6 +651,82 @@ do
     enabled = true; modules.Altoholic.refresh(); flush(); assert(Edges(cell)[1].color[2] == 1)
     S.Dropdown, S.Tab, ns.BindPopupList = oldDropdown, oldTab, oldBind
     S.EditBox, S.GetFont = oldInput, oldFont
+end
+
+-- Retail achievement rows and options: preserve semantic art and native actions.
+do
+    local oldButton = S.Button
+    S.Button = function(f, keys)
+        oldButton(f, keys)
+        if not f.retailFill then
+            f.retailFill = f:CreateTexture(); f.retailFill.layer = 'BACKGROUND'
+            f.retailHover = f:CreateTexture(); f.retailHover.layer = 'HIGHLIGHT'
+        end
+        f.retailFill:SetAlpha(1); f.retailFill:SetColorTexture(0.08, 0.08, 0.08, 0.95)
+        f.retailHover:SetAlpha(1); f.retailHover:SetColorTexture(1, 1, 1, 0.1)
+    end
+    local root = frame('Frame'); AltoholicFrame = root; root.Tabs = {}; root.selectedTab = 1
+    local page = frame('Frame', nil, root); page.id = 1; root.TabFrames = {page}
+    local row = frame('Button', nil, page)
+    row.Name = frame('Button', nil, row); row.Name.Text = row.Name:CreateFontString(nil, nil, 'native')
+    row.Name_OnEnter = function() return 'tooltip-native' end
+    row.Item1 = frame('Button', nil, row)
+    row.Item1.Icon = row.Item1:CreateTexture(); row.Item1.Icon.path = 'achievement-spell'
+    row.Item1.IconBorder = row.Item1:CreateTexture(); row.Item1.IconBorder:SetShown(false)
+    row.Update = function(self)
+        self.Name.Text:SetText('|cFF26C6E2Account-wide achievement')
+        return 'row-native', nil, 13
+    end
+    row:Update()
+    local panel = frame('Frame', nil, page)
+    panel.Title = panel:CreateFontString(nil, nil, 'native')
+    panel.Separator = panel:CreateTexture(); panel.Separator:SetHeight(1)
+    panel.ResetButton = frame('Button', nil, panel); panel.ResetButton.label = panel.ResetButton:CreateFontString(nil, nil, 'native')
+    panel.ApplyButton = frame('Button', nil, panel); panel.ApplyButton.label = panel.ApplyButton:CreateFontString(nil, nil, 'native')
+    panel.ResetButton.action = function() return 'reset-native' end
+    panel.ApplyButton.action = function() return 'apply-native' end
+    local url = frame('Button', nil, page); url.url = 'https://example.invalid'; url.iconFile = 'native-logo'
+    url.Icon = url:CreateTexture(); url.Icon.path = 'native-logo'; url.action = function() return 'url-native' end
+    local check = frame('CheckButton', nil, panel); check.locLabel = 'CHECK'; check.checked = true
+    check.Text = check:CreateFontString(nil, nil, 'native')
+    local tick, disabledTick = check:CreateTexture(), check:CreateTexture()
+    tick:SetShown(true); disabledTick:SetShown(false)
+    check.GetCheckedTexture = function() return tick end
+    check.GetDisabledCheckedTexture = function() return disabledTick end
+    local protected = frame('CheckButton', nil, panel); protected.locLabel = 'SECURE'; protected.protected = true
+    modules.Altoholic.install(S, modules.Altoholic); flush()
+    assert(tick.path == 'solid' and tick.color[1] == accent and disabledTick.color[1] == 0.4)
+    assert(tick:IsShown() and not disabledTick:IsShown() and check.checked and not protected.checkbox)
+    assert(row.Name.retailFill.color[4] == 0 and row.Name.retailHover.color[4] == 0.12, 'achievement name became an opaque box')
+    assert(row.Name.Text.text == '|cFF26C6E2Account-wide achievement' and row.Name_OnEnter() == 'tooltip-native')
+    assert(row.Item1.Icon.path == 'achievement-spell' and row.Item1.Icon.alpha == 1, 'achievement status art lost')
+    assert(panel.Separator.color[1] == 0.16 and panel.Separator.height == 1)
+    assert(panel.ResetButton.retailFill.color[1] == 0.075 and panel.ResetButton.retailHover.color[4] == 0.12)
+    assert(panel.ResetButton.action() == 'reset-native' and panel.ApplyButton.action() == 'apply-native')
+    assert(url.Icon.path == 'native-logo' and url.Icon.crop[1] == 0 and url.Icon.points[1][4] == 3 and url.action() == 'url-native')
+    local function Counts(f)
+        local n = #f.regions + 1
+        for _, child in ipairs(f.children) do n = n + Counts(child) end
+        return n
+    end
+    local count, hook = Counts(root), row.Update
+    auditScans[root] = 0
+    for _ = 1, 100 do
+        local a, b, c = row:Update(); assert(a == 'row-native' and b == nil and c == 13)
+        check.hooks.OnClick(check); check:Disable(); check:Enable()
+    end
+    flush()
+    assert((auditScans[root] or 0) == 0 and Counts(root) == count and row.Update == hook, 'row/checkbox callbacks scanned or allocated')
+    print('BENCH altoholic_controls row_updates=100 checkbox_cycles=100 full_scans=0 new_objects=0')
+    for _ = 1, 10 do modules.Altoholic.refresh(); flush() end
+    assert(Counts(root) == count and row.Name.retailFill.color[4] == 0 and row.Update == hook)
+    local edgeHost = panel.ResetButton.children[1]
+    assert(edgeHost and edgeHost.mouseEnabled == false and #edgeHost.regions == 4 and edgeHost.regions[1].alpha == 1, 'option border vanished or blocks clicks')
+    accent = 0.31; modules.Altoholic.refresh(); flush(); assert(tick.color[1] == accent)
+    enabled = false; check:Disable(); assert(check.Text.textColor[1] == 0.88)
+    enabled = true; combat = true; check:Enable(); assert(check.Text.textColor[1] == 0.88)
+    combat = false; modules.Altoholic.refresh(); flush()
+    S.Button = oldButton
 end
 
 -- Agenda uses its own calendar template, not Blizzard's CalendarDayButton globals.

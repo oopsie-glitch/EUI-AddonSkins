@@ -25,3 +25,7 @@ Mocked regression coverage includes lazy page styling before timers, native fact
 Simulated measurements: 100 warmed page visits cause zero public font writes and no new canvases; 100 active-list layout callbacks cause zero owner-container scans. These are mock results, not in-game CPU/FPS measurements. Actual rendering, frame time and taint behaviour remain unverified.
 
 Sources: the user-supplied ForeverCompanion ZIP, particularly Compat.lua, Options.lua, Bislist.lua, TalentFrame.lua, Rotation.lua, Loot.lua, Professions.lua, Market.lua and Tour.lua. The exact Retail fork source was not supplied. Missing Retail icons are deliberately untouched. No third-party source or assets are bundled.
+
+## Row contrast follow-up
+
+Restore the native two-half row gradients with neutral charcoal tones. Light rows fade from 0.075 to a 0.13 centre; dark rows from 0.05 to 0.085. Column/section header bands use a slightly brighter 0.16 centre. Preserve native row anchors, alternating assignment, text, item artwork and actions. Theme refreshes retain each half's direction. Reuse existing row textures without extra frames or redraw hooks. Regression checks cover both directions, opaque fills, relative contrast and theme refreshes.

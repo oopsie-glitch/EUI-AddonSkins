@@ -6,6 +6,7 @@ local function texture(kind)
     return { GetObjectType = function() return kind or "Texture" end,
         SetColorTexture = function(self, ...) self.color = {...}; self.colorWrites = (self.colorWrites or 0) + 1 end,
         SetAlpha = function(self, a) self.alpha = a end,
+        SetGradientAlpha = function(self, ...) self.gradient = {...} end,
         ClearAllPoints = function(self) self.points = {} end,
         SetPoint = function(self, ...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end }
 end
@@ -192,7 +193,15 @@ assert(f.CloseButton.point[4] == -8 and f.CloseButton.point[5] == -8 and f.Close
 assert(f.optionsBtn.point[2] == f.CloseButton and f.helpBtn.point[2] == f.optionsBtn and f.helpBtn.scripts.OnClick == originalHelp)
 assert(f.softOptions.noBorder and search.softOptions.noBorder and api.COLORS.border[1] == 0.055, "Companion soft chrome missing")
 assert(calls.EditBox == edits + 1, "must skin the ordinary input exactly once; skip restricted frames")
-assert(light.color[4] == 0.045 and right.color[4] == 0.045)
+assert(light.gradient[2] == 0.075 and light.gradient[6] == 0.13 and right.gradient[2] == 0.13 and right.gradient[6] == 0.075, 'row halves lost their centre gradient')
+local darkL, darkR = api.StripedBackground(f, 'dark')
+local headL, headR = api.StripedBackground(f, 'header')
+assert(darkL.gradient[6] == 0.085 and darkR.gradient[2] == 0.085)
+assert(headL.gradient[6] == 0.16 and headR.gradient[2] == 0.16)
+assert(light.gradient[5] == 1 and darkR.gradient[9] == 1, 'rows retained transparent dark overlays')
+assert(headL.gradient[6] > light.gradient[6] and light.gradient[6] > darkL.gradient[6])
+looks(); flush()
+assert(light.gradient[6] == 0.13 and right.gradient[6] == 0.075 and headR.gradient[6] == 0.09, 'theme refresh reversed or flattened a row')
 assert(inset.color[1] == 0.055, "inset missed the charcoal palette")
 assert(tab.sel.color[2] == 0.824)
 b.scripts.OnClick(); assert(clicks == 1, "lost click callback")

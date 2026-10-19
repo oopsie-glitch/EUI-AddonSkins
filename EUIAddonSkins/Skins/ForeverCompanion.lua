@@ -8,6 +8,7 @@ local roots = setmetatable({}, { __mode = "k" })
 local seen = setmetatable({}, { __mode = "k" })
 local hooked = setmetatable({}, { __mode = "k" })
 local paints = setmetatable({}, { __mode = "k" })
+local paintReverse = setmetatable({}, {__mode = "k"})
 local tabs = setmetatable({}, { __mode = "k" })
 local sideTabs = setmetatable({}, { __mode = "k" })
 local pending, queued = {}, false
@@ -44,13 +45,25 @@ local function Allowed(f)
         and not (f.IsProtected and f:IsProtected())
 end
 
-local function Paint(t, kind)
+local function Paint(t, kind, reverse)
     if not t or not t.SetColorTexture then return end
     local r, g, b = S.GetAccentColor()
     if kind == "accent" then t:SetColorTexture(r, g, b, 0.9)
     elseif kind == "selection" then t:SetColorTexture(r, g, b, 0.18)
-    elseif kind == "light" then t:SetColorTexture(1, 1, 1, 0.045)
-    elseif kind == "header" then t:SetColorTexture(1, 1, 1, 0.055)
+    elseif kind == "light" or kind == "dark" or kind == "header" then
+        -- Keep the native two-half row geometry, with a neutral centre glow.
+        if reverse == nil then reverse = paintReverse[t] end
+        local colors = API.COLORS and API.COLORS[kind]
+        if colors then
+            local first, last = reverse and colors.center or colors.edge, reverse and colors.edge or colors.center
+            t:SetColorTexture(1, 1, 1, 1)
+            if t.SetGradient and CreateColor then
+                t:SetGradient("HORIZONTAL", CreateColor(first[1], first[2], first[3], 1), CreateColor(last[1], last[2], last[3], 1))
+            elseif t.SetGradientAlpha then
+                t:SetGradientAlpha("HORIZONTAL", first[1], first[2], first[3], 1, last[1], last[2], last[3], 1)
+            else t:SetColorTexture(colors.center[1], colors.center[2], colors.center[3], 1) end
+        end
+        paintReverse[t] = reverse
     elseif kind == "pane" then t:SetColorTexture(0.055, 0.055, 0.06, 0.96)
     else t:SetColorTexture(0, 0, 0, 0.12) end
     paints[t] = kind
@@ -60,13 +73,12 @@ end
 local function Palette()
     local c = API.COLORS
     if not c then return end
-    local r, g, b = S.GetAccentColor()
     c.pane = { 0.055, 0.055, 0.06 }
     c.border = { 0.055, 0.055, 0.055 }
     c.bar = { 0.065, 0.065, 0.075 }
-    c.light = { center = { 0.085, 0.085, 0.095 }, edge = { 0.055, 0.055, 0.065 } }
-    c.dark = { center = { 0.05, 0.05, 0.06 }, edge = { 0.025, 0.025, 0.035 } }
-    c.header = { center = { r * 0.18, g * 0.18, b * 0.18 }, edge = { 0.025, 0.025, 0.035 } }
+    c.light = { center = { 0.13, 0.13, 0.14 }, edge = { 0.075, 0.075, 0.085 } }
+    c.dark = { center = { 0.085, 0.085, 0.095 }, edge = { 0.05, 0.05, 0.06 } }
+    c.header = { center = { 0.16, 0.16, 0.17 }, edge = { 0.09, 0.09, 0.10 } }
     c.sep = { 0.20, 0.20, 0.22, 0.35 }
 end
 
@@ -521,7 +533,8 @@ local function Install(skin)
         if Allowed(owner) and v[1] and v[1].SetPoint then Canvas(owner, v[1]) end
     end)
     Wrap("StripedBackground", function(v, owner, style)
-        Paint(v[1], style); Paint(v[2], style)
+        style = style or "dark"
+        Paint(v[1], style, false); Paint(v[2], style, true)
         if style == "header" and Allowed(owner) and owner:GetObjectType() == "Frame" then headers[owner] = true end
     end)
     Wrap("CreateSideTab", function(v)

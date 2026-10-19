@@ -2,6 +2,7 @@
 local enabled, combat, allocated, hookCount = true, false, 0, 0
 local errors, timers, looks, events, handlers = {}, {}, {}, {}, {}
 local module, factory, fontFace, accent = nil, nil, 'EUI', 0.25
+local fontWrites, checkboxPaints, colourWrites = 0, 0, 0
 local ns = {IsEnabled = function() return enabled end}
 ns.RegisterSkinDefinition = function(id, fn) assert(id == 'AllTheThings'); factory = fn end
 ns.RegisterModule = function(id, _, available, install) module = {id=id, available=available, install=install} end
@@ -36,13 +37,17 @@ local function Object(kind, parent)
     function f:GetFont() return self.path,self.size,self.flags end
     function f:SetFont(path,size,flags) assert(not combat); self.path,self.size,self.flags=path,size,flags end
     function f:SetFontObject() self.path='Native'; self.size=15; self.flags='' end
-    function f:SetTextColor(...) self.color={...} end
+    function f:SetTextColor(r,g,b,a) self.color[1],self.color[2],self.color[3],self.color[4]=r,g,b,a end
     function f:GetAlpha() return self.alpha end
     function f:SetAlpha(v) self.alpha=v end
-    function f:SetColorTexture(...) self.color={...} end
-    function f:SetVertexColor(...) self.vertex={...} end
+    function f:SetColorTexture(r,g,b,a)
+        colourWrites=colourWrites+1; self.color[1],self.color[2],self.color[3],self.color[4]=r,g,b,a
+    end
+    function f:SetVertexColor(r,g,b,a)
+        self.vertex=self.vertex or {}; self.vertex[1],self.vertex[2],self.vertex[3],self.vertex[4]=r,g,b,a
+    end
     function f:SetTexture(v) self.texture=v end
-    function f:SetPoint(...) self.point={...} end
+    function f:SetPoint(...) if not ATT_PERF_FIXTURE then self.point={...} end end
     function f:ClearAllPoints() self.point=nil end
     function f:SetAllPoints(p) self.anchor=p end
     function f:SetFrameLevel(v) self.level=v end
@@ -83,17 +88,17 @@ local function Text(parent)
 end
 local S = {GetFont=function() return fontFace,'' end, GetAccentColor=function() return accent,0.6,0.8 end,
     GetPanelColor=function() return 0.06,0.06,0.07,0.95 end, OnLooksChanged=function(fn) looks[#looks+1]=fn end}
-S.Font=function(f) f:SetFont(fontFace, f.size, '') end
+S.Font=function(f) fontWrites=fontWrites+1; f:SetFont(fontFace, f.size, '') end
 S.Panel=function(f) f.panel=true; f:CreateTexture(nil,'BACKGROUND') end
 S.ScrollBar=function(f) f.scroll=true end
 S.CloseButton=function(f) f.close=true end
-S.Checkbox=function(f) f.check=true end
+S.Checkbox=function(f) checkboxPaints=checkboxPaints+1; f.check=true end
 S.Button=function(f) f.button=true end
 S.EditBox=function(f) f.input=true end
 S.Dropdown=function(f) f.dropdown=true end
 S.StateButtonLabel=function(f) f.stateLabel=true end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins',ns)
-assert(loadfile('EUIAddonSkins/Skins/AllTheThings.lua'))('EUIAddonSkins',ns)
+assert(loadfile(ATT_SKIN_PATH or 'EUIAddonSkins/Skins/AllTheThings.lua'))('EUIAddonSkins',ns)
 assert(not module and factory, 'skin should defer its implementation')
 factory(); AllTheThings=nil; assert(not module.available())
 local function Row(parent)
@@ -108,7 +113,9 @@ local function Window()
     w.ScrollBar=Object('Slider',w); w.ScrollBar.thumb=Object('Texture')
     w.Container=Object('Frame',w); w.Container.rows=setmetatable({Row(w.Container)}, {
         __index=function() error('skinning instantiated a lazy collection row') end})
-    w.DefaultRedraw=function(self) self.Container.rows[1].Label:SetFontObject('GameFontNormal') end
+    w.DefaultRedraw=function(self)
+        if not self.stableFonts then self.Container.rows[1].Label:SetFontObject('GameFontNormal') end
+    end
     w.scripts.OnShow=function() w.nativeShow=true end
     return w
 end
@@ -142,11 +149,38 @@ local oldSize=row.Label.size; prime:DefaultRedraw(); assert(row.Label.path=='EUI
 local count,hooks=allocated,hookCount
 for _=1,100 do prime:DefaultRedraw() end
 assert(allocated==count and hookCount==hooks, 'warm redraw creates UI objects or duplicate hooks')
+if not ATT_PERF_FIXTURE then
+    prime.stableFonts=true
+    local writes,paints,colours=fontWrites,checkboxPaints,colourWrites
+    for _=1,100 do
+        prime:DefaultRedraw(); check:Enable(); check.scripts.OnShow(check)
+    end
+    assert(fontWrites==writes and checkboxPaints==paints and colourWrites==colours,
+        'unchanged redraw/settings callbacks repaint existing controls')
+    prime.stableFonts=false; prime:DefaultRedraw()
+    assert(fontWrites==writes+1, 'native font reset was not restored exactly once')
+    local extra=Row(prime.Container); prime.Container.rows[2]=extra; prime.rowCount=1
+    prime.stableFonts=true; prime:DefaultRedraw()
+    assert(extra.Label.path=='Native', 'redraw inspected rows beyond the visible budget')
+    prime.rowCount=2; prime:DefaultRedraw(); assert(extra.Label.path=='EUI', 'newly visible row missed')
+    local getFont=extra.Label.GetFont
+    extra.Label.GetFont=function() error('hidden window was inspected') end
+    prime.shown=false; prime:DefaultRedraw(); prime.shown=true
+    extra.Label.GetFont=getFont; prime.stableFonts=false
+end
 local other=Window(); AllTheThings.Windows.MiniList=other; handlers.OnWindowCreated(other,'MiniList')
 assert(other.CloseButton.close and other.Container.rows[1].Label.path=='EUI')
 local fresh,marker=settings:CreateOptionsPage('new'); assert(marker=='native-return' and nativeCalls==1)
 local late=Object('CheckButton'); late.Text=Text(late); late.checkedArt=Object('Texture'); late.disabledArt=Object('Texture')
 fresh:RegisterObject(late); Flush(); assert(late.check and late.Text.path=='EUI', 'late settings controls missed')
+if not ATT_PERF_FIXTURE then
+    local unfinished=Object('Button'); fresh:RegisterObject(unfinished)
+    unfinished.scripts.OnShow(unfinished) -- Construction has not assigned the label yet.
+    unfinished.Text=Text(unfinished); Flush()
+    assert(unfinished.button and unfinished.Text.path=='EUI', 'construction batch skipped a newly completed control')
+    unfinished:Disable(); assert(unfinished.Text.color[1]==0.48)
+    unfinished:Enable(); assert(unfinished.Text.color[1]==0.9)
+end
 assert(AllTheThings.ShowPopupDialogWithMultiLineEditBox()=='dialog-return')
 assert(ATTEditBox.Button.button and ATTEditBox.EditBox.path=='EUI' and not ATTEditBox.EditBox.input
     and ATTEditBox.EditBox.text=='native export data', 'multiline dialog lost native editor behaviour')
@@ -161,6 +195,12 @@ combat=false; for _,f in ipairs(events) do if f.events and f.events.PLAYER_REGEN
 Flush(); assert(disabled.CloseButton.close, 'combat-deferred window never styled')
 local protected=Window(); protected.protected=true; handlers.OnWindowCreated(protected); assert(not protected.CloseButton.close)
 assert(#errors==0,table.concat(errors,'\n'))
+if ATT_PERF_FIXTURE then
+    return {prime=prime, check=check, page=page, Row=Row, Object=Object, Text=Text, S=S, Flush=Flush,
+        setEnabled=function(v) enabled=v end, module=module,
+        allocations=function() return allocated,hookCount end,
+        writes=function() return fontWrites,checkboxPaints,colourWrites end}
+end
 AllTheThings=nil
 ATTEditBox=nil
 print('PASS: ATT lazy windows, row reuse, native colours/actions/profile backdrops, settings construction, theme updates, disable/combat gates and stable warm allocations')

@@ -22,3 +22,28 @@ New windows are observed through `OnWindowCreated`. Pooled rows are restyled aft
 These mocked checks do not establish in-game appearance, client compatibility or taint safety. Shared Blizzard tooltips and static popups are not independently restyled by this adapter. ATT versions using different UI internals may need additional coverage.
 
 The linked Azilroka/AddOnSkins adapter was inspected for context only. Its restrictive `AddOnSkins/License.txt` does not grant general copying into this MIT project; no source or assets from it are included. The new adapter is original code using EllesmereUI's public API. ATT and EllesmereUI are installed separately.
+
+## Performance follow-up (alpha.2)
+
+The initial alpha created fresh font-hook closures on every row visit even though the shared hook guard discarded them. It also repainted checkbox textures/anchors on repeated Enable and OnShow callbacks. These paths now bind font hooks once, paint unchanged controls once per theme generation, and update label colours only when enabled state changes. A completed-construction batch still repaints newly initialized controls. Native font resets remain synchronous; theme changes repaint registered controls.
+
+Row work is restricted to ATT's visible row budget with `rawget`, avoiding lazy pool creation. Hidden windows return immediately. Hover texture styling is applied once. ATT profile backdrops, row dimensions, collection colours and native callbacks are preserved. No shared helper was changed.
+
+Reproduce the comparison from the repository root:
+
+```
+python3 benchmarks/run_att.py --baseline
+python3 benchmarks/run_att.py
+```
+
+The baseline is the exact initial-alpha adapter from `f0e88253de6f0f077fb8ed7aace8e5c8ba965ff8`. Both runs use the same source-shaped Lua 5.4 fixture and seven trials. Table values are median elapsed times; allocation figures are GC-stopped temporary Lua growth for that trial.
+
+| Simulated workload | Initial alpha | Optimized alpha |
+| --- | ---: | ---: |
+| 2,000 redraws of 80 visible rows | 320.855 ms / 45,156.656 KiB | 187.194 ms / 156.625 KiB |
+| 200 bursts enabling 100 already enabled settings | 182.368 ms / 22,970.500 KiB | 13.470 ms / 1,562.812 KiB |
+| 200 bursts showing 100 styled settings controls | 167.301 ms / 21,408.000 KiB | 14.702 ms / 0.375 KiB |
+
+Both builds create zero UI objects or new hooks in these warm workloads. The optimized build also makes zero font, checkbox and colour writes in them. Fonts reset by ATT, real enable/disable changes, theme changes and newly created controls are separately covered by regression tests.
+
+These are mock CPU/allocation measurements, not WoW memory or FPS measurements. The hook mock allocates argument/return tables (including when the skin is disabled), and UI methods are simplified. Absolute timings vary by host. No real-client profiling was available; startup is a one-time inspection of existing ATT-owned windows/settings, while the absent-target factory remains deferred. No polling or per-frame skin loop is installed.

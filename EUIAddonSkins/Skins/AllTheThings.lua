@@ -7,6 +7,8 @@ end, function(S, module)
     local H = ns.CreateSkinHelper(S, module)
     local soft = ns.CreateSoftSkin(S, module)
     local windows, objects, surfaces, fonts = {}, {}, {}, {}
+    local painted, states, highlights = {}, {}, {}
+    local generation = 0
     local pending, painting, waiting = {}, false, false
     local PaintWindow, BindWindow, BindObject, PaintObject, Refresh
     local events = CreateFrame("Frame")
@@ -21,18 +23,29 @@ end, function(S, module)
     end
     local function Font(text, control)
         if not H.Allowed(text) or not text.GetFont then return end
+        local entry = fonts[text]
+        if not entry then
+            entry = {}; fonts[text] = entry
+            H.Hook(text, "SetFontObject", function() Run(Font, text, entry.control) end)
+        end
+        if control then entry.control = control end
         local path, size, flags = text:GetFont()
         if not path then return end -- A registered label may not be initialized yet.
         local font, outline = S.GetFont()
-        if path ~= font or flags ~= (outline or "") or fonts[text] ~= size then
+        if path ~= font or flags ~= (outline or "") or entry.size ~= size or entry.generation ~= generation then
             S.Font(text) -- Preserve native point size, layout and collection colours.
-            fonts[text] = size
+            entry.size, entry.generation = size, generation
         end
         if control and text.SetTextColor then
             local shade = control.IsEnabled and not control:IsEnabled() and 0.48 or 0.9
             text:SetTextColor(shade, shade, shade, 1)
         end
-        H.Hook(text, "SetFontObject", function() Run(Font, text, control) end)
+    end
+    local function State(f)
+        local enabled = not f.IsEnabled or f:IsEnabled()
+        if states[f] == enabled then return end
+        states[f] = enabled
+        Font(f.Text or (f.GetFontString and f:GetFontString()), f)
     end
     local function Gradient(t, first, last, r, g, b)
         t:SetColorTexture(1, 1, 1, 1)
@@ -73,15 +86,20 @@ end, function(S, module)
         if thumb then thumb:SetWidth(5) end -- Keep thumb height, range and native hit area.
     end
     local function Rows(window)
+        if window.IsShown and not window:IsShown() then return end
         local rows = window.Container and window.Container.rows
         if type(rows) ~= "table" then return end
         -- pairs does not invoke ATT's lazy __index. Never create a row by
         -- indexing past the pool, or traverse its collection/database objects.
-        for _, row in pairs(rows) do
+        for i = 1, math.min(window.rowCount or #rows, #rows) do
+            local row = rawget(rows, i)
             if H.Allowed(row) and (not row.IsShown or row:IsShown()) then
                 Font(row.Label); Font(row.Summary)
                 local hover = row.GetHighlightTexture and H.Texture(row:GetHighlightTexture())
-                if hover then hover:SetColorTexture(1, 1, 1, 0.10) end
+                if hover and not highlights[hover] then
+                    highlights[hover] = true
+                    hover:SetColorTexture(1, 1, 1, 0.10)
+                end
                 -- Background marks map selections; Texture/Indicator/Summary
                 -- carry collection, rarity and completion state. Leave them native.
             end
@@ -119,8 +137,10 @@ end, function(S, module)
         end
         Font(f.Text, f)
     end
-    PaintObject = function(f)
+    PaintObject = function(f, completed)
         if not H.Allowed(f) then return end
+        if painted[f] == generation and not completed then State(f); return end
+        painted[f] = generation
         local kind = f:GetObjectType()
         if kind == "CheckButton" then Check(f)
         elseif kind == "EditBox" then
@@ -144,11 +164,12 @@ end, function(S, module)
         if kind ~= "FontString" then
             for _, region in ipairs(H.Regions(f)) do Font(region) end
         end
+        states[f] = not f.IsEnabled or f:IsEnabled()
     end
     local function PaintPending()
         for object in pairs(pending) do
             pending[object] = nil
-            PaintObject(object)
+            PaintObject(object, true)
         end
     end
     local function FlushObjects() Run(PaintPending) end
@@ -161,9 +182,10 @@ end, function(S, module)
             -- Bind now; paint completed controls together on the next frame.
             H.Script(f, "OnShow", function() Run(PaintObject, f) end)
             for _, method in ipairs({"Enable", "Disable", "SetEnabled"}) do
-                H.Hook(f, method, function() Run(PaintObject, f) end)
+                H.Hook(f, method, function() Run(State, f) end)
             end
             H.Hook(f, "RegisterObject", function(_, object)
+                if not H.Allowed(object) then return end
                 BindObject(object); pending[object] = true; H.Queue(pending, FlushObjects)
             end)
             if type(f.Objects) == "table" then for _, object in ipairs(f.Objects) do BindObject(object) end end
@@ -180,11 +202,13 @@ end, function(S, module)
         local dialog = _G.ATTEditBox
         if not H.Allowed(dialog) then return end
         PaintWindow(dialog)
+        if surfaces[dialog] then Surface(dialog) end
         BindObject(dialog)
         PaintPending()
     end
     Refresh = function()
         waiting = false
+        generation = generation + 1
         for _, window in pairs(app.Windows) do
             PaintWindow(window); if surfaces[window] then Surface(window) end
         end

@@ -24,6 +24,7 @@ local function texture(kind, parent)
     function t:SetAllPoints(anchor) self.anchor = anchor end
     function t:ClearAllPoints() self.points = {} end
     function t:SetShown(v) self.shown = v end
+    function t:IsShown() return self.shown ~= false end
     function t:GetVertexColor() return table.unpack(self.color or {1, 1, 1, 1}) end
     function t:SetSize(w, h) self.width, self.height = w, h end
     function t:SetHeight(h) self.height = h end
@@ -346,6 +347,11 @@ assert(Details:OpenOptionsWindow() == 'options-native' and DetailsOptionsWindow.
 -- Source-shaped category reset: a page OnShow scan runs before Details applies
 -- the final selected template. Styling must be settled when the click returns.
 DetailsOptionsWindow.sectionFramesContainer = {}
+local originalTab = S.Tab
+S.Tab = function(f)
+    originalTab(f)
+    if not f.euiLabel then f.euiLabel = font(f) end
+end
 for id = 1, 3 do
     local page = frame('Frame', nil, DetailsOptionsWindow); page:Hide()
     local button = frame('Button', nil, DetailsOptionsWindow); button.label = font(button)
@@ -377,10 +383,12 @@ for _, id in ipairs({1, 2, 3, 1, 3}) do
         assert(button.backdrop == nil and button.tab and button.selected == (i == id), 'category styles/selection flashed after native reset')
         assert(section.sectionButton.icon.alpha == 0, 'native category marker returned')
         assert(button.label.alpha == 0, 'native template label overlapped the EUI tab label')
+        assert(button.euiLabel.textColor[1] == (i == id and accent or 0.88), 'visible section label missed selection contrast')
     end
     flush()
     assert(page.sectionButton.widget.selected, 'queued scan lost the selected category')
 end
+S.Tab = originalTab
 local input = frame('EditBox', nil, DetailsOptionsWindow)
 local description = font(DetailsOptionsWindow)
 local dfInput = frame('EditBox', nil, DetailsOptionsWindow)
@@ -397,6 +405,131 @@ assert(input.inputOptions.noBorder and dropdown.dropdown and check.button and ch
 assert(dfInput.inputOptions.padInput == false and not dfInput.padded and dfInput.points[1][4] == 2 and dfInput:GetWidth() == 120, 'DF field expanded across its description')
 assert(dfInput.value == 'saved-value' and dfInput.commit() == 'commit-native', 'DF input contents/commit changed')
 assert(infoBar.fill == 'eui-bar' and infoBar.value == 65)
+-- Source-shaped DF options: pooled switches, template bursts and native value editing.
+do
+    local page = DetailsOptionsWindow.sectionFramesContainer[3]
+    page:Show()
+    local heading, warning, desc = font(page), font(page), font(page)
+    heading:SetText('General:'); heading:SetTextColor(1, 0.82, 0)
+    warning:SetText('|cffff0000Warning|r'); warning:SetTextColor(1, 0.1, 0.1)
+    desc:SetText('Native description'); desc:SetTextColor(0.6, 0.6, 0.6)
+    page.widget_list_by_type = {label = {{widget = heading}, {widget = warning}, {widget = desc}}}
+    local title = font(DetailsOptionsWindow); title:SetText('Details! Options Panel')
+    DetailsOptionsWindow.title = {widget = title}
+    local close = frame('Button', 'DetailsOptionsWindowCloseButton', DetailsOptionsWindow)
+    close.action = function() return 'close-native' end
+    local button = frame('Button', nil, page); button:SetSize(20, 20)
+    local mark = button:CreateTexture(); mark:SetShown(true)
+    local label = font(page); label:SetText('Allow |cffff0000CLEAR|r')
+    local w = {widget = button, type = 'switch', checked_texture = mark, value = true, hasLabel = {widget = label}}
+    button.MyObject = w
+    function w:SetTemplate()
+        mark:SetTexture('native-green-check'); mark:SetSize(32, 32); mark:SetVertexColor(0, 1, 0, 1)
+        button.backdrop = {bgFile = 'native-switch'}
+        return 'template-native', nil, 7
+    end
+    function w:SetValue(value) self.value = value; mark:SetShown(value); return 'value-native' end
+    function w:Disable() self.lockdown = true; mark:SetShown(false); return 'disable-native' end
+    function w:Enable() self.lockdown = false; mark:SetShown(self.value); return 'enable-native' end
+    button.action = function() return w:SetValue(not w.value) end
+    local drop = frame('Button', nil, page)
+    drop.arrowTexture, drop.arrowTexture2 = drop:CreateTexture(), drop:CreateTexture()
+    drop.arrowTexture2:SetShown(false)
+    local icon = drop:CreateTexture(); icon.path = 'selected-spell'; icon:SetAlpha(0.7)
+    local dropdownWidget = {widget = drop, type = 'dropdown', icon = icon}
+    drop.MyObject = dropdownWidget
+    function dropdownWidget:SetTemplate()
+        drop.arrowTexture:SetTexture('native-gold-arrow'); drop.arrowTexture:SetSize(32, 28)
+        return 'dropdown-template-native'
+    end
+    drop.dropdownframe = frame('ScrollFrame', nil, drop)
+    local range = frame('Slider', nil, page); range:SetSize(180, 20)
+    local thumb = range:CreateTexture(); range.GetThumbTexture = function() return thumb end
+    range.GetOrientation = function() return 'HORIZONTAL' end
+    local number = font(range); number:SetText('25')
+    local slider = {widget = range, slider = range, type = 'slider', amt = number, value = 25, creates = 0}
+    range.MyObject = slider
+    function slider:SetValueBox(shown, side, width, height, gap)
+        self.value_box_shown, self.value_box_side = shown, side
+        if not self.value_box then
+            self.creates = self.creates + 1
+            self.value_box = frame('EditBox', nil, range); self.value_box.MyObject = self
+            self.value_box.commit = function(value) self.value = math.max(1, math.min(50, value)); return 'commit-native' end
+        end
+        self.value_box:SetSize(width, height); self.value_box:SetPoint('LEFT', range, 'RIGHT', gap, 0)
+        number:SetShown(not shown)
+        self.value_box:Show()
+        if self.value_box.hooks.OnShow then self.value_box.hooks.OnShow(self.value_box) end
+    end
+    function slider:SetTemplate() range:SetWidth(180); self.value_box_shown = false; return 'slider-template-native' end
+    local hiddenPage = DetailsOptionsWindow.sectionFramesContainer[2]
+    hiddenPage:Hide()
+    local late = frame('Button', nil, hiddenPage)
+    late.MyObject = {type = 'switch', checked_texture = late:CreateTexture()}
+    local oldRange = frame('Slider', nil, page); oldRange:SetSize(180, 20)
+    local oldThumb = oldRange:CreateTexture(); oldRange.GetThumbTexture = function() return oldThumb end
+    oldRange.GetOrientation = function() return 'HORIZONTAL' end
+    oldRange.MyObject = {widget = oldRange, type = 'slider', amt = font(oldRange)}
+    local alreadyBoxed = frame('Slider', nil, page); alreadyBoxed:SetSize(120, 20)
+    local boxedThumb = alreadyBoxed:CreateTexture(); alreadyBoxed.GetThumbTexture = function() return boxedThumb end
+    alreadyBoxed.GetOrientation = function() return 'HORIZONTAL' end
+    local boxed = {widget = alreadyBoxed, type = 'slider', value_box_shown = true, value_box_side = 'left'}
+    boxed.value_box = frame('EditBox', nil, alreadyBoxed); boxed.value_box.MyObject = boxed
+    boxed.SetValueBox = function() error('existing native box must keep its layout') end
+    alreadyBoxed.MyObject = boxed
+    modules.Details.refresh(); flush()
+    assert(not late.button, 'hidden options content was skinned eagerly')
+    assert(oldRange:GetWidth() == 180 and oldRange.MyObject.value_box == nil, 'legacy numeric UI was replaced without native support')
+    assert(alreadyBoxed:GetWidth() == 120 and boxed.value_box_side == 'left', 'existing native value box layout changed')
+    assert(Details222.OptionsPanel.SelectOptionsSection(2) == 'section-native' and late.button, 'newly selected section was not styled synchronously')
+    Details222.OptionsPanel.SelectOptionsSection(3); flush()
+    assert(heading.textColor[1] == accent and warning.textColor[1] == 1 and warning.text == '|cffff0000Warning|r' and desc.textColor[1] == 0.6)
+    assert(title.textColor[1] == accent and DetailsOptionsWindow.shellOptions.noAccent and close.close and close.action() == 'close-native')
+    assert(mark.path == 'solid' and mark.color[1] == accent and mark.points[1][4] == 4 and mark.points[2][4] == -4 and mark:IsShown())
+    assert(button.action() == 'value-native' and not w.value and not mark:IsShown())
+    assert(w:SetValue(true) == 'value-native' and mark:IsShown())
+    assert(w:Disable() == 'disable-native' and not mark:IsShown() and label.textColor[1] == 0.5)
+    assert(w:Enable() == 'enable-native' and mark:IsShown() and label.text:find('|cffff0000CLEAR|r', 1, true))
+    assert(drop.arrowTexture.path:find('eui%-arrow%-down3') and drop.arrowTexture.width == 10 and not drop.arrowTexture2:IsShown())
+    assert(icon.path == 'selected-spell' and icon.alpha == 0.7)
+    assert(range:GetWidth() == 140 and slider.value_box:GetWidth() == 36 and slider.value_box.points[1][4] == 4 and not number:IsShown())
+    assert(slider.value_box.inputOptions.padInput == false and slider.value_box.commit(100) == 'commit-native' and slider.value == 50)
+    local savedAccent = accent
+    accent = 0.23; modules.Details.refresh(); flush()
+    assert(heading.textColor[1] == accent and mark.color[1] == accent and title.textColor[1] == accent)
+    assert(warning.textColor[1] == 1 and desc.textColor[1] == 0.6, 'theme changed semantic label colours')
+    accent = savedAccent; modules.Details.refresh(); flush()
+    local nativeParent = button.parent
+    button.parent = UIParent
+    w:SetTemplate(); assert(mark.path == 'native-green-check', 'stale widget hook styled a foreign owner')
+    button.parent = nativeParent
+    local settings = ns.DetailsSettings(); settings.menus = false
+    w:SetTemplate(); assert(mark.path == 'native-green-check', 'menu-disabled callback restyled a switch')
+    settings.menus = true; modules.Details.refresh(); flush()
+    local count, creates, hook = #button.regions + #drop.regions + #range.regions, slider.creates, w.SetTemplate
+    auditScans[DetailsOptionsWindow] = 0
+    for _ = 1, 100 do
+        local a, b, c = w:SetTemplate(); assert(a == 'template-native' and b == nil and c == 7)
+        assert(dropdownWidget:SetTemplate() == 'dropdown-template-native')
+        assert(slider:SetTemplate() == 'slider-template-native')
+    end
+    flush()
+    assert(auditScans[DetailsOptionsWindow] == 0 and slider.creates == creates and w.SetTemplate == hook)
+    assert(#button.regions + #drop.regions + #range.regions == count and range:GetWidth() == 140)
+    assert(mark.path == 'solid' and drop.arrowTexture.path:find('eui%-arrow%-down3') and icon.alpha == 0.7)
+    print('BENCH details_templates switches=100 dropdowns=100 sliders=100 full_scans=0 new_value_boxes=0')
+    local nav = DetailsOptionsWindow.sectionFramesContainer[1].sectionButton
+    nav.lockdown = true; nav:SetTemplate(); assert(nav.widget.euiLabel.textColor[1] == 0.5)
+    nav.lockdown = false; nav:SetTemplate(); assert(nav.widget.euiLabel.textColor[1] == 0.88)
+    local protected = frame('Button', nil, page); protected.protected = true
+    protected.MyObject = {type = 'switch', checked_texture = protected:CreateTexture()}
+    modules.Details.refresh(); flush(); assert(not protected.button)
+    combat = true; mark:SetTexture('combat-native'); w:SetTemplate(); assert(mark.path == 'native-green-check')
+    combat = false; modules.Details.refresh(); flush(); assert(mark.path == 'solid')
+    enabled = false; w:SetTemplate(); assert(mark.path == 'native-green-check')
+    enabled = true; modules.Details.refresh(); flush(); assert(mark.path == 'solid')
+end
+
 -- The designer is created after the options window and repopulates controls
 -- after object clicks. Native refreshes must finish with styled pooled rows.
 local editor = frame('Frame', 'DetailsOptionsDesignerEditor', DetailsOptionsWindow)

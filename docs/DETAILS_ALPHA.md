@@ -45,3 +45,19 @@ Tiny Threat uses its native plugin ID and host window to select the appropriate 
 Header buttons anchor independently to the EUI header, preventing sibling dependency cycles during native redraws. Restoration clears all managed anchors before restoring the original graph, ahead of native skin resets. A scoped adapter corrects Cooltip's receiver for exact native raid-plugin switch callbacks produced by `MontaRaidOption`; plugin selection logic and menu parameters remain native. Regression fixtures reproduce the previous anchor cycle and callback receiver failure.
 
 Raid-menu dispatch supplies the plugin manager explicitly, avoiding the legacy `ExecFunc` refresh that requires absent `CoolTip` metadata on modern toolbar buttons. After switching, the existing attribute button's OnEnter handler rebuilds only the same owned menu. If the handler is unavailable, the stale popup closes. Other owners are left untouched. Tests include the legacy follow-up failure, repeated modern menu refreshes, missing handlers, ownership changes and nil-containing return values.
+
+
+## Options refinement alpha
+
+Untagged branch `skin/details-options`, based on v1.5.1. Shared helpers, meter styling, settings and release versions are unchanged.
+
+- DF checkbox switches use solid inset accent squares; native value, checked visibility, disabled state and callbacks remain in control. Native toggle widgets keep their knob and visibility model.
+- Standalone gold/orange option headings and known window captions follow the selected accent. Warning/description colours and inline colour codes are preserved. Available section labels have clearer contrast; disabled sections stay muted.
+- Options/container shells omit the top accent line; active sections retain theirs. The named native options close button uses the EUI close treatment without replacing its action. Ordinary option buttons use softer surfaces, preserving their icons.
+- Native dropdown arrows become neutral chevrons. Selected-option artwork and dropdown actions are retained; pooled popup contents are scanned only within that popup on show.
+- On DF versions with `SetValueBox`, eligible horizontal sliders use the native numeric editor, reserving 40 UI units inside the existing row footprint. Existing native value-box layouts retain their side/size. Narrow controls and versions without the API keep their native value presentation. Input commit, range clamping and drag callbacks remain native.
+- Registered hidden option sections are excluded from scans. Native section selection still applies the completed visible page synchronously. Switch/dropdown/slider template callbacks repaint their own controls rather than scheduling a full-window pass. There is no polling or global framework replacement.
+
+Sources reviewed: Tercioo/Details-Damage-Meter `Libs/DF/slider.lua`, `dropdown.lua`, `label.lua`, `buildmenu.lua`, `frames/window_options2.lua`, `frames/window_options2_sections.lua` and `core/plugins.lua`. No upstream code or assets are bundled.
+
+Validation: `python3 scripts/package.py` runs all regression suites, Lua syntax, manifests and the 39-file single-folder package checks. Source-shaped cases cover native switch values/visibility, disabled/theme/ownership guards, template returns, legacy sliders, existing numeric-editor layouts, unchanged commit handlers, selected icons, hidden-page activation and reusable editors. One hundred switch, dropdown and slider template updates each produce zero full-window scans or additional numeric editors in the mock. Existing meter, Tiny Threat, designer, menu-restoration and combat tests remain in the suite. Automated checks do not establish actual WoW rendering, FPS or taint behaviour.

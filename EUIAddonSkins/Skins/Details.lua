@@ -118,6 +118,168 @@ local function Setup(C, refresh)
         end
         return false
     end
+    -- Options sections are explicitly registered; defer hidden content until
+    -- the completed native section-selection callback styles the visible page.
+    local scan = H.Scan
+    H.Scan = function(root, callback, visit, excluded)
+        local exclude = {}
+        for f, value in pairs(excluded or {}) do exclude[f] = value end
+        local options = Frame(_G.DetailsOptionsWindow)
+        for _, section in pairs(options and options.sectionFramesContainer or {}) do
+            local page = Frame(section)
+            if H.Allowed(page) and page.IsShown and not page:IsShown() then exclude[page] = true end
+        end
+        return scan(root, callback, visit, exclude)
+    end
+    local controls, headingTints = {}, setmetatable({}, {__mode = "k"})
+    local function OptionOwned(f)
+        for _ = 1, 24 do
+            if not H.Allowed(f) then return false end
+            if f == _G.DetailsOptionsWindow or f == _G.DetailsPluginContainerWindow then return true end
+            f = f.GetParent and f:GetParent()
+        end
+        return false
+    end
+    local function LabelTone(text, widget, heading)
+        text = Frame(text)
+        if not H.Allowed(text) or text:GetObjectType() ~= "FontString" then return end
+        H.Font(text)
+        if widget and (widget.lockdown or widget.widget and widget.widget.IsEnabled and not widget.widget:IsEnabled()) then
+            text:SetTextColor(0.5, 0.5, 0.5, 1)
+        elseif heading then text:SetTextColor(S.GetAccentColor())
+        else text:SetTextColor(0.88, 0.88, 0.9, 1) end
+    end
+    state.OptionLabels = function(f)
+        if not OptionOwned(f) then return end
+        for _, key in ipairs({"title", "titulo", "instancetext", "editingGroupLabel"}) do
+            LabelTone(f[key], nil, true)
+        end
+        -- BuildMenu exposes standalone labels separately from paired controls.
+        -- Only its gold/orange headings change; descriptions and semantic colours stay native.
+        for _, label in ipairs(f.widget_list_by_type and f.widget_list_by_type.label or {}) do
+            local text = Frame(label)
+            if H.Allowed(text) and text.GetTextColor then
+                local r, g, b = text:GetTextColor()
+                local old = headingTints[text]
+                local heading = r and r > 0.7 and g > 0.4 and b < 0.3
+                    or old and r == old[1] and g == old[2] and b == old[3]
+                if heading then
+                    LabelTone(text, nil, true)
+                    headingTints[text] = {S.GetAccentColor()}
+                else headingTints[text] = nil end
+            end
+        end
+    end
+    state.Control = function(f, kind)
+        local widget = f.MyObject
+        if type(widget) ~= "table" then return false end
+        local method = widget.type
+        if kind == "EditBox" and widget.value_box == f then
+            S.EditBox(f, {padInput = false}); return true
+        end
+        local supported = method == "switch" or method == "dropdown" or kind == "Slider" and method == "slider"
+            or kind == "Button" and method == "button" and OptionOwned(f) and (f.GetFontString and f:GetFontString() or f.Text or f.text)
+        if not supported then return false end
+        if ns.DetailsSettings().menus == false or not ns.IsEnabled(C.module) or Busy() then return true end
+        local d = controls[f]
+        if not d or d.widget ~= widget then
+            d = {widget = widget}; controls[f] = d
+            d.paint = function()
+                if not H.Allowed(f) or f.MyObject ~= widget or not Owned(f) or d.painting then return end
+                d.painting = true
+                local ok, err = pcall(state.Control, f, kind)
+                d.painting = false
+                if not ok then error(err) end
+            end
+            -- Native template/setter bursts touch just this control, not every window.
+            for _, name in ipairs({"SetTemplate", "Enable", "Disable"}) do H.Hook(widget, name, d.paint) end
+            if method == "switch" then
+                H.Hook(widget, "SetCheckedTexture", d.paint)
+                H.Hook(widget, "SetAsCheckBox", d.paint)
+                H.Hook(widget, "SetValue", d.paint)
+            end
+            local function PaintCurrent()
+                local current = controls[f]
+                if current then current.paint() end
+            end
+            H.Script(f, "OnEnable", PaintCurrent); H.Script(f, "OnDisable", PaintCurrent)
+            H.Script(f, "OnShow", PaintCurrent)
+            if kind == "Button" then H.Script(f, "OnClick", PaintCurrent) end
+        end
+        f.euiDetailsOptionVisual = true
+        if method == "switch" then
+            f.euiDetailsCheck = H.Texture(widget.checked_texture)
+            f.euiDetailsToggle = H.Texture(widget.toggle_knob)
+            S.Button(f, {"euiDetailsCheck", "euiDetailsToggle", "text", "Text", "label"})
+            if f.SetBackdrop then f:SetBackdrop(nil) end
+            if f.euiDetailsCheck and not widget.is_toggle then
+                local mark = f.euiDetailsCheck
+                mark:SetVertexColor(1, 1, 1, 1)
+                if widget.lockdown or f.IsEnabled and not f:IsEnabled() then mark:SetColorTexture(0.4, 0.4, 0.4, 0.8)
+                else mark:SetColorTexture(S.GetAccentColor()) end
+                mark:ClearAllPoints()
+                mark:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
+                mark:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -4, 4)
+                -- Native Show/Hide and alpha continue to reflect value/lockdown.
+            end
+            LabelTone(widget.hasLabel or widget.label, widget)
+        elseif method == "dropdown" then
+            local icon = H.Texture(widget.icon); local alpha = icon and icon:GetAlpha()
+            if not d.dropdown then
+                local before = {}; for _, region in ipairs(H.Regions(f)) do before[region] = true end
+                S.Dropdown(f)
+                for _, region in ipairs(H.Regions(f)) do
+                    if not before[region] and H.Texture(region) and region.GetDrawLayer and region:GetDrawLayer() == "OVERLAY" then d.arrow = region end
+                end
+                d.dropdown = true
+            end
+            if icon then icon:SetAlpha(alpha) end
+            H.Fade(f.statusbar)
+            local native = H.Texture(f.arrowTexture)
+            if native and d.arrow then H.Fade(d.arrow) end
+            for _, arrow in pairs({base = native or d.arrow, hover = H.Texture(f.arrowTexture2)}) do
+                arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
+                arrow:SetTexCoord(0, 1, 0, 1); arrow:SetSize(10, 7)
+                arrow:ClearAllPoints(); arrow:SetPoint("RIGHT", f, "RIGHT", -7, 0)
+                arrow:SetVertexColor(0.8, 0.8, 0.8, 1); arrow:SetAlpha(1)
+            end
+            if H.Allowed(f.dropdownframe) then
+                H.Script(f.dropdownframe, "OnShow", function() C.RefreshControlsNow(f.dropdownframe) end)
+                C.Panel(f.dropdownframe)
+            end
+        elseif kind == "Slider" then
+            H.LegacySlider(f)
+            local thumb = f.GetThumbTexture and H.Texture(f:GetThumbTexture())
+            if thumb and f.GetOrientation and f:GetOrientation() == "HORIZONTAL" then
+                thumb:SetSize(8, 14)
+                -- Newer DF exposes a native numeric editor. Reserve room inside
+                -- the original control width, keeping the existing row footprint.
+                if type(widget.SetValueBox) == "function" and f.GetWidth then
+                    if d.manageValueBox == nil then d.manageValueBox = not widget.value_box_shown end
+                    if d.manageValueBox then
+                        local width = f:GetWidth()
+                        if width ~= d.trackWidth then d.width = width end
+                        if d.width and d.width >= 100 then
+                            d.trackWidth = d.width - 40
+                            if width ~= d.trackWidth then f:SetWidth(d.trackWidth) end
+                            if not widget.value_box_shown or widget.value_box_side ~= "right" then widget:SetValueBox(true, "right", 36, 18, 4) end
+                        end
+                    end
+                    -- An existing native value-box layout keeps its own side/size.
+                    if H.Allowed(widget.value_box) then
+                        H.Script(widget.value_box, "OnShow", d.paint)
+                        S.EditBox(widget.value_box, {padInput = false})
+                    end
+                end
+            end
+        else
+            f.euiDetailsIcon = H.Texture(widget.icon)
+            S.Button(f, {"euiDetailsIcon", "text", "Text", "label"})
+            if f.SetBackdrop then f:SetBackdrop(nil) end
+            LabelTone((f.GetFontString and f:GetFontString()) or f.Text or f.text, widget)
+        end
+        return true
+    end
     state.Section = function(button)
         local section = state.sections[button]
         if not section then return false end
@@ -131,6 +293,12 @@ local function Setup(C, refresh)
         if widget then H.Fade(H.Texture(widget.icon)) end
         H.Fade(H.Texture(button.icon))
         if H.Tab(button, section:IsShown()) then
+            for _, text in ipairs(H.Regions(button)) do
+                local native = button.GetFontString and button:GetFontString()
+                if text ~= native and text.GetObjectType and text:GetObjectType() == "FontString" then
+                    LabelTone(text, widget, section:IsShown())
+                end
+            end
             -- EUI supplies the visible label; DF templates can recolour the
             -- hidden native label again, so keep it from doubling the text.
             H.Fade(button.GetFontString and button:GetFontString())
@@ -547,6 +715,7 @@ end
 ns.RegisterScopedSkin("Details", "Details!", {
     available = function() return type(_G.Details) == "table" and type(_G.Details.GetAllInstances) == "function" end,
     softBorders = true, preserveTextColors = true, immediateShow = true,
+    borderlessButtons = function(f) return f.euiDetailsOptionVisual == true end,
     hooks = function(C, refresh)
         local state = Setup(C, refresh)
         state.BindTiny()
@@ -573,7 +742,8 @@ ns.RegisterScopedSkin("Details", "Details!", {
             local f = Frame(value)
             if C.H.Allowed(f) then
                 state.roots[f] = true
-                result[#result + 1] = {frame = f, options = {noTopBar = true}}
+                result[#result + 1] = {frame = f, options = {noTopBar = true,
+                    noAccent = f == _G.DetailsOptionsWindow or f == _G.DetailsPluginContainerWindow}}
             end
         end
         local panel = ns.CreateDetailsSettingsPanel()
@@ -600,6 +770,10 @@ ns.RegisterScopedSkin("Details", "Details!", {
     end,
     visit = function(C, f, kind, refresh)
         local H, S = C.H, C.S
+        C.details.OptionLabels(f)
+        local options = Frame(_G.DetailsOptionsWindow)
+        local name = options and options.GetName and options:GetName()
+        if kind == "Button" and name and f == _G[name .. "CloseButton"] then S.CloseButton(f); return true end
         if C.details.Section(f) then return true end
         if C.details.DesignerRow(f) then return true end
         -- Preserve displayed values and semantic colours in breakdown bars.
@@ -609,6 +783,7 @@ ns.RegisterScopedSkin("Details", "Details!", {
             for _, text in ipairs(H.Regions(f)) do H.Font(text) end
             return true
         end
+        if C.details.Control(f, kind) then return true end
         local widget = f.MyObject
         if kind == "EditBox" and type(widget) == "table" and widget.type == "textentry"
             and not (f.IsMultiLine and f:IsMultiLine()) then
@@ -616,21 +791,6 @@ ns.RegisterScopedSkin("Details", "Details!", {
             -- Blizzard padding expands the field leftward across that label.
             S.EditBox(f, {padInput = false})
             for _, text in ipairs(H.Regions(f)) do H.Font(text) end
-            return true
-        end
-        if type(widget) == "table" and widget.type == "switch" then
-            f.euiDetailsCheck = widget.checked_texture
-            S.Button(f, {"euiDetailsCheck", "text", "Text", "label"})
-            if H.Texture(widget.checked_texture) then widget.checked_texture:SetVertexColor(S.GetAccentColor()) end
-            H.Hook(widget, "SetTemplate", refresh)
-            return true
-        end
-        if type(widget) == "table" and widget.type == "dropdown" then
-            S.Dropdown(f)
-            H.Fade(f.statusbar)
-            H.Hook(widget, "SetTemplate", refresh)
-            H.Script(f.dropdownframe, "OnShow", C.RefreshNow)
-            if H.Allowed(f.dropdownframe) then C.Panel(f.dropdownframe) end
             return true
         end
         if kind == "Slider" then

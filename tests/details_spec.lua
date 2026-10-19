@@ -370,6 +370,7 @@ Details222 = {OptionsPanel = {SelectOptionsSection = function(id)
     local pages = DetailsOptionsWindow.sectionFramesContainer
     for _, page in ipairs(pages) do page:Hide(); page.sectionButton:SetTemplate(); page.sectionButton:SetIcon() end
     local page = pages[id]; page:Show()
+    if page.RefreshOptions then page:RefreshOptions() end
     if page.hooks.OnShow then page.hooks.OnShow(page) end
     page.sectionButton:SetTemplate(); page.sectionButton:SetIcon()
     return 'section-native'
@@ -389,6 +390,47 @@ for _, id in ipairs({1, 2, 3, 1, 3}) do
     flush()
     assert(page.sectionButton.widget.selected, 'queued scan lost the selected category')
 end
+-- Repeated selection retains the completed tab highlight through native
+-- Hide/SetTemplate bursts and never scans the whole options/meter hierarchy.
+local selectedPage = DetailsOptionsWindow.sectionFramesContainer[3]
+local selectedButton = selectedPage.sectionButton.widget
+local selectionSetter, transientDeselections = S.SetTabSelection, 0
+S.SetTabSelection = function(button, selected)
+    if button == selectedButton and not selected then transientDeselections = transientDeselections + 1 end
+    return selectionSetter(button, selected)
+end
+auditScans[DetailsOptionsWindow], auditScans[selectedPage] = 0, 0
+for _ = 1, 50 do selectedButton.hooks.OnClick(selectedButton) end
+assert(transientDeselections == 0, 'active tab lost its highlight during native template reset')
+assert(auditScans[DetailsOptionsWindow] == 0 and auditScans[selectedPage] == 50, 'tab clicks rescanned unrelated roots')
+flush()
+assert(auditScans[selectedPage] == 50, 'completed selection left a duplicate queued page scan')
+S.SetTabSelection = selectionSetter
+-- Native RefreshOptions may create controls after page OnShow. They must be
+-- ready synchronously, without pre-scanning all hidden sections.
+local lazyPage = DetailsOptionsWindow.sectionFramesContainer[2]
+local lazyControl
+lazyPage.RefreshOptions = function()
+    if not lazyControl then
+        lazyControl = frame('Button', nil, lazyPage)
+        lazyControl.MyObject = {type = 'switch', checked_texture = lazyControl:CreateTexture(), SetTemplate = function() end}
+    end
+end
+assert(Details222.OptionsPanel.SelectOptionsSection(2) == 'section-native')
+assert(lazyControl.button, 'post-OnShow controls waited for a deferred full refresh')
+flush()
+auditScans[DetailsOptionsWindow], auditScans[lazyPage] = 0, 0
+for _ = 1, 100 do lazyPage.hooks.OnShow(lazyPage) end
+flush()
+assert(auditScans[DetailsOptionsWindow] == 0 and auditScans[lazyPage] == 1, 'page show burst did not coalesce locally')
+auditScans[lazyPage] = 0
+lazyPage.hooks.OnShow(lazyPage); enabled = false; flush(); enabled = true
+assert(auditScans[lazyPage] == 0, 'queued page scan ignored disabled skin')
+lazyPage.hooks.OnShow(lazyPage); ns.DetailsSettings().menus = false; flush()
+assert(auditScans[lazyPage] == 0, 'queued page scan ignored disabled menus')
+ns.DetailsSettings().menus = true
+print('BENCH details_navigation full=0 page=50 clicks=50; show_burst page=1 callbacks=100')
+Details222.OptionsPanel.SelectOptionsSection(3); flush()
 S.Tab = originalTab
 local input = frame('EditBox', nil, DetailsOptionsWindow)
 local description = font(DetailsOptionsWindow)

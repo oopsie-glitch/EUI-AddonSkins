@@ -359,6 +359,41 @@ local function Setup(C, refresh)
         state.ControlContrast(f, widget, method)
         return true
     end
+    local pendingSections = {}
+    state.RequestOptions = function(root, source)
+        if state.sections[source] then return end -- Completed selection already paints this page.
+        local target = source
+        for _ = 1, 24 do
+            if not H.Allowed(target) then target = root; break end
+            if target == _G.DetailsOptionsWindow then target = root; break end
+            if state.optionPages and state.optionPages[target] then break end
+            target = target.GetParent and target:GetParent()
+        end
+        target = target or root
+        pendingSections[target] = true
+        H.Queue(pendingSections, function()
+            for page in pairs(pendingSections) do
+                pendingSections[page] = nil
+                if ns.DetailsSettings().menus ~= false then C.RefreshControlsNow(page) end
+            end
+        end)
+    end
+    state.SelectedOptions = function()
+        if ns.DetailsSettings().menus == false or not ns.IsEnabled(C.module) or Busy() then return end
+        local options = Frame(_G.DetailsOptionsWindow)
+        local selected
+        for _, page in pairs(options and options.sectionFramesContainer or {}) do
+            if H.Allowed(page) and page:IsShown() then selected = page; break end
+        end
+        state.selectedSection = selected
+        for button in pairs(state.sections) do state.Section(button) end
+        if selected then
+            -- RefreshOptions can construct controls after OnShow. Paint only
+            -- after native selection has completed, before returning to the UI.
+            pendingSections[selected] = nil
+            C.RefreshControlsNow(selected)
+        end
+    end
     state.Section = function(button)
         local section = state.sections[button]
         if not section then return false end
@@ -371,11 +406,15 @@ local function Setup(C, refresh)
         local widget = button.MyObject
         if widget then H.Fade(H.Texture(widget.icon)) end
         H.Fade(H.Texture(button.icon))
-        if H.Tab(button, section:IsShown()) then
+        -- Native selection temporarily hides every page while resetting every
+        -- template. Retain the last completed selection through that burst.
+        local selected = state.selectedSection == section
+        if not state.selectedSection then selected = section:IsShown() end
+        if H.Tab(button, selected) then
             for _, text in ipairs(H.Regions(button)) do
                 local native = button.GetFontString and button:GetFontString()
                 if text ~= native and text.GetObjectType and text:GetObjectType() == "FontString" then
-                    LabelTone(text, widget, section:IsShown())
+                    LabelTone(text, widget, selected)
                 end
             end
             -- EUI supplies the visible label; DF templates can recolour the
@@ -795,11 +834,20 @@ ns.RegisterScopedSkin("Details", "Details!", {
     available = function() return type(_G.Details) == "table" and type(_G.Details.GetAllInstances) == "function" end,
     softBorders = true, preserveTextColors = true, immediateShow = true,
     borderlessButtons = function(f) return f.euiDetailsOptionVisual == true end,
+    controlRefresh = function(C, root, source)
+        local f = source or root
+        for _ = 1, 24 do
+            if not C.H.Allowed(f) then break end
+            if f == _G.DetailsOptionsWindow then C.details.RequestOptions(root, source); return end
+            f = f.GetParent and f:GetParent()
+        end
+        C.module.refresh()
+    end,
     hooks = function(C, refresh)
         local state = Setup(C, refresh)
         state.BindTiny()
         local options = _G.Details222 and _G.Details222.OptionsPanel
-        C.H.Hook(options, "SelectOptionsSection", C.RefreshNow)
+        C.H.Hook(options, "SelectOptionsSection", state.SelectedOptions)
         local tip = _G.GameCooltip
         C.H.Hook(tip, "Reset", function() state.quickAdded = false end)
         for _, name in ipairs({"ShowCooltip", "BuildCooltip", "BuildTooltip", "BuildTooltipSecondFrame", "SetHost", "ShowRoundedCorner", "HideRoundedCorner"}) do
@@ -829,10 +877,20 @@ ns.RegisterScopedSkin("Details", "Details!", {
         if C.H.Allowed(panel) then result[#result + 1] = {frame = panel, mode = "controls"} end
         if ns.DetailsSettings().menus ~= false then
             local options = Frame(_G.DetailsOptionsWindow)
+            state.selectedSection = nil
+            for _, page in pairs(options and options.sectionFramesContainer or {}) do
+                if C.H.Allowed(page) and page:IsShown() then state.selectedSection = page; break end
+            end
             for _, section in pairs(options and options.sectionFramesContainer or {}) do
                 local button = C.H.Allowed(section) and Frame(section.sectionButton)
                 if C.H.Allowed(section) and C.H.Allowed(button) then
                     state.sections[button] = section
+                    state.optionPages = state.optionPages or {}
+                    state.optionPages[section] = true
+                    C.H.Script(section, "OnShow", function() state.RequestOptions(section, section) end)
+                    -- Reserve only our helper callback; the native click/action
+                    -- still runs and its completed selection handles the refresh.
+                    C.H.Script(button, "OnClick", function() end)
                     local function Paint() state.Section(button) end
                     C.H.Hook(section.sectionButton, "SetTemplate", Paint)
                     C.H.Hook(section.sectionButton, "SetIcon", Paint)

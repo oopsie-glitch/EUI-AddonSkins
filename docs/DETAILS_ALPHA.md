@@ -71,3 +71,10 @@ Validation: `python3 scripts/package.py` runs all regression suites, Lua syntax,
 - Create visual layers once, exclude them from control scans immediately (including their construction pass), and repaint the background only when its colour changes. Native resizing handles their anchors; there is no animation, polling or added show-refresh path.
 
 Regression cases check centre/edge alpha continuity, both gradient APIs, theme repaint, non-interactive visual layers, checkbox/dropdown/input contrast, native row actions, unchanged selected icons/marker state, and no repeated visual allocation during template bursts. The complete package checks pass. OLED readability and actual client rendering remain a visual judgement, not something established by mocks. Meter and Tiny Threat appearance are unchanged.
+
+
+### Tab refresh follow-up
+
+Details hides every section and reapplies every category template during selection, even when reselecting the active category. Keep the last completed selection while those templates reset; reconcile navigation after the native method finishes. Replace its full-window refresh with a synchronous scan of the selected page, including controls created by native RefreshOptions after OnShow. Page show/interaction bursts coalesce within their section; the completed selection cancels its pending show pass. Other windows retain their existing refresh route. No native tab callback is replaced or skipped.
+
+Regression fixtures reproduce the native hide/template/show/RefreshOptions order. Fifty repeated clicks produce fifty selected-page scans, zero full options scans and no transient deselection of the active tab in the mock. One hundred page-show callbacks coalesce to one page scan. Newly created post-OnShow controls are styled before native selection returns. These are simulated callback/scan counts, not client rendering or FPS measurements. The approved readability layers and meter styling are unchanged.

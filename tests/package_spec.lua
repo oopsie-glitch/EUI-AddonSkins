@@ -5,7 +5,7 @@ for _, manifest in ipairs({'EUIAddonSkins.toc', 'EUIAddonSkins_Camelot.toc', 'EU
         if line:match('^## Interface:') then for value in line:gmatch('%d+') do interfaces[tonumber(value)] = true end end
     end
     assert(interfaces[120100] and interfaces[120105] and interfaces[16001], 'Retail/Forever interface coverage regressed: ' .. manifest)
-    for _, onlyTarget in ipairs({false, 'BugSack', 'PallyPower', 'BtWQuests'}) do
+    for _, onlyTarget in ipairs({false, 'AllTheThings', 'BugSack', 'PallyPower', 'BtWQuests'}) do
         local ns, entries = {}, {}
         EUIAddonSkinsDB = nil
         C_AddOns = {
@@ -28,7 +28,7 @@ for _, manifest in ipairs({'EUIAddonSkins.toc', 'EUIAddonSkins_Camelot.toc', 'EU
                 assert(loadfile('EUIAddonSkins/' .. line:gsub('\\','/')))('EUIAddonSkins', ns)
             end
         end
-        assert(#ns.modules == 0 and #ns.skinCatalog == 22)
+        assert(#ns.modules == 0 and #ns.skinCatalog == 23)
         for _, entry in ipairs(ns.skinCatalog) do assert(entry.defined and not entry.loaded) end
         local count = 0; for _ in pairs(entries) do count = count + 1 end
         assert(count == (onlyTarget and 1 or 0), manifest .. ': unexpected toggles')

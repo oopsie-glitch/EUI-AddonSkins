@@ -4,6 +4,7 @@ EllesmereUI skins for World of Warcraft addons.
 
 ## Supported addons
 
+- AllTheThings (collection windows and addon options; alpha)
 - Forever Companion
 - Forever Dungeon Journal
 - RestedXP Guides (legacy and V2 windows)

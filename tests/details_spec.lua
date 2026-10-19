@@ -103,9 +103,11 @@ local function frame(kind, name, parent)
     return f
 end
 CreateFrame = function(kind, name, parent) local f = frame(kind, name, parent); events[#events + 1] = f; return f end
+local auditButtonCalls, auditTabCalls, auditFontCalls = 0, 0, 0
 local S = {GetAccentColor = function() return accent, 0.6, 0.7 end}
-function S.Font(t, r, g, b) t:SetFont('eui'); if r then t:SetTextColor(r, g, b) end end
+function S.Font(t, r, g, b) auditFontCalls = auditFontCalls + 1; t:SetFont('eui'); if r then t:SetTextColor(r, g, b) end end
 function S.Button(f, keys)
+    auditButtonCalls = auditButtonCalls + 1
     local keep = {}; for _, key in ipairs(keys or {}) do keep[f[key] or false] = true end
     for _, t in ipairs(f.regions) do if t.kind == 'Texture' and not keep[t] then t:SetAlpha(0) end end
     f.button = true
@@ -116,7 +118,11 @@ function S.ScrollBar(f) f.scroll = true end
 function S.Panel(f, options) f.panel = true; f.panelOptions = options end
 function S.Shell(f, options) f.shell = true; f.shellOptions = options end
 function S.Tab(f) f.tab = true end
-function S.SetTabSelection(f, selected) f.selected = selected end
+function S.SetTabSelection(f, selected)
+    auditTabCalls = auditTabCalls + 1
+    f.selected = selected
+    if f.euiLabel then f.euiLabel:SetTextColor(1, 1, 1, selected and 1 or 0.5) end
+end
 function S.CloseButton(f) f.close = true end
 function S.Checkbox(f) f.checkbox = true end
 function S.EditBox(f, options)
@@ -219,6 +225,8 @@ Details = {
     GetInstanceAttributeText = function() return 'Damage Done' end,
     GetShowingCombat = function(self) return {GetCombatTime = function() return self.elapsed or 6 end} end,
     SetTitleBarText = function() return 'title-native' end,
+    SetMode = function(self, mode) self.modo = mode; return 'mode-native' end,
+    SetDisplay = function() return 'display-native', nil, 3 end,
     RefreshMainWindow = function() return 'refresh-native' end,
     SetMenuOwner = function(_, owner) GameCooltip:SetHost(owner); return 'owner-native' end,
     SetBarRightTextSettings = function(self, total, ps, percent, bracket, sep)
@@ -359,7 +367,8 @@ for id = 1, 3 do
     local widget = {widget = button, type = 'button', icon = button:CreateTexture()}
     button.MyObject, page.sectionButton = widget, widget
     function widget:SetTemplate()
-        button:SetBackdrop({bgFile = 'native-category'}); button.selected = nil
+        button:SetBackdrop({bgFile = 'native-category'}); button.nativeSelected = nil
+        button.label:SetFont('native-category-font', 12, '')
         button.label:SetAlpha(1)
     end
     function widget:SetIcon() self.icon:SetAlpha(1) end
@@ -400,8 +409,14 @@ S.SetTabSelection = function(button, selected)
     return selectionSetter(button, selected)
 end
 auditScans[DetailsOptionsWindow], auditScans[selectedPage] = 0, 0
+local categoryPaints, categoryFonts = auditTabCalls, auditFontCalls
 for _ = 1, 50 do selectedButton.hooks.OnClick(selectedButton) end
 assert(transientDeselections == 0, 'active tab lost its highlight during native template reset')
+if not auditBaseline then
+    assert(auditTabCalls == categoryPaints, 'same-tab clicks repainted every category')
+    assert(auditFontCalls == categoryFonts, 'native category templates caused unrelated font rewrites')
+end
+print(('BENCH details_category_reset clicks=50 selection_writes=%d font_calls=%d'):format(auditTabCalls-categoryPaints, auditFontCalls-categoryFonts))
 assert(auditScans[DetailsOptionsWindow] == 0 and auditScans[selectedPage] == 50, 'tab clicks rescanned unrelated roots')
 flush()
 assert(auditScans[selectedPage] == 50, 'completed selection left a duplicate queued page scan')
@@ -575,6 +590,26 @@ do
     assert(icon.path == 'selected-spell' and icon.alpha == 0.7)
     assert(range:GetWidth() == 140 and slider.value_box:GetWidth() == 36 and slider.value_box.points[1][4] == 4 and not number:IsShown())
     assert(slider.value_box.inputOptions.padInput == false and slider.value_box.commit(100) == 'commit-native' and slider.value == 50)
+    -- Account for work inside a scan, not just its entry count. Native page
+    -- refreshes set current switch values and re-enable dependencies repeatedly.
+    local calls, fonts = auditButtonCalls, label.writes or 0
+    for _ = 1, 100 do w:SetValue(w.value); w:Enable(); button.hooks.OnShow(button) end
+    print(('BENCH details_control_state callbacks=300 button_calls=%d label_font_writes=%d'):format(auditButtonCalls - calls, (label.writes or 0) - fonts))
+    if not auditBaseline then
+        assert(auditButtonCalls - calls == 0, 'unchanged value/enable/show callbacks reran the full button skinner')
+        assert((label.writes or 0) - fonts == 0, 'unchanged state callbacks rewrote the label font')
+    end
+    calls, fonts = auditButtonCalls, label.writes or 0
+    for _ = 1, 20 do Details222.OptionsPanel.SelectOptionsSection(3) end
+    flush()
+    print(('BENCH details_warm_tabs clicks=20 button_calls=%d label_font_writes=%d'):format(auditButtonCalls - calls, (label.writes or 0) - fonts))
+    if not auditBaseline then
+        assert(auditButtonCalls - calls == 0, 'warm tab selection reran control setup')
+        assert((label.writes or 0) - fonts == 0, 'warm tab selection rewrote unchanged fonts')
+    end
+    -- External/native font changes must still be repaired, despite the cache.
+    label:SetFont('native-reset-font', 12, ''); w:Enable()
+    assert(label:GetFont() == 'eui', 'cached label ignored a native font reset')
     local savedAccent = accent
     accent = 0.23; modules.Details.refresh(); flush()
     assert(heading.textColor[1] == accent and mark.color[1] == accent and title.textColor[1] == accent)
@@ -912,4 +947,22 @@ assert(ns.DetailsSettings().tiny == true, 'existing meter users lost Tiny Threat
 EUIAddonSkinsDB.details.tiny = false
 assert(ns.DetailsSettings().tiny == false, 'migration overwrote an explicit Tiny Threat choice')
 EUIAddonSkinsDB.details = currentSettings
+-- A real DF slider refresh can call Details' bar-setting method. Such meter
+-- work must not refresh the options or invalidate every category's font cache.
+enabled = true; ns.DetailsSettings().menus = true; DetailsOptionsWindow:Show()
+modules.Details.refresh(); flush(); auditScans[DetailsOptionsWindow] = 0
+for _ = 1, 100 do
+    Details.SetBarSettings(meter, meter.row_info.height, meter.row_info.texture, nil,nil,nil,nil,nil,nil,nil,nil, meter.row_info.space.between)
+end
+flush()
+print(('BENCH details_meter_setters callbacks=100 options_scans=%d'):format(auditScans[DetailsOptionsWindow] or 0))
+if not auditBaseline then assert((auditScans[DetailsOptionsWindow] or 0) == 0, 'meter setting burst rescanned options') end
+auditScans[DetailsOptionsWindow] = 0
+for _ = 1, 20 do
+    assert(Details.SetMode(meter, meter.modo) == 'mode-native')
+    local a,b,c = Details.SetDisplay(meter)
+    assert(a == 'display-native' and b == nil and c == 3)
+end
+print(('BENCH details_meter_modes callbacks=40 options_scans=%d'):format(auditScans[DetailsOptionsWindow] or 0))
+if not auditBaseline then assert((auditScans[DetailsOptionsWindow] or 0) == 0, 'meter mode/display changes rescanned options') end
 print('PASS: Details quick submenu, independent Tiny Threat modes, native plugin redraws/restoration, meter styles, actions/data, dynamic controls, themes and combat guards')

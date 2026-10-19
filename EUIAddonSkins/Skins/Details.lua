@@ -103,6 +103,27 @@ local function Setup(C, refresh)
     local S, H, D = C.S, C.H, _G.Details
     local state = {meters = {}, owners = {}, roots = {}, sections = {}, designerRows = {}, designers = {}, snapshots = {}, texts = {}, textures = {}, applying = false}
     C.details = state
+    -- The public Font primitive reapplies its FontObject/shadow and font on
+    -- every call. Details shows/re-enables whole groups at once; cache only
+    -- unchanged outputs within this adapter, with full-refresh invalidation.
+    local fontCache = setmetatable({}, {__mode = "k"})
+    local applyFont = S.Font
+    S.Font = function(text, r, g, b)
+        if not H.Allowed(text) or not text.GetFont then return applyFont(text, r, g, b) end
+        local path, size, flags = text:GetFont()
+        if issecretvalue and (issecretvalue(path) or issecretvalue(size) or issecretvalue(flags)) then
+            return applyFont(text, r, g, b)
+        end
+        local old = fontCache[text]
+        if old and old.epoch == state.fontEpoch and old.path == path and old.size == size and old.flags == flags then
+            if r then text:SetTextColor(r, g, b or r) end
+            return
+        end
+        applyFont(text, r, g, b)
+        path, size, flags = text:GetFont()
+        if issecretvalue and (issecretvalue(path) or issecretvalue(size) or issecretvalue(flags)) then return end
+        fontCache[text] = {epoch = state.fontEpoch, path = path, size = size, flags = flags}
+    end
     local function Busy()
         if InCombatLockdown and InCombatLockdown() then
             if not state.combatPending then state.combatPending = true; refresh() end
@@ -221,10 +242,13 @@ local function Setup(C, refresh)
         text = Frame(text)
         if not H.Allowed(text) or text:GetObjectType() ~= "FontString" then return end
         H.Font(text)
+        local r, g, b, a
         if widget and (widget.lockdown or widget.widget and widget.widget.IsEnabled and not widget.widget:IsEnabled()) then
-            text:SetTextColor(0.5, 0.5, 0.5, 1)
-        elseif heading then text:SetTextColor(S.GetAccentColor())
-        else text:SetTextColor(0.88, 0.88, 0.9, 1) end
+            r, g, b, a = 0.5, 0.5, 0.5, 1
+        elseif heading then r, g, b, a = S.GetAccentColor(); a = a or 1
+        else r, g, b, a = 0.88, 0.88, 0.9, 1 end
+        local cr, cg, cb, ca = text:GetTextColor()
+        if cr ~= r or cg ~= g or cb ~= b or ca ~= a then text:SetTextColor(r, g, b, a) end
     end
     state.OptionLabels = function(f)
         if not OptionOwned(f) then return end
@@ -247,7 +271,7 @@ local function Setup(C, refresh)
             end
         end
     end
-    state.Control = function(f, kind)
+    state.Control = function(f, kind, force)
         local widget = f.MyObject
         if type(widget) ~= "table" then return false end
         local method = widget.type
@@ -264,30 +288,45 @@ local function Setup(C, refresh)
             d.paint = function()
                 if not H.Allowed(f) or f.MyObject ~= widget or not Owned(f) or d.painting then return end
                 d.painting = true
-                local ok, err = pcall(state.Control, f, kind)
+                local ok, err = pcall(state.Control, f, kind, true)
                 d.painting = false
                 if not ok then error(err) end
             end
             -- Native template/setter bursts touch just this control, not every window.
-            for _, name in ipairs({"SetTemplate", "Enable", "Disable"}) do H.Hook(widget, name, d.paint) end
+            H.Hook(widget, "SetTemplate", d.paint)
             if method == "switch" then
                 H.Hook(widget, "SetCheckedTexture", d.paint)
                 H.Hook(widget, "SetAsCheckBox", d.paint)
-                H.Hook(widget, "SetValue", d.paint)
             end
             local function PaintCurrent()
                 local current = controls[f]
-                if current then current.paint() end
+                if current and f.MyObject == current.widget and Owned(f) then state.Control(f, kind) end
             end
+            H.Hook(widget, "Enable", PaintCurrent); H.Hook(widget, "Disable", PaintCurrent)
             H.Script(f, "OnEnable", PaintCurrent); H.Script(f, "OnDisable", PaintCurrent)
             H.Script(f, "OnShow", PaintCurrent)
             if kind == "Button" then H.Script(f, "OnClick", PaintCurrent) end
+        end
+        local disabled = widget.lockdown or f.IsEnabled and not f:IsEnabled() or false
+        if d.ready and not force and d.epoch == state.fontEpoch and d.paintWidth == f:GetWidth() and d.paintHeight == f:GetHeight()
+            and d.mark == widget.checked_texture and d.knob == widget.toggle_knob and d.row == widget.highlightFrame then
+            if method == "switch" then
+                if disabled ~= d.disabled and H.Texture(widget.checked_texture) and not widget.is_toggle then
+                    if disabled then widget.checked_texture:SetColorTexture(0.4, 0.4, 0.4, 0.8)
+                    else widget.checked_texture:SetColorTexture(S.GetAccentColor()) end
+                end
+                LabelTone(widget.hasLabel or widget.label, widget)
+            elseif method == "button" then LabelTone((f.GetFontString and f:GetFontString()) or f.Text or f.text, widget) end
+            d.disabled = disabled
+            return true
         end
         f.euiDetailsOptionVisual = true
         if method == "switch" then
             f.euiDetailsCheck = H.Texture(widget.checked_texture)
             f.euiDetailsToggle = H.Texture(widget.toggle_knob)
-            S.Button(f, {"euiDetailsCheck", "euiDetailsToggle", "text", "Text", "label"})
+            if not d.baseStyled then
+                S.Button(f, {"euiDetailsCheck", "euiDetailsToggle", "text", "Text", "label"}); d.baseStyled = true
+            end
             if f.SetBackdrop then f:SetBackdrop(nil) end
             if f.euiDetailsCheck and not widget.is_toggle then
                 local mark = f.euiDetailsCheck
@@ -352,11 +391,16 @@ local function Setup(C, refresh)
             end
         else
             f.euiDetailsIcon = H.Texture(widget.icon)
-            S.Button(f, {"euiDetailsIcon", "text", "Text", "label"})
+            if not d.baseStyled then
+                S.Button(f, {"euiDetailsIcon", "text", "Text", "label"}); d.baseStyled = true
+            end
             if f.SetBackdrop then f:SetBackdrop(nil) end
             LabelTone((f.GetFontString and f:GetFontString()) or f.Text or f.text, widget)
         end
         state.ControlContrast(f, widget, method)
+        d.ready, d.epoch, d.disabled = true, state.fontEpoch, disabled
+        d.paintWidth, d.paintHeight, d.mark, d.knob = f:GetWidth(), f:GetHeight(), widget.checked_texture, widget.toggle_knob
+        d.row = widget.highlightFrame
         return true
     end
     local pendingSections = {}
@@ -394,6 +438,7 @@ local function Setup(C, refresh)
             C.RefreshControlsNow(selected)
         end
     end
+    local sectionPaint = {}
     state.Section = function(button)
         local section = state.sections[button]
         if not section then return false end
@@ -410,18 +455,31 @@ local function Setup(C, refresh)
         -- template. Retain the last completed selection through that burst.
         local selected = state.selectedSection == section
         if not state.selectedSection then selected = section:IsShown() end
-        if H.Tab(button, selected) then
-            for _, text in ipairs(H.Regions(button)) do
+        local previous = sectionPaint[button]
+        local disabled = widget and widget.lockdown or button.IsEnabled and not button:IsEnabled() or false
+        local changed = not previous or previous.selected ~= selected or previous.disabled ~= disabled or previous.epoch ~= state.fontEpoch
+        local tab = S.Tab ~= nil
+        if changed then
+            tab = H.Tab(button, selected)
+            if not previous then
+                previous = {labels = {}}; sectionPaint[button] = previous
                 local native = button.GetFontString and button:GetFontString()
-                if text ~= native and text.GetObjectType and text:GetObjectType() == "FontString" then
-                    LabelTone(text, widget, selected)
+                for _, text in ipairs(H.Regions(button)) do
+                    if text ~= native and text.GetObjectType and text:GetObjectType() == "FontString" then
+                        previous.labels[#previous.labels + 1] = text
+                    end
                 end
             end
+            previous.selected, previous.disabled, previous.epoch = selected, disabled, state.fontEpoch
+        end
+        if tab then
+            for _, text in ipairs(previous.labels) do LabelTone(text, widget, selected) end
             -- EUI supplies the visible label; DF templates can recolour the
             -- hidden native label again, so keep it from doubling the text.
             H.Fade(button.GetFontString and button:GetFontString())
         else S.Button(button, {"Text", "text"}) end
-        for _, text in ipairs(H.Regions(button)) do H.Font(text) end
+        -- Do not restyle the hidden DF label: SetIcon measures it and may
+        -- resize the native button. Only EUI's visible label needs our font.
         return true
     end
     state.DesignerRow = function(row)
@@ -433,7 +491,9 @@ local function Setup(C, refresh)
     end
     state.BindDesigner = function(editor)
         if not H.Allowed(editor) or not Owned(editor) or ns.DetailsSettings().menus == false then return end
-        H.Hook(editor, "EditObject", C.RefreshNow)
+        H.Hook(editor, "EditObject", function()
+            if ns.DetailsSettings().menus ~= false then C.RefreshControlsNow(editor) end
+        end)
         local function DisabledOptions()
             if ns.DetailsSettings().menus ~= false then C.RefreshControlsNow(editor) end
         end
@@ -786,8 +846,11 @@ local function Setup(C, refresh)
         end)
     end
     H.Hook(D, "RefreshMainWindow", function(_, instance) state.layout.Title(instance) end)
-    for _, name in ipairs({"SetMode", "SetDisplay"}) do H.Hook(D, name, C.RefreshNow) end
-    H.Hook(D.RaidTables, "EnableRaidMode", C.RefreshNow)
+    local function PaintMetersNow()
+        if state.look and not state.applying then state.ApplyMeters() end
+    end
+    for _, name in ipairs({"SetMode", "SetDisplay"}) do H.Hook(D, name, PaintMetersNow) end
+    H.Hook(D.RaidTables, "EnableRaidMode", PaintMetersNow)
     H.Hook(D, "InstallPlugin", refresh)
     H.Hook(D, "SetMenuOwner", state.QuickMenu)
     -- Native raid-menu callbacks receive Cooltip's Host as self, but the
@@ -820,7 +883,15 @@ local function Setup(C, refresh)
             if callback == original then tip.FunctionsTableMain[index] = state.raidSwitch end
         end
     end)
-    for _, name in ipairs({"ChangeSkin", "SetBarSettings", "SetBarTextSettings", "ApplyProfile", "CreateInstance"}) do
+    local meterRefresh = {}
+    for _, name in ipairs({"SetBarSettings", "SetBarTextSettings"}) do
+        H.Hook(D, name, function()
+            if not state.applying then
+                H.Queue(meterRefresh, function() if state.look then state.ApplyMeters() end end)
+            end
+        end)
+    end
+    for _, name in ipairs({"ChangeSkin", "ApplyProfile", "CreateInstance"}) do
         H.Hook(D, name, function() if not state.applying then refresh() end end)
     end
     for _, name in ipairs({"OpenOptionsWindow", "InitializeOptionsWindow", "OpenBreakdownWindow", "OpenSpecificBreakdownWindow",
@@ -857,6 +928,7 @@ ns.RegisterScopedSkin("Details", "Details!", {
     roots = function(C)
         local state = C.details
         state.combatPending = false; state.look = Look(C.S)
+        state.fontEpoch = (state.fontEpoch or 0) + 1
         for _, instance in pairs(_G.Details:GetAllInstances() or {}) do
             for _, key in ipairs({"baseframe", "rowframe", "windowSwitchButton", "bgframe"}) do
                 local owner = instance[key]

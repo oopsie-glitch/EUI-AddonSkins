@@ -78,3 +78,25 @@ Regression cases check centre/edge alpha continuity, both gradient APIs, theme r
 Details hides every section and reapplies every category template during selection, even when reselecting the active category. Keep the last completed selection while those templates reset; reconcile navigation after the native method finishes. Replace its full-window refresh with a synchronous scan of the selected page, including controls created by native RefreshOptions after OnShow. Page show/interaction bursts coalesce within their section; the completed selection cancels its pending show pass. Other windows retain their existing refresh route. No native tab callback is replaced or skipped.
 
 Regression fixtures reproduce the native hide/template/show/RefreshOptions order. Fifty repeated clicks produce fifty selected-page scans, zero full options scans and no transient deselection of the active tab in the mock. One hundred page-show callbacks coalesce to one page scan. Newly created post-OnShow controls are styled before native selection returns. These are simulated callback/scan counts, not client rendering or FPS measurements. The approved readability layers and meter styling are unchanged.
+
+
+### Performance audit after 8aaf3b9
+
+The prior scan-count tests missed repeated primitive/font work inside each scan. Review of the public EllesmereUI font helper and Details DF page refresh, enable/disable, switch and template code identified these adapter costs:
+
+- Unchanged show/enable/value callbacks reran button setup and label fonts. Keep base button setup once, use a state-only path for unchanged controls, and let native checkbox value changes retain their own marker visibility. Template/marker setters still force a visual repair; geometry, marker, row or full-theme changes invalidate the warm path.
+- Category template resets repeatedly called SetTabSelection and restyled the hidden native label. Keep category selection updates for actual selection/disabled/theme changes, repair visible-label colours only when needed, and leave the hidden native label's font alone. DF measures that native label in SetIcon.
+- Cache public Font outputs within Details using weak keys and actual font/size/flags comparisons. Full integration refreshes invalidate the cache; native font resets are still repaired. Public API calls remain responsible for applying fonts/shadows; no private EUI state is accessed.
+- Bar-setting bursts coalesce into meter-only styling. Mode/display changes and raid-mode activation retain synchronous meter styling without scanning the options. Profile/skin/window creation still use full refreshes. Designer EditObject refreshes its owned editor subtree.
+
+The same strengthened fixtures were run against the exact previous alpha (8aaf3b9) and the updated source:
+
+| Mock scenario | Previous alpha | Updated |
+| --- | --- | --- |
+| 50 same-category clicks: selection writes / public Font calls | 550 / 1650 | 0 / 0 |
+| 300 unchanged value/enable/show callbacks: Button calls / label font writes | 300 / 300 | 0 / 0 |
+| 20 warm selections: Button calls / label font writes | 20 / 40 | 0 / 0 |
+| 100 bar-setting callbacks: full options scans | 1 | 0 |
+| 40 mode/display callbacks: full options scans | 40 | 0 |
+
+These are simulated operation counts, not CPU timings, memory totals or FPS claims. Regression coverage retains dynamic controls, theme updates, template repair, native values/actions/returns, disable/combat guards and reusable visual layers. No polling, global DF/AceGUI changes, eager hidden-page scans or shared runtime changes were added. First-time controls still require initial setup; actual client render timing and whether this eliminates the reported visible flicker cannot be established here.

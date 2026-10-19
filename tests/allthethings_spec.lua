@@ -47,6 +47,9 @@ local function Object(kind, parent)
         self.vertex=self.vertex or {}; self.vertex[1],self.vertex[2],self.vertex[3],self.vertex[4]=r,g,b,a
     end
     function f:SetTexture(v) self.texture=v end
+    if kind=='Texture' then function f:GetTexture() return self.texture end end
+    function f:SetTexCoord(...) self.coords={...} end
+    function f:SetText(v) self.text=v end
     function f:SetPoint(...) if not ATT_PERF_FIXTURE then self.point={...} end end
     function f:ClearAllPoints() self.point=nil end
     function f:SetAllPoints(p) self.anchor=p end
@@ -77,6 +80,9 @@ local function Object(kind, parent)
     function f:CreateTexture(_,layer)
         local t=Object('Texture'); t.layer=layer; self.regions[#self.regions+1]=t; return t
     end
+    function f:CreateFontString()
+        local t=Object('FontString'); self.regions[#self.regions+1]=t; return t
+    end
     function f:RegisterObject(o) self.Objects=self.Objects or {}; self.Objects[#self.Objects+1]=o end
     function f:SetBackdrop(v) self.backdrop=v end
     if parent then parent.children[#parent.children+1]=f end
@@ -97,6 +103,7 @@ S.Button=function(f) f.button=true end
 S.EditBox=function(f) f.input=true end
 S.Dropdown=function(f) f.dropdown=true end
 S.StateButtonLabel=function(f) f.stateLabel=true end
+S.PageButton=function(f,glyph) f.glyph=glyph end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins',ns)
 assert(loadfile(ATT_SKIN_PATH or 'EUIAddonSkins/Skins/AllTheThings.lua'))('EUIAddonSkins',ns)
 assert(not module and factory, 'skin should defer its implementation')
@@ -111,6 +118,12 @@ local function Window()
     local w=Object('Frame'); w.backdrop={bgFile='native'}; w.Grip=w:CreateTexture(nil,'ARTWORK')
     w.native=w:CreateTexture(nil,'BACKGROUND'); w.CloseButton=Object('Button',w)
     w.ScrollBar=Object('Slider',w); w.ScrollBar.thumb=Object('Texture')
+    w.ScrollBar.back=w.ScrollBar:CreateTexture(nil,'BACKGROUND'); w.ScrollBar.back.texture='native track'
+    w.ScrollBar.ScrollUpButton=Object('Button',w.ScrollBar)
+    w.ScrollBar.ScrollDownButton=Object('Button',w.ScrollBar)
+    w.ScrollBar.scripts.OnValueChanged=function(_,value) w.scrollValue=value; return 'native-scroll' end
+    w.ScrollBar.ScrollUpButton.scripts.OnClick=function() w.upClicked=true; return 'native-up' end
+    w.ScrollBar.ScrollDownButton.scripts.OnClick=function() w.downClicked=true; return 'native-down' end
     w.Container=Object('Frame',w); w.Container.rows=setmetatable({Row(w.Container)}, {
         __index=function() error('skinning instantiated a lazy collection row') end})
     w.DefaultRedraw=function(self)
@@ -140,8 +153,14 @@ assert(module.available()); module.install(S,module); Flush()
 local row=prime.Container.rows[1]
 assert(row.Label.path=='EUI' and row.Summary.path=='EUI' and row.Label.color[2]==0.8)
 assert(row.Texture.texture=='item' and row.Background.alpha==1 and row.Indicator.alpha==1)
-assert(prime.native.alpha==0 and prime.Grip.alpha==1 and prime.backdrop.bgFile=='native')
+assert(prime.native.alpha==0 and prime.Grip.alpha==0 and prime.backdrop.bgFile=='native')
 assert(prime.CloseButton.close and prime.ScrollBar.thumb.width==5)
+assert(prime.ScrollBar.back.alpha==0 and prime.ScrollBar.thumb.color[1]==accent)
+assert(prime.ScrollBar.ScrollUpButton.glyph=='^' and prime.ScrollBar.ScrollDownButton.glyph=='v')
+assert(prime.ScrollBar.width==16 and prime.ScrollBar.thumb.height==20, 'scroll hit area or thumb height changed')
+assert(prime.ScrollBar.scripts.OnValueChanged(prime.ScrollBar,12)=='native-scroll' and prime.scrollValue==12)
+assert(prime.ScrollBar.ScrollUpButton.scripts.OnClick()=='native-up' and prime.upClicked)
+assert(prime.ScrollBar.ScrollDownButton.scripts.OnClick()=='native-down' and prime.downClicked)
 assert(check.check and check.checked and check.checkedArt.color[1]==accent and slider.thumb.width==8)
 check:Disable(); assert(check.Text.color[1]==0.48 and check.checked)
 check:Enable(); assert(check.Text.color[1]==0.9)
@@ -173,6 +192,12 @@ assert(other.CloseButton.close and other.Container.rows[1].Label.path=='EUI')
 local fresh,marker=settings:CreateOptionsPage('new'); assert(marker=='native-return' and nativeCalls==1)
 local late=Object('CheckButton'); late.Text=Text(late); late.checkedArt=Object('Texture'); late.disabledArt=Object('Texture')
 fresh:RegisterObject(late); Flush(); assert(late.check and late.Text.path=='EUI', 'late settings controls missed')
+local scrollPage=Object('ScrollFrame'); scrollPage.ScrollBar=Object('Frame',scrollPage)
+scrollPage.ScrollBar.Back=Object('Button',scrollPage.ScrollBar)
+scrollPage.ScrollBar.Forward=Object('Button',scrollPage.ScrollBar)
+fresh:RegisterObject(scrollPage); Flush()
+assert(scrollPage.ScrollBar.scroll and scrollPage.ScrollBar.Back.glyph=='^'
+    and scrollPage.ScrollBar.Forward.glyph=='v', 'modern options scroll steppers missed')
 if not ATT_PERF_FIXTURE then
     local unfinished=Object('Button'); fresh:RegisterObject(unfinished)
     unfinished.scripts.OnShow(unfinished) -- Construction has not assigned the label yet.
@@ -186,6 +211,7 @@ assert(ATTEditBox.Button.button and ATTEditBox.EditBox.path=='EUI' and not ATTEd
     and ATTEditBox.EditBox.text=='native export data', 'multiline dialog lost native editor behaviour')
 fontFace='EUI-new'; accent=0.7; looks[1](); Flush()
 assert(row.Label.path==fontFace and late.checkedArt.color[1]==0.7, 'theme/accent refresh missed')
+assert(prime.ScrollBar.thumb.color[1]==0.7, 'scrollbar accent did not refresh')
 local saved=prime.backdrop; prime:SetBackdrop({bgFile='changed-by-ATT'}); assert(prime.backdrop.bgFile=='changed-by-ATT')
 enabled=false; local before=allocated; local disabled=Window(); local nativeAllocated=allocated
 AllTheThings.Windows.Disabled=disabled; handlers.OnWindowCreated(disabled); assert(allocated==nativeAllocated and not disabled.CloseButton.close)

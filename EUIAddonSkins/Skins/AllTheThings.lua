@@ -4,8 +4,10 @@ ns.RegisterModule("AllTheThings", "AllTheThings", function()
     return type(_G.AllTheThings) == "table" and type(_G.AllTheThings.Windows) == "table"
 end, function(S, module)
     local app = _G.AllTheThings
-    local H = ns.CreateSkinHelper(S, module)
     local soft = ns.CreateSoftSkin(S, module)
+    -- Legacy ATT steppers use the same public page-arrow primitive, with
+    -- subdued borders, as the rest of the collection's soft controls.
+    local H = ns.CreateSkinHelper(setmetatable({PageButton = soft.SoftPageButton}, {__index = S}), module)
     local windows, objects, surfaces, fonts = {}, {}, {}, {}
     local painted, states, highlights = {}, {}, {}
     local generation = 0
@@ -81,15 +83,25 @@ end, function(S, module)
     end
     local function Scroll(f)
         if not H.Allowed(f) then return end
-        S.ScrollBar(f)
         local thumb = f.GetThumbTexture and H.Texture(f:GetThumbTexture())
-        if thumb then thumb:SetWidth(5) end -- Keep thumb height, range and native hit area.
+        if thumb then
+            -- S.ScrollBar handles modern Track.Thumb frames; ATT's collection
+            -- windows use UIPanelScrollBarTemplate and a texture thumb instead.
+            H.LegacySlider(f)
+            thumb:SetVertexColor(1, 1, 1, 1)
+            if thumb.SetTexCoord then thumb:SetTexCoord(0, 1, 0, 1) end
+            thumb:SetWidth(5) -- Keep native height, range and slider hit area.
+        else
+            S.ScrollBar(f, true)
+            if H.Allowed(f.Back) then soft.SoftPageButton(f.Back, "^") end
+            if H.Allowed(f.Forward) then soft.SoftPageButton(f.Forward, "v") end
+        end
     end
     local function Rows(window)
         if window.IsShown and not window:IsShown() then return end
         local rows = window.Container and window.Container.rows
         if type(rows) ~= "table" then return end
-        -- pairs does not invoke ATT's lazy __index. Never create a row by
+        -- rawget does not invoke ATT's lazy __index. Never create a row by
         -- indexing past the pool, or traverse its collection/database objects.
         for i = 1, math.min(window.rowCount or #rows, #rows) do
             local row = rawget(rows, i)
@@ -112,7 +124,6 @@ end, function(S, module)
             windows[window] = true
             Surface(window)
             if H.Allowed(window.CloseButton) then S.CloseButton(window.CloseButton) end
-            Scroll(window.ScrollBar)
             H.Hook(window, "SetBackdrop", function() Run(NativeBackground, window) end)
             -- DefaultRedraw is the completed, non-yielding visual stage; never
             -- hook ATT's coroutine-driven data rebuilding or GetWindow factory.
@@ -120,6 +131,8 @@ end, function(S, module)
             H.Script(window, "OnShow", function() Run(PaintWindow, window) end)
         end
         Rows(window)
+        if H.Texture(window.Grip) then H.Resize(window, true) end
+        Scroll(window.ScrollBar)
     end
     BindWindow = function(window) Run(PaintWindow, window) end
 

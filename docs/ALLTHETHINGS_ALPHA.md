@@ -47,3 +47,9 @@ The baseline is the exact initial-alpha adapter from `f0e88253de6f0f077fb8ed7aac
 Both builds create zero UI objects or new hooks in these warm workloads. The optimized build also makes zero font, checkbox and colour writes in them. Fonts reset by ATT, real enable/disable changes, theme changes and newly created controls are separately covered by regression tests.
 
 These are mock CPU/allocation measurements, not WoW memory or FPS measurements. The hook mock allocates argument/return tables (including when the skin is disabled), and UI methods are simplified. Absolute timings vary by host. No real-client profiling was available; startup is a one-time inspection of existing ATT-owned windows/settings, while the absent-target factory remains deferred. No polling or per-frame skin loop is installed.
+
+## Scroll controls (alpha.3)
+
+ATT's collection lists use a legacy texture-thumb slider. EllesmereUI's public `ScrollBar` primitive targets modern `Track.Thumb` frames, so the initial adapter narrowed the stock thumb without replacing its artwork. Legacy lists now use the existing legacy-slider helper: flat accent-coloured grip, thin neutral track and public EUI page-arrow buttons with subdued borders. Modern options scrollbars retain the modern primitive with visible themed steppers. Native values, thumb height, click handlers and slider hit areas remain unchanged. The stock corner grip is replaced by the collection's existing neutral resize indicator; the native window resize action stays intact.
+
+Regression coverage includes both scrollbar families, up/down click returns, scroll values, drag-area dimensions, accent refreshes and stable warm redraw allocation/hook counts.

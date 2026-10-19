@@ -8,6 +8,7 @@ end, function(S, module)
     local H = ns.CreateSkinHelper(setmetatable({PageButton = soft.SoftPageButton}, {__index = S}), module)
     local known, painted, fonts, visual, surfaces, selected = {}, {}, {}, {}, {}, {}
     local pendingRoots, generation = {}, 1
+    local nativeArt, checks, roles, mainPages = {}, {}, {}, {}
     local painting, waiting = false, false
     local Discover, Paint, Refresh, Roots
     local events = CreateFrame("Frame")
@@ -19,14 +20,38 @@ end, function(S, module)
         painting = true; H.Safe(fn, ...); painting = false
     end
     local function Name(f) return f.GetName and f:GetName() or "" end
+    local function ReadableColour(text)
+        if not text.GetTextColor then return end
+        local parent = text.GetParent and text:GetParent()
+        local legendItem = false
+        for _ = 1, 16 do
+            -- Log event categories have deliberately different legend colours.
+            if parent == ui.GRM_RosterCheckBoxSideFrame then
+                if legendItem then return end
+                break
+            end
+            if not parent then break end
+            if parent.GetObjectType and parent:GetObjectType() == "CheckButton" then legendItem = true end
+            parent = parent.GetParent and parent:GetParent()
+        end
+        local r, g, b, a = text:GetTextColor()
+        if not r or a == 0 then return end
+        if r == 1 and (g == 1 or math.abs(g - 0.82) < 0.001) and b == 0 then
+            text:SetTextColor(0.9, 0.9, 0.9, a)
+        elseif math.abs(r - 0.64) < 0.001 and math.abs(g - 0.102) < 0.001 and math.abs(b - 0.102) < 0.001 then
+            -- Retain GRM's red missing-data state, with readable luminance.
+            text:SetTextColor(1, 0.32, 0.32, a)
+        end
+    end
     local function Font(text)
-        if not H.Allowed(text) or not text.GetFont then return end
+        if not H.Allowed(text) or visual[text] or not text.GetFont then return end
         local entry = fonts[text]
         if not entry then
             entry = {}; fonts[text] = entry
             local function Restore() Run(Font, text) end
             H.Hook(text, "SetFont", Restore)
             H.Hook(text, "SetFontObject", Restore)
+            H.Hook(text, "SetTextColor", function() Run(ReadableColour, text) end)
         end
         local path, size, flags = text:GetFont()
         if not path then return end
@@ -35,6 +60,7 @@ end, function(S, module)
             S.Font(text) -- Keep native point size, inline links and semantic colours.
             entry.generation = generation
         end
+        ReadableColour(text)
     end
     local function Gradient(t, first, last, r, g, b)
         t:SetColorTexture(1, 1, 1, 1)
@@ -55,31 +81,88 @@ end, function(S, module)
             d.right:SetPoint("TOPLEFT", layer, "TOP"); d.right:SetPoint("BOTTOMRIGHT")
         end
         local r, g, b = S.GetPanelColor()
-        r, g, b = math.min(1, r + 0.15), math.min(1, g + 0.15), math.min(1, b + 0.15)
-        Gradient(d.left, 0, 0.45, r, g, b); Gradient(d.right, 0.45, 0, r, g, b)
+        r, g, b = math.min(1, r + 0.08), math.min(1, g + 0.08), math.min(1, b + 0.08)
+        Gradient(d.left, 0, 0.18, r, g, b); Gradient(d.right, 0.18, 0, r, g, b)
     end
-    local function Scroll(f)
-        local thumb = f.GetThumbTexture and H.Texture(f:GetThumbTexture())
-        if thumb then
-            H.LegacySlider(f); thumb:SetVertexColor(1, 1, 1, 1)
-            local horizontal = f.GetOrientation and f:GetOrientation() == "HORIZONTAL"
-            if horizontal then thumb:SetSize(8, 14) else thumb:SetWidth(5) end
-        else
-            S.ScrollBar(f, true)
-            if H.Allowed(f.Back) then soft.SoftPageButton(f.Back, "^") end
-            if H.Allowed(f.Forward) then soft.SoftPageButton(f.Forward, "v") end
+    local function StripArt(art, depth)
+        if H.Texture(art) then H.Fade(art); return end
+        if depth > 2 or not H.Allowed(art) or art:GetObjectType() ~= "Frame" or not art.GetRegions then return end
+        visual[art] = true
+        for _, region in ipairs(H.Regions(art)) do if H.Texture(region) then H.Fade(region) end end
+        for _, child in ipairs(H.Children(art)) do StripArt(child, depth + 1) end
+    end
+    local function Chrome(f)
+        local textures = nativeArt[f]
+        if not textures then
+            textures = {}; nativeArt[f] = textures
+            for _, region in ipairs(H.Regions(f)) do
+                if H.Texture(region) and region ~= f.Icon then textures[#textures + 1] = region end
+            end
+            for _, method in ipairs({"SetNormalTexture", "SetPushedTexture", "SetDisabledTexture", "SetHighlightTexture"}) do
+                H.Hook(f, method, function() Run(Chrome, f) end)
+            end
+        end
+        for _, texture in ipairs(textures) do H.Fade(texture) end
+        for _, getter in ipairs({"GetNormalTexture", "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture"}) do
+            local texture = f[getter] and H.Texture(f[getter](f))
+            if texture then H.Fade(texture) end
+        end
+        -- GameMenuButtonTemplate and TranslucentFrameTemplate carry some art
+        -- in child frames, outside GetRegions(). Leave controls and hit areas alone.
+        for _, key in ipairs({"NineSlice", "Border", "BorderFrame", "NormalTexture", "PushedTexture", "DisabledTexture"}) do
+            StripArt(f[key], 0)
         end
     end
+    local function PageButton(f, glyph)
+        if not H.Allowed(f) then return end
+        roles[f] = "arrow"; Chrome(f); soft.SoftPageButton(f, glyph)
+    end
+    local function Scroll(f)
+        local inner = H.Allowed(f.Slider) and f.Slider or f
+        local horizontal = inner.GetOrientation and inner:GetOrientation() == "HORIZONTAL"
+        local thumb = inner.GetThumbTexture and H.Texture(inner:GetThumbTexture())
+        if thumb then
+            H.LegacySlider(inner); thumb:SetVertexColor(1, 1, 1, 1)
+            if horizontal then thumb:SetSize(8, 14) else thumb:SetWidth(5) end
+        else S.ScrollBar(inner, true) end
+        PageButton(f.Back, horizontal and "<" or "^")
+        PageButton(f.Forward, horizontal and ">" or "v")
+        PageButton(f.ScrollUpButton, "^"); PageButton(f.ScrollDownButton, "v")
+    end
     local function Check(f)
-        S.Checkbox(f, {borderInset = 4, hover = 0.05})
+        local entry = checks[f]
+        if not entry then
+            local before, children = {}, {}
+            for _, region in ipairs(H.Regions(f)) do before[region] = true end
+            for _, child in ipairs(H.Children(f)) do children[child] = true end
+            S.Checkbox(f, {borderInset = 4, hover = 0.05})
+            entry = {art = {}, borders = {}}; checks[f] = entry
+            for _, region in ipairs(H.Regions(f)) do
+                if not before[region] and H.Texture(region) then entry.art[#entry.art + 1] = region end
+            end
+            for _, child in ipairs(H.Children(f)) do
+                if not children[child] and H.Allowed(child) and child:GetObjectType() == "Frame" then
+                    entry.borders[#entry.borders + 1] = child; visual[child] = true
+                end
+            end
+        end
+        -- Keep native frame geometry/hit rectangles, but make the visible box
+        -- consistently 14 UI units (or smaller for GRM's tiny radio controls).
+        local size = math.min(14, f:GetWidth(), f:GetHeight())
+        for _, art in ipairs(entry.art) do
+            art:ClearAllPoints(); art:SetPoint("CENTER", f, "CENTER"); art:SetSize(size, size)
+        end
+        for _, border in ipairs(entry.borders) do
+            border:ClearAllPoints(); border:SetPoint("CENTER", f, "CENTER"); border:SetSize(size, size)
+        end
         for i, getter in ipairs({"GetCheckedTexture", "GetDisabledCheckedTexture"}) do
             local mark = f[getter] and H.Texture(f[getter](f))
             if mark then
                 mark:SetVertexColor(1, 1, 1, 1)
                 if i == 1 then local r, g, b = S.GetAccentColor(); mark:SetColorTexture(r, g, b, 1)
                 else mark:SetColorTexture(0.4, 0.4, 0.4, 0.8) end
-                mark:ClearAllPoints(); mark:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -6)
-                mark:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -6, 6)
+                mark:ClearAllPoints(); mark:SetPoint("CENTER", f, "CENTER")
+                mark:SetSize(math.max(2, size - 4), math.max(2, size - 4))
             end
         end
     end
@@ -95,15 +178,27 @@ end, function(S, module)
         if kind == "GameTooltip" or kind == "PlayerModel" or kind == "ModelScene" then return end
         if painted[f] == generation and not force then return end
         painted[f] = generation
-        if kind == "CheckButton" then Check(f)
+        if H.Allowed(f.CloseButton) then roles[f.CloseButton] = "close" end
+        if kind == "CheckButton" then
+            Check(f)
+            H.Hook(f, "SetSize", function() Run(Check, f) end)
+            H.Hook(f, "SetCheckedTexture", function() Run(Check, f) end)
+            H.Hook(f, "SetDisabledCheckedTexture", function() Run(Check, f) end)
         elseif kind == "Slider" then Scroll(f)
         elseif kind == "EditBox" then
             if not (f.IsMultiLine and f:IsMultiLine()) then soft.EditBox(f) end
             Font(f)
         elseif kind == "DropdownButton" then soft.Dropdown(f)
         elseif kind == "Button" then
-            if name:find("CloseButton$", 1) then S.CloseButton(f)
+            if roles[f] == "close" or name:find("CloseButton$", 1) then Chrome(f); S.CloseButton(f)
+            elseif roles[f] == "arrow" then Chrome(f)
             elseif name:match("Tab$") then
+                local originalLabels
+                if not nativeArt[f] then
+                    originalLabels = {}
+                    for _, region in ipairs(H.Regions(f)) do originalLabels[region] = true end
+                end
+                Chrome(f)
                 -- Older GRM export tabs use a custom FontString instead of Text.
                 if not f.Text and not (f.GetFontString and f:GetFontString()) then
                     local label = f[name .. "Text"]
@@ -111,6 +206,13 @@ end, function(S, module)
                 end
                 if selected[f] == nil and f.IsHighlightLocked then selected[f] = f:IsHighlightLocked() end
                 H.Tab(f, selected[f] == true)
+                if originalLabels then
+                    for _, region in ipairs(H.Regions(f)) do
+                        -- EUI owns the replacement label and its selected accent,
+                        -- including user-selected colours matching Blizzard gold.
+                        if region:GetObjectType() == "FontString" and not originalLabels[region] then visual[region] = true end
+                    end
+                end
                 if H.Allowed(f.Text) then H.Fade(f.Text) end
                 H.Hook(f, "LockHighlight", function() selected[f] = true; Run(H.Tab, f, true) end)
                 H.Hook(f, "UnlockHighlight", function() selected[f] = false; Run(H.Tab, f, false) end)
@@ -126,7 +228,8 @@ end, function(S, module)
             local colourControl = name:find("ColorPicker", 1, true) or name:find("Swatch", 1, true)
             local backdrop = f.GetBackdrop and f:GetBackdrop()
             local topLevel = f.GetParent and f:GetParent() == UIParent
-            if not colourControl and (backdrop or topLevel or f.NineSlice or name:match("Selected$")) then
+            if not colourControl and (backdrop or topLevel or f.NineSlice or f == ui.GRM_RosterCheckBoxSideFrame or name:match("Selected$")) then
+                Chrome(f)
                 S.Panel(f, {noBorder = true})
                 if f.NineSlice then S.FadeNineSlice(f.NineSlice) end
                 if f.SetBackdrop then f:SetBackdrop(nil) end
@@ -165,12 +268,38 @@ end, function(S, module)
         if count then known[f] = count end
         for _, child in ipairs(H.Children(f)) do Discover(child, depth + 1, complete) end
     end
+    local function SelectMainPage(page)
+        for tab, target in pairs(mainPages) do
+            local active = target == page
+            if selected[tab] ~= active then selected[tab] = active; H.Tab(tab, active) end
+        end
+    end
+    local function BindMainPages()
+        local root = ui.GRM_RosterChangeLogFrame
+        if not H.Allowed(root) then return end
+        local mapping = {GRM_LogTab = "GRM_LogFrame", GRM_AddEventTab = "GRM_EventsFrame",
+            GRM_BanListTab = "GRM_CoreBanListFrame", GRM_AddonUsersTab = "GRM_AddonUsersFrame",
+            GRM_OptionsTab = "GRM_OptionsFrame", GRM_GuildAuditTab = "GRM_AuditFrame"}
+        local current, visible = nil, 0
+        for key, pageKey in pairs(mapping) do
+            local tab, page = root[key], root[pageKey]
+            if H.Allowed(tab) and H.Allowed(page) and not mainPages[tab] then
+                mainPages[tab] = page
+                H.Hook(page, "Show", function() Run(SelectMainPage, page) end)
+            end
+            if mainPages[tab] and page:IsShown() and page:GetAlpha() == 1 then
+                current, visible = page, visible + 1
+            end
+        end
+        if visible == 1 then SelectMainPage(current) end
+    end
     Roots = function(complete)
         -- The GRM UI registry contains its roots and launch buttons. Do not
         -- enumerate globals, guild data, UIParent or Blizzard's guild frames.
         for _, f in pairs(ui) do
             if H.Allowed(f) then Discover(f, 0, complete) end
         end
+        BindMainPages()
     end
     Refresh = function()
         waiting = false; generation = generation + 1

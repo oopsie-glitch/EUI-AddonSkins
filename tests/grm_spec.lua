@@ -50,6 +50,7 @@ local function Object(kind, parent)
     function f:GetFont() return self.path,self.size,self.flags end
     function f:SetFont(path,size,flags) self.path,self.size,self.flags=path,size,flags end
     function f:SetFontObject() self.path='Native'; self.size=15; self.flags='' end
+    function f:GetTextColor() return table.unpack(self.color) end
     function f:SetTextColor(r,g,b,a) self.color[1],self.color[2],self.color[3],self.color[4]=r,g,b,a end
     function f:GetAlpha() return self.alpha end
     function f:SetAlpha(v) self.alpha=v end
@@ -76,6 +77,8 @@ local function Object(kind, parent)
     function f:SetSize(w,h) self.width,self.height=w,h end
     function f:GetDrawLayer() return self.layer end
     function f:IsShown() return self.shown end
+    function f:Show() self.shown=true; if self.scripts.OnShow then self.scripts.OnShow(self) end end
+    function f:Hide() self.shown=false end
     function f:IsEnabled() return self.enabled ~= false end
     function f:GetFontString() return self.Text end
     function f:GetHighlightTexture() return self.highlight end
@@ -94,7 +97,7 @@ local function Object(kind, parent)
         local t=Object('Texture'); t.layer=layer; self.regions[#self.regions+1]=t; return t
     end
     function f:CreateFontString()
-        local t=Object('FontString'); self.regions[#self.regions+1]=t; return t
+        local t=Object('FontString'); t.parent=self; self.regions[#self.regions+1]=t; return t
     end
     function f:RegisterObject(o) self.Objects=self.Objects or {}; self.Objects[#self.Objects+1]=o end
     function f:SetBackdrop(v) self.backdrop=v end
@@ -103,7 +106,7 @@ local function Object(kind, parent)
 end
 CreateFrame = function(kind,_,parent) local f=Object(kind,parent); events[#events+1]=f; return f end
 local function Text(parent)
-    local f=Object('FontString'); parent.regions[#parent.regions+1]=f; return f
+    local f=Object('FontString'); f.parent=parent; parent.regions[#parent.regions+1]=f; return f
 end
 local S = {GetFont=function() return fontFace,'' end, GetAccentColor=function() return accent,0.6,0.8 end,
     GetPanelColor=function() return 0.06,0.06,0.07,0.95 end, OnLooksChanged=function(fn) looks[#looks+1]=fn end}
@@ -111,11 +114,25 @@ S.Font=function(f) assert(not combat); fontWrites=fontWrites+1; f:SetFont(fontFa
 S.Panel=function(f) if not f.panel then f.panel=true; f:CreateTexture(nil,'BACKGROUND') end end
 S.Inset=function(f) f.inset=true end
 S.FadeNineSlice=function(f) f.faded=true end
-S.Tab=function(f) f.tab=true end
+S.Tab=function(f)
+    f.tab=true
+    if not f.tabFill then
+        f.tabFill=f:CreateTexture(nil,'BACKGROUND')
+        f.tabText=f:CreateFontString(); f.tabText:SetTextColor(1,1,0,1)
+    end
+end
 S.SetTabSelection=function(f,v) f.selected=v end
 S.ScrollBar=function(f) f.scroll=true end
-S.CloseButton=function(f) f.close=true end
-S.Checkbox=function(f) checkboxPaints=checkboxPaints+1; f.check=true end
+S.CloseButton=function(f)
+    f.close=true
+    if not f.closeGlyph then f.closeGlyph=f:CreateTexture(nil,'OVERLAY') end
+end
+S.Checkbox=function(f)
+    checkboxPaints=checkboxPaints+1
+    if f.check then return end
+    f.check=true; f.checkFill=f:CreateTexture(nil,'BACKGROUND'); f.checkHover=f:CreateTexture(nil,'HIGHLIGHT')
+    f.checkBorder=Object('Frame',f)
+end
 S.Button=function(f) f.button=true end
 S.EditBox=function(f) f.input=true end
 S.Dropdown=function(f) f.dropdown=true end
@@ -130,7 +147,7 @@ GameTooltip=Object('GameTooltip',UIParent)
 CommunitiesFrame=Object('Frame',UIParent)
 local function Named(kind, name, parent)
     local f=Object(kind,parent); f.name=name
-    if parent then parent[name]=f end
+    if parent and name then parent[name]=f end
     return f
 end
 local function Button(name,parent,custom)
@@ -151,13 +168,36 @@ end
 local root=Named('Frame','GRM_RosterChangeLogFrame',UIParent)
 -- Modern TranslucentFrameTemplate can have no BackdropTemplate API/backdrop.
 root.NineSlice=Named('Frame','NineSlice',root)
+root.NineSlice.edge=root.NineSlice:CreateTexture(nil,'BORDER')
+root.CloseButton=Named('Button',nil,root) -- BasicFrameTemplate's unnamed child.
+root.CloseButton.native=root.CloseButton:CreateTexture(nil,'ARTWORK')
+root.CloseButton.scripts.OnClick=function() root:Hide(); return 'close-return' end
+local legend=Named('Frame','GRM_RosterCheckBoxSideFrame',root)
+legend.Border=Named('Frame',nil,legend); legend.Border.edge=legend.Border:CreateTexture(nil,'BORDER')
+local legendCheck=Named('CheckButton','GRM_PromotionLegend',legend)
+local legendLabel=Text(legendCheck); legendLabel:SetTextColor(1,1,0,1)
+local legendHeading=Text(legend); legendHeading:SetTextColor(1,1,0,1)
+local gold=Text(root); gold:SetTextColor(1,0.82,0,1)
+local red=Text(root); red:SetTextColor(0.64,0.102,0.102,1)
+local disabledLabel=Text(root); disabledLabel:SetTextColor(0.5,0.5,0.5,1)
 local check=Named('CheckButton','GRM_TestCheckButton',root)
 check.checked=true; check.checkedArt=Object('Texture'); check.disabledArt=Object('Texture')
 check.Text=Text(check)
 check.scripts.OnClick=function(self) self.checked=not self.checked end
 local action,actionLabel=Button('GRM_ActionButton',root,true)
 local semantic=Text(root); semantic.color={0.3,0.7,0.1,1}
+local rogue=Text(root); rogue:SetTextColor(1,0.96,0.41,1)
 local scroll=Slider('GRM_LogScrollFrameSlider',root)
+local main=Button('GRM_LogTab',root)
+main.NineSlice=Named('Frame',nil,main); main.NineSlice.edge=main.NineSlice:CreateTexture(nil,'BORDER')
+local mainOther=Button('GRM_OptionsTab',root)
+root.GRM_LogFrame=Named('Frame','GRM_LogFrame',root)
+root.GRM_OptionsFrame=Named('Frame','GRM_OptionsFrame',root); root.GRM_OptionsFrame.shown=false
+local wrapper=Named('Slider','GRM_TooltipScaleSlider',root)
+wrapper.Slider=Slider('GRM_TooltipScaleSliderInner',wrapper); wrapper.Slider.orientation='HORIZONTAL'
+wrapper.Back=Named('Button',nil,wrapper); wrapper.Forward=Named('Button',nil,wrapper)
+wrapper.Back.native=wrapper.Back:CreateTexture(nil,'ARTWORK')
+wrapper.Back.scripts.OnClick=function() return 'step-back' end
 local first=Button('GRM_GeneralTab',root); first:LockHighlight()
 local second=Button('GRM_ScanTab',root)
 local editor=Named('EditBox','GRM_LogTextEditor',root)
@@ -169,7 +209,7 @@ local protectedText=Text(protected)
 local tooltip=Named('GameTooltip','GRM_Tooltip',root); tooltip.Text=Text(tooltip)
 local launch=Button('GRM_LoadLogButton',CommunitiesFrame)
 local phaseCalls=0
-GRM_UI={GRM_RosterChangeLogFrame=root,GRM_LoadLogButton=launch,GRM_LoadLogButtonText=launch.Text}
+GRM_UI={GRM_RosterCheckBoxSideFrame=legend,GRM_RosterChangeLogFrame=root,GRM_LoadLogButton=launch,GRM_LoadLogButtonText=launch.Text}
 -- Construction helpers return native results and preserve scripts. No guild data
 -- operations are required for visual discovery.
 GRM_UI.CreateButton=function(name,parent)
@@ -229,11 +269,31 @@ end},OptionTabFrameControl=function(tab)
 end, Kick=function() error('skinning must not invoke guild actions') end}
 assert(module.available()); module.install(S,module); Flush()
 assert(root.panel and root.NineSlice.faded and #root.children>0)
+assert(root.NineSlice.edge.alpha==0 and legend.panel and legend.Border.edge.alpha==0)
+assert(root.CloseButton.close and root.CloseButton.native.alpha==0 and root.CloseButton.closeGlyph.alpha==1)
+assert(root.CloseButton.scripts.OnClick()=='close-return' and not root.shown); root:Show()
+assert(main.tab and main.NineSlice.edge.alpha==0 and main.tabFill.alpha==1 and main.selected)
+assert(main.tabText.color[1]==1 and main.tabText.color[2]==1 and main.tabText.color[3]==0, "EUI accent label was recoloured")
+assert(wrapper.Back.glyph=='<' and wrapper.Forward.glyph=='>' and wrapper.Back.native.alpha==0)
+assert(wrapper.Back.scripts.OnClick()=='step-back' and wrapper.Slider.thumb.width==8)
+assert(check.checkFill.width==14 and check.checkBorder.width==14 and check.checkedArt.width==10)
+assert(check.width==16 and check.height==20, 'checkbox native hit rectangle was changed')
+assert(gold.color[1]==0.9 and red.color[1]==1 and red.color[2]==0.32 and disabledLabel.color[1]==0.5)
+assert(legendLabel.color[1]==1 and legendLabel.color[2]==1 and legendLabel.color[3]==0, 'event legend lost category colour')
+assert(legendHeading.color[1]==0.9, 'sidebar heading still uses stock yellow')
+red:SetTextColor(0,0.77,0.063,1); assert(red.color[1]==0 and red.color[2]==0.77)
+red:SetTextColor(0.64,0.102,0.102,1); assert(red.color[1]==1 and red.color[2]==0.32)
+root.GRM_OptionsFrame:Show(); assert(mainOther.selected and not main.selected)
+root.GRM_LogFrame:Show(); assert(main.selected and not mainOther.selected)
 assert(CommunitiesFrame.panel==nil and UIParent.panel==nil and GameTooltip.panel==nil)
 assert(launch.button and launch.Text.path=='EUI')
 assert(action.button and actionLabel.path=='EUI')
 assert(action.scripts.OnClick(action,'LeftButton')=='LeftButton' and action.clicks==1)
 assert(semantic.path=='EUI' and semantic.color[2]==0.7, 'semantic guild colours changed')
+assert(rogue.color[1]==1 and rogue.color[2]==0.96 and rogue.color[3]==0.41, 'class colour changed')
+gold:SetTextColor(1,1,0,1); assert(gold.color[1]==0.9)
+check:SetSize(32,32); assert(check.checkFill.width==14 and check.checkedArt.width==10 and check.width==32)
+check:SetSize(16,20)
 assert(protectedText.path=='Native' and tooltip.Text.path=='Native')
 assert(editor.text=='unchanged guild export' and not editor.input, 'native editor was restyled destructively')
 assert(swatch.backdrop.bgFile=='class colour' and not swatch.panel and art.Icon.texture=='class-icon')

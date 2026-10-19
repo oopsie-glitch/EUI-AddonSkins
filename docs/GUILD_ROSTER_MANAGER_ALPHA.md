@@ -22,3 +22,11 @@ The mocked regression exercises native button/radio/dropdown actions, legacy scr
 Integration points were inspected in TheGeneticsGuy/Guild-Roster-Manager, Retail commit `79be399c35424a48456361c374bc591b68c88dd2` (GRM 1.99423). The AddOnSkins GRM adapter was reviewed for coverage only. This adapter is original external styling code; no upstream code, textures, fonts or other assets are bundled or copied.
 
 The full project syntax/regression/package checks pass. No WoW client is available here: appearance, live guild permissions, client-specific templates and taint behaviour have not been verified in-game. Older GRM versions use feature detection; their visual coverage is not established by the Retail source review.
+
+## Visual refinement (alpha.2)
+
+The centre highlight is subdued for a matte appearance. Template artwork inside main-tab child frames, unnamed BasicFrame close buttons and the Display Changes side-panel border are stripped before applying the public skin primitives. Native controls retain their geometry and callbacks. Main-tab selection follows GRM's page Show calls, without hooking its repeating fade timers.
+
+Checkboxes have a consistent 14-unit visual box while their native hit rectangles stay intact; tiny native radio controls remain smaller. MinimalSliderWithSteppers wrappers receive left/right arrows around the actual slider, with native click handlers preserved. Stock gold/yellow labels become soft white and GRM's dark-red missing-data colour becomes a brighter red. Class colours, disabled greys and the log's coloured event legend remain native. Changes to text colours are repaired locally without scanning the interface.
+
+Additional mocked fixtures cover nested template artwork, anonymous close buttons, side panels without a backdrop API, wrapped slider arrows, main-page selection, checkbox resizing, live status-colour resets and preserved class/legend colours. Full package/regression checks pass; no in-game visual verification is claimed.

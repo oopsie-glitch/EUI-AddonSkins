@@ -2,6 +2,7 @@ local ADDON, ns = ...
 -- One-folder activation catalog. Skin files define factories at startup;
 -- their implementation bodies run only for eligible, loaded targets.
 ns.skinCatalog = {
+    {id = "GuildRosterManager", label = "Guild Roster Manager", targets = {"Guild_Roster_Manager"}},
     {id = "Altoholic", label = "Altoholic", targets = {"Altoholic"}},
     {id = "AtlasLootContinued", label = "AtlasLootClassic Continued", targets = {"AtlasLootContinued"}},
     {id = "Attune", label = "Attune", targets = {"Attune"}},

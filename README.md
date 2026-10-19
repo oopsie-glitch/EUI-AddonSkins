@@ -4,6 +4,7 @@ EllesmereUI skins for World of Warcraft addons.
 
 ## Supported addons
 
+- Guild Roster Manager (alpha)
 - Forever Companion
 - Forever Dungeon Journal
 - RestedXP Guides (legacy and V2 windows)

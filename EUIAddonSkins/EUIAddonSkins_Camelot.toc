@@ -18,6 +18,7 @@ Widgets.lua
 Scoped.lua
 Menus.lua
 Loader.lua
+Skins\Simulationcraft.lua
 Skins\Altoholic.lua
 Skins\AtlasLootContinued.lua
 Skins\Attune.lua

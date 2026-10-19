@@ -61,3 +61,13 @@ Untagged branch `skin/details-options`, based on v1.5.1. Shared helpers, meter s
 Sources reviewed: Tercioo/Details-Damage-Meter `Libs/DF/slider.lua`, `dropdown.lua`, `label.lua`, `buildmenu.lua`, `frames/window_options2.lua`, `frames/window_options2_sections.lua` and `core/plugins.lua`. No upstream code or assets are bundled.
 
 Validation: `python3 scripts/package.py` runs all regression suites, Lua syntax, manifests and the 39-file single-folder package checks. Source-shaped cases cover native switch values/visibility, disabled/theme/ownership guards, template returns, legacy sliders, existing numeric-editor layouts, unchanged commit handlers, selected icons, hidden-page activation and reusable editors. One hundred switch, dropdown and slider template updates each produce zero full-window scans or additional numeric editors in the mock. Existing meter, Tiny Threat, designer, menu-restoration and combat tests remain in the suite. Automated checks do not establish actual WoW rendering, FPS or taint behaviour.
+
+
+### Options readability follow-up
+
+- Give only the Details options canvas a charcoal base with a broad centre highlight and darker edges. Existing shell texture remains visible underneath; the public panel colour informs the base. Both modern colour-object gradients and legacy alpha gradients are supported, with no extra asset.
+- Slightly lift unchecked checkbox fills and add muted one-unit outlines to switches, dropdowns and numeric/text inputs. Visual children do not accept mouse input or alter native control geometry, marker visibility or focus handlers.
+- Soften the existing DF row background where a native highlight row is available; its hover visibility and click handlers remain native. No new clickable rows are introduced.
+- Create visual layers once, exclude them from control scans immediately (including their construction pass), and repaint the background only when its colour changes. Native resizing handles their anchors; there is no animation, polling or added show-refresh path.
+
+Regression cases check centre/edge alpha continuity, both gradient APIs, theme repaint, non-interactive visual layers, checkbox/dropdown/input contrast, native row actions, unchanged selected icons/marker state, and no repeated visual allocation during template bursts. The complete package checks pass. OLED readability and actual client rendering remain a visual judgement, not something established by mocks. Meter and Tiny Threat appearance are unchanged.

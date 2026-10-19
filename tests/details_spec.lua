@@ -19,6 +19,7 @@ local function texture(kind, parent)
     function t:SetAlpha(v) self.alpha = v end
     function t:GetDrawLayer() return self.layer or 'ARTWORK' end
     function t:SetColorTexture(...) self.color = {...}; self.path = 'solid' end
+    function t:SetGradientAlpha(...) self.gradient = {...} end
     function t:SetVertexColor(...) self.color = {...} end
     function t:SetPoint(...) self.points[#self.points + 1] = {...} end
     function t:SetAllPoints(anchor) self.anchor = anchor end
@@ -423,6 +424,10 @@ do
     local label = font(page); label:SetText('Allow |cffff0000CLEAR|r')
     local w = {widget = button, type = 'switch', checked_texture = mark, value = true, hasLabel = {widget = label}}
     button.MyObject = w
+    w.highlightFrame = frame('Button', nil, page)
+    w.highlightFrame.highlightTexture = w.highlightFrame:CreateTexture(); w.highlightFrame.highlightTexture:SetShown(false)
+    local rowWash = w.highlightFrame:CreateTexture(); rowWash.layer = 'ARTWORK'
+    w.highlightFrame.action = function() return 'row-click-native' end
     function w:SetTemplate()
         mark:SetTexture('native-green-check'); mark:SetSize(32, 32); mark:SetVertexColor(0, 1, 0, 1)
         button.backdrop = {bgFile = 'native-switch'}
@@ -483,6 +488,40 @@ do
     assert(alreadyBoxed:GetWidth() == 120 and boxed.value_box_side == 'left', 'existing native value box layout changed')
     assert(Details222.OptionsPanel.SelectOptionsSection(2) == 'section-native' and late.button, 'newly selected section was not styled synchronously')
     Details222.OptionsPanel.SelectOptionsSection(3); flush()
+    local function Backdrop(parent)
+        for _, child in ipairs(parent.children) do
+            if #child.regions == 5 and child.regions[2].gradient then return child end
+        end
+    end
+    local background = Backdrop(DetailsOptionsWindow)
+    assert(background and background.mouse == false and background:GetFrameLevel() == DetailsOptionsWindow:GetFrameLevel())
+    assert(background.regions[1].color[1] == 0.055 and background.regions[1].color[4] == 0.82)
+    assert(background.regions[2].gradient[5] == 0 and background.regions[2].gradient[9] == 0.5)
+    assert(background.regions[3].gradient[5] == 0.5 and background.regions[3].gradient[9] == 0)
+    assert(not background.hooks.OnShow, 'visual background acquired a full-refresh show hook')
+    local function Contrast(parent)
+        for _, child in ipairs(parent.children) do
+            if #child.regions == 5 and (child.regions[2].width == 1 or child.regions[2].height == 1) then return child end
+        end
+    end
+    local checkVisual, dropVisual, inputVisual = Contrast(button), Contrast(drop), Contrast(slider.value_box)
+    assert(checkVisual and dropVisual and inputVisual)
+    assert(checkVisual.mouse == false and checkVisual.regions[1].color[1] == 0.095 and not checkVisual.hooks.OnShow)
+    assert(dropVisual.regions[1].color[1] == 0.065 and inputVisual.regions[1].color[1] == 0.065)
+    assert(checkVisual.regions[2].color[4] == 0.45 and checkVisual.regions[2].height == 1)
+    assert(rowWash.color[4] == 0.12 and rowWash.color[1] == 0 and not w.highlightFrame.highlightTexture:IsShown() and w.highlightFrame.action() == 'row-click-native')
+    -- Both modern colour objects and legacy gradients are supported, without a new asset.
+    local oldPanelColor, oldCreateColor = S.GetPanelColor, CreateColor
+    CreateColor = function(r,g,b,a) return {r=r,g=g,b=b,a=a} end
+    for i = 2, 5 do
+        background.regions[i].SetGradient = function(self, direction, first, last) self.modernGradient={direction,first,last} end
+    end
+    S.GetPanelColor = function() return 0.08,0.08,0.09,1 end
+    modules.Details.refresh(); flush()
+    assert(Backdrop(DetailsOptionsWindow) == background and background.regions[1].color[1] == 0.08)
+    assert(background.regions[2].modernGradient[2].a == 0 and background.regions[2].modernGradient[3].a == 0.5)
+    S.GetPanelColor, CreateColor = oldPanelColor, oldCreateColor
+    modules.Details.refresh(); flush()
     assert(heading.textColor[1] == accent and warning.textColor[1] == 1 and warning.text == '|cffff0000Warning|r' and desc.textColor[1] == 0.6)
     assert(title.textColor[1] == accent and DetailsOptionsWindow.shellOptions.noAccent and close.close and close.action() == 'close-native')
     assert(mark.path == 'solid' and mark.color[1] == accent and mark.points[1][4] == 4 and mark.points[2][4] == -4 and mark:IsShown())
@@ -506,6 +545,12 @@ do
     local settings = ns.DetailsSettings(); settings.menus = false
     w:SetTemplate(); assert(mark.path == 'native-green-check', 'menu-disabled callback restyled a switch')
     settings.menus = true; modules.Details.refresh(); flush()
+    local function VisualCount(f)
+        local n = #f.regions + 1
+        for _, child in ipairs(f.children) do n = n + VisualCount(child) end
+        return n
+    end
+    local visualCount = VisualCount(DetailsOptionsWindow)
     local count, creates, hook = #button.regions + #drop.regions + #range.regions, slider.creates, w.SetTemplate
     auditScans[DetailsOptionsWindow] = 0
     for _ = 1, 100 do
@@ -515,6 +560,7 @@ do
     end
     flush()
     assert(auditScans[DetailsOptionsWindow] == 0 and slider.creates == creates and w.SetTemplate == hook)
+    assert(VisualCount(DetailsOptionsWindow) == visualCount, 'template updates duplicated readable surfaces')
     assert(#button.regions + #drop.regions + #range.regions == count and range:GetWidth() == 140)
     assert(mark.path == 'solid' and drop.arrowTexture.path:find('eui%-arrow%-down3') and icon.alpha == 0.7)
     print('BENCH details_templates switches=100 dropdowns=100 sliders=100 full_scans=0 new_value_boxes=0')

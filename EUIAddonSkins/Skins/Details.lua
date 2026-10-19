@@ -120,9 +120,11 @@ local function Setup(C, refresh)
     end
     -- Options sections are explicitly registered; defer hidden content until
     -- the completed native section-selection callback styles the visible page.
+    local visualFrames = setmetatable({}, {__mode = "k"})
     local scan = H.Scan
     H.Scan = function(root, callback, visit, excluded)
-        local exclude = {}
+        -- New visual layers can be created during this same traversal.
+        local exclude = setmetatable({}, {__index = visualFrames})
         for f, value in pairs(excluded or {}) do exclude[f] = value end
         local options = Frame(_G.DetailsOptionsWindow)
         for _, section in pairs(options and options.sectionFramesContainer or {}) do
@@ -139,6 +141,81 @@ local function Setup(C, refresh)
             f = f.GetParent and f:GetParent()
         end
         return false
+    end
+    local readableBackground, readableControls = nil, {}
+    local function Gradient(texture, direction, r, g, b, first, last)
+        texture:SetColorTexture(1, 1, 1, 1)
+        if texture.SetGradient and CreateColor then
+            texture:SetGradient(direction, CreateColor(r, g, b, first), CreateColor(r, g, b, last))
+        elseif texture.SetGradientAlpha then
+            texture:SetGradientAlpha(direction, r, g, b, first, r, g, b, last)
+        else texture:SetColorTexture(r, g, b, math.max(first, last) * 0.5) end
+    end
+    state.ReadableBackground = function(f)
+        if f ~= Frame(_G.DetailsOptionsWindow) then return end
+        if not readableBackground or readableBackground.owner ~= f then
+            local layer = CreateFrame("Frame", nil, f)
+            visualFrames[layer] = true
+            layer:SetAllPoints(f); layer:EnableMouse(false)
+            if layer.SetFrameLevel and f.GetFrameLevel then layer:SetFrameLevel(f:GetFrameLevel()) end
+            local d = {owner = f, layer = layer}; readableBackground = d
+            d.base = layer:CreateTexture(nil, "BACKGROUND", nil, -4); d.base:SetAllPoints(layer)
+            d.left = layer:CreateTexture(nil, "BACKGROUND", nil, -3)
+            d.left:SetPoint("TOPLEFT", layer, "TOPLEFT"); d.left:SetPoint("BOTTOMRIGHT", layer, "BOTTOM")
+            d.right = layer:CreateTexture(nil, "BACKGROUND", nil, -3)
+            d.right:SetPoint("TOPLEFT", layer, "TOP"); d.right:SetPoint("BOTTOMRIGHT", layer, "BOTTOMRIGHT")
+            d.top = layer:CreateTexture(nil, "BACKGROUND", nil, -2)
+            d.top:SetPoint("TOPLEFT", layer, "TOPLEFT"); d.top:SetPoint("BOTTOMRIGHT", layer, "RIGHT")
+            d.bottom = layer:CreateTexture(nil, "BACKGROUND", nil, -2)
+            d.bottom:SetPoint("TOPLEFT", layer, "LEFT"); d.bottom:SetPoint("BOTTOMRIGHT", layer, "BOTTOMRIGHT")
+        end
+        local d = readableBackground
+        local r, g, b = 0.055, 0.055, 0.06
+        if S.GetPanelColor then r, g, b = S.GetPanelColor() end
+        r, g, b = math.max(0.055, r), math.max(0.055, g), math.max(0.06, b)
+        if d.r == r and d.g == g and d.b == b then return end
+        d.r, d.g, d.b = r, g, b
+        d.base:SetColorTexture(r, g, b, 0.82)
+        local lr, lg, lb = math.min(1, r + 0.15), math.min(1, g + 0.15), math.min(1, b + 0.15)
+        Gradient(d.left, "HORIZONTAL", lr, lg, lb, 0, 0.5)
+        Gradient(d.right, "HORIZONTAL", lr, lg, lb, 0.5, 0)
+        Gradient(d.top, "VERTICAL", 0, 0, 0, 0, 0.14)
+        Gradient(d.bottom, "VERTICAL", 0, 0, 0, 0.14, 0)
+    end
+    state.ControlContrast = function(f, widget, method)
+        if not OptionOwned(f) then return end
+        if method == "switch" or method == "dropdown" or method == "input" then
+            local d = readableControls[f]
+            if not d then
+                local layer = CreateFrame("Frame", nil, f)
+                visualFrames[layer] = true
+                layer:SetAllPoints(f); layer:EnableMouse(false)
+                if layer.SetFrameLevel and f.GetFrameLevel then layer:SetFrameLevel(f:GetFrameLevel()) end
+                d = {layer = layer}; readableControls[f] = d
+                d.fill = layer:CreateTexture(nil, "BACKGROUND", nil, -2); d.fill:SetAllPoints(layer)
+                for _, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+                    local edge = layer:CreateTexture(nil, "BORDER")
+                    edge:SetColorTexture(0.28, 0.28, 0.3, 0.45)
+                    if side == "TOP" or side == "BOTTOM" then
+                        edge:SetPoint(side .. "LEFT", layer, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", layer, side .. "RIGHT"); edge:SetHeight(1)
+                    else
+                        edge:SetPoint("TOP" .. side, layer, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, layer, "BOTTOM" .. side); edge:SetWidth(1)
+                    end
+                end
+            end
+            local shade = method == "switch" and 0.095 or 0.065
+            if d.shade ~= shade then d.fill:SetColorTexture(shade, shade, shade + 0.005, 1); d.shade = shade end
+        end
+        local row = widget and widget.highlightFrame
+        if H.Allowed(row) and OptionOwned(row) and H.Texture(row.highlightTexture) then
+            -- DF already owns the row bounds, hover visibility and click handlers.
+            -- Repaint its plain background only; no new clickable row is introduced.
+            for _, region in ipairs(H.Regions(row)) do
+                if H.Texture(region) and region ~= row.highlightTexture and region.GetDrawLayer and region:GetDrawLayer() == "ARTWORK" then
+                    region:SetVertexColor(1, 1, 1, 1); region:SetColorTexture(0, 0, 0, 0.12)
+                end
+            end
+        end
     end
     local function LabelTone(text, widget, heading)
         text = Frame(text)
@@ -175,7 +252,7 @@ local function Setup(C, refresh)
         if type(widget) ~= "table" then return false end
         local method = widget.type
         if kind == "EditBox" and widget.value_box == f then
-            S.EditBox(f, {padInput = false}); return true
+            S.EditBox(f, {padInput = false}); state.ControlContrast(f, widget, "input"); return true
         end
         local supported = method == "switch" or method == "dropdown" or kind == "Slider" and method == "slider"
             or kind == "Button" and method == "button" and OptionOwned(f) and (f.GetFontString and f:GetFontString() or f.Text or f.text)
@@ -269,6 +346,7 @@ local function Setup(C, refresh)
                     if H.Allowed(widget.value_box) then
                         H.Script(widget.value_box, "OnShow", d.paint)
                         S.EditBox(widget.value_box, {padInput = false})
+                        state.ControlContrast(widget.value_box, widget, "input")
                     end
                 end
             end
@@ -278,6 +356,7 @@ local function Setup(C, refresh)
             if f.SetBackdrop then f:SetBackdrop(nil) end
             LabelTone((f.GetFontString and f:GetFontString()) or f.Text or f.text, widget)
         end
+        state.ControlContrast(f, widget, method)
         return true
     end
     state.Section = function(button)
@@ -770,6 +849,7 @@ ns.RegisterScopedSkin("Details", "Details!", {
     end,
     visit = function(C, f, kind, refresh)
         local H, S = C.H, C.S
+        C.details.ReadableBackground(f)
         C.details.OptionLabels(f)
         local options = Frame(_G.DetailsOptionsWindow)
         local name = options and options.GetName and options:GetName()
@@ -790,6 +870,7 @@ ns.RegisterScopedSkin("Details", "Details!", {
             -- DF anchors the field just two pixels beyond its description.
             -- Blizzard padding expands the field leftward across that label.
             S.EditBox(f, {padInput = false})
+            C.details.ControlContrast(f, widget, "input")
             for _, text in ipairs(H.Regions(f)) do H.Font(text) end
             return true
         end

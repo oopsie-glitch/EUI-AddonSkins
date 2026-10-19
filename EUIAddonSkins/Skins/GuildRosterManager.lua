@@ -22,6 +22,13 @@ end, function(S, module)
     local function Name(f) return f.GetName and f:GetName() or "" end
     local function ReadableColour(text)
         if not text.GetTextColor then return end
+        local r, g, b, a = text:GetTextColor()
+        if not r or a == 0 then return end
+        local gold = r == 1 and (g == 1 or math.abs(g - 0.82) < 0.001) and b == 0
+        local missing = math.abs(r - 0.64) < 0.001 and math.abs(g - 0.102) < 0.001 and math.abs(b - 0.102) < 0.001
+        -- Roster class colours, good/unknown states and disabled labels need no
+        -- ancestry inspection or colour write on repeated native updates.
+        if not gold and not missing then return end
         local parent = text.GetParent and text:GetParent()
         local legendItem = false
         for _ = 1, 16 do
@@ -34,11 +41,9 @@ end, function(S, module)
             if parent.GetObjectType and parent:GetObjectType() == "CheckButton" then legendItem = true end
             parent = parent.GetParent and parent:GetParent()
         end
-        local r, g, b, a = text:GetTextColor()
-        if not r or a == 0 then return end
-        if r == 1 and (g == 1 or math.abs(g - 0.82) < 0.001) and b == 0 then
+        if gold then
             text:SetTextColor(0.9, 0.9, 0.9, a)
-        elseif math.abs(r - 0.64) < 0.001 and math.abs(g - 0.102) < 0.001 and math.abs(b - 0.102) < 0.001 then
+        elseif missing then
             -- Retain GRM's red missing-data state, with readable luminance.
             text:SetTextColor(1, 0.32, 0.32, a)
         end
@@ -322,10 +327,13 @@ end, function(S, module)
         Run(Discover, parent[name .. "Menu"], 0, true)
     end)
     H.Hook(ui, "BuildDropDownOptions", function(_, menu) Run(Discover, menu, 0, true) end)
+    -- BuildLogFrames updates checkbox values, permissions, text and fonts.
+    -- Their local setters/factories already keep the skin current; it must not
+    -- trigger a full interface repaint on each native settings/rank refresh.
     local function BuiltRoots() Run(Roots, true) end
     for _, method in ipairs({"PreAddonLoadUI", "GR_MetaDataInitializeUIFirst", "GR_MetaDataInitializeUISecond",
         "GR_MetaDataInitializeUIThird", "MetaDataInitializeUIrosterLog1", "MetaDataInitializeUIrosterLog2",
-        "ReloadAllFrames", "LoadToolFrames", "BuildLogFrames"}) do H.Hook(ui, method, BuiltRoots) end
+        "ReloadAllFrames", "LoadToolFrames"}) do H.Hook(ui, method, BuiltRoots) end
     H.Hook(_G.GRM_R, "BuildRosterFrames", BuiltRoots)
     H.Hook(_G.GRM and _G.GRM.Export, "LoadExportUI", BuiltRoots)
     H.Hook(_G.GRM, "OptionTabFrameControl", function(tab)

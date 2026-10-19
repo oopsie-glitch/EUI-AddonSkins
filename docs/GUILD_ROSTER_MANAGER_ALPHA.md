@@ -30,3 +30,24 @@ The centre highlight is subdued for a matte appearance. Template artwork inside 
 Checkboxes have a consistent 14-unit visual box while their native hit rectangles stay intact; tiny native radio controls remain smaller. MinimalSliderWithSteppers wrappers receive left/right arrows around the actual slider, with native click handlers preserved. Stock gold/yellow labels become soft white and GRM's dark-red missing-data colour becomes a brighter red. Class colours, disabled greys and the log's coloured event legend remain native. Changes to text colours are repaired locally without scanning the interface.
 
 Additional mocked fixtures cover nested template artwork, anonymous close buttons, side panels without a backdrop API, wrapped slider arrows, main-page selection, checkbox resizing, live status-colour resets and preserved class/legend colours. Full package/regression checks pass; no in-game visual verification is claimed.
+
+## Performance review (alpha.3)
+
+Two avoidable paths were reduced without changing appearance:
+
+- Removed the full-window callback on `BuildLogFrames`. In GRM 1.99423 this refreshes settings, permissions and existing text/control values. Local setters and construction hooks already maintain those visuals, including newly created controls. Genuine construction, language and theme refreshes retain their completed discovery passes.
+- Text colours that do not need remapping now return before inspecting parents. Class colours, good/unknown states and disabled greys keep their native values. The legend exclusion still applies when a colour actually needs examination.
+
+Reproduce the source-shaped benchmark with `python3 benchmarks/run_grm.py --baseline` and `python3 benchmarks/run_grm.py`. The baseline is alpha.2 commit `8973f28e39cde681cf9ccce438a314096673c2bc`. Each workload uses seven trials; these are median host-Lua times, not WoW timings.
+
+| Simulated workload | Alpha.2 | Alpha.3 |
+| --- | ---: | ---: |
+| 100 settings refreshes, with 500 extra audit labels present | 104.590 ms | 0.411 ms |
+| 100 batches updating 500 class/good-state colours | 69.077 ms | 43.776 ms |
+| 2,000 warm main-tab switches | 4.684 ms | 5.139 ms |
+
+The small tab-time difference is host timing variation; that runtime path is unchanged. Warm window shows and tab switches perform zero child/region traversals, font rewrites or new UI object/hook creation. The 100 simulated settings refreshes previously read 1,900 child lists and 14,600 region lists; they now read zero. Fifty thousand unmodified colour updates previously inspected 250,000 parents; they now inspect zero. Native font resets are still repaired, and a real pooled dropdown font reset still causes the required local font write.
+
+The settings-refresh trial's GC-stopped temporary Lua growth fell from 3,533.410 KiB to 48.625 KiB. These figures include mock hook argument/return tables and other simplified test APIs; they do not measure retained addon memory or WoW allocations. All warm workloads create zero new UI objects or hooks. Tests also cover dynamically constructed controls during a native settings refresh, class/legend/status colours, themes, disabled skins and combat deferral.
+
+Static review found no added polling, OnUpdate, per-frame scan, scroll-triggered full refresh or guild-data traversal. Caches and hook guards reuse existing UI objects. Full discovery remains intentional during initial construction and explicit theme/language rebuilds. Real-client first-open latency, FPS and protected-action behaviour cannot be measured here.

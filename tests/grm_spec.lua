@@ -3,6 +3,7 @@ local enabled, combat, allocated, hookCount = true, false, 0, 0
 local errors, timers, looks, events, handlers = {}, {}, {}, {}, {}
 local module, factory, fontFace, accent = nil, nil, 'EUI', 0.25
 local fontWrites, checkboxPaints, colourWrites = 0, 0, 0
+local childReads, regionReads, parentReads = 0, 0, 0
 local ns = {IsEnabled = function() return enabled end}
 ns.RegisterSkinDefinition = function(id, fn) assert(id == 'GuildRosterManager'); factory = fn end
 ns.RegisterModule = function(id, _, available, install) module = {id=id, available=available, install=install} end
@@ -32,11 +33,11 @@ local function Object(kind, parent)
     function f:GetObjectType() return self.kind end
     function f:IsForbidden() return false end
     function f:IsProtected() return self.protected end
-    function f:GetChildren() self.walks=(self.walks or 0)+1; return table.unpack(self.children) end
+    function f:GetChildren() childReads=childReads+1; self.walks=(self.walks or 0)+1; return table.unpack(self.children) end
     function f:GetNumChildren() return #self.children end
     function f:GetNumRegions() return #self.regions end
     function f:GetName() return self.name end
-    function f:GetParent() return self.parent end
+    function f:GetParent() parentReads=parentReads+1; return self.parent end
     function f:GetBackdrop() return self.backdrop end
     function f:LockHighlight() self.locked=true end
     function f:UnlockHighlight() self.locked=false end
@@ -46,7 +47,7 @@ local function Object(kind, parent)
         elseif not self.highlight then self.highlight=self:CreateTexture(nil,'HIGHLIGHT') end
         self.highlight.texture=v
     end
-    function f:GetRegions() return table.unpack(self.regions) end
+    function f:GetRegions() regionReads=regionReads+1; return table.unpack(self.regions) end
     function f:GetFont() return self.path,self.size,self.flags end
     function f:SetFont(path,size,flags) self.path,self.size,self.flags=path,size,flags end
     function f:SetFontObject() self.path='Native'; self.size=15; self.flags='' end
@@ -139,7 +140,7 @@ S.Dropdown=function(f) f.dropdown=true end
 S.StateButtonLabel=function(f) f.stateLabel=true end
 S.PageButton=function(f,glyph) f.glyph=glyph end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins',ns)
-assert(loadfile('EUIAddonSkins/Skins/GuildRosterManager.lua'))('EUIAddonSkins',ns)
+assert(loadfile(GRM_SKIN_PATH or 'EUIAddonSkins/Skins/GuildRosterManager.lua'))('EUIAddonSkins',ns)
 assert(not module and factory, 'implementation must be deferred')
 GRM_UI, GRM = nil, nil; factory(); assert(not module.available())
 UIParent=Object('Frame'); UIParent.name='UIParent'
@@ -253,6 +254,11 @@ GRM_UI.BuildDropDownOptions=function(list,menu,selector)
     return 'menu-return'
 end
 GRM_UI.ReloadAllFrames=function() phaseCalls=phaseCalls+1; return 'reload-result' end
+GRM_UI.BuildLogFrames=function()
+    gold:SetTextColor(1,0.82,0,1); red:SetTextColor(0.64,0.102,0.102,1)
+    semantic:SetFont('Native',13,'')
+    return 'native-state-return'
+end
 GRM_R={BuildRosterFrames=function()
     GRM_UI.GRM_RosterFrame=Named('Frame','GRM_RosterFrame',UIParent)
     GRM_UI.GRM_RosterFrame.backdrop={bgFile='native'}
@@ -366,3 +372,30 @@ end
 Flush(); assert(checkboxPaints==before)
 assert(#errors==0,table.concat(errors,'\n'))
 print('PASS: GRM factories, pooled menus, clean checks, tabs, lazy windows, font resets, native actions, cached warm shows, theme/disabled/combat gates')
+
+if not GRM_PERF_FIXTURE then
+    local beforeChildren,beforeRegions,beforeParents=childReads,regionReads,parentReads
+    for _=1,100 do
+        assert(GRM_UI.BuildLogFrames()=='native-state-return')
+        assert(gold.color[1]==0.9 and red.color[2]==0.32 and semantic.path==fontFace)
+    end
+    assert(childReads==beforeChildren and regionReads==beforeRegions,
+        'native settings/rank refresh triggered interface traversal')
+    local before=parentReads
+    for _=1,100 do rogue:SetTextColor(1,0.96,0.41,1); disabledLabel:SetTextColor(0.5,0.5,0.5,1) end
+    assert(parentReads==before, 'unmodified colours still inspect ancestors')
+    local original=GRM_UI.BuildLogFrames
+    GRM_UI.BuildLogFrames=function()
+        original(); GRM_UI.CreateButton('GRM_LazyStateControl',root)
+        return 'dynamic-state-return'
+    end
+    assert(GRM_UI.BuildLogFrames()=='dynamic-state-return'); Flush()
+    assert(root.GRM_LazyStateControl.button and root.GRM_LazyStateControl.GRM_LazyStateControlText.path==fontFace)
+end
+if GRM_PERF_FIXTURE then
+    return {root=root, Object=Object, Named=Named, Text=Text, Button=Button, module=module,
+        Flush=Flush, menu=menu, selector=selector, semantic=semantic,
+        setEnabled=function(v) enabled=v end,
+        counts=function() return {objects=allocated,hooks=hookCount,fonts=fontWrites,
+            checks=checkboxPaints,colours=colourWrites,children=childReads,regions=regionReads,parents=parentReads} end}
+end

@@ -13,6 +13,16 @@ end, function(S, module)
     local generation = 0
     local pending, painting, waiting = {}, false, false
     local PaintWindow, BindWindow, BindObject, PaintObject, Refresh
+    local function Opacity()
+        EUIAddonSkinsDB = EUIAddonSkinsDB or {}
+        local db = EUIAddonSkinsDB
+        db.allTheThings = db.allTheThings or {}
+        local value = db.allTheThings.opacity
+        if type(value) ~= "number" or value ~= value then value = 0.65 end
+        value = math.max(0, math.min(1, value))
+        db.allTheThings.opacity = value
+        return value
+    end
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
 
@@ -71,6 +81,7 @@ end, function(S, module)
             d.right = layer:CreateTexture(nil, "BACKGROUND", nil, -3)
             d.right:SetPoint("TOPLEFT", layer, "TOP"); d.right:SetPoint("BOTTOMRIGHT")
         end
+        d.layer:SetAlpha(Opacity())
         local r, g, b = S.GetPanelColor()
         r, g, b = math.min(1, r + 0.15), math.min(1, g + 0.15), math.min(1, b + 0.15)
         Gradient(d.left, 0, 0.4, r, g, b); Gradient(d.right, 0.4, 0, r, g, b)
@@ -230,6 +241,42 @@ end, function(S, module)
         for f in pairs(objects) do PaintObject(f) end
         soft.RefreshSoftBorders()
     end
+    local function ApplyOpacity()
+        local value = Opacity()
+        for _, surface in pairs(surfaces) do surface.layer:SetAlpha(value) end
+    end
+    local function AppearanceOptions()
+        if type(app.Settings) ~= "table" or type(app.Settings.CreateOptionsPage) ~= "function" then return end
+        local page = app.Settings:CreateOptionsPage("EUI AddonSkins")
+        if not H.Allowed(page) then return end
+        local slider = CreateFrame("Slider", nil, page, "OptionsSliderTemplate")
+        slider:SetPoint("TOPLEFT", page, "TOPLEFT", 24, -104)
+        slider:SetSize(260, 18); slider:SetOrientation("HORIZONTAL"); slider:SetMinMaxValues(0, 100); slider:SetValueStep(1)
+        if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
+        local label = page:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        label:SetPoint("BOTTOMLEFT", slider, "TOPLEFT", 0, 8)
+        local description = page:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        description:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", 0, -22)
+        description:SetText("Window background opacity. Text, icons and controls stay fully visible.")
+        local function Sync()
+            local percent = math.floor(Opacity() * 100 + 0.5)
+            slider:SetValue(percent)
+            label:SetText("Background opacity: " .. percent .. "%")
+        end
+        slider:SetScript("OnValueChanged", function(_, value)
+            value = math.max(0, math.min(100, math.floor(value + 0.5)))
+            Opacity() -- Initialize only our own saved settings.
+            EUIAddonSkinsDB.allTheThings.opacity = value / 100
+            label:SetText("Background opacity: " .. value .. "%")
+            Run(ApplyOpacity) -- No row scans, font writes or full refresh while dragging.
+        end)
+        slider:HookScript("OnShow", Sync)
+        -- ATT registers controls before their constructors finish; its normal
+        -- RegisterObject lifecycle lets our completed-control pass theme this slider.
+        if page.RegisterObject then page:RegisterObject(slider) end
+        page.backgroundOpacity = slider
+        Sync(); Font(label); Font(description)
+    end
     module.refresh = function() H.Queue(module, function() Run(Refresh) end) end
     events:SetScript("OnEvent", function() if waiting then Run(Refresh) end end)
     if type(app.AddEventHandler) == "function" then
@@ -240,6 +287,7 @@ end, function(S, module)
     H.Hook(app, "ShowPopupDialogWithMultiLineEditBox", function() Run(EditDialog) end)
     if S.OnLooksChanged then S.OnLooksChanged(module.refresh) end
     Run(Refresh)
+    Run(AppearanceOptions)
 end)
 end
 if ns.RegisterSkinDefinition then ns.RegisterSkinDefinition("AllTheThings", DefineSkin)

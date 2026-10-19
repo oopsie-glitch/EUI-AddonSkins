@@ -68,6 +68,14 @@ local function Object(kind, parent)
     function f:GetHighlightTexture() return self.highlight end
     function f:GetThumbTexture() return self.thumb end
     function f:GetOrientation() return self.orientation or 'VERTICAL' end
+    function f:SetOrientation(value) self.orientation=value end
+    function f:SetMinMaxValues(a,b) self.minimum,self.maximum=a,b end
+    function f:SetValueStep(step) self.step=step end
+    function f:SetValue(value)
+        self.value=value
+        if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self,value) end
+    end
+    function f:GetValue() return self.value end
     function f:GetCheckedTexture() return self.checkedArt end
     function f:GetDisabledCheckedTexture() return self.disabledArt end
     function f:Enable() self.enabled=true end
@@ -88,7 +96,7 @@ local function Object(kind, parent)
     if parent then parent.children[#parent.children+1]=f end
     return f
 end
-CreateFrame = function(kind,_,parent) local f=Object(kind,parent); events[#events+1]=f; return f end
+CreateFrame = function(kind,_,parent) local f=Object(kind,parent); if kind=='Slider' then f.thumb=Object('Texture') end; events[#events+1]=f; return f end
 local function Text(parent)
     local f=Object('FontString'); parent.regions[#parent.regions+1]=f; return f
 end
@@ -136,8 +144,8 @@ local settings=Object('Frame'); local page=Object('Frame'); settings:RegisterObj
 local check=Object('CheckButton',page); check.Text=Text(check); check.checked=true
 check.checkedArt=Object('Texture'); check.disabledArt=Object('Texture'); page:RegisterObject(check)
 local slider=Object('Slider',page); slider.orientation='HORIZONTAL'; slider.thumb=Object('Texture'); page:RegisterObject(slider)
-local nativeCalls=0; settings.CreateOptionsPage=function(self)
-    nativeCalls=nativeCalls+1; local p=Object('Frame'); self:RegisterObject(p); return p,'native-return'
+local nativeCalls=0; settings.CreateOptionsPage=function(self,title)
+    nativeCalls=nativeCalls+1; local p=Object('Frame'); self:RegisterObject(p); if title=='EUI AddonSkins' then self.appearancePage=p end; return p,'native-return'
 end
 local prime=Window(); AllTheThings={Windows={Prime=prime},Settings=settings,
     GetWindow=function() error('skin must not force ATT window creation') end,
@@ -149,7 +157,25 @@ AllTheThings.ShowPopupDialogWithMultiLineEditBox=function()
     ATTEditBox.Button=Object('Button',ATTEditBox); ATTEditBox.Button.Text=Text(ATTEditBox.Button)
     return 'dialog-return'
 end
+EUIAddonSkinsDB={unrelated={kept=true}}
 assert(module.available()); module.install(S,module); Flush()
+local function Surface(owner)
+    for _,child in ipairs(owner.children) do if child.panel then return child end end
+end
+if not ATT_PERF_FIXTURE then assert(settings.appearancePage, "appearance options were not registered") end
+local opacity=settings.appearancePage and settings.appearancePage.backgroundOpacity
+if opacity then
+assert(opacity and opacity:GetValue()==65 and Surface(prime):GetAlpha()==0.65)
+assert(prime:GetAlpha()==1 and prime.Container.rows[1].Label:GetAlpha()==1)
+local opacityObjects,opacityHooks,opacityFonts=allocated,hookCount,fontWrites
+for percent=0,100 do opacity:SetValue(percent) end
+assert(Surface(prime):GetAlpha()==1 and EUIAddonSkinsDB.allTheThings.opacity==1)
+assert(allocated==opacityObjects and hookCount==opacityHooks and fontWrites==opacityFonts,
+    'dragging opacity created objects/hooks or rewrote fonts')
+opacity:SetValue(42); assert(Surface(prime):GetAlpha()==0.42)
+opacity.scripts.OnShow(opacity); assert(opacity:GetValue()==42)
+assert(EUIAddonSkinsDB.unrelated.kept and prime.backdrop.bgFile=='native')
+end
 local row=prime.Container.rows[1]
 assert(row.Label.path=='EUI' and row.Summary.path=='EUI' and row.Label.color[2]==0.8)
 assert(row.Texture.texture=='item' and row.Background.alpha==1 and row.Indicator.alpha==1)
@@ -189,7 +215,8 @@ if not ATT_PERF_FIXTURE then
 end
 local other=Window(); AllTheThings.Windows.MiniList=other; handlers.OnWindowCreated(other,'MiniList')
 assert(other.CloseButton.close and other.Container.rows[1].Label.path=='EUI')
-local fresh,marker=settings:CreateOptionsPage('new'); assert(marker=='native-return' and nativeCalls==1)
+if opacity then assert(Surface(other):GetAlpha()==0.42, 'new windows lost saved opacity') end
+local fresh,marker=settings:CreateOptionsPage('new'); assert(marker=='native-return' and nativeCalls==(settings.appearancePage and 2 or 1))
 local late=Object('CheckButton'); late.Text=Text(late); late.checkedArt=Object('Texture'); late.disabledArt=Object('Texture')
 fresh:RegisterObject(late); Flush(); assert(late.check and late.Text.path=='EUI', 'late settings controls missed')
 local scrollPage=Object('ScrollFrame'); scrollPage.ScrollBar=Object('Frame',scrollPage)
@@ -212,6 +239,15 @@ assert(ATTEditBox.Button.button and ATTEditBox.EditBox.path=='EUI' and not ATTEd
 fontFace='EUI-new'; accent=0.7; looks[1](); Flush()
 assert(row.Label.path==fontFace and late.checkedArt.color[1]==0.7, 'theme/accent refresh missed')
 assert(prime.ScrollBar.thumb.color[1]==0.7, 'scrollbar accent did not refresh')
+if opacity then
+assert(Surface(prime):GetAlpha()==0.42, 'theme refresh lost saved opacity')
+combat=true; opacity:SetValue(20); assert(Surface(prime):GetAlpha()==0.42)
+combat=false
+for _,f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.scripts.OnEvent(f,'PLAYER_REGEN_ENABLED') end end
+Flush(); assert(Surface(prime):GetAlpha()==0.20, 'combat-deferred opacity missed')
+enabled=false; opacity:SetValue(30); assert(Surface(prime):GetAlpha()==0.20)
+enabled=true; module.refresh(); Flush(); assert(Surface(prime):GetAlpha()==0.30)
+end
 local saved=prime.backdrop; prime:SetBackdrop({bgFile='changed-by-ATT'}); assert(prime.backdrop.bgFile=='changed-by-ATT')
 enabled=false; local before=allocated; local disabled=Window(); local nativeAllocated=allocated
 AllTheThings.Windows.Disabled=disabled; handlers.OnWindowCreated(disabled); assert(allocated==nativeAllocated and not disabled.CloseButton.close)

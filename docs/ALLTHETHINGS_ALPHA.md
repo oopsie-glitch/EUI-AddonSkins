@@ -36,7 +36,7 @@ python3 benchmarks/run_att.py --baseline
 python3 benchmarks/run_att.py
 ```
 
-The baseline is the exact initial-alpha adapter from `f0e88253de6f0f077fb8ed7aace8e5c8ba965ff8`. Both runs use the same source-shaped Lua 5.4 fixture and seven trials. Table values are median elapsed times; allocation figures are GC-stopped temporary Lua growth for that trial.
+The baseline is the exact initial-alpha adapter from `f0e88253de6f0f077fb8ed7aace8e5c8ba965ff8`. Both recorded runs used the same source-shaped Lua 5.4 fixture and seven trials. The historical initial-alpha adapter no longer satisfies the later scrollbar assertions, so rerunning `--baseline` now requires aligning that fixture; the current adapter benchmark still runs. Table values are median elapsed times; allocation figures are GC-stopped temporary Lua growth for that trial.
 
 | Simulated workload | Initial alpha | Optimized alpha |
 | --- | ---: | ---: |
@@ -53,3 +53,9 @@ These are mock CPU/allocation measurements, not WoW memory or FPS measurements. 
 ATT's collection lists use a legacy texture-thumb slider. EllesmereUI's public `ScrollBar` primitive targets modern `Track.Thumb` frames, so the initial adapter narrowed the stock thumb without replacing its artwork. Legacy lists now use the existing legacy-slider helper: flat accent-coloured grip, thin neutral track and public EUI page-arrow buttons with subdued borders. Modern options scrollbars retain the modern primitive with visible themed steppers. Native values, thumb height, click handlers and slider hit areas remain unchanged. The stock corner grip is replaced by the collection's existing neutral resize indicator; the native window resize action stays intact.
 
 Regression coverage includes both scrollbar families, up/down click returns, scroll values, drag-area dimensions, accent refreshes and stable warm redraw allocation/hook counts.
+
+## Background opacity (alpha.4)
+
+Open Options > AddOns > All The Things > EUI AddonSkins. Background opacity defaults to 65% and is adjustable from 0–100%. The choice is saved in EUI AddonSkins, applies immediately to existing and new ATT collection windows and its multiline dialog, and survives theme changes. Text, icons and controls remain fully opaque. ATT's own saved backdrop and profile colours remain unchanged.
+
+Dragging the slider updates only the adapter's background layers, without row traversal, font writes or a full skin refresh. Changes made during combat defer until combat ends; disabled skins do not apply them. Regression coverage includes persistence when reopening the page, new windows, theme refresh, foreground opacity, unrelated settings and stable object/hook/font counts across the full slider range.

@@ -23,7 +23,7 @@ end, function(S, module)
             fontCache[text] = {path = path, size = size, flags = flags, generation = fontGeneration}
         elseif r then text:SetTextColor(r, g, b or r) end
     end
-    local panels, watched = {}, {}
+    local panels, watched, watchPass = {}, {}, {}
     local borderLocks = {}
     local canvases, checks, arrows, grips = {}, {}, {}, {}
     local visuals = setmetatable({}, {__mode = "k"})
@@ -106,6 +106,116 @@ end, function(S, module)
         end
         H.Action(button, {"euiCaret"})
         if button.euiCaret then button.euiCaret:SetAlpha(1); button.euiCaret:SetVertexColor(0.8, 0.8, 0.82, 1) end
+    end
+    local inputEdges, favouriteIcons = {}, {}
+    local function FilterOwner(f)
+        local root = _G.ForeverDungeonJournalFrame
+        local filter = root and root.lootFilterWindow or _G.ForeverDungeonJournalLootFilter
+        for _ = 1, 20 do
+            if not H.Allowed(f) then return false end
+            if f == filter then return true end
+            f = f.GetParent and f:GetParent()
+        end
+        return false
+    end
+    local function InputEdge(f)
+        if inputEdges[f] or not f.CreateTexture then return end
+        local layer = CreateFrame("Frame", nil, f); visuals[layer] = true
+        layer:SetAllPoints(f); layer:EnableMouse(false)
+        for _, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+            local t = layer:CreateTexture(nil, "BORDER"); t:SetColorTexture(0.28, 0.28, 0.30, 0.45)
+            if side == "TOP" or side == "BOTTOM" then
+                t:SetPoint(side .. "LEFT", layer, side .. "LEFT"); t:SetPoint(side .. "RIGHT", layer, side .. "RIGHT"); t:SetHeight(1)
+            else
+                t:SetPoint("TOP" .. side, layer, "TOP" .. side); t:SetPoint("BOTTOM" .. side, layer, "BOTTOM" .. side); t:SetWidth(1)
+            end
+        end
+        inputEdges[f] = layer
+    end
+    local function FilterButton(f)
+        local nativeArrow = H.Texture(f.arrow) or H.Texture(f.Arrow) or H.Texture(f.arrowTexture)
+        if nativeArrow then
+            H.Fade(nativeArrow)
+            if not f.fdjSkinArrow and f.CreateTexture then
+                local t = f:CreateTexture(nil, "OVERLAY")
+                t:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
+                t:SetPoint("RIGHT", f, "RIGHT", -7, 0); t:SetSize(10, 7)
+                f.fdjSkinArrow = t
+            end
+        end
+        H.Action(f, {"icon", "Icon", "fdjSkinArrow"})
+        for _, getter in ipairs({"GetNormalTexture", "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture"}) do
+            if f[getter] then H.Fade(f[getter](f)) end
+        end
+        if f.fdjSkinArrow then f.fdjSkinArrow:SetAlpha(1); f.fdjSkinArrow:SetVertexColor(0.8, 0.8, 0.82, 1) end
+        H.Font((f.GetFontString and f:GetFontString()) or f.text or f.Text, 0.9, 0.9, 0.92)
+    end
+    local function Popup(f)
+        local root = _G.ForeverDungeonJournalFrame
+        local filter = root and root.lootFilterWindow or _G.ForeverDungeonJournalLootFilter
+        local favourites = root and root.favouritesWindow or _G.ForeverDungeonJournalFavourites
+        local r, g, b = S.GetAccentColor()
+        if f == filter then
+            if ns.BindPopupOwner then ns.BindPopupOwner(S, module, f) end
+            H.Font(f.title, r, g, b); H.Font(f.statsHeader, r, g, b)
+            H.Font(f.statsHint, 0.68, 0.68, 0.71)
+            if H.Allowed(f.minBox) then S.EditBox(f.minBox, {padInput = false}); InputEdge(f.minBox) end
+            for _, key in ipairs({"show", "ok", "clear"}) do
+                local button = f[key]
+                if H.Allowed(button) then FilterButton(button); if button.SetHeight then button:SetHeight(24) end end
+            end
+            local button = f.show
+            local icon = button and H.Texture(button.icon)
+            local label = button and button.GetFontString and button:GetFontString()
+            if icon and label and label.ClearAllPoints then
+                icon:SetSize(16, 16)
+                label:ClearAllPoints(); label:SetPoint("CENTER", button, "CENTER", 9, 0)
+                icon:ClearAllPoints(); icon:SetPoint("RIGHT", label, "LEFT", -2, 0)
+            end
+        elseif f == favourites then
+            local inset = f.Inset
+            if H.Allowed(inset) then
+                if S.Inset then S.Inset(inset) end
+                H.Fade(inset.Bg); H.Fade(inset.Background)
+                if inset.SetBackdrop then inset:SetBackdrop(nil) end
+                if not inset.fdjSkinInset and inset.ClearAllPoints then
+                    inset:ClearAllPoints(); inset:SetPoint("TOPLEFT", f, "TOPLEFT", 10, -38)
+                    inset:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 12); inset.fdjSkinInset = true
+                end
+                if inset.NineSlice then S.FadeNineSlice(inset.NineSlice) end
+            end
+            H.Fade(f.Bg); H.Fade(f.Background); H.Fade(f.fdjStarBackground)
+            if H.Allowed(f.PortraitContainer) then
+                for _, t in ipairs(H.Regions(f.PortraitContainer)) do if H.Texture(t) then H.Fade(t) end end
+            end
+            Canvas(f)
+            H.Font(f.fdjTitle, r, g, b); H.Font(f.fdjEmpty, 0.72, 0.72, 0.75)
+            if f.fdjTitle and f.fdjTitle.ClearAllPoints and not f.fdjSkinTitle then
+                f.fdjTitle:ClearAllPoints(); f.fdjTitle:SetPoint("TOP", f, "TOP", 0, -12); f.fdjSkinTitle = true
+            end
+            for _, divider in pairs(f.fdjDividers or {}) do H.Font(divider.title, r, g, b) end
+            local portrait = H.Texture(f.portrait) or f.PortraitContainer and H.Texture(f.PortraitContainer.portrait)
+            -- The non-portrait template keeps its star beside a local holder.
+            if not portrait and f.fdjStarBackground and f.fdjStarBackground.GetParent then
+                local holder = f.fdjStarBackground:GetParent()
+                if holder ~= f and H.Allowed(holder) then
+                    for _, t in ipairs(H.Regions(holder)) do
+                        local path = t.GetTexture and t:GetTexture()
+                        if type(path) == "string" and path:find("FavouriteStar", 1, true) then portrait = t; break end
+                    end
+                end
+            end
+            if portrait then
+                if not favouriteIcons[f] then
+                    local layer = CreateFrame("Frame", nil, f); visuals[layer] = true
+                    layer:SetSize(22, 22); layer:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -9); layer:EnableMouse(false)
+                    local t = layer:CreateTexture(nil, "OVERLAY"); t:SetAllPoints(layer)
+                    t:SetTexture(portrait:GetTexture()); t:SetTexCoord(0, 1, 0, 1)
+                    favouriteIcons[f] = t
+                end
+                H.Fade(portrait)
+            end
+        end
     end
     local function Grip(f)
         if not H.Allowed(f) or not f.CreateTexture then return end
@@ -196,6 +306,20 @@ end, function(S, module)
             end
         end
         if kind == "CheckButton" then Check(f); return true end
+        if FilterOwner(f) then
+            if kind == "Frame" and H.Allowed(f.Button) and H.Allowed(f.Text) then
+                local icon = H.Texture(f.icon) or H.Texture(f.Icon)
+                local alpha = icon and icon:GetAlpha()
+                S.Dropdown(f); Arrow(f.Button, "down"); H.Font(f.Text, 0.9, 0.9, 0.92)
+                if icon then icon:SetAlpha(alpha) end
+                return true
+            end
+            if kind == "EditBox" then S.EditBox(f, {padInput = false}); InputEdge(f); return true end
+            if kind == "Button" and not f.itemID and not f.itemId then
+                local label = (f.GetFontString and f:GetFontString()) or f.text or f.Text
+                if label then FilterButton(f); return true end
+            end
+        end
         if kind == "Slider" then
             H.LegacySlider(f)
             local thumb = f.GetThumbTexture and H.Texture(f:GetThumbTexture())
@@ -255,10 +379,23 @@ end, function(S, module)
         for _, key in ipairs({"slot", "meta"}) do H.Font(f[key], 0.65, 0.65, 0.68) end
     end
 
+    local function Exclude(f)
+        local out = {}
+        if f.dungeonMapArtHolder then out[f.dungeonMapArtHolder] = true end
+        if f == _G.ForeverDungeonJournalFrame then
+            for _, key in ipairs({"lootFilterWindow", "favouritesWindow", "bugReportWindow"}) do
+                if H.Allowed(f[key]) then out[f[key]] = true end
+            end
+        end
+        return out
+    end
     local function Watch(f)
-        if not H.Allowed(f) then return end
-        H.Shell(f, refresh, {noTopBar = true})
-        ns.AttachAccent(S, f)
+        if not H.Allowed(f) or watchPass[f] then return end
+        watchPass[f] = true
+        local main = f == _G.ForeverDungeonJournalFrame
+        H.Shell(f, refresh, {noTopBar = true, noAccent = main})
+        if not main then ns.AttachAccent(S, f) end
+        Popup(f)
         for _, key in ipairs({"fdjCloseButton", "CloseButton", "closeButton"}) do
             if H.Allowed(f[key]) then S.CloseButton(f[key]) end
         end
@@ -275,11 +412,11 @@ end, function(S, module)
             H.Queue(f, function()
                 if serial ~= fullSerial then return end
                 if Busy() then module.combatPending = true; return end
-                H.Scan(f, Controls, Visit, f.dungeonMapArtHolder and {[f.dungeonMapArtHolder] = true})
+                H.Scan(f, Controls, Visit, Exclude(f))
             end)
         end
         if first or not f.IsVisible or f:IsVisible() then
-            H.Scan(f, Controls, Visit, f.dungeonMapArtHolder and {[f.dungeonMapArtHolder] = true})
+            H.Scan(f, Controls, Visit, Exclude(f))
         end
     end
 
@@ -287,6 +424,7 @@ end, function(S, module)
         if not ns.IsEnabled(module) then fullQueued = false; return end
         if Busy() then module.combatPending = true; fullQueued = false; return end
         module.combatPending = false
+        watchPass = {}
         local f = _G.ForeverDungeonJournalFrame
         if f then
             Watch(f)
@@ -312,7 +450,7 @@ end, function(S, module)
             H.Font(f.dungeonTitle, r, g, b)
             if f.homePanel then
                 for _, t in ipairs(H.Regions(f.homePanel)) do
-                    if t.GetHeight and t:GetHeight() == 1 and t.SetColorTexture then t:SetColorTexture(r, g, b, 0.7) end
+                    if t.GetHeight and t:GetHeight() == 1 and t.SetColorTexture then t:SetColorTexture(0.2, 0.2, 0.22, 0.35) end
                 end
             end
             if f.languageMenu then Panel(f.languageMenu); H.Scan(f.languageMenu, refresh, Visit) end

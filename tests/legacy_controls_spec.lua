@@ -1315,7 +1315,7 @@ local journalLooks, previousLooks, journalEvents = {}, S.OnLooksChanged, #events
 S.OnLooksChanged = function(fn) journalLooks[#journalLooks + 1] = fn end
 modules.ForeverDungeonJournal.install(S, modules.ForeverDungeonJournal); flush()
 S.OnLooksChanged = previousLooks
-assert(journal.shellOptions.noBorder, 'journal soft shell missing')
+assert(journal.shellOptions.noBorder and journal.shellOptions.noAccent and not journal.accent, 'main journal retained its accent bar')
 assert(cover.border[1] == 0.055, 'journal card outline too bright')
 cover:SetBackdropBorderColor(1, 1, 1, 1); assert(cover.border[1] == 0.055, 'neutral card redraw restored a bright border')
 cover:SetBackdropBorderColor(0.2, 0.8, 0.2, 1); assert(cover.border[2] == 0.8, 'semantic card border lost')
@@ -1339,7 +1339,41 @@ for _, key in ipairs({'mapTab', 'bossesTab', 'questsTab'}) do
 end
 -- Refined filter checkboxes retain native values, marker visibility and actions.
 do
-    local filter = frame('Frame', 'ForeverDungeonJournalLootFilter')
+    local filter = frame('Frame', 'ForeverDungeonJournalLootFilter', journal)
+    journal.lootFilterWindow = filter
+    filter.title, filter.statsHeader, filter.statsHint = filter:CreateFontString(), filter:CreateFontString(), filter:CreateFontString()
+    filter.title:SetTextColor(1, 0.82, 0.27); filter.statsHeader:SetTextColor(1, 0.82, 0.27)
+    filter.minBox = frame('EditBox', nil, filter); filter.minBox.value = '12'
+    filter.minBox.commit = function() return 'input-native' end
+    for _, key in ipairs({'show', 'ok', 'clear'}) do
+        local button = frame('Button', nil, filter); filter[key] = button
+        button.label = button:CreateFontString(); button.label:SetTextColor(1, 0.82, 0.27)
+        button.normal = button:CreateTexture(); button.normal.path = 'red-native-button'
+        button.action = function() return key .. '-native' end
+    end
+    filter.show.icon = filter.show:CreateTexture(); filter.show.icon.path = 'loot-pouch'
+    local dropdown = frame('Button', nil, filter)
+    dropdown.icon = dropdown:CreateTexture(); dropdown.icon.path = 'armor-icon'
+    dropdown.arrow = dropdown:CreateTexture(); dropdown.arrow.path = 'gold-arrow'
+    dropdown.normal = dropdown:CreateTexture(); dropdown.normal.path = 'red-native-dropdown'
+    dropdown.label = dropdown:CreateFontString(); dropdown.label:SetTextColor(1, 0.82, 0.27)
+    dropdown.action = function() return 'dropdown-native' end
+    local legacyDropdown = frame('Frame', nil, filter)
+    legacyDropdown.Button = frame('Button', nil, legacyDropdown)
+    legacyDropdown.Text = legacyDropdown:CreateFontString()
+    legacyDropdown.icon = legacyDropdown:CreateTexture(); legacyDropdown.icon:SetAlpha(0.7)
+    legacyDropdown.Button.action = function() return 'legacy-dropdown-native' end
+    local favourites = frame('Frame', 'ForeverDungeonJournalFavourites')
+    journal.favouritesWindow = favourites
+    favourites.Inset = frame('Frame', nil, favourites)
+    favourites.Inset.Bg = favourites.Inset:CreateTexture(); favourites.Inset.Bg.path = 'stone-background'
+    favourites.portrait = favourites:CreateTexture(); favourites.portrait.path = 'Interface/AddOns/ForeverDungeonJournal/Media/FavouriteStar'
+    favourites.fdjStarBackground = favourites:CreateTexture(); favourites.fdjStarBackground.path = 'portrait-circle'
+    favourites.fdjTitle, favourites.fdjEmpty = favourites:CreateFontString(nil, 'OVERLAY', 'GameFontNormal'), favourites:CreateFontString(nil, 'OVERLAY', 'GameFontDisable')
+    favourites.fdjTitle:SetTextColor(1, 0.82, 0.27)
+    favourites.fdjEmpty:SetText('Right click items to add favourites')
+    local divider = journal.homePanel:CreateTexture(); divider:SetHeight(1); divider.GetHeight = function(self) return self.height end
+    divider:SetColorTexture(0.48, 0.34, 0.16, 0.75)
     local check = frame('CheckButton', nil, filter); check.checked = true
     local mark = check:CreateTexture(); mark:SetShown(true)
     local disabledMark = check:CreateTexture(); disabledMark:SetShown(false)
@@ -1359,6 +1393,24 @@ do
     local scrollClicks = 0
     slider.ScrollUpButton.hooks.OnClick = function() scrollClicks = scrollClicks + 1 end
     modules.ForeverDungeonJournal.refresh(); flush()
+    assert(filter.title.textColor[1] == accent and filter.statsHeader.textColor[1] == accent)
+    assert(filter.show.normal.alpha == 0 and filter.show.icon.alpha == 1 and filter.show.icon.width == 16)
+    assert(filter.show.label.textColor[1] == 0.9 and filter.show.icon.points[1][5] == 0)
+    assert(filter.show.action() == 'show-native' and filter.ok.action() == 'ok-native' and filter.clear.action() == 'clear-native')
+    assert(filter.minBox.inputOptions.padInput == false and filter.minBox.value == '12' and filter.minBox.commit() == 'input-native')
+    local edgeHost = filter.minBox.children[1]
+    assert(edgeHost and edgeHost.mouseEnabled == false and #edgeHost.regions == 4 and not edgeHost.hooks.OnShow)
+    assert(dropdown.normal.alpha == 0 and dropdown.arrow.alpha == 0 and dropdown.icon.alpha == 1 and dropdown.fdjSkinArrow.width == 10)
+    assert(dropdown.label.textColor[1] == 0.9 and dropdown.action() == 'dropdown-native')
+    assert(legacyDropdown.dropdown and legacyDropdown.Button.fdjSkinArrow.width == 10 and legacyDropdown.icon.alpha == 0.7 and legacyDropdown.Button.action() == 'legacy-dropdown-native')
+    assert(favourites.Inset.Bg.alpha == 0 and favourites.portrait.alpha == 0 and favourites.fdjStarBackground.alpha == 0)
+    assert(favourites.fdjTitle.textColor[1] == accent and favourites.fdjEmpty.textColor[1] == 0.72)
+    local smallStar
+    for _, child in ipairs(favourites.children) do
+        if child.width == 22 and child.mouseEnabled == false then smallStar = child end
+    end
+    assert(smallStar and smallStar.regions[1].path:find('FavouriteStar') and not smallStar.hooks.OnShow)
+    assert(divider.color[1] == 0.2 and divider.color[4] == 0.35)
     assert(check.checkbox and mark.path == 'solid' and mark.color[1] == accent and mark.points[1][4] == 7)
     assert(mark:IsShown() and not disabledMark:IsShown() and not protected.checkbox)
     check.hooks.OnClick(check); flush(); assert(not check:GetChecked() and not mark:IsShown())
@@ -1375,13 +1427,16 @@ do
     assert(canvas and canvas.regions[1].color[1] == 0.055 and canvas.regions[2].gradient[9] == 0.48)
     assert(not canvas.hooks.OnShow and cover.title.textColor[1] == 0.93)
     local children, fonts = #journal.homePanel.children, cover.title.fontWrites
-    auditScans[journal] = 0
+    local popupChildren = #favourites.children + #filter.minBox.children
+    auditScans[journal], auditScans[filter], auditScans[favourites] = 0, 0, 0
     for _ = 1, 100 do
         local a,b,c = ForeverDungeonJournal_NS.RefreshHomeDungeonCards()
         assert(a == 'cards-native' and b == nil and c == 3)
     end
     flush()
     assert(auditScans[journal] == 1 and #journal.homePanel.children == children and cover.title.fontWrites == fonts, tostring(auditScans[journal]) .. ":" .. #journal.homePanel.children .. ":" .. children .. ":" .. tostring(cover.title.fontWrites) .. ":" .. tostring(fonts))
+    assert(auditScans[filter] == 1 and auditScans[favourites] == 1, 'popup aliases caused duplicate scans')
+    assert(#favourites.children + #filter.minBox.children == popupChildren, 'refresh duplicated popup decorations')
     local scans = auditScans[journal]
     ForeverDungeonJournal_NS.questRefreshWorker.hooks.OnUpdate(); flush()
     assert(questWorkerCalls == 1 and auditScans[journal] == scans, 'skin added a recurring quest-worker refresh')

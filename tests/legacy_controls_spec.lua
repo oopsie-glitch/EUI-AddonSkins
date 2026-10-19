@@ -1291,8 +1291,12 @@ do
     S.Tab, S.SetTabSelection, S.Dropdown, S.EditBox, S.Shell, S.GetFont = tabPrimitive, tabSelection, dropdownPrimitive, inputPrimitive, shellPrimitive, getFont
 end
 
+do
 assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)
-ForeverDungeonJournal_NS = {THEMES = {}, ToggleJournal = function() end}
+ForeverDungeonJournal_NS = {THEMES = {}, ToggleJournal = function() end, RefreshHomeDungeonCards = function() return 'cards-native', nil, 3 end,
+    questRefreshWorker = frame('Frame'), RefreshQuestList = function() end, RefreshQuestDetail = function() end}
+local questWorkerCalls = 0
+ForeverDungeonJournal_NS.questRefreshWorker:SetScript('OnUpdate', function() questWorkerCalls = questWorkerCalls + 1 end)
 ForeverDungeonJournalFrame = frame('Frame')
 local journal = ForeverDungeonJournalFrame
 journal.homePanel = frame('Frame', nil, journal)
@@ -1307,14 +1311,18 @@ local bugLabel = journal.bugReportButton:CreateFontString()
 journal.languageSelectorButton = frame('Button', nil, journal)
 journal.languageSelectorText = journal.languageSelectorButton:CreateFontString()
 local caret = journal.languageSelectorButton:CreateTexture(); caret.path = 'native-caret'
+local journalLooks, previousLooks, journalEvents = {}, S.OnLooksChanged, #events
+S.OnLooksChanged = function(fn) journalLooks[#journalLooks + 1] = fn end
 modules.ForeverDungeonJournal.install(S, modules.ForeverDungeonJournal); flush()
+S.OnLooksChanged = previousLooks
 assert(journal.shellOptions.noBorder, 'journal soft shell missing')
 assert(cover.border[1] == 0.055, 'journal card outline too bright')
 cover:SetBackdropBorderColor(1, 1, 1, 1); assert(cover.border[1] == 0.055, 'neutral card redraw restored a bright border')
 cover:SetBackdropBorderColor(0.2, 0.8, 0.2, 1); assert(cover.border[2] == 0.8, 'semantic card border lost')
+cover:SetBackdropBorderColor(1, 0.76, 0.22, 1); assert(cover.border[1] == accent, 'card hover missed accent colour')
 assert(cover.backdrop.edgeSize == 1 and cover.art.path == 'dungeon-art' and cover.art.alpha == 1 and cover.counts.textColor[1] == 1 and cover.action() == 'open-dungeon')
 assert(journal.homeTitle.textColor[1] == accent and journal.bugReportButton.button and bug.alpha == 1)
-assert(caret.alpha == 0 and journal.languageSelectorButton.euiCaret.text == 'v')
+assert(caret.alpha == 0 and journal.languageSelectorButton.euiCaret.path:find('eui%-arrow%-down3') and journal.languageSelectorButton.euiCaret.width == 10)
 -- All FDJ mode states keep their icon but never revive UIPanelButton art.
 for _, key in ipairs({'mapTab', 'bossesTab', 'questsTab'}) do
     local tab = frame('Button', nil, journal); journal[key] = tab
@@ -1328,6 +1336,73 @@ for _, key in ipairs({'mapTab', 'bossesTab', 'questsTab'}) do
     assert(tab.tab and tab.normal.alpha == 0 and tab.Icon == tab.fdjIcon and tab.fdjIcon.alpha == 1)
     tab:SetNormalTexture('restored-red'); tab:Enable(); assert(tab.normal.alpha == 0 and not tab.selected)
     tab:Disable(); assert(tab.selected and tab.normal.alpha == 0)
+end
+-- Refined filter checkboxes retain native values, marker visibility and actions.
+do
+    local filter = frame('Frame', 'ForeverDungeonJournalLootFilter')
+    local check = frame('CheckButton', nil, filter); check.checked = true
+    local mark = check:CreateTexture(); mark:SetShown(true)
+    local disabledMark = check:CreateTexture(); disabledMark:SetShown(false)
+    check.GetCheckedTexture = function() return mark end
+    check.GetDisabledCheckedTexture = function() return disabledMark end
+    check.fdjLabel = check:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
+    check.hooks.OnClick = function(self) self:SetChecked(not self:GetChecked()); mark:SetShown(self:GetChecked()) end
+    local protected = frame('CheckButton', nil, filter); protected.protected = true
+    journal.resizeGrip = frame('Button', nil, journal)
+    journal.resizeGrip.normal = journal.resizeGrip:CreateTexture(); journal.resizeGrip.normal.path = 'SizeGrabber'
+    journal.resizeGrip.hooks.OnMouseDown = function() return 'drag-native' end
+    local slider = frame('Slider', nil, journal.homePanel); local thumb = slider:CreateTexture()
+    slider.GetThumbTexture = function() return thumb end
+    slider.GetOrientation = function() return 'VERTICAL' end
+    slider.ScrollUpButton = frame('Button', nil, slider)
+    slider.ScrollDownButton = frame('Button', nil, slider)
+    local scrollClicks = 0
+    slider.ScrollUpButton.hooks.OnClick = function() scrollClicks = scrollClicks + 1 end
+    modules.ForeverDungeonJournal.refresh(); flush()
+    assert(check.checkbox and mark.path == 'solid' and mark.color[1] == accent and mark.points[1][4] == 7)
+    assert(mark:IsShown() and not disabledMark:IsShown() and not protected.checkbox)
+    check.hooks.OnClick(check); flush(); assert(not check:GetChecked() and not mark:IsShown())
+    check:Disable(); assert(mark.color[1] == 0.45)
+    check:Enable(); assert(mark.color[1] == accent and not mark:IsShown())
+    assert(thumb.width == 8 and slider.ScrollUpButton.fdjSkinArrow.rotation == math.pi)
+    slider.ScrollUpButton.hooks.OnClick()
+    assert(slider.ScrollDownButton.fdjSkinArrow.width == 10 and scrollClicks == 1)
+    assert(journal.resizeGrip.normal.alpha == 0 and journal.resizeGrip.hooks.OnMouseDown() == 'drag-native')
+    local canvas
+    for _, child in ipairs(journal.homePanel.children) do
+        if child.mouseEnabled == false and #child.regions == 3 then canvas = child end
+    end
+    assert(canvas and canvas.regions[1].color[1] == 0.055 and canvas.regions[2].gradient[9] == 0.48)
+    assert(not canvas.hooks.OnShow and cover.title.textColor[1] == 0.93)
+    local children, fonts = #journal.homePanel.children, cover.title.fontWrites
+    auditScans[journal] = 0
+    for _ = 1, 100 do
+        local a,b,c = ForeverDungeonJournal_NS.RefreshHomeDungeonCards()
+        assert(a == 'cards-native' and b == nil and c == 3)
+    end
+    flush()
+    assert(auditScans[journal] == 1 and #journal.homePanel.children == children and cover.title.fontWrites == fonts, tostring(auditScans[journal]) .. ":" .. #journal.homePanel.children .. ":" .. children .. ":" .. tostring(cover.title.fontWrites) .. ":" .. tostring(fonts))
+    local scans = auditScans[journal]
+    ForeverDungeonJournal_NS.questRefreshWorker.hooks.OnUpdate(); flush()
+    assert(questWorkerCalls == 1 and auditScans[journal] == scans, 'skin added a recurring quest-worker refresh')
+    local previousAccent = accent
+    accent = 0.27; for _, fn in ipairs(journalLooks) do fn() end; flush()
+    assert(mark.color[1] == accent and cover.title.textColor[1] == 0.93)
+    accent = previousAccent
+    combat = true; modules.ForeverDungeonJournal.refresh(); flush()
+    local deferred = frame('CheckButton', nil, filter)
+    modules.ForeverDungeonJournal.refresh(); flush(); assert(not deferred.checkbox)
+    combat = false
+    for index = journalEvents + 1, #events do
+        local event = events[index]
+        if event.events and event.events.PLAYER_REGEN_ENABLED and event.hooks.OnEvent then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end
+    end
+    flush(); assert(deferred.checkbox)
+    enabled = false; local disabledControl = frame('CheckButton', nil, filter)
+    modules.ForeverDungeonJournal.refresh(); flush(); assert(not disabledControl.checkbox)
+    enabled = true; modules.ForeverDungeonJournal.refresh(); flush(); assert(disabledControl.checkbox)
+    print('BENCH journal_home callbacks=100 root_scans=1 new_canvases=0 title_font_writes=0')
+end
 end
 -- Auctionator legacy templates: wrappers, controls and pooled inventory rows.
 assert(loadfile('EUIAddonSkins/Skins/Auctionator.lua'))('EUIAddonSkins', ns)

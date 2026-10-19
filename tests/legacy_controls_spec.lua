@@ -1456,6 +1456,28 @@ do
     enabled = false; local disabledControl = frame('CheckButton', nil, filter)
     modules.ForeverDungeonJournal.refresh(); flush(); assert(not disabledControl.checkbox)
     enabled = true; modules.ForeverDungeonJournal.refresh(); flush(); assert(disabledControl.checkbox)
+    -- Boss panes share the quest canvas without intercepting native controls.
+    do
+        journal.leftPanel = frame('Frame', nil, journal)
+        journal.rightPanel = frame('Frame', nil, journal)
+        local boss = frame('Button', nil, journal.leftPanel)
+        boss.icon = boss:CreateTexture(); boss.icon.path = 'boss-portrait'
+        boss.action = function() return 'boss-native' end
+        modules.ForeverDungeonJournal.refresh(); flush()
+        local counts = {}
+        for _, panel in ipairs({journal.leftPanel, journal.rightPanel}) do
+            local canvas
+            for _, child in ipairs(panel.children) do
+                if child.mouseEnabled == false and #child.regions == 3 then canvas = child end
+            end
+            assert(canvas and canvas.regions[1].color[1] == 0.055 and canvas.regions[2].gradient[9] == 0.48, 'boss pane missed the quest canvas')
+            assert(not canvas.hooks.OnShow, 'decorative boss canvas was scanned')
+            counts[panel] = #panel.children
+        end
+        for _ = 1, 10 do modules.ForeverDungeonJournal.refresh(); flush() end
+        for panel, count in pairs(counts) do assert(#panel.children == count, 'boss canvas recreated on refresh') end
+        assert(boss.icon.path == 'boss-portrait' and boss.icon.alpha == 1 and boss.action() == 'boss-native')
+    end
     -- Private quest closures are called directly by native clicks, bypassing
     -- exported RefreshQuestDetail hooks. Readability must hold before a timer.
     journal.questLeftPanel = frame('Frame', nil, journal)

@@ -540,6 +540,7 @@ end, function(S, module)
             for _, key in ipairs({"contentPanel", "headerPanel", "homePanel", "leftPanel", "rightPanel",
                 "questLeftPanel", "questRightPanel", "questTextInset", "routePanel"}) do Panel(f[key]) end
             Canvas(f.homePanel)
+            Canvas(f.leftPanel); Canvas(f.rightPanel)
             QuestReadability(f)
             for _, key in ipairs({"homeParchment", "contentParchment", "headerParchment", "leftParchment",
                 "rightParchment", "questLeftParchment", "questRightParchment", "questParchment", "atmosphere"}) do H.Fade(f[key]) end

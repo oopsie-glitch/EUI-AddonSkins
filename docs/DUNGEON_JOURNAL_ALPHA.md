@@ -36,3 +36,7 @@ The native quest-row click closes over private renderer functions, so hooks on e
 Quest refreshes coalesce to the quest-list and detail subtrees rather than the entire journal. In mocked regression tests, 100 private quest clicks perform zero full-window scans and one scan of each quest subtree; 100 unchanged exported detail callbacks perform zero body-font writes. Tests verify immediate readability before deferred callbacks, preserved text/actions/semantic colours, replacement native textures, dynamic headings, disabled skins and combat deferral. The new fixture fails against the preceding skin and passes with this change. All package checks pass. These are simulated results, not in-game frame-time or visual measurements.
 
 Additional source reviewed: ForeverDungeonJournal `UI/QuestsTab.lua`, `UI/MainFrame.lua`, `UI/ThemeData.lua` and `Core/Journal.lua`. Exact Retail-fork rendering remains unverified.
+
+## Boss background follow-up
+
+Apply the same reusable charcoal centre-highlight canvas to the boss list and loot/detail panels. Preserve native rows, portraits, quality colours and actions. Regression fixtures verify matching background colours, mouse-disabled layers excluded from scans, native boss actions/artwork and no extra canvas creation across repeated refreshes.

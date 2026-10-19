@@ -32,10 +32,13 @@ local function frame(kind)
         self.created = self.created or {}
         local t = {SetPoint = function(self, ...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end, ClearAllPoints = function(self) self.points = {} end, SetHeight = function() end, SetWidth = function(self, w) self.width = w end,
             SetColorTexture = function(self, ...) self.color = {...} end,
+            SetAllPoints = function(self, target) self.allPoints = target end,
             SetAlpha = function(self, a) self.alpha = a end}
         self.created[#self.created + 1] = t
         return t
     end
+    function f:SetAllPoints(target) self.allPoints = target end
+    function f:EnableMouse(value) self.mouseEnabled = value end
     function f:GetObjectType() return self.kind end
     function f:IsProtected() return self.protected end
     function f:GetChildren() return table.unpack(self.children) end
@@ -52,9 +55,9 @@ local combat, combatEvents = false
 InCombatLockdown = function() return combat end
 CreateFrame = function()
     local f = frame()
-    function f:RegisterEvent(event) self.event = event end
+    function f:RegisterEvent(event) self.event = event; combatEvents = self end
     function f:SetScript(event, fn) self.hooks[event] = fn end
-    combatEvents = f; return f
+    return f
 end
 local S = {GetAccentColor = function() return 0.1, 0.8, 0.6 end,
     GetPanelColor = function() return 0.03, 0.03, 0.04, 0.95 end,

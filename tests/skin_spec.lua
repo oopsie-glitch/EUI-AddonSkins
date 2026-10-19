@@ -7,6 +7,10 @@ local function texture(kind)
         SetColorTexture = function(self, ...) self.color = {...}; self.colorWrites = (self.colorWrites or 0) + 1 end,
         SetAlpha = function(self, a) self.alpha = a end,
         SetGradientAlpha = function(self, ...) self.gradient = {...} end,
+        GetAlpha = function(self) return self.alpha == nil and 1 or self.alpha end,
+        SetTexture = function(self, path) self.path = path; self.atlas = nil end,
+        GetAtlas = function(self) return self.atlas end,
+        SetSize = function(self, w, h) self.width, self.height = w, h end,
         ClearAllPoints = function(self) self.points = {} end,
         SetPoint = function(self, ...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end }
 end
@@ -80,6 +84,13 @@ for _, name in ipairs({ "Shell", "Panel", "Button", "EditBox", "Dropdown", "Inse
     "FadeNineSlice", "Font", "CloseButton", "ScrollBar", "SquareIcon", "Checkbox", "StateButtonLabel" }) do
     skin[name] = function(f, options) assert(f, name .. " missing frame"); count(name); if name == "Button" then f.buttonSkinned = true end; if name == "Shell" or name == "EditBox" then f.softOptions = options end end
 end
+skin.Dropdown = function(f)
+    count('Dropdown')
+    if f.skinFill then return end
+    if f.Icon then f.Icon:SetAlpha(0) end
+    f.skinFill = f:CreateTexture(); f.skinFill:SetAlpha(1)
+    f.skinArrow = f:CreateTexture(); f.skinArrow.atlas = 'Azerite-PointingArrow'; f.skinArrow:SetAlpha(1)
+end
 local nativeOpen
 ForeverCompanion = {OpenOptions = function() if nativeOpen then return nativeOpen() end end}
 local popupOwners = {}
@@ -96,11 +107,20 @@ ForeverCompanionAPI = {
     CreateSearchBox = function(parent) return frame("EditBox", nil, parent) end,
     CreateDropdown = function(parent)
         local f = frame(legacyDropdownMode and 'Frame' or 'DropdownButton', nil, parent)
+        f.Icon = f:CreateTexture(); f.Icon:SetTexture('selected-class-icon'); f.Icon:SetAlpha(0.7)
         local button = legacyDropdownMode and frame('Button', nil, f) or f
         if legacyDropdownMode then f.Button = button end
         button.Arrow = texture()
         function button.Arrow:SetTexture(path) self.path = path end
         function button.Arrow:SetSize(w, h) self.width, self.height = w, h end
+        button.normal = button:CreateTexture(); button.normal:SetTexture('native-boxed-border'); button.normal:SetAlpha(1)
+        button.GetNormalTexture = function(self) return self.normal end
+        button.SetNormalTexture = function(self, value) self.normal = value end
+        f.GenerateMenu = function()
+            button.Arrow:SetAlpha(1); button.normal:SetAlpha(1)
+            return nil, 'menu-native'
+        end
+        f.OverrideText = function(self, value) self.selectedText = value; button.Arrow:SetAlpha(1) end
         button.scripts.OnClick = function() return 'dropdown-native' end
         return {frame = f}
     end,
@@ -228,7 +248,20 @@ do
         legacyDropdownMode = legacy
         local dropdown = api.CreateDropdown(f).frame
         local button = dropdown.Button or dropdown
-        assert(button.Arrow.path:find('eui%-arrow%-down3') and button.Arrow.width == 10)
+        assert(dropdown.skinArrow.path:find('eui%-arrow%-down3') and dropdown.skinArrow.width == 10)
+        assert(button.Arrow.alpha == 0 and button.normal.alpha == 0 and dropdown.skinFill.alpha == 1 and dropdown.Icon.alpha == 0.7)
+        local regions, hooks = #dropdown.regions, #(dropdown.hooks.OnClick or {})
+        for _ = 1, 100 do
+            local empty, result = dropdown:GenerateMenu()
+            dropdown:OverrideText('Warrior')
+            for _, fn in ipairs(button.hooks.OnClick or {}) do fn(button) end
+            assert(empty == nil and result == 'menu-native' and dropdown.selectedText == 'Warrior')
+            assert(button.Arrow.alpha == 0 and button.normal.alpha == 0 and dropdown.skinFill.alpha == 1 and dropdown.skinArrow.alpha == 1, 'dropdown restored native artwork on interaction')
+        end
+        local replacement = button:CreateTexture(); replacement:SetAlpha(1)
+        button:SetNormalTexture(replacement); replacement:SetAlpha(1)
+        assert(replacement.alpha == 0, 'replacement state texture escaped the skin')
+        assert(#dropdown.regions == regions + (legacy and 0 or 1) and #(dropdown.hooks.OnClick or {}) == hooks, 'dropdown interactions recreated art or hooks')
         local _, _, _, alpha = popupOwners[dropdown].GetPanelColor()
         assert(alpha == 0.98 and button.scripts.OnClick() == 'dropdown-native')
     end

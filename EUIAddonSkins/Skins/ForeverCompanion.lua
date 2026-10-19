@@ -15,7 +15,7 @@ local pending, queued = {}, false
 local Scan, Queue, Completed
 local function Weak() return setmetatable({}, {__mode = "k"}) end
 local visuals, canvases, fontCache, textGuards, checkSeen, checkMarks = Weak(), Weak(), Weak(), Weak(), Weak(), Weak()
-local waitingWindows, combatWork, headers = Weak(), {}, Weak()
+local waitingWindows, combatWork, headers, dropdowns = Weak(), {}, Weak(), Weak()
 local generation = 0
 local fontApplying = {}
 local chromeWaiting
@@ -182,16 +182,70 @@ local function Check(f)
     end
 end
 
+local dropdownChrome = {"Left", "Middle", "Right", "Background", "Texture", "Arrow", "arrow", "ArrowTexture"}
+local dropdownStates = {"GetNormalTexture", "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture"}
 local function Dropdown(f)
-    S.Dropdown(f)
-    if ns.BindPopupOwner then ns.BindPopupOwner(menuSkin, moduleOwner, f) end
-    local button = f.Button or f
-    local arrow = button.Arrow or button.arrow or f.Arrow
-    if arrow and arrow.SetTexture and arrow.SetSize then
-        arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
-        arrow:SetSize(10, 7)
-        if arrow.SetVertexColor then arrow:SetVertexColor(0.8, 0.8, 0.82, 1) end
+    if not Allowed(f) or Busy() then return end
+    local d = dropdowns[f]
+    if not d then
+        d = {native = {}, keep = {}}; dropdowns[f] = d
+        local before, icons = {}, {}
+        -- Snapshot native chrome before the public helper creates its own fill,
+        -- hover and arrow. Keep selected icons and native click targets intact.
+        for _, owner in ipairs({f, f.Button or false}) do
+            if Allowed(owner) and owner.GetRegions then
+                for _, key in ipairs({"Icon", "icon"}) do
+                    local icon = H.Texture(owner[key])
+                    if icon then d.keep[icon] = true; icons[icon] = icon.GetAlpha and icon:GetAlpha() or 1 end
+                end
+                for _, region in ipairs({owner:GetRegions()}) do
+                    if H.Texture(region) and region ~= f.Icon and region ~= f.icon and region ~= owner.Icon and region ~= owner.icon then d.native[region] = true end
+                end
+            end
+        end
+        for _, region in ipairs({f:GetRegions()}) do before[region] = true end
+        S.Dropdown(f)
+        for icon, alpha in pairs(icons) do icon:SetAlpha(alpha) end
+        for _, region in ipairs({f:GetRegions()}) do
+            if not before[region] then d.keep[region] = true end
+            if region.GetAtlas and region:GetAtlas() == "Azerite-PointingArrow" then d.arrow = region; d.keep[region] = true; d.native[region] = nil end
+        end
+        if not d.arrow then
+            d.arrow = f:CreateTexture(nil, "OVERLAY"); d.keep[d.arrow] = true
+            d.arrow:SetPoint("RIGHT", f, "RIGHT", -6, 0)
+        end
+        d.arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
+        d.arrow:SetSize(10, 7)
+        if d.arrow.SetVertexColor then d.arrow:SetVertexColor(0.8, 0.8, 0.82, 1) end
+        d.paint = function()
+            if d.painting or not Enabled() or Busy() then return end
+            d.painting = true
+            for _, owner in ipairs({f, f.Button or false}) do
+                if Allowed(owner) then
+                    for _, key in ipairs(dropdownChrome) do
+                        local region = H.Texture(owner[key])
+                        if region and not d.keep[region] then d.native[region] = true end
+                    end
+                    for _, getter in ipairs(dropdownStates) do
+                        local region = owner[getter] and H.Texture(owner[getter](owner))
+                        if region and not d.keep[region] then d.native[region] = true end
+                    end
+                end
+            end
+            for region in pairs(d.native) do H.Fade(region) end
+            d.arrow:SetAlpha(1)
+            Text(f.Text or (f.GetFontString and f:GetFontString()))
+            d.painting = false
+        end
+        for _, owner in ipairs({f, f.Button or false}) do
+            if Allowed(owner) then
+                for _, method in ipairs({"SetNormalTexture", "SetPushedTexture", "SetDisabledTexture", "SetHighlightTexture", "GenerateMenu", "OverrideText", "SetDefaultText", "Enable", "Disable"}) do HookMethod(owner, method, d.paint) end
+                for _, script in ipairs({"OnShow", "OnClick", "OnMouseDown", "OnMouseUp"}) do H.Script(owner, script, d.paint) end
+            end
+        end
+        if ns.BindPopupOwner then ns.BindPopupOwner(menuSkin, moduleOwner, f) end
     end
+    d.paint()
 end
 
 local function Talent(f)
@@ -310,7 +364,7 @@ local function SkinNode(f)
         elseif kind == "Slider" or kind == "EventFrame" then
             -- MinimalScrollBar is an EventFrame; normal option sliders stay intact.
             if f.ThumbTexture or f.GetThumbTexture or f.Track then S.ScrollBar(f) end
-        elseif kind == "DropdownButton" then Dropdown(f)
+        elseif kind == "DropdownButton" or dropdowns[f] then Dropdown(f)
         elseif kind == "Button" and not talent and not f.itemId and not f.spellId then
             local label = (f.GetFontString and f:GetFontString()) or f.Text or f.text
             if label and not f.icon then
@@ -325,6 +379,7 @@ local function SkinNode(f)
         end
     end
     if f:GetObjectType() == "CheckButton" and not fresh then Check(f) end
+    if dropdowns[f] and not fresh then Dropdown(f) end
     Text(f.headTitle, "accent")
     if headers[f] then Text(f.text, "accent") end
     if f.pages and f.current then

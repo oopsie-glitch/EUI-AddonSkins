@@ -29,3 +29,11 @@ Sources: the user-supplied ForeverCompanion ZIP, particularly Compat.lua, Option
 ## Row contrast follow-up
 
 Restore the native two-half row gradients with neutral charcoal tones. Light rows fade from 0.075 to a 0.13 centre; dark rows from 0.05 to 0.085. Column/section header bands use a slightly brighter 0.16 centre. Preserve native row anchors, alternating assignment, text, item artwork and actions. Theme refreshes retain each half's direction. Reuse existing row textures without extra frames or redraw hooks. Regression checks cover both directions, opaque fills, relative contrast and theme refreshes.
+
+## Dropdown redraw follow-up
+
+The public EllesmereUI Dropdown helper is one-shot. Capture native chrome before applying it, preserve the helper's newly created fill/hover/arrow, and suppress native state textures with enabled-gated alpha guards. Use the helper-created arrow for the clean chevron instead of recolouring the hidden native arrow. Keep selected icons and native click targets intact.
+
+Refresh only the owned dropdown after menu generation, text updates, state texture replacement and mouse/show callbacks. Modern and legacy shapes share this handling; no window traversal or polling is added. Regression fixtures simulate the public helper's one-time artwork creation and verify 100 regenerations/clicks per shape, preserved native returns/text/actions, replacement state textures, visible skin artwork and stable region/hook counts. All packaging checks pass. The exact Retail fork remains unavailable for in-game verification.
+
+Public source checked: EllesmereUIBlizzardSkin_WindowEngine.lua (`WSkin.Dropdown`) and EllesmereUIBlizzardSkin_SkinAPI.lua in EllesmereGaming/EllesmereUI. No private engine state is accessed and no upstream source is bundled.

@@ -1456,6 +1456,79 @@ do
     enabled = false; local disabledControl = frame('CheckButton', nil, filter)
     modules.ForeverDungeonJournal.refresh(); flush(); assert(not disabledControl.checkbox)
     enabled = true; modules.ForeverDungeonJournal.refresh(); flush(); assert(disabledControl.checkbox)
+    -- Private quest closures are called directly by native clicks, bypassing
+    -- exported RefreshQuestDetail hooks. Readability must hold before a timer.
+    journal.questLeftPanel = frame('Frame', nil, journal)
+    journal.questRightPanel = frame('Frame', nil, journal)
+    journal.questTextInset = frame('Frame', nil, journal.questRightPanel)
+    journal.questDetailContent = frame('Frame', nil, journal.questTextInset)
+    for _, key in ipairs({'questDetailText', 'questTurninText', 'questNotesText', 'questStartsText', 'questRewardSummary', 'selectedQuestMeta', 'selectedQuestName', 'questObjectiveHeader', 'questStartsHeader', 'questTurninHeader', 'questNotesHeader', 'questRewardHeader'}) do
+        journal[key] = journal.questDetailContent:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
+        journal[key]:SetText('Native quest text: ' .. key)
+    end
+    journal.questMapButton = frame('Button', nil, journal.questDetailContent)
+    journal.questMapButton.icon = journal.questMapButton:CreateTexture(); journal.questMapButton.icon.path = 'map-art'
+    journal.questMapButton.label = journal.questMapButton:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
+    journal.questMapButton.Left = journal.questMapButton:CreateTexture(); journal.questMapButton.Left.path = 'red-action-slice'
+    local mapClicks = 0
+    journal.questMapButton.hooks.OnClick = function() mapClicks = mapClicks + 1 end
+    local reward = frame('Button', nil, journal.questDetailContent)
+    reward.itemID = 123; reward.icon = reward:CreateTexture(); reward.icon.path = 'reward-art'
+    reward.name = reward:CreateFontString(nil, 'OVERLAY', 'GameFontNormal'); reward.name:SetTextColor(0.1, 1, 0.1)
+    journal.selectedQuestClass = journal.questDetailContent:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
+    journal.selectedQuestClass:SetTextColor(0.9, 0.3, 0.2)
+    journal.questsTab.Left, journal.questsTab.Middle, journal.questsTab.Right = journal.questsTab:CreateTexture(), journal.questsTab:CreateTexture(), journal.questsTab:CreateTexture()
+    local questClicks = 0
+    local function PrivateQuestDetail()
+        questClicks = questClicks + 1
+        journal.questDetailText:SetFontObject('native-quest-font')
+        journal.questDetailText:SetTextColor(0.10, 0.065, 0.025)
+        journal.questTurninText:SetTextColor(0.10, 0.065, 0.025)
+        journal.selectedQuestMeta:SetTextColor(0.25, 0.16, 0.08)
+        journal.selectedQuestName:SetTextColor(1, 0.78, 0.16)
+        journal.questRewardHeader:SetTextColor(0.82, 0.52, 0.10)
+        if questClicks == 1 then journal.questsTab.Left = journal.questsTab:CreateTexture() end
+        journal.questsTab.Left:SetTexture('native-tab-slice'); journal.questsTab.Left:SetAlpha(1)
+        journal.questMapButton.Left:SetTexture('native-action-slice'); journal.questMapButton.Left:SetAlpha(1)
+        if not journal.questAlsoReceiveHeader then
+            journal.questAlsoReceiveHeader = journal.questDetailContent:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
+            journal.questAlsoReceiveHeader:SetText('You will also receive')
+        end
+    end
+    local questRow = frame('Button', nil, journal.questLeftPanel)
+    questRow.questIndex = 1; questRow.name, questRow.meta = questRow:CreateFontString(), questRow:CreateFontString()
+    questRow.hooks.OnClick = PrivateQuestDetail
+    modules.ForeverDungeonJournal.refresh(); flush()
+    local savedText = journal.questDetailText.text
+    auditScans[journal], auditScans[journal.questLeftPanel], auditScans[journal.questTextInset] = 0, 0, 0
+    for _ = 1, 100 do
+        questRow.hooks.OnClick(questRow)
+        assert(journal.questDetailText.textColor[1] == 0.86 and journal.questDetailText.font == 'eui', 'private renderer restored parchment text/font')
+        assert(journal.questTurninText.textColor[1] == 0.86 and journal.selectedQuestMeta.textColor[1] == 0.68)
+        assert(journal.selectedQuestName.textColor[1] == accent and journal.questRewardHeader.textColor[1] == 0.94)
+        assert(journal.questAlsoReceiveHeader.textColor[1] == 0.94, 'dynamic quest header waited for deferred scan')
+        assert(journal.questsTab.Left.alpha == 0 and journal.questMapButton.Left.alpha == 0, 'native sliced artwork returned')
+    end
+    flush()
+    assert(questClicks == 100 and journal.questDetailText.text == savedText)
+    assert(auditScans[journal] == 0 and auditScans[journal.questLeftPanel] == 1 and auditScans[journal.questTextInset] == 1, 'quest clicks refreshed the full journal or repeated page scans')
+    assert(reward.name.textColor[2] == 1 and journal.selectedQuestClass.textColor[2] == 0.3, 'readability styling changed semantic colours')
+    journal.questMapButton.hooks.OnClick(journal.questMapButton); flush(); assert(mapClicks == 1 and journal.questMapButton.icon.alpha == 1)
+    local writes = journal.questDetailText.fontWrites
+    for _ = 1, 100 do ForeverDungeonJournal_NS.RefreshQuestDetail() end
+    flush(); assert(journal.questDetailText.fontWrites == writes, 'unchanged quest completion callbacks rewrote body fonts')
+    enabled = false; journal.questDetailText:SetTextColor(0.1, 0.065, 0.025)
+    assert(journal.questDetailText.textColor[1] == 0.1)
+    enabled = true; modules.ForeverDungeonJournal.refresh(); flush(); assert(journal.questDetailText.textColor[1] == 0.86)
+    combat = true; journal.questDetailText:SetTextColor(0.1, 0.065, 0.025)
+    assert(journal.questDetailText.textColor[1] == 0.1)
+    combat = false
+    for index = journalEvents + 1, #events do
+        local event = events[index]
+        if event.events and event.events.PLAYER_REGEN_ENABLED and event.hooks.OnEvent then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end
+    end
+    flush(); assert(journal.questDetailText.textColor[1] == 0.86)
+    print('BENCH journal_quest private_clicks=100 full_scans=0 list_scans=1 detail_scans=1; unchanged_refreshes=100 body_font_writes=0')
     print('BENCH journal_home callbacks=100 root_scans=1 new_canvases=0 title_font_writes=0')
 end
 end

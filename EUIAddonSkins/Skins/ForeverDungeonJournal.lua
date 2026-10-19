@@ -270,17 +270,91 @@ end, function(S, module)
         if f.SetBackdrop then f:SetBackdrop(nil) end
     end
 
-    local function ModeTab(tab)
+    local readable = setmetatable({}, {__mode = "k"})
+    local queueQuest, ModeTab
+    local function Readable(text, role, owner)
+        if not H.Allowed(text) or text:GetObjectType() ~= "FontString" then return end
+        local d = readable[text]
+        if not d then
+            d = {}; readable[text] = d
+            d.paint = function()
+                if d.painting or not ns.IsEnabled(module) or not H.Allowed(text) then return end
+                if Busy() then module.combatPending = true; return end
+                d.painting = true
+                local r, g, b = 0.86, 0.86, 0.89
+                if d.role == "accent" then r, g, b = S.GetAccentColor()
+                elseif d.role == "muted" then r, g, b = 0.68, 0.68, 0.71
+                elseif d.role == "heading" then r, g, b = 0.94, 0.94, 0.96
+                elseif d.role == "action" and d.owner and d.owner.IsEnabled and not d.owner:IsEnabled() then r, g, b = 0.5, 0.5, 0.5 end
+                H.Font(text)
+                local cr, cg, cb, ca = text:GetTextColor()
+                if cr ~= r or cg ~= g or cb ~= b or ca ~= 1 then text:SetTextColor(r, g, b, 1) end
+                d.painting = false
+            end
+            -- Local/private renderers bypass exported namespace hooks. Guard
+            -- only known prose/headings, never item or quest-status colours.
+            for _, method in ipairs({"SetTextColor", "SetFontObject", "SetFont"}) do H.Hook(text, method, d.paint) end
+        end
+        d.role, d.owner = role, owner
+        d.paint()
+    end
+    local function QuestReadability(f)
+        if not H.Allowed(f) or Busy() then return end
+        for _, key in ipairs({"questDetailText", "questTurninText", "questRewardSummary", "questStartsText", "questNotesText"}) do Readable(f[key], "body") end
+        for _, key in ipairs({"selectedQuestMeta", "noQuestMessage"}) do Readable(f[key], "muted") end
+        for _, key in ipairs({"questObjectiveHeader", "questRequiredItemsHeader", "questStartsHeader", "questTurninHeader", "questNotesHeader", "questRewardHeader", "questAlsoReceiveHeader", "questListTitle"}) do Readable(f[key], "heading") end
+        Readable(f.selectedQuestName, "accent")
+        Canvas(f.questLeftPanel); Canvas(f.questTextInset)
+    end
+    local function QuestDone()
+        if Busy() then module.combatPending = true; return end
+        local f = _G.ForeverDungeonJournalFrame
+        QuestReadability(f)
+        if H.Allowed(f) then
+            for _, key in ipairs({"bossesTab", "questsTab", "mapTab", "dungeonRouteButton", "dungeonPrepButton"}) do ModeTab(f[key]) end
+        end
+        if queueQuest then queueQuest() end
+    end
+    local nativeChrome = {"Left", "Middle", "Right", "LeftDisabled", "MiddleDisabled", "RightDisabled", "LeftSeparator", "RightSeparator"}
+    local function StripButton(f)
+        if f.SetBackdrop then f:SetBackdrop(nil) end
+        for _, key in ipairs(nativeChrome) do H.Fade(f[key]) end
+        if f.NineSlice and S.FadeNineSlice then S.FadeNineSlice(f.NineSlice) end
+        for _, getter in ipairs({"GetNormalTexture", "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture"}) do
+            if f[getter] then H.Fade(f[getter](f)) end
+        end
+    end
+    local function QuestAction(button)
+        if not H.Allowed(button) then return end
+        H.Action(button, {"icon", "Icon"}); StripButton(button)
+        Readable((button.GetFontString and button:GetFontString()) or button.text or button.Text, "action", button)
+        local function Paint()
+            if Busy() then module.combatPending = true; return end
+            StripButton(button)
+            Readable((button.GetFontString and button:GetFontString()) or button.text or button.Text, "action", button)
+        end
+        for _, name in ipairs({"SetNormalTexture", "SetPushedTexture", "SetDisabledTexture", "SetHighlightTexture", "Enable", "Disable"}) do H.Hook(button, name, Paint) end
+        H.Script(button, "OnClick", QuestDone)
+    end
+    ModeTab = function(tab)
         if not H.Allowed(tab) then return end
         -- Keep the journal's foreground icon; the API only preserves .Icon.
         if H.Texture(tab.fdjIcon) then tab.Icon = tab.fdjIcon end
         H.Tab(tab, tab.IsEnabled and not tab:IsEnabled() or false)
+        StripButton(tab)
+        H.Hook(tab, "SetBackdrop", function(_, value) if value and not Busy() then tab:SetBackdrop(nil) end end)
+        H.Script(tab, "OnClick", QuestDone)
         -- UIPanelButtonTemplate can restore its state textures after Enable().
         -- Suppress only native chrome, never the EUI tab's own regions.
         for _, getter in ipairs({"GetNormalTexture", "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture"}) do
             if tab[getter] then H.Fade(tab[getter](tab)) end
         end
-        H.Fade(tab.text or (tab.GetFontString and tab:GetFontString()))
+        local native = tab.text or (tab.GetFontString and tab:GetFontString())
+        local replacement
+        for _, text in ipairs(H.Regions(tab)) do
+            if text ~= native and text.GetObjectType and text:GetObjectType() == "FontString" then replacement = true; break end
+        end
+        if replacement then H.Fade(native) else Readable(native, "heading") end
         for _, method in ipairs({"SetNormalTexture", "SetPushedTexture", "SetDisabledTexture", "SetHighlightTexture", "Enable", "Disable"}) do
             H.Hook(tab, method, function() ModeTab(tab) end)
         end
@@ -289,10 +363,21 @@ end, function(S, module)
     local function Visit(f, kind)
         local root = _G.ForeverDungeonJournalFrame
         if root and f == root.languageSelectorButton then Language(f); return true end
-        if root and (f == root.bossesTab or f == root.questsTab or f == root.mapTab or f == root.dungeonRouteButton) then
+        if root and (f == root.bossesTab or f == root.questsTab or f == root.mapTab or f == root.dungeonRouteButton or f == root.dungeonPrepButton) then
             -- FDJ disables the active mode button. Mirror that visual state,
             -- including programmatic switches, without enabling/disabling it.
             ModeTab(f); return true
+        end
+        if root then
+            for _, key in ipairs({"questMapButton", "questChainButton", "questStartLinkButton", "questLeadsToButton", "questShareButton"}) do
+                if f == root[key] then QuestAction(f); return true end
+            end
+        end
+        if kind == "Button" and f.questIndex and f.name and f.meta then
+            H.Script(f, "OnClick", QuestDone)
+            H.Script(f, "OnShow", function() if queueQuest then queueQuest() end end)
+            H.Font(f.name); H.Font(f.meta)
+            return true
         end
         -- UIPanelCloseButton textures can be numeric file IDs on this client.
         -- Identify the unnamed journal close control by its exact owned anchor.
@@ -379,6 +464,21 @@ end, function(S, module)
         for _, key in ipairs({"slot", "meta"}) do H.Font(f[key], 0.65, 0.65, 0.68) end
     end
 
+    local questQueue = {}
+    queueQuest = function()
+        if fullQueued or not ns.IsEnabled(module) then return end
+        local serial = fullSerial
+        H.Queue(questQueue, function()
+            if serial ~= fullSerial then return end
+            if Busy() then module.combatPending = true; return end
+            local f = _G.ForeverDungeonJournalFrame
+            if not H.Allowed(f) then return end
+            QuestReadability(f)
+            for _, key in ipairs({"questLeftPanel", "questTextInset"}) do
+                if H.Allowed(f[key]) and (not f[key].IsVisible or f[key]:IsVisible()) then H.Scan(f[key], queueQuest, Visit) end
+            end
+        end)
+    end
     local function Exclude(f)
         local out = {}
         if f.dungeonMapArtHolder then out[f.dungeonMapArtHolder] = true end
@@ -406,8 +506,16 @@ end, function(S, module)
             H.Hook(f, "SetBackdropColor", refresh)
             H.Hook(f, "SetBackdropBorderColor", refresh)
         end
-        local function Controls()
+        local function Controls(source)
             if fullQueued then return end
+            if main and H.Allowed(source) then
+                local parent = source
+                for _ = 1, 20 do
+                    if parent == f or not H.Allowed(parent) then break end
+                    if parent == f.questLeftPanel or parent == f.questRightPanel or parent == f.questTextInset then queueQuest(); return end
+                    parent = parent.GetParent and parent:GetParent()
+                end
+            end
             local serial = fullSerial
             H.Queue(f, function()
                 if serial ~= fullSerial then return end
@@ -428,10 +536,11 @@ end, function(S, module)
         local f = _G.ForeverDungeonJournalFrame
         if f then
             Watch(f)
-            for _, key in ipairs({"mapTab", "bossesTab", "questsTab", "dungeonRouteButton"}) do ModeTab(f[key]) end
+            for _, key in ipairs({"mapTab", "bossesTab", "questsTab", "dungeonRouteButton", "dungeonPrepButton"}) do ModeTab(f[key]) end
             for _, key in ipairs({"contentPanel", "headerPanel", "homePanel", "leftPanel", "rightPanel",
                 "questLeftPanel", "questRightPanel", "questTextInset", "routePanel"}) do Panel(f[key]) end
             Canvas(f.homePanel)
+            QuestReadability(f)
             for _, key in ipairs({"homeParchment", "contentParchment", "headerParchment", "leftParchment",
                 "rightParchment", "questLeftParchment", "questRightParchment", "questParchment", "atmosphere"}) do H.Fade(f[key]) end
             for _, edge in ipairs(f.questInsetEdges or {}) do
@@ -498,7 +607,8 @@ end, function(S, module)
         "ToggleFavouritesWindow", "ToggleBugReportWindow", "RefreshHomeCards", "GoBackPage",
         "RefreshLootFilterResults", "RebuildLootFilterPage", "RefreshFavouritesWindow",
         "ShowItemFavouriteMenu", "ShowLootFilterResults", "RelocalizeLootFilter", "RefreshHomeDungeonCards",
-        "RefreshQuestList", "RefreshQuestDetail", "ApplyTheme", "ApplyLocale"}) do H.Hook(journal, name, refresh) end
+        "ApplyTheme", "ApplyLocale", "ApplyLocalization", "ApplySelectedLanguage"}) do H.Hook(journal, name, refresh) end
+    for _, name in ipairs({"RefreshQuestList", "RefreshQuestDetail", "SelectQuest", "SelectQuestByID", "SetQuestFaction", "SelectPrerequisiteStepByOffset", "SetMode", "ShowDungeonPage", "RefreshAll"}) do H.Hook(journal, name, QuestDone) end
     -- Current workers finish through exported renderers. Keep the legacy
     -- one-shot worker fallback only when those exports are unavailable.
     if journal.questRefreshWorker and not (type(journal.RefreshQuestList) == "function" and type(journal.RefreshQuestDetail) == "function") then

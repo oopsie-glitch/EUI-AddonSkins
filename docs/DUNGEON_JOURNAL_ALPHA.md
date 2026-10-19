@@ -26,3 +26,13 @@ Remove the main journal's top accent line while keeping popup accents and active
 Favourites gets a charcoal centre-highlight canvas, a clean inset, a brighter empty-state message and accent headings. Replace the oversized circular header decoration with the addon's existing star artwork in a contained 22-unit mouse-disabled layer. Item-row icons, quality colours and favourite actions are preserved. Soften the browsing divider to neutral grey.
 
 Popup roots are excluded from their parent's scan and deduplicated across local/global aliases. Regression fixtures cover red native texture removal, both dropdown shapes, icon alpha, native footer/input/dropdown actions, no main accent, hidden portrait/stone textures, contained star geometry, heading colours and stable visual allocations. All package checks pass. The Retail fork's exact source was not supplied; supported control shapes are verified in mocks, with actual rendering still unverified.
+
+## Quest readability and redraw follow-up
+
+Use near-white prose and headings, muted metadata and the selected accent for the quest title. Keep item-quality, class, completion and status colours native. Extend the centre-highlight charcoal canvas to the quest list and detail inset. Remove restored native tab slices and red quest-action artwork while preserving icons, enabled states and click actions.
+
+The native quest-row click closes over private renderer functions, so hooks on exported namespace functions alone miss these redraws. Guard only known quest FontStrings when their font or colour is reset, before the renderer measures text. Recheck known mode/action controls after native quest clicks. Handle replaced tab textures and newly created reward headings without replacing native callbacks.
+
+Quest refreshes coalesce to the quest-list and detail subtrees rather than the entire journal. In mocked regression tests, 100 private quest clicks perform zero full-window scans and one scan of each quest subtree; 100 unchanged exported detail callbacks perform zero body-font writes. Tests verify immediate readability before deferred callbacks, preserved text/actions/semantic colours, replacement native textures, dynamic headings, disabled skins and combat deferral. The new fixture fails against the preceding skin and passes with this change. All package checks pass. These are simulated results, not in-game frame-time or visual measurements.
+
+Additional source reviewed: ForeverDungeonJournal `UI/QuestsTab.lua`, `UI/MainFrame.lua`, `UI/ThemeData.lua` and `Core/Journal.lua`. Exact Retail-fork rendering remains unverified.

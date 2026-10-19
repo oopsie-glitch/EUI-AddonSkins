@@ -100,3 +100,14 @@ The same strengthened fixtures were run against the exact previous alpha (8aaf3b
 | 40 mode/display callbacks: full options scans | 40 | 0 |
 
 These are simulated operation counts, not CPU timings, memory totals or FPS claims. Regression coverage retains dynamic controls, theme updates, template repair, native values/actions/returns, disable/combat guards and reusable visual layers. No polling, global DF/AceGUI changes, eager hidden-page scans or shared runtime changes were added. First-time controls still require initial setup; actual client render timing and whether this eliminates the reported visible flicker cannot be established here.
+
+
+### Deferred tab repaint and page construction
+
+The public EllesmereUI Tab helper attaches an OnClick callback which schedules UpdateAllTabs for the next frame. That update sets every owned tab label to white with selected/unselected opacity. Earlier fixtures stopped at synchronous selection and therefore missed the later reset. Hook only the visible labels created for Details category buttons and synchronously restore their selected accent or neutral full-opacity tint when SetTextColor is called. Native labels, unrelated tabs and the suite's global callbacks are not changed. Disabled/menu/combat gates still apply.
+
+Details also constructs numerous options sections with native C_Timer.After callbacks (0.05–0.433 seconds in the reviewed source). Selection and OnShow can run before these controls exist. Owned-parent post-hooks on DetailsFramework BuildMenu and BuildMenuVolatile now style the completed subtree, even if its registered page is hidden. Ordinary window scans still skip hidden pages; no native builder is invoked by the skin, no page is shown to prepare it, and no polling or speculative preloading is added.
+
+Regression fixtures now model the public tab helper's next-frame repaint and the native Show/OnShow/RefreshOptions order, then check all label colours and opacity after queued callbacks complete. A delayed builder fixture verifies that hidden labels and controls are styled before BuildMenu returns, with native multiple returns intact and no full-window scan. It also checks foreign parents, repeated hook registration, volatile rebuilds, disabled menus and combat deferral. The exact previous alpha 5eb5543 fails the deferred-colour fixture; removing only the new builder hooks fails the delayed hidden-page fixture. Both pass in the updated source. These reproduce callback behavior, not actual client rendering.
+
+Primary sources: EllesmereGaming/EllesmereUI EllesmereUIBlizzardSkin_WindowEngine.lua (Tab/UpdateTabVisual) and Tercioo/Details-Damage-Meter frames/window_options2_sections.lua and Libs/DF/buildmenu.lua.

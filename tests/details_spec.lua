@@ -169,6 +169,21 @@ local function font(parent)
     function t:SetFont(path, size, flags) self.font, self.size, self.flags = path, size or self.size, flags or ''; self.writes = (self.writes or 0) + 1 end
     return t
 end
+-- DF completes some sections from delayed native builders. Keep the source
+-- signatures and multiple returns; foreign framework users remain untouched.
+DetailsFramework = {}
+function DetailsFramework:BuildMenu(parent)
+    parent.builtLabel = parent.builtLabel or font(parent)
+    parent.builtLabel:SetFont('native-delayed-font', 12, '')
+    if not parent.builtControl then
+        parent.builtControl = frame('Button', nil, parent)
+        parent.builtControl.MyObject = {type = 'switch', checked_texture = parent.builtControl:CreateTexture()}
+    end
+    return parent, nil, 'build-native'
+end
+function DetailsFramework:BuildMenuVolatile(parent)
+    return self:BuildMenu(parent)
+end
 UIParent = frame()
 local settingsRegistered, openedCategory = 0
 Settings = {
@@ -356,10 +371,20 @@ assert(Details:OpenOptionsWindow() == 'options-native' and DetailsOptionsWindow.
 -- Source-shaped category reset: a page OnShow scan runs before Details applies
 -- the final selected template. Styling must be settled when the click returns.
 DetailsOptionsWindow.sectionFramesContainer = {}
-local originalTab = S.Tab
+local originalTab, deferredTabs = S.Tab, {}
 S.Tab = function(f)
     originalTab(f)
-    if not f.euiLabel then f.euiLabel = font(f) end
+    if not f.euiLabel then
+        f.euiLabel = font(f); deferredTabs[f] = true
+        -- Model the actual public EUI Tab helper's next-frame UpdateAllTabs.
+        f:HookScript('OnClick', function()
+            C_Timer.After(0, function()
+                for tab in pairs(deferredTabs) do
+                    tab.euiLabel:SetTextColor(1, 1, 1, tab.selected and 1 or 0.5)
+                end
+            end)
+        end)
+    end
 end
 for id = 1, 3 do
     local page = frame('Frame', nil, DetailsOptionsWindow); page:Hide()
@@ -379,8 +404,8 @@ Details222 = {OptionsPanel = {SelectOptionsSection = function(id)
     local pages = DetailsOptionsWindow.sectionFramesContainer
     for _, page in ipairs(pages) do page:Hide(); page.sectionButton:SetTemplate(); page.sectionButton:SetIcon() end
     local page = pages[id]; page:Show()
-    if page.RefreshOptions then page:RefreshOptions() end
     if page.hooks.OnShow then page.hooks.OnShow(page) end
+    if page.RefreshOptions then page:RefreshOptions() end
     page.sectionButton:SetTemplate(); page.sectionButton:SetIcon()
     return 'section-native'
 end}}
@@ -398,6 +423,11 @@ for _, id in ipairs({1, 2, 3, 1, 3}) do
     end
     flush()
     assert(page.sectionButton.widget.selected, 'queued scan lost the selected category')
+    for i, section in ipairs(DetailsOptionsWindow.sectionFramesContainer) do
+        local text = section.sectionButton.widget.euiLabel
+        assert(text.textColor[1] == (i == id and accent or 0.88) and text.textColor[4] == 1,
+            'deferred EUI tab update reset category colour/opacity')
+    end
 end
 -- Repeated selection retains the completed tab highlight through native
 -- Hide/SetTemplate bursts and never scans the whole options/meter hierarchy.
@@ -446,6 +476,38 @@ assert(auditScans[lazyPage] == 0, 'queued page scan ignored disabled menus')
 ns.DetailsSettings().menus = true
 print('BENCH details_navigation full=0 page=50 clicks=50; show_burst page=1 callbacks=100')
 Details222.OptionsPanel.SelectOptionsSection(3); flush()
+-- Native delayed construction must be skinned before it returns, even on a
+-- hidden page. This is construction driven, not a poll or eager page traversal.
+local hiddenBuild = DetailsOptionsWindow.sectionFramesContainer[2]
+assert(not hiddenBuild:IsShown())
+auditScans[DetailsOptionsWindow], auditScans[hiddenBuild] = 0, 0
+C_Timer.After(0.2, function()
+    local result, empty, tail = DetailsFramework:BuildMenu(hiddenBuild)
+    assert(result == hiddenBuild and empty == nil and tail == 'build-native')
+    assert(hiddenBuild.builtLabel:GetFont() == 'eui' and hiddenBuild.builtControl.button,
+        'delayed hidden section was not styled at build completion')
+    assert(not hiddenBuild:IsShown(), 'preparing controls showed a hidden section')
+end)
+flush()
+assert(auditScans[DetailsOptionsWindow] == 0 and auditScans[hiddenBuild] == 1)
+local foreignBuild = frame('Frame', nil, UIParent)
+DetailsFramework:BuildMenu(foreignBuild)
+assert(foreignBuild.builtLabel:GetFont() == 'native-delayed-font' and not foreignBuild.builtControl.button)
+local builder = DetailsFramework.BuildMenu
+for _ = 1, 3 do modules.Details.refresh(); flush() end
+assert(DetailsFramework.BuildMenu == builder, 'framework builder hook duplicated')
+local result, empty, tail = DetailsFramework:BuildMenuVolatile(hiddenBuild)
+assert(result == hiddenBuild and empty == nil and tail == 'build-native' and hiddenBuild.builtLabel:GetFont() == 'eui')
+ns.DetailsSettings().menus = false
+DetailsFramework:BuildMenu(hiddenBuild)
+assert(hiddenBuild.builtLabel:GetFont() == 'native-delayed-font', 'disabled menus styled hidden builder')
+ns.DetailsSettings().menus = true
+combat = true
+DetailsFramework:BuildMenu(hiddenBuild)
+assert(hiddenBuild.builtLabel:GetFont() == 'native-delayed-font', 'hidden builder ignored combat')
+combat = false
+DetailsFramework:BuildMenu(hiddenBuild); flush()
+assert(hiddenBuild.builtLabel:GetFont() == 'eui')
 S.Tab = originalTab
 local input = frame('EditBox', nil, DetailsOptionsWindow)
 local description = font(DetailsOptionsWindow)

@@ -139,8 +139,8 @@ local function Setup(C, refresh)
         end
         return false
     end
-    -- Options sections are explicitly registered; defer hidden content until
-    -- the completed native section-selection callback styles the visible page.
+    -- Ordinary refreshes skip hidden pages. A completed native BuildMenu may
+    -- explicitly prepare its own hidden subtree before it is first shown.
     local visualFrames = setmetatable({}, {__mode = "k"})
     local scan = H.Scan
     H.Scan = function(root, callback, visit, excluded)
@@ -150,7 +150,7 @@ local function Setup(C, refresh)
         local options = Frame(_G.DetailsOptionsWindow)
         for _, section in pairs(options and options.sectionFramesContainer or {}) do
             local page = Frame(section)
-            if H.Allowed(page) and page.IsShown and not page:IsShown() then exclude[page] = true end
+            if H.Allowed(page) and page.IsShown and not page:IsShown() and page ~= state.buildingOptions then exclude[page] = true end
         end
         return scan(root, callback, visit, exclude)
     end
@@ -162,6 +162,16 @@ local function Setup(C, refresh)
             f = f.GetParent and f:GetParent()
         end
         return false
+    end
+    state.BuiltOptions = function(_, parent)
+        parent = Frame(parent)
+        if not H.Allowed(parent) or not OptionOwned(parent) or ns.DetailsSettings().menus == false or Busy() then return end
+        -- DF builds some pages in delayed callbacks. Prepare the completed
+        -- owned subtree now, without showing it or invoking native RefreshOptions.
+        local previous = state.buildingOptions
+        state.buildingOptions = parent
+        C.RefreshControlsNow(parent)
+        state.buildingOptions = previous
     end
     local readableBackground, readableControls = nil, {}
     local function Gradient(texture, direction, r, g, b, first, last)
@@ -467,6 +477,16 @@ local function Setup(C, refresh)
                 for _, text in ipairs(H.Regions(button)) do
                     if text ~= native and text.GetObjectType and text:GetObjectType() == "FontString" then
                         previous.labels[#previous.labels + 1] = text
+                        -- The public Tab helper runs UpdateAllTabs one frame
+                        -- after a click, resetting label tint/opacity globally.
+                        -- Repair only this adapter's visible label synchronously.
+                        local repairing = false
+                        H.Hook(text, "SetTextColor", function()
+                            if repairing or ns.DetailsSettings().menus == false or not H.Allowed(button) or Busy() then return end
+                            repairing = true
+                            LabelTone(text, button.MyObject, state.selectedSection == section)
+                            repairing = false
+                        end)
                     end
                 end
             end
@@ -919,6 +939,9 @@ ns.RegisterScopedSkin("Details", "Details!", {
         state.BindTiny()
         local options = _G.Details222 and _G.Details222.OptionsPanel
         C.H.Hook(options, "SelectOptionsSection", state.SelectedOptions)
+        local framework = _G.DetailsFramework
+        C.H.Hook(framework, "BuildMenu", state.BuiltOptions)
+        C.H.Hook(framework, "BuildMenuVolatile", state.BuiltOptions)
         local tip = _G.GameCooltip
         C.H.Hook(tip, "Reset", function() state.quickAdded = false end)
         for _, name in ipairs({"ShowCooltip", "BuildCooltip", "BuildTooltip", "BuildTooltipSecondFrame", "SetHost", "ShowRoundedCorner", "HideRoundedCorner"}) do

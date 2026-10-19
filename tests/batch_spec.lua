@@ -40,6 +40,11 @@ end
 local function frame(kind, name, parent)
     local f = {kind = kind or 'Frame', name = name, children = {}, regions = {}, hooks = {}, scripts = {}, shown = true, enabled = true, parent = parent}
     function f:GetObjectType() return self.kind end
+    function f:SetAlpha(value) self.alpha = value end
+    function f:SetAllPoints(target) self.allPoints = target end
+    function f:EnableMouse(value) self.mouse = value end
+    function f:GetFrameLevel() return self.level or 1 end
+    function f:SetFrameLevel(value) self.level = value end
     function f:GetName() return self.name end
     function f:GetParent() return self.parent end
     function f:ClearAllPoints() self.layoutPoint = nil end

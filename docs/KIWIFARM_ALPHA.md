@@ -59,3 +59,19 @@ The more restrained font treatment improves separation without resizing or
 repositioning the stats window. Tests cover 100 data updates with zero extra
 font writes, font-size/return preservation, native font resets and restoration,
 heading-row reuse, original artwork restoration and bounded marker allocations.
+
+## Appearance options
+
+Right-click KiwiFarm or its minimap button, then choose **Appearance > AddonSkins**.
+
+- Background opacity: 0–100% in 10% steps, or **Use KiwiFarm opacity** to follow the native background colour picker's alpha. Default: 90%.
+- Menu background opacity: separate 0–100% choices, plus the 95% default.
+- Background style: flat charcoal or soft centre highlight (default).
+- Show accent line: off by default; enabled lines follow Blizzard Skins+ accent colour/visibility preferences.
+- Reset skin settings: reset these KiwiFarm skin options only.
+
+Settings are saved under EUIAddonSkinsDB.kiwiFarm. Native KiwiFarm colour values, font size, dimensions, anchors, stats, visibility and whole-frame fade handlers remain unchanged. Opacity affects only owned background layers. The root's old shell textures are suppressed so 0% is actually clear; text stays independent. Decorative layers are excluded from scans from their first creation.
+
+A guarded initialization post-hook appends one submenu to the localized Appearance list of KiwiFarmPopupMenu only, before its native renderer displays the menu. Native menu tables and actions are retained; the submenu is hidden when the skin is disabled. Settings changes update owned backgrounds immediately and refresh the current owned native submenu's checkmarks. Combat-time visual changes wait until combat ends. No polling or stats/data-update hooks are added.
+
+The full package check passes Lua syntax, regression suites, manifests, versions, MIT license and the single-folder runtime ZIP. Fixtures verify saved values, 0/100% opacity, untouched text/frame alpha, native colour-picker cooperation, both background styles, accent toggles, independent legacy-menu opacity, reset isolation, first-open injection/deduplication, unrelated-owner guards, menu regeneration and combat/disabled handling. Repeated opens retain zero full-window refreshes and stable background allocations. These are mock results; in-game rendering and taint remain unverified.

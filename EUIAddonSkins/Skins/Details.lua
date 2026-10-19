@@ -103,6 +103,27 @@ local function Setup(C, refresh)
     local S, H, D = C.S, C.H, _G.Details
     local state = {meters = {}, owners = {}, roots = {}, sections = {}, designerRows = {}, designers = {}, snapshots = {}, texts = {}, textures = {}, applying = false}
     C.details = state
+    -- The public Font primitive reapplies its FontObject/shadow and font on
+    -- every call. Details shows/re-enables whole groups at once; cache only
+    -- unchanged outputs within this adapter, with full-refresh invalidation.
+    local fontCache = setmetatable({}, {__mode = "k"})
+    local applyFont = S.Font
+    S.Font = function(text, r, g, b)
+        if not H.Allowed(text) or not text.GetFont then return applyFont(text, r, g, b) end
+        local path, size, flags = text:GetFont()
+        if issecretvalue and (issecretvalue(path) or issecretvalue(size) or issecretvalue(flags)) then
+            return applyFont(text, r, g, b)
+        end
+        local old = fontCache[text]
+        if old and old.epoch == state.fontEpoch and old.path == path and old.size == size and old.flags == flags then
+            if r then text:SetTextColor(r, g, b or r) end
+            return
+        end
+        applyFont(text, r, g, b)
+        path, size, flags = text:GetFont()
+        if issecretvalue and (issecretvalue(path) or issecretvalue(size) or issecretvalue(flags)) then return end
+        fontCache[text] = {epoch = state.fontEpoch, path = path, size = size, flags = flags}
+    end
     local function Busy()
         if InCombatLockdown and InCombatLockdown() then
             if not state.combatPending then state.combatPending = true; refresh() end
@@ -118,6 +139,316 @@ local function Setup(C, refresh)
         end
         return false
     end
+    -- Ordinary refreshes skip hidden pages. A completed native BuildMenu may
+    -- explicitly prepare its own hidden subtree before it is first shown.
+    local visualFrames = setmetatable({}, {__mode = "k"})
+    local scan = H.Scan
+    H.Scan = function(root, callback, visit, excluded)
+        -- New visual layers can be created during this same traversal.
+        local exclude = setmetatable({}, {__index = visualFrames})
+        for f, value in pairs(excluded or {}) do exclude[f] = value end
+        local options = Frame(_G.DetailsOptionsWindow)
+        for _, section in pairs(options and options.sectionFramesContainer or {}) do
+            local page = Frame(section)
+            if H.Allowed(page) and page.IsShown and not page:IsShown() and page ~= state.buildingOptions then exclude[page] = true end
+        end
+        return scan(root, callback, visit, exclude)
+    end
+    local controls, headingTints = {}, setmetatable({}, {__mode = "k"})
+    local function OptionOwned(f)
+        for _ = 1, 24 do
+            if not H.Allowed(f) then return false end
+            if f == _G.DetailsOptionsWindow or f == _G.DetailsPluginContainerWindow then return true end
+            f = f.GetParent and f:GetParent()
+        end
+        return false
+    end
+    state.BuiltOptions = function(_, parent)
+        parent = Frame(parent)
+        if not H.Allowed(parent) or not OptionOwned(parent) or ns.DetailsSettings().menus == false or Busy() then return end
+        -- DF builds some pages in delayed callbacks. Prepare the completed
+        -- owned subtree now, without showing it or invoking native RefreshOptions.
+        local previous = state.buildingOptions
+        state.buildingOptions = parent
+        C.RefreshControlsNow(parent)
+        state.buildingOptions = previous
+    end
+    local readableBackground, readableControls = nil, {}
+    local function Gradient(texture, direction, r, g, b, first, last)
+        texture:SetColorTexture(1, 1, 1, 1)
+        if texture.SetGradient and CreateColor then
+            texture:SetGradient(direction, CreateColor(r, g, b, first), CreateColor(r, g, b, last))
+        elseif texture.SetGradientAlpha then
+            texture:SetGradientAlpha(direction, r, g, b, first, r, g, b, last)
+        else texture:SetColorTexture(r, g, b, math.max(first, last) * 0.5) end
+    end
+    state.ReadableBackground = function(f)
+        if f ~= Frame(_G.DetailsOptionsWindow) then return end
+        if not readableBackground or readableBackground.owner ~= f then
+            local layer = CreateFrame("Frame", nil, f)
+            visualFrames[layer] = true
+            layer:SetAllPoints(f); layer:EnableMouse(false)
+            if layer.SetFrameLevel and f.GetFrameLevel then layer:SetFrameLevel(f:GetFrameLevel()) end
+            local d = {owner = f, layer = layer}; readableBackground = d
+            d.base = layer:CreateTexture(nil, "BACKGROUND", nil, -4); d.base:SetAllPoints(layer)
+            d.left = layer:CreateTexture(nil, "BACKGROUND", nil, -3)
+            d.left:SetPoint("TOPLEFT", layer, "TOPLEFT"); d.left:SetPoint("BOTTOMRIGHT", layer, "BOTTOM")
+            d.right = layer:CreateTexture(nil, "BACKGROUND", nil, -3)
+            d.right:SetPoint("TOPLEFT", layer, "TOP"); d.right:SetPoint("BOTTOMRIGHT", layer, "BOTTOMRIGHT")
+            d.top = layer:CreateTexture(nil, "BACKGROUND", nil, -2)
+            d.top:SetPoint("TOPLEFT", layer, "TOPLEFT"); d.top:SetPoint("BOTTOMRIGHT", layer, "RIGHT")
+            d.bottom = layer:CreateTexture(nil, "BACKGROUND", nil, -2)
+            d.bottom:SetPoint("TOPLEFT", layer, "LEFT"); d.bottom:SetPoint("BOTTOMRIGHT", layer, "BOTTOMRIGHT")
+        end
+        local d = readableBackground
+        local r, g, b = 0.055, 0.055, 0.06
+        if S.GetPanelColor then r, g, b = S.GetPanelColor() end
+        r, g, b = math.max(0.055, r), math.max(0.055, g), math.max(0.06, b)
+        if d.r == r and d.g == g and d.b == b then return end
+        d.r, d.g, d.b = r, g, b
+        d.base:SetColorTexture(r, g, b, 0.82)
+        local lr, lg, lb = math.min(1, r + 0.15), math.min(1, g + 0.15), math.min(1, b + 0.15)
+        Gradient(d.left, "HORIZONTAL", lr, lg, lb, 0, 0.5)
+        Gradient(d.right, "HORIZONTAL", lr, lg, lb, 0.5, 0)
+        Gradient(d.top, "VERTICAL", 0, 0, 0, 0, 0.14)
+        Gradient(d.bottom, "VERTICAL", 0, 0, 0, 0.14, 0)
+    end
+    state.ControlContrast = function(f, widget, method)
+        if not OptionOwned(f) then return end
+        if method == "switch" or method == "dropdown" or method == "input" then
+            local d = readableControls[f]
+            if not d then
+                local layer = CreateFrame("Frame", nil, f)
+                visualFrames[layer] = true
+                layer:SetAllPoints(f); layer:EnableMouse(false)
+                if layer.SetFrameLevel and f.GetFrameLevel then layer:SetFrameLevel(f:GetFrameLevel()) end
+                d = {layer = layer}; readableControls[f] = d
+                d.fill = layer:CreateTexture(nil, "BACKGROUND", nil, -2); d.fill:SetAllPoints(layer)
+                for _, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+                    local edge = layer:CreateTexture(nil, "BORDER")
+                    edge:SetColorTexture(0.28, 0.28, 0.3, 0.45)
+                    if side == "TOP" or side == "BOTTOM" then
+                        edge:SetPoint(side .. "LEFT", layer, side .. "LEFT"); edge:SetPoint(side .. "RIGHT", layer, side .. "RIGHT"); edge:SetHeight(1)
+                    else
+                        edge:SetPoint("TOP" .. side, layer, "TOP" .. side); edge:SetPoint("BOTTOM" .. side, layer, "BOTTOM" .. side); edge:SetWidth(1)
+                    end
+                end
+            end
+            local shade = method == "switch" and 0.095 or 0.065
+            if d.shade ~= shade then d.fill:SetColorTexture(shade, shade, shade + 0.005, 1); d.shade = shade end
+        end
+        local row = widget and widget.highlightFrame
+        if H.Allowed(row) and OptionOwned(row) and H.Texture(row.highlightTexture) then
+            -- DF already owns the row bounds, hover visibility and click handlers.
+            -- Repaint its plain background only; no new clickable row is introduced.
+            for _, region in ipairs(H.Regions(row)) do
+                if H.Texture(region) and region ~= row.highlightTexture and region.GetDrawLayer and region:GetDrawLayer() == "ARTWORK" then
+                    region:SetVertexColor(1, 1, 1, 1); region:SetColorTexture(0, 0, 0, 0.12)
+                end
+            end
+        end
+    end
+    local function LabelTone(text, widget, heading)
+        text = Frame(text)
+        if not H.Allowed(text) or text:GetObjectType() ~= "FontString" then return end
+        H.Font(text)
+        local r, g, b, a
+        if widget and (widget.lockdown or widget.widget and widget.widget.IsEnabled and not widget.widget:IsEnabled()) then
+            r, g, b, a = 0.5, 0.5, 0.5, 1
+        elseif heading then r, g, b, a = S.GetAccentColor(); a = a or 1
+        else r, g, b, a = 0.88, 0.88, 0.9, 1 end
+        local cr, cg, cb, ca = text:GetTextColor()
+        if cr ~= r or cg ~= g or cb ~= b or ca ~= a then text:SetTextColor(r, g, b, a) end
+    end
+    state.OptionLabels = function(f)
+        if not OptionOwned(f) then return end
+        for _, key in ipairs({"title", "titulo", "instancetext", "editingGroupLabel"}) do
+            LabelTone(f[key], nil, true)
+        end
+        -- BuildMenu exposes standalone labels separately from paired controls.
+        -- Only its gold/orange headings change; descriptions and semantic colours stay native.
+        for _, label in ipairs(f.widget_list_by_type and f.widget_list_by_type.label or {}) do
+            local text = Frame(label)
+            if H.Allowed(text) and text.GetTextColor then
+                local r, g, b = text:GetTextColor()
+                local old = headingTints[text]
+                local heading = r and r > 0.7 and g > 0.4 and b < 0.3
+                    or old and r == old[1] and g == old[2] and b == old[3]
+                if heading then
+                    LabelTone(text, nil, true)
+                    headingTints[text] = {S.GetAccentColor()}
+                else headingTints[text] = nil end
+            end
+        end
+    end
+    state.Control = function(f, kind, force)
+        local widget = f.MyObject
+        if type(widget) ~= "table" then return false end
+        local method = widget.type
+        if kind == "EditBox" and widget.value_box == f then
+            S.EditBox(f, {padInput = false}); state.ControlContrast(f, widget, "input"); return true
+        end
+        local supported = method == "switch" or method == "dropdown" or kind == "Slider" and method == "slider"
+            or kind == "Button" and method == "button" and OptionOwned(f) and (f.GetFontString and f:GetFontString() or f.Text or f.text)
+        if not supported then return false end
+        if ns.DetailsSettings().menus == false or not ns.IsEnabled(C.module) or Busy() then return true end
+        local d = controls[f]
+        if not d or d.widget ~= widget then
+            d = {widget = widget}; controls[f] = d
+            d.paint = function()
+                if not H.Allowed(f) or f.MyObject ~= widget or not Owned(f) or d.painting then return end
+                d.painting = true
+                local ok, err = pcall(state.Control, f, kind, true)
+                d.painting = false
+                if not ok then error(err) end
+            end
+            -- Native template/setter bursts touch just this control, not every window.
+            H.Hook(widget, "SetTemplate", d.paint)
+            if method == "switch" then
+                H.Hook(widget, "SetCheckedTexture", d.paint)
+                H.Hook(widget, "SetAsCheckBox", d.paint)
+            end
+            local function PaintCurrent()
+                local current = controls[f]
+                if current and f.MyObject == current.widget and Owned(f) then state.Control(f, kind) end
+            end
+            H.Hook(widget, "Enable", PaintCurrent); H.Hook(widget, "Disable", PaintCurrent)
+            H.Script(f, "OnEnable", PaintCurrent); H.Script(f, "OnDisable", PaintCurrent)
+            H.Script(f, "OnShow", PaintCurrent)
+            if kind == "Button" then H.Script(f, "OnClick", PaintCurrent) end
+        end
+        local disabled = widget.lockdown or f.IsEnabled and not f:IsEnabled() or false
+        if d.ready and not force and d.epoch == state.fontEpoch and d.paintWidth == f:GetWidth() and d.paintHeight == f:GetHeight()
+            and d.mark == widget.checked_texture and d.knob == widget.toggle_knob and d.row == widget.highlightFrame then
+            if method == "switch" then
+                if disabled ~= d.disabled and H.Texture(widget.checked_texture) and not widget.is_toggle then
+                    if disabled then widget.checked_texture:SetColorTexture(0.4, 0.4, 0.4, 0.8)
+                    else widget.checked_texture:SetColorTexture(S.GetAccentColor()) end
+                end
+                LabelTone(widget.hasLabel or widget.label, widget)
+            elseif method == "button" then LabelTone((f.GetFontString and f:GetFontString()) or f.Text or f.text, widget) end
+            d.disabled = disabled
+            return true
+        end
+        f.euiDetailsOptionVisual = true
+        if method == "switch" then
+            f.euiDetailsCheck = H.Texture(widget.checked_texture)
+            f.euiDetailsToggle = H.Texture(widget.toggle_knob)
+            if not d.baseStyled then
+                S.Button(f, {"euiDetailsCheck", "euiDetailsToggle", "text", "Text", "label"}); d.baseStyled = true
+            end
+            if f.SetBackdrop then f:SetBackdrop(nil) end
+            if f.euiDetailsCheck and not widget.is_toggle then
+                local mark = f.euiDetailsCheck
+                mark:SetVertexColor(1, 1, 1, 1)
+                if widget.lockdown or f.IsEnabled and not f:IsEnabled() then mark:SetColorTexture(0.4, 0.4, 0.4, 0.8)
+                else mark:SetColorTexture(S.GetAccentColor()) end
+                mark:ClearAllPoints()
+                mark:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
+                mark:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -4, 4)
+                -- Native Show/Hide and alpha continue to reflect value/lockdown.
+            end
+            LabelTone(widget.hasLabel or widget.label, widget)
+        elseif method == "dropdown" then
+            local icon = H.Texture(widget.icon); local alpha = icon and icon:GetAlpha()
+            if not d.dropdown then
+                local before = {}; for _, region in ipairs(H.Regions(f)) do before[region] = true end
+                S.Dropdown(f)
+                for _, region in ipairs(H.Regions(f)) do
+                    if not before[region] and H.Texture(region) and region.GetDrawLayer and region:GetDrawLayer() == "OVERLAY" then d.arrow = region end
+                end
+                d.dropdown = true
+            end
+            if icon then icon:SetAlpha(alpha) end
+            H.Fade(f.statusbar)
+            local native = H.Texture(f.arrowTexture)
+            if native and d.arrow then H.Fade(d.arrow) end
+            for _, arrow in pairs({base = native or d.arrow, hover = H.Texture(f.arrowTexture2)}) do
+                arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
+                arrow:SetTexCoord(0, 1, 0, 1); arrow:SetSize(10, 7)
+                arrow:ClearAllPoints(); arrow:SetPoint("RIGHT", f, "RIGHT", -7, 0)
+                arrow:SetVertexColor(0.8, 0.8, 0.8, 1); arrow:SetAlpha(1)
+            end
+            if H.Allowed(f.dropdownframe) then
+                H.Script(f.dropdownframe, "OnShow", function() C.RefreshControlsNow(f.dropdownframe) end)
+                C.Panel(f.dropdownframe)
+            end
+        elseif kind == "Slider" then
+            H.LegacySlider(f)
+            local thumb = f.GetThumbTexture and H.Texture(f:GetThumbTexture())
+            if thumb and f.GetOrientation and f:GetOrientation() == "HORIZONTAL" then
+                thumb:SetSize(8, 14)
+                -- Newer DF exposes a native numeric editor. Reserve room inside
+                -- the original control width, keeping the existing row footprint.
+                if type(widget.SetValueBox) == "function" and f.GetWidth then
+                    if d.manageValueBox == nil then d.manageValueBox = not widget.value_box_shown end
+                    if d.manageValueBox then
+                        local width = f:GetWidth()
+                        if width ~= d.trackWidth then d.width = width end
+                        if d.width and d.width >= 100 then
+                            d.trackWidth = d.width - 40
+                            if width ~= d.trackWidth then f:SetWidth(d.trackWidth) end
+                            if not widget.value_box_shown or widget.value_box_side ~= "right" then widget:SetValueBox(true, "right", 36, 18, 4) end
+                        end
+                    end
+                    -- An existing native value-box layout keeps its own side/size.
+                    if H.Allowed(widget.value_box) then
+                        H.Script(widget.value_box, "OnShow", d.paint)
+                        S.EditBox(widget.value_box, {padInput = false})
+                        state.ControlContrast(widget.value_box, widget, "input")
+                    end
+                end
+            end
+        else
+            f.euiDetailsIcon = H.Texture(widget.icon)
+            if not d.baseStyled then
+                S.Button(f, {"euiDetailsIcon", "text", "Text", "label"}); d.baseStyled = true
+            end
+            if f.SetBackdrop then f:SetBackdrop(nil) end
+            LabelTone((f.GetFontString and f:GetFontString()) or f.Text or f.text, widget)
+        end
+        state.ControlContrast(f, widget, method)
+        d.ready, d.epoch, d.disabled = true, state.fontEpoch, disabled
+        d.paintWidth, d.paintHeight, d.mark, d.knob = f:GetWidth(), f:GetHeight(), widget.checked_texture, widget.toggle_knob
+        d.row = widget.highlightFrame
+        return true
+    end
+    local pendingSections = {}
+    state.RequestOptions = function(root, source)
+        if state.sections[source] then return end -- Completed selection already paints this page.
+        local target = source
+        for _ = 1, 24 do
+            if not H.Allowed(target) then target = root; break end
+            if target == _G.DetailsOptionsWindow then target = root; break end
+            if state.optionPages and state.optionPages[target] then break end
+            target = target.GetParent and target:GetParent()
+        end
+        target = target or root
+        pendingSections[target] = true
+        H.Queue(pendingSections, function()
+            for page in pairs(pendingSections) do
+                pendingSections[page] = nil
+                if ns.DetailsSettings().menus ~= false then C.RefreshControlsNow(page) end
+            end
+        end)
+    end
+    state.SelectedOptions = function()
+        if ns.DetailsSettings().menus == false or not ns.IsEnabled(C.module) or Busy() then return end
+        local options = Frame(_G.DetailsOptionsWindow)
+        local selected
+        for _, page in pairs(options and options.sectionFramesContainer or {}) do
+            if H.Allowed(page) and page:IsShown() then selected = page; break end
+        end
+        state.selectedSection = selected
+        for button in pairs(state.sections) do state.Section(button) end
+        if selected then
+            -- RefreshOptions can construct controls after OnShow. Paint only
+            -- after native selection has completed, before returning to the UI.
+            pendingSections[selected] = nil
+            C.RefreshControlsNow(selected)
+        end
+    end
+    local sectionPaint = {}
     state.Section = function(button)
         local section = state.sections[button]
         if not section then return false end
@@ -130,12 +461,45 @@ local function Setup(C, refresh)
         local widget = button.MyObject
         if widget then H.Fade(H.Texture(widget.icon)) end
         H.Fade(H.Texture(button.icon))
-        if H.Tab(button, section:IsShown()) then
+        -- Native selection temporarily hides every page while resetting every
+        -- template. Retain the last completed selection through that burst.
+        local selected = state.selectedSection == section
+        if not state.selectedSection then selected = section:IsShown() end
+        local previous = sectionPaint[button]
+        local disabled = widget and widget.lockdown or button.IsEnabled and not button:IsEnabled() or false
+        local changed = not previous or previous.selected ~= selected or previous.disabled ~= disabled or previous.epoch ~= state.fontEpoch
+        local tab = S.Tab ~= nil
+        if changed then
+            tab = H.Tab(button, selected)
+            if not previous then
+                previous = {labels = {}}; sectionPaint[button] = previous
+                local native = button.GetFontString and button:GetFontString()
+                for _, text in ipairs(H.Regions(button)) do
+                    if text ~= native and text.GetObjectType and text:GetObjectType() == "FontString" then
+                        previous.labels[#previous.labels + 1] = text
+                        -- The public Tab helper runs UpdateAllTabs one frame
+                        -- after a click, resetting label tint/opacity globally.
+                        -- Repair only this adapter's visible label synchronously.
+                        local repairing = false
+                        H.Hook(text, "SetTextColor", function()
+                            if repairing or ns.DetailsSettings().menus == false or not H.Allowed(button) or Busy() then return end
+                            repairing = true
+                            LabelTone(text, button.MyObject, state.selectedSection == section)
+                            repairing = false
+                        end)
+                    end
+                end
+            end
+            previous.selected, previous.disabled, previous.epoch = selected, disabled, state.fontEpoch
+        end
+        if tab then
+            for _, text in ipairs(previous.labels) do LabelTone(text, widget, selected) end
             -- EUI supplies the visible label; DF templates can recolour the
             -- hidden native label again, so keep it from doubling the text.
             H.Fade(button.GetFontString and button:GetFontString())
         else S.Button(button, {"Text", "text"}) end
-        for _, text in ipairs(H.Regions(button)) do H.Font(text) end
+        -- Do not restyle the hidden DF label: SetIcon measures it and may
+        -- resize the native button. Only EUI's visible label needs our font.
         return true
     end
     state.DesignerRow = function(row)
@@ -147,7 +511,9 @@ local function Setup(C, refresh)
     end
     state.BindDesigner = function(editor)
         if not H.Allowed(editor) or not Owned(editor) or ns.DetailsSettings().menus == false then return end
-        H.Hook(editor, "EditObject", C.RefreshNow)
+        H.Hook(editor, "EditObject", function()
+            if ns.DetailsSettings().menus ~= false then C.RefreshControlsNow(editor) end
+        end)
         local function DisabledOptions()
             if ns.DetailsSettings().menus ~= false then C.RefreshControlsNow(editor) end
         end
@@ -500,8 +866,11 @@ local function Setup(C, refresh)
         end)
     end
     H.Hook(D, "RefreshMainWindow", function(_, instance) state.layout.Title(instance) end)
-    for _, name in ipairs({"SetMode", "SetDisplay"}) do H.Hook(D, name, C.RefreshNow) end
-    H.Hook(D.RaidTables, "EnableRaidMode", C.RefreshNow)
+    local function PaintMetersNow()
+        if state.look and not state.applying then state.ApplyMeters() end
+    end
+    for _, name in ipairs({"SetMode", "SetDisplay"}) do H.Hook(D, name, PaintMetersNow) end
+    H.Hook(D.RaidTables, "EnableRaidMode", PaintMetersNow)
     H.Hook(D, "InstallPlugin", refresh)
     H.Hook(D, "SetMenuOwner", state.QuickMenu)
     -- Native raid-menu callbacks receive Cooltip's Host as self, but the
@@ -534,7 +903,15 @@ local function Setup(C, refresh)
             if callback == original then tip.FunctionsTableMain[index] = state.raidSwitch end
         end
     end)
-    for _, name in ipairs({"ChangeSkin", "SetBarSettings", "SetBarTextSettings", "ApplyProfile", "CreateInstance"}) do
+    local meterRefresh = {}
+    for _, name in ipairs({"SetBarSettings", "SetBarTextSettings"}) do
+        H.Hook(D, name, function()
+            if not state.applying then
+                H.Queue(meterRefresh, function() if state.look then state.ApplyMeters() end end)
+            end
+        end)
+    end
+    for _, name in ipairs({"ChangeSkin", "ApplyProfile", "CreateInstance"}) do
         H.Hook(D, name, function() if not state.applying then refresh() end end)
     end
     for _, name in ipairs({"OpenOptionsWindow", "InitializeOptionsWindow", "OpenBreakdownWindow", "OpenSpecificBreakdownWindow",
@@ -547,11 +924,24 @@ end
 ns.RegisterScopedSkin("Details", "Details!", {
     available = function() return type(_G.Details) == "table" and type(_G.Details.GetAllInstances) == "function" end,
     softBorders = true, preserveTextColors = true, immediateShow = true,
+    borderlessButtons = function(f) return f.euiDetailsOptionVisual == true end,
+    controlRefresh = function(C, root, source)
+        local f = source or root
+        for _ = 1, 24 do
+            if not C.H.Allowed(f) then break end
+            if f == _G.DetailsOptionsWindow then C.details.RequestOptions(root, source); return end
+            f = f.GetParent and f:GetParent()
+        end
+        C.module.refresh()
+    end,
     hooks = function(C, refresh)
         local state = Setup(C, refresh)
         state.BindTiny()
         local options = _G.Details222 and _G.Details222.OptionsPanel
-        C.H.Hook(options, "SelectOptionsSection", C.RefreshNow)
+        C.H.Hook(options, "SelectOptionsSection", state.SelectedOptions)
+        local framework = _G.DetailsFramework
+        C.H.Hook(framework, "BuildMenu", state.BuiltOptions)
+        C.H.Hook(framework, "BuildMenuVolatile", state.BuiltOptions)
         local tip = _G.GameCooltip
         C.H.Hook(tip, "Reset", function() state.quickAdded = false end)
         for _, name in ipairs({"ShowCooltip", "BuildCooltip", "BuildTooltip", "BuildTooltipSecondFrame", "SetHost", "ShowRoundedCorner", "HideRoundedCorner"}) do
@@ -561,6 +951,7 @@ ns.RegisterScopedSkin("Details", "Details!", {
     roots = function(C)
         local state = C.details
         state.combatPending = false; state.look = Look(C.S)
+        state.fontEpoch = (state.fontEpoch or 0) + 1
         for _, instance in pairs(_G.Details:GetAllInstances() or {}) do
             for _, key in ipairs({"baseframe", "rowframe", "windowSwitchButton", "bgframe"}) do
                 local owner = instance[key]
@@ -573,17 +964,28 @@ ns.RegisterScopedSkin("Details", "Details!", {
             local f = Frame(value)
             if C.H.Allowed(f) then
                 state.roots[f] = true
-                result[#result + 1] = {frame = f, options = {noTopBar = true}}
+                result[#result + 1] = {frame = f, options = {noTopBar = true,
+                    noAccent = f == _G.DetailsOptionsWindow or f == _G.DetailsPluginContainerWindow}}
             end
         end
         local panel = ns.CreateDetailsSettingsPanel()
         if C.H.Allowed(panel) then result[#result + 1] = {frame = panel, mode = "controls"} end
         if ns.DetailsSettings().menus ~= false then
             local options = Frame(_G.DetailsOptionsWindow)
+            state.selectedSection = nil
+            for _, page in pairs(options and options.sectionFramesContainer or {}) do
+                if C.H.Allowed(page) and page:IsShown() then state.selectedSection = page; break end
+            end
             for _, section in pairs(options and options.sectionFramesContainer or {}) do
                 local button = C.H.Allowed(section) and Frame(section.sectionButton)
                 if C.H.Allowed(section) and C.H.Allowed(button) then
                     state.sections[button] = section
+                    state.optionPages = state.optionPages or {}
+                    state.optionPages[section] = true
+                    C.H.Script(section, "OnShow", function() state.RequestOptions(section, section) end)
+                    -- Reserve only our helper callback; the native click/action
+                    -- still runs and its completed selection handles the refresh.
+                    C.H.Script(button, "OnClick", function() end)
                     local function Paint() state.Section(button) end
                     C.H.Hook(section.sectionButton, "SetTemplate", Paint)
                     C.H.Hook(section.sectionButton, "SetIcon", Paint)
@@ -600,6 +1002,11 @@ ns.RegisterScopedSkin("Details", "Details!", {
     end,
     visit = function(C, f, kind, refresh)
         local H, S = C.H, C.S
+        C.details.ReadableBackground(f)
+        C.details.OptionLabels(f)
+        local options = Frame(_G.DetailsOptionsWindow)
+        local name = options and options.GetName and options:GetName()
+        if kind == "Button" and name and f == _G[name .. "CloseButton"] then S.CloseButton(f); return true end
         if C.details.Section(f) then return true end
         if C.details.DesignerRow(f) then return true end
         -- Preserve displayed values and semantic colours in breakdown bars.
@@ -609,28 +1016,15 @@ ns.RegisterScopedSkin("Details", "Details!", {
             for _, text in ipairs(H.Regions(f)) do H.Font(text) end
             return true
         end
+        if C.details.Control(f, kind) then return true end
         local widget = f.MyObject
         if kind == "EditBox" and type(widget) == "table" and widget.type == "textentry"
             and not (f.IsMultiLine and f:IsMultiLine()) then
             -- DF anchors the field just two pixels beyond its description.
             -- Blizzard padding expands the field leftward across that label.
             S.EditBox(f, {padInput = false})
+            C.details.ControlContrast(f, widget, "input")
             for _, text in ipairs(H.Regions(f)) do H.Font(text) end
-            return true
-        end
-        if type(widget) == "table" and widget.type == "switch" then
-            f.euiDetailsCheck = widget.checked_texture
-            S.Button(f, {"euiDetailsCheck", "text", "Text", "label"})
-            if H.Texture(widget.checked_texture) then widget.checked_texture:SetVertexColor(S.GetAccentColor()) end
-            H.Hook(widget, "SetTemplate", refresh)
-            return true
-        end
-        if type(widget) == "table" and widget.type == "dropdown" then
-            S.Dropdown(f)
-            H.Fade(f.statusbar)
-            H.Hook(widget, "SetTemplate", refresh)
-            H.Script(f.dropdownframe, "OnShow", C.RefreshNow)
-            if H.Allowed(f.dropdownframe) then C.Panel(f.dropdownframe) end
             return true
         end
         if kind == "Slider" then

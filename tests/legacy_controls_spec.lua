@@ -298,6 +298,13 @@ modules.Altoholic.refresh(); flush()
 for _, key in ipairs({'scrollBorderTop', 'scrollBorderMiddle', 'scrollBorderBottom', 'scrollFrameScrollBarBackground'}) do assert(altoScroll[key].alpha == 0, 'Altoholic retained native scroll border') end
 assert(altoThumb.width == 4 and altoThumb.height == 18 and altoThumb.crop[1] == 0 and altoThumb.crop[2] == 1 and altoThumb.path == 'solid')
 assert(altoBar.ScrollUpButton.glyph == '^' and altoBar.ScrollDownButton.glyph == 'v')
+assert(altoBar.ScrollUpButton.euiAltoArrow.path:find('eui%-arrow%-down3') and altoBar.ScrollUpButton.euiAltoArrow.rotation == math.pi)
+assert(altoBar.ScrollDownButton.euiAltoArrow.rotation == nil)
+local arrowCount = #altoBar.ScrollUpButton.regions
+altoBar.ScrollUpButton:Disable(); assert(altoBar.ScrollUpButton.euiAltoArrow.color[1] == 0.35)
+altoBar.ScrollUpButton:Enable(); assert(altoBar.ScrollUpButton.euiAltoArrow.color[1] == 0.8)
+modules.Altoholic.refresh(); flush()
+assert(altoBar.ScrollUpButton.euiAltoArrow.alpha == 1 and #altoBar.ScrollUpButton.regions == arrowCount, 'stepper redraw lost/duplicated arrow')
 altoBar.ScrollUpButton.hooks.OnClick(); assert(altoBar.value == 0, 'native scroll-up action changed')
 altoBar.ScrollDownButton.hooks.OnClick(); assert(altoBar.value == 12 and altoBar.maximum == 300 and altoBar.points[1][4] == -20, 'native scrolling range or anchors changed')
 assert(not realmRow.Item11:IsShown() and not realmRow.Item12:IsShown() and realmRow.Item1:IsShown())
@@ -358,6 +365,9 @@ do
         assert(b.euiSelection.color[4] == (i == 1 and 0.2 or 0), 'category selection was lost')
     end
     local category = categories.Buttons[2]
+    category.Text.GetText = function(self) return self.text end
+    category:SetCategory('|cffffff00Activity|r')
+    assert(category.Text.text == 'Activity' and category.Text.textColor[1] == 0.86)
     assert(category:SetSubCategory('Experience') == 'subcategory-native' and category.NormalTexture.alpha == 0 and category.Text.font == 'eui')
     assert(category.Text.points[#category.Text.points][4] == 18, 'subcategory indentation changed')
     assert(category:SetSubSubCategory('Nested') == 'nested-native' and category.Text.points[#category.Text.points][4] == 26)
@@ -621,7 +631,11 @@ do
     assert(slider.Backdrop.backdrop == nil and thumb.width == 8 and thumb.height == 12
         and slider.Text.fontSize == 10 and slider.Low.fontSize == 9 and slider.Text.points[1][5] == 5
         and slider.Low.points[1][5] == -4 and slider.maximum == 360 and slider.value == 180 and slider.hooks.OnValueChanged() == 'value-native')
-    assert(check.checked and tick.desaturated and tick.color[1] == accent and check.Text.textColor[1] == 0.88 and check.action() == 'check-native')
+    assert(check.checked and tick.path == 'solid' and tick.color[1] == accent and tick.points[1][4] == 6 and tick.points[2][4] == -6 and check.Text.textColor[1] == 0.88 and check.action() == 'check-native')
+    local checkScans = auditScans[root] or 0
+    check:Disable(); assert(check.Text.textColor[1] == 0.5)
+    check:Enable(); assert(check.Text.textColor[1] == 0.88)
+    flush(); assert((auditScans[root] or 0) == checkScans, 'checkbox state rescanned Altoholic')
     assert(tab.label.alpha == 0 and euiLabel.textColor[1] == accent and page.NextPage.glyph == '>' and page.PrevPage.glyph == '<' and page.NextPage.action() == 'next-native')
     euiLabel:SetTextColor(1, 1, 1, 1); assert(euiLabel.textColor[1] == accent, 'EUI tab repaint reset the accent tint')
     local a, b, c = row:Update(true); assert(a == 'grid-native' and b == nil and c == 13)
@@ -637,6 +651,82 @@ do
     enabled = true; modules.Altoholic.refresh(); flush(); assert(Edges(cell)[1].color[2] == 1)
     S.Dropdown, S.Tab, ns.BindPopupList = oldDropdown, oldTab, oldBind
     S.EditBox, S.GetFont = oldInput, oldFont
+end
+
+-- Retail achievement rows and options: preserve semantic art and native actions.
+do
+    local oldButton = S.Button
+    S.Button = function(f, keys)
+        oldButton(f, keys)
+        if not f.retailFill then
+            f.retailFill = f:CreateTexture(); f.retailFill.layer = 'BACKGROUND'
+            f.retailHover = f:CreateTexture(); f.retailHover.layer = 'HIGHLIGHT'
+        end
+        f.retailFill:SetAlpha(1); f.retailFill:SetColorTexture(0.08, 0.08, 0.08, 0.95)
+        f.retailHover:SetAlpha(1); f.retailHover:SetColorTexture(1, 1, 1, 0.1)
+    end
+    local root = frame('Frame'); AltoholicFrame = root; root.Tabs = {}; root.selectedTab = 1
+    local page = frame('Frame', nil, root); page.id = 1; root.TabFrames = {page}
+    local row = frame('Button', nil, page)
+    row.Name = frame('Button', nil, row); row.Name.Text = row.Name:CreateFontString(nil, nil, 'native')
+    row.Name_OnEnter = function() return 'tooltip-native' end
+    row.Item1 = frame('Button', nil, row)
+    row.Item1.Icon = row.Item1:CreateTexture(); row.Item1.Icon.path = 'achievement-spell'
+    row.Item1.IconBorder = row.Item1:CreateTexture(); row.Item1.IconBorder:SetShown(false)
+    row.Update = function(self)
+        self.Name.Text:SetText('|cFF26C6E2Account-wide achievement')
+        return 'row-native', nil, 13
+    end
+    row:Update()
+    local panel = frame('Frame', nil, page)
+    panel.Title = panel:CreateFontString(nil, nil, 'native')
+    panel.Separator = panel:CreateTexture(); panel.Separator:SetHeight(1)
+    panel.ResetButton = frame('Button', nil, panel); panel.ResetButton.label = panel.ResetButton:CreateFontString(nil, nil, 'native')
+    panel.ApplyButton = frame('Button', nil, panel); panel.ApplyButton.label = panel.ApplyButton:CreateFontString(nil, nil, 'native')
+    panel.ResetButton.action = function() return 'reset-native' end
+    panel.ApplyButton.action = function() return 'apply-native' end
+    local url = frame('Button', nil, page); url.url = 'https://example.invalid'; url.iconFile = 'native-logo'
+    url.Icon = url:CreateTexture(); url.Icon.path = 'native-logo'; url.action = function() return 'url-native' end
+    local check = frame('CheckButton', nil, panel); check.locLabel = 'CHECK'; check.checked = true
+    check.Text = check:CreateFontString(nil, nil, 'native')
+    local tick, disabledTick = check:CreateTexture(), check:CreateTexture()
+    tick:SetShown(true); disabledTick:SetShown(false)
+    check.GetCheckedTexture = function() return tick end
+    check.GetDisabledCheckedTexture = function() return disabledTick end
+    local protected = frame('CheckButton', nil, panel); protected.locLabel = 'SECURE'; protected.protected = true
+    modules.Altoholic.install(S, modules.Altoholic); flush()
+    assert(tick.path == 'solid' and tick.color[1] == accent and disabledTick.color[1] == 0.4)
+    assert(tick:IsShown() and not disabledTick:IsShown() and check.checked and not protected.checkbox)
+    assert(row.Name.retailFill.color[4] == 0 and row.Name.retailHover.color[4] == 0.12, 'achievement name became an opaque box')
+    assert(row.Name.Text.text == '|cFF26C6E2Account-wide achievement' and row.Name_OnEnter() == 'tooltip-native')
+    assert(row.Item1.Icon.path == 'achievement-spell' and row.Item1.Icon.alpha == 1, 'achievement status art lost')
+    assert(panel.Separator.color[1] == 0.16 and panel.Separator.height == 1)
+    assert(panel.ResetButton.retailFill.color[1] == 0.075 and panel.ResetButton.retailHover.color[4] == 0.12)
+    assert(panel.ResetButton.action() == 'reset-native' and panel.ApplyButton.action() == 'apply-native')
+    assert(url.Icon.path == 'native-logo' and url.Icon.crop[1] == 0 and url.Icon.points[1][4] == 3 and url.action() == 'url-native')
+    local function Counts(f)
+        local n = #f.regions + 1
+        for _, child in ipairs(f.children) do n = n + Counts(child) end
+        return n
+    end
+    local count, hook = Counts(root), row.Update
+    auditScans[root] = 0
+    for _ = 1, 100 do
+        local a, b, c = row:Update(); assert(a == 'row-native' and b == nil and c == 13)
+        check.hooks.OnClick(check); check:Disable(); check:Enable()
+    end
+    flush()
+    assert((auditScans[root] or 0) == 0 and Counts(root) == count and row.Update == hook, 'row/checkbox callbacks scanned or allocated')
+    print('BENCH altoholic_controls row_updates=100 checkbox_cycles=100 full_scans=0 new_objects=0')
+    for _ = 1, 10 do modules.Altoholic.refresh(); flush() end
+    assert(Counts(root) == count and row.Name.retailFill.color[4] == 0 and row.Update == hook)
+    local edgeHost = panel.ResetButton.children[1]
+    assert(edgeHost and edgeHost.mouseEnabled == false and #edgeHost.regions == 4 and edgeHost.regions[1].alpha == 1, 'option border vanished or blocks clicks')
+    accent = 0.31; modules.Altoholic.refresh(); flush(); assert(tick.color[1] == accent)
+    enabled = false; check:Disable(); assert(check.Text.textColor[1] == 0.88)
+    enabled = true; combat = true; check:Enable(); assert(check.Text.textColor[1] == 0.88)
+    combat = false; modules.Altoholic.refresh(); flush()
+    S.Button = oldButton
 end
 
 -- Agenda uses its own calendar template, not Blizzard's CalendarDayButton globals.
@@ -1291,8 +1381,12 @@ do
     S.Tab, S.SetTabSelection, S.Dropdown, S.EditBox, S.Shell, S.GetFont = tabPrimitive, tabSelection, dropdownPrimitive, inputPrimitive, shellPrimitive, getFont
 end
 
+do
 assert(loadfile('EUIAddonSkins/Skins/ForeverDungeonJournal.lua'))('EUIAddonSkins', ns)
-ForeverDungeonJournal_NS = {THEMES = {}, ToggleJournal = function() end}
+ForeverDungeonJournal_NS = {THEMES = {}, ToggleJournal = function() end, RefreshHomeDungeonCards = function() return 'cards-native', nil, 3 end,
+    questRefreshWorker = frame('Frame'), RefreshQuestList = function() end, RefreshQuestDetail = function() end}
+local questWorkerCalls = 0
+ForeverDungeonJournal_NS.questRefreshWorker:SetScript('OnUpdate', function() questWorkerCalls = questWorkerCalls + 1 end)
 ForeverDungeonJournalFrame = frame('Frame')
 local journal = ForeverDungeonJournalFrame
 journal.homePanel = frame('Frame', nil, journal)
@@ -1307,14 +1401,18 @@ local bugLabel = journal.bugReportButton:CreateFontString()
 journal.languageSelectorButton = frame('Button', nil, journal)
 journal.languageSelectorText = journal.languageSelectorButton:CreateFontString()
 local caret = journal.languageSelectorButton:CreateTexture(); caret.path = 'native-caret'
+local journalLooks, previousLooks, journalEvents = {}, S.OnLooksChanged, #events
+S.OnLooksChanged = function(fn) journalLooks[#journalLooks + 1] = fn end
 modules.ForeverDungeonJournal.install(S, modules.ForeverDungeonJournal); flush()
-assert(journal.shellOptions.noBorder, 'journal soft shell missing')
+S.OnLooksChanged = previousLooks
+assert(journal.shellOptions.noBorder and journal.shellOptions.noAccent and not journal.accent, 'main journal retained its accent bar')
 assert(cover.border[1] == 0.055, 'journal card outline too bright')
 cover:SetBackdropBorderColor(1, 1, 1, 1); assert(cover.border[1] == 0.055, 'neutral card redraw restored a bright border')
 cover:SetBackdropBorderColor(0.2, 0.8, 0.2, 1); assert(cover.border[2] == 0.8, 'semantic card border lost')
+cover:SetBackdropBorderColor(1, 0.76, 0.22, 1); assert(cover.border[1] == accent, 'card hover missed accent colour')
 assert(cover.backdrop.edgeSize == 1 and cover.art.path == 'dungeon-art' and cover.art.alpha == 1 and cover.counts.textColor[1] == 1 and cover.action() == 'open-dungeon')
 assert(journal.homeTitle.textColor[1] == accent and journal.bugReportButton.button and bug.alpha == 1)
-assert(caret.alpha == 0 and journal.languageSelectorButton.euiCaret.text == 'v')
+assert(caret.alpha == 0 and journal.languageSelectorButton.euiCaret.path:find('eui%-arrow%-down3') and journal.languageSelectorButton.euiCaret.width == 10)
 -- All FDJ mode states keep their icon but never revive UIPanelButton art.
 for _, key in ipairs({'mapTab', 'bossesTab', 'questsTab'}) do
     local tab = frame('Button', nil, journal); journal[key] = tab
@@ -1328,6 +1426,223 @@ for _, key in ipairs({'mapTab', 'bossesTab', 'questsTab'}) do
     assert(tab.tab and tab.normal.alpha == 0 and tab.Icon == tab.fdjIcon and tab.fdjIcon.alpha == 1)
     tab:SetNormalTexture('restored-red'); tab:Enable(); assert(tab.normal.alpha == 0 and not tab.selected)
     tab:Disable(); assert(tab.selected and tab.normal.alpha == 0)
+end
+-- Refined filter checkboxes retain native values, marker visibility and actions.
+do
+    local filter = frame('Frame', 'ForeverDungeonJournalLootFilter', journal)
+    journal.lootFilterWindow = filter
+    filter.title, filter.statsHeader, filter.statsHint = filter:CreateFontString(), filter:CreateFontString(), filter:CreateFontString()
+    filter.title:SetTextColor(1, 0.82, 0.27); filter.statsHeader:SetTextColor(1, 0.82, 0.27)
+    filter.minBox = frame('EditBox', nil, filter); filter.minBox.value = '12'
+    filter.minBox.commit = function() return 'input-native' end
+    for _, key in ipairs({'show', 'ok', 'clear'}) do
+        local button = frame('Button', nil, filter); filter[key] = button
+        button.label = button:CreateFontString(); button.label:SetTextColor(1, 0.82, 0.27)
+        button.normal = button:CreateTexture(); button.normal.path = 'red-native-button'
+        button.action = function() return key .. '-native' end
+    end
+    filter.show.icon = filter.show:CreateTexture(); filter.show.icon.path = 'loot-pouch'
+    local dropdown = frame('Button', nil, filter)
+    dropdown.icon = dropdown:CreateTexture(); dropdown.icon.path = 'armor-icon'
+    dropdown.arrow = dropdown:CreateTexture(); dropdown.arrow.path = 'gold-arrow'
+    dropdown.normal = dropdown:CreateTexture(); dropdown.normal.path = 'red-native-dropdown'
+    dropdown.label = dropdown:CreateFontString(); dropdown.label:SetTextColor(1, 0.82, 0.27)
+    dropdown.action = function() return 'dropdown-native' end
+    local legacyDropdown = frame('Frame', nil, filter)
+    legacyDropdown.Button = frame('Button', nil, legacyDropdown)
+    legacyDropdown.Text = legacyDropdown:CreateFontString()
+    legacyDropdown.icon = legacyDropdown:CreateTexture(); legacyDropdown.icon:SetAlpha(0.7)
+    legacyDropdown.Button.action = function() return 'legacy-dropdown-native' end
+    local favourites = frame('Frame', 'ForeverDungeonJournalFavourites')
+    journal.favouritesWindow = favourites
+    favourites.Inset = frame('Frame', nil, favourites)
+    favourites.Inset.Bg = favourites.Inset:CreateTexture(); favourites.Inset.Bg.path = 'stone-background'
+    favourites.portrait = favourites:CreateTexture(); favourites.portrait.path = 'Interface/AddOns/ForeverDungeonJournal/Media/FavouriteStar'
+    favourites.fdjStarBackground = favourites:CreateTexture(); favourites.fdjStarBackground.path = 'portrait-circle'
+    favourites.fdjTitle, favourites.fdjEmpty = favourites:CreateFontString(nil, 'OVERLAY', 'GameFontNormal'), favourites:CreateFontString(nil, 'OVERLAY', 'GameFontDisable')
+    favourites.fdjTitle:SetTextColor(1, 0.82, 0.27)
+    favourites.fdjEmpty:SetText('Right click items to add favourites')
+    local divider = journal.homePanel:CreateTexture(); divider:SetHeight(1); divider.GetHeight = function(self) return self.height end
+    divider:SetColorTexture(0.48, 0.34, 0.16, 0.75)
+    local check = frame('CheckButton', nil, filter); check.checked = true
+    local mark = check:CreateTexture(); mark:SetShown(true)
+    local disabledMark = check:CreateTexture(); disabledMark:SetShown(false)
+    check.GetCheckedTexture = function() return mark end
+    check.GetDisabledCheckedTexture = function() return disabledMark end
+    check.fdjLabel = check:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
+    check.hooks.OnClick = function(self) self:SetChecked(not self:GetChecked()); mark:SetShown(self:GetChecked()) end
+    local protected = frame('CheckButton', nil, filter); protected.protected = true
+    journal.resizeGrip = frame('Button', nil, journal)
+    journal.resizeGrip.normal = journal.resizeGrip:CreateTexture(); journal.resizeGrip.normal.path = 'SizeGrabber'
+    journal.resizeGrip.hooks.OnMouseDown = function() return 'drag-native' end
+    local slider = frame('Slider', nil, journal.homePanel); local thumb = slider:CreateTexture()
+    slider.GetThumbTexture = function() return thumb end
+    slider.GetOrientation = function() return 'VERTICAL' end
+    slider.ScrollUpButton = frame('Button', nil, slider)
+    slider.ScrollDownButton = frame('Button', nil, slider)
+    local scrollClicks = 0
+    slider.ScrollUpButton.hooks.OnClick = function() scrollClicks = scrollClicks + 1 end
+    modules.ForeverDungeonJournal.refresh(); flush()
+    assert(filter.title.textColor[1] == accent and filter.statsHeader.textColor[1] == accent)
+    assert(filter.show.normal.alpha == 0 and filter.show.icon.alpha == 1 and filter.show.icon.width == 16)
+    assert(filter.show.label.textColor[1] == 0.9 and filter.show.icon.points[1][5] == 0)
+    assert(filter.show.action() == 'show-native' and filter.ok.action() == 'ok-native' and filter.clear.action() == 'clear-native')
+    assert(filter.minBox.inputOptions.padInput == false and filter.minBox.value == '12' and filter.minBox.commit() == 'input-native')
+    local edgeHost = filter.minBox.children[1]
+    assert(edgeHost and edgeHost.mouseEnabled == false and #edgeHost.regions == 4 and not edgeHost.hooks.OnShow)
+    assert(dropdown.normal.alpha == 0 and dropdown.arrow.alpha == 0 and dropdown.icon.alpha == 1 and dropdown.fdjSkinArrow.width == 10)
+    assert(dropdown.label.textColor[1] == 0.9 and dropdown.action() == 'dropdown-native')
+    assert(legacyDropdown.dropdown and legacyDropdown.Button.fdjSkinArrow.width == 10 and legacyDropdown.icon.alpha == 0.7 and legacyDropdown.Button.action() == 'legacy-dropdown-native')
+    assert(favourites.Inset.Bg.alpha == 0 and favourites.portrait.alpha == 0 and favourites.fdjStarBackground.alpha == 0)
+    assert(favourites.fdjTitle.textColor[1] == accent and favourites.fdjEmpty.textColor[1] == 0.72)
+    local smallStar
+    for _, child in ipairs(favourites.children) do
+        if child.width == 22 and child.mouseEnabled == false then smallStar = child end
+    end
+    assert(smallStar and smallStar.regions[1].path:find('FavouriteStar') and not smallStar.hooks.OnShow)
+    assert(divider.color[1] == 0.2 and divider.color[4] == 0.35)
+    assert(check.checkbox and mark.path == 'solid' and mark.color[1] == accent and mark.points[1][4] == 7)
+    assert(mark:IsShown() and not disabledMark:IsShown() and not protected.checkbox)
+    check.hooks.OnClick(check); flush(); assert(not check:GetChecked() and not mark:IsShown())
+    check:Disable(); assert(mark.color[1] == 0.45)
+    check:Enable(); assert(mark.color[1] == accent and not mark:IsShown())
+    assert(thumb.width == 8 and slider.ScrollUpButton.fdjSkinArrow.rotation == math.pi)
+    slider.ScrollUpButton.hooks.OnClick()
+    assert(slider.ScrollDownButton.fdjSkinArrow.width == 10 and scrollClicks == 1)
+    assert(journal.resizeGrip.normal.alpha == 0 and journal.resizeGrip.hooks.OnMouseDown() == 'drag-native')
+    local canvas
+    for _, child in ipairs(journal.homePanel.children) do
+        if child.mouseEnabled == false and #child.regions == 3 then canvas = child end
+    end
+    assert(canvas and canvas.regions[1].color[1] == 0.055 and canvas.regions[2].gradient[9] == 0.48)
+    assert(not canvas.hooks.OnShow and cover.title.textColor[1] == 0.93)
+    local children, fonts = #journal.homePanel.children, cover.title.fontWrites
+    local popupChildren = #favourites.children + #filter.minBox.children
+    auditScans[journal], auditScans[filter], auditScans[favourites] = 0, 0, 0
+    for _ = 1, 100 do
+        local a,b,c = ForeverDungeonJournal_NS.RefreshHomeDungeonCards()
+        assert(a == 'cards-native' and b == nil and c == 3)
+    end
+    flush()
+    assert(auditScans[journal] == 1 and #journal.homePanel.children == children and cover.title.fontWrites == fonts, tostring(auditScans[journal]) .. ":" .. #journal.homePanel.children .. ":" .. children .. ":" .. tostring(cover.title.fontWrites) .. ":" .. tostring(fonts))
+    assert(auditScans[filter] == 1 and auditScans[favourites] == 1, 'popup aliases caused duplicate scans')
+    assert(#favourites.children + #filter.minBox.children == popupChildren, 'refresh duplicated popup decorations')
+    local scans = auditScans[journal]
+    ForeverDungeonJournal_NS.questRefreshWorker.hooks.OnUpdate(); flush()
+    assert(questWorkerCalls == 1 and auditScans[journal] == scans, 'skin added a recurring quest-worker refresh')
+    local previousAccent = accent
+    accent = 0.27; for _, fn in ipairs(journalLooks) do fn() end; flush()
+    assert(mark.color[1] == accent and cover.title.textColor[1] == 0.93)
+    accent = previousAccent
+    combat = true; modules.ForeverDungeonJournal.refresh(); flush()
+    local deferred = frame('CheckButton', nil, filter)
+    modules.ForeverDungeonJournal.refresh(); flush(); assert(not deferred.checkbox)
+    combat = false
+    for index = journalEvents + 1, #events do
+        local event = events[index]
+        if event.events and event.events.PLAYER_REGEN_ENABLED and event.hooks.OnEvent then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end
+    end
+    flush(); assert(deferred.checkbox)
+    enabled = false; local disabledControl = frame('CheckButton', nil, filter)
+    modules.ForeverDungeonJournal.refresh(); flush(); assert(not disabledControl.checkbox)
+    enabled = true; modules.ForeverDungeonJournal.refresh(); flush(); assert(disabledControl.checkbox)
+    -- Boss panes share the quest canvas without intercepting native controls.
+    do
+        journal.leftPanel = frame('Frame', nil, journal)
+        journal.rightPanel = frame('Frame', nil, journal)
+        local boss = frame('Button', nil, journal.leftPanel)
+        boss.icon = boss:CreateTexture(); boss.icon.path = 'boss-portrait'
+        boss.action = function() return 'boss-native' end
+        modules.ForeverDungeonJournal.refresh(); flush()
+        local counts = {}
+        for _, panel in ipairs({journal.leftPanel, journal.rightPanel}) do
+            local canvas
+            for _, child in ipairs(panel.children) do
+                if child.mouseEnabled == false and #child.regions == 3 then canvas = child end
+            end
+            assert(canvas and canvas.regions[1].color[1] == 0.055 and canvas.regions[2].gradient[9] == 0.48, 'boss pane missed the quest canvas')
+            assert(not canvas.hooks.OnShow, 'decorative boss canvas was scanned')
+            counts[panel] = #panel.children
+        end
+        for _ = 1, 10 do modules.ForeverDungeonJournal.refresh(); flush() end
+        for panel, count in pairs(counts) do assert(#panel.children == count, 'boss canvas recreated on refresh') end
+        assert(boss.icon.path == 'boss-portrait' and boss.icon.alpha == 1 and boss.action() == 'boss-native')
+    end
+    -- Private quest closures are called directly by native clicks, bypassing
+    -- exported RefreshQuestDetail hooks. Readability must hold before a timer.
+    journal.questLeftPanel = frame('Frame', nil, journal)
+    journal.questRightPanel = frame('Frame', nil, journal)
+    journal.questTextInset = frame('Frame', nil, journal.questRightPanel)
+    journal.questDetailContent = frame('Frame', nil, journal.questTextInset)
+    for _, key in ipairs({'questDetailText', 'questTurninText', 'questNotesText', 'questStartsText', 'questRewardSummary', 'selectedQuestMeta', 'selectedQuestName', 'questObjectiveHeader', 'questStartsHeader', 'questTurninHeader', 'questNotesHeader', 'questRewardHeader'}) do
+        journal[key] = journal.questDetailContent:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
+        journal[key]:SetText('Native quest text: ' .. key)
+    end
+    journal.questMapButton = frame('Button', nil, journal.questDetailContent)
+    journal.questMapButton.icon = journal.questMapButton:CreateTexture(); journal.questMapButton.icon.path = 'map-art'
+    journal.questMapButton.label = journal.questMapButton:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
+    journal.questMapButton.Left = journal.questMapButton:CreateTexture(); journal.questMapButton.Left.path = 'red-action-slice'
+    local mapClicks = 0
+    journal.questMapButton.hooks.OnClick = function() mapClicks = mapClicks + 1 end
+    local reward = frame('Button', nil, journal.questDetailContent)
+    reward.itemID = 123; reward.icon = reward:CreateTexture(); reward.icon.path = 'reward-art'
+    reward.name = reward:CreateFontString(nil, 'OVERLAY', 'GameFontNormal'); reward.name:SetTextColor(0.1, 1, 0.1)
+    journal.selectedQuestClass = journal.questDetailContent:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
+    journal.selectedQuestClass:SetTextColor(0.9, 0.3, 0.2)
+    journal.questsTab.Left, journal.questsTab.Middle, journal.questsTab.Right = journal.questsTab:CreateTexture(), journal.questsTab:CreateTexture(), journal.questsTab:CreateTexture()
+    local questClicks = 0
+    local function PrivateQuestDetail()
+        questClicks = questClicks + 1
+        journal.questDetailText:SetFontObject('native-quest-font')
+        journal.questDetailText:SetTextColor(0.10, 0.065, 0.025)
+        journal.questTurninText:SetTextColor(0.10, 0.065, 0.025)
+        journal.selectedQuestMeta:SetTextColor(0.25, 0.16, 0.08)
+        journal.selectedQuestName:SetTextColor(1, 0.78, 0.16)
+        journal.questRewardHeader:SetTextColor(0.82, 0.52, 0.10)
+        if questClicks == 1 then journal.questsTab.Left = journal.questsTab:CreateTexture() end
+        journal.questsTab.Left:SetTexture('native-tab-slice'); journal.questsTab.Left:SetAlpha(1)
+        journal.questMapButton.Left:SetTexture('native-action-slice'); journal.questMapButton.Left:SetAlpha(1)
+        if not journal.questAlsoReceiveHeader then
+            journal.questAlsoReceiveHeader = journal.questDetailContent:CreateFontString(nil, 'OVERLAY', 'GameFontNormal')
+            journal.questAlsoReceiveHeader:SetText('You will also receive')
+        end
+    end
+    local questRow = frame('Button', nil, journal.questLeftPanel)
+    questRow.questIndex = 1; questRow.name, questRow.meta = questRow:CreateFontString(), questRow:CreateFontString()
+    questRow.hooks.OnClick = PrivateQuestDetail
+    modules.ForeverDungeonJournal.refresh(); flush()
+    local savedText = journal.questDetailText.text
+    auditScans[journal], auditScans[journal.questLeftPanel], auditScans[journal.questTextInset] = 0, 0, 0
+    for _ = 1, 100 do
+        questRow.hooks.OnClick(questRow)
+        assert(journal.questDetailText.textColor[1] == 0.86 and journal.questDetailText.font == 'eui', 'private renderer restored parchment text/font')
+        assert(journal.questTurninText.textColor[1] == 0.86 and journal.selectedQuestMeta.textColor[1] == 0.68)
+        assert(journal.selectedQuestName.textColor[1] == accent and journal.questRewardHeader.textColor[1] == 0.94)
+        assert(journal.questAlsoReceiveHeader.textColor[1] == 0.94, 'dynamic quest header waited for deferred scan')
+        assert(journal.questsTab.Left.alpha == 0 and journal.questMapButton.Left.alpha == 0, 'native sliced artwork returned')
+    end
+    flush()
+    assert(questClicks == 100 and journal.questDetailText.text == savedText)
+    assert(auditScans[journal] == 0 and auditScans[journal.questLeftPanel] == 1 and auditScans[journal.questTextInset] == 1, 'quest clicks refreshed the full journal or repeated page scans')
+    assert(reward.name.textColor[2] == 1 and journal.selectedQuestClass.textColor[2] == 0.3, 'readability styling changed semantic colours')
+    journal.questMapButton.hooks.OnClick(journal.questMapButton); flush(); assert(mapClicks == 1 and journal.questMapButton.icon.alpha == 1)
+    local writes = journal.questDetailText.fontWrites
+    for _ = 1, 100 do ForeverDungeonJournal_NS.RefreshQuestDetail() end
+    flush(); assert(journal.questDetailText.fontWrites == writes, 'unchanged quest completion callbacks rewrote body fonts')
+    enabled = false; journal.questDetailText:SetTextColor(0.1, 0.065, 0.025)
+    assert(journal.questDetailText.textColor[1] == 0.1)
+    enabled = true; modules.ForeverDungeonJournal.refresh(); flush(); assert(journal.questDetailText.textColor[1] == 0.86)
+    combat = true; journal.questDetailText:SetTextColor(0.1, 0.065, 0.025)
+    assert(journal.questDetailText.textColor[1] == 0.1)
+    combat = false
+    for index = journalEvents + 1, #events do
+        local event = events[index]
+        if event.events and event.events.PLAYER_REGEN_ENABLED and event.hooks.OnEvent then event.hooks.OnEvent(event, 'PLAYER_REGEN_ENABLED') end
+    end
+    flush(); assert(journal.questDetailText.textColor[1] == 0.86)
+    print('BENCH journal_quest private_clicks=100 full_scans=0 list_scans=1 detail_scans=1; unchanged_refreshes=100 body_font_writes=0')
+    print('BENCH journal_home callbacks=100 root_scans=1 new_canvases=0 title_font_writes=0')
+end
 end
 -- Auctionator legacy templates: wrappers, controls and pooled inventory rows.
 assert(loadfile('EUIAddonSkins/Skins/Auctionator.lua'))('EUIAddonSkins', ns)
@@ -1766,6 +2081,7 @@ enabled = false; local untouched = frame('CheckButton', nil, atlasRoot)
 atlasGUI:Toggle(); flush(); assert(not untouched.checkbox)
 enabled = true
 print('PASS: AtlasLoot windows, synchronous pooled menus, selectors, colours/overlays/maps/models, dynamic controls and idempotence')
+do
 -- GTFO: skin only its settings canvases; sound/gameplay methods stay untouched.
 GTFO = nil
 assert(loadfile('EUIAddonSkins/Skins/GTFO.lua'))('EUIAddonSkins', ns)
@@ -1780,7 +2096,23 @@ end
 GTFO_RefreshOptions = function() return 'refresh-native' end
 modules.GTFO.install(S, modules.GTFO); flush()
 assert(GTFO_RenderOptions() == 'settings-native')
-local gtfoCheck = frame('CheckButton', nil, GTFO_MainFrame); gtfoCheck.checked = true
+local gtfoCheck = frame('CheckButton', 'GTFO_EnabledButton', GTFO_MainFrame); gtfoCheck.checked = true
+GTFO_EnabledButtonText = gtfoCheck:CreateFontString(nil, 'ARTWORK', 'GameFontNormal')
+local checkedMark, disabledMark = gtfoCheck:CreateTexture(), gtfoCheck:CreateTexture()
+checkedMark:SetShown(true); disabledMark:SetShown(false)
+gtfoCheck.GetCheckedTexture = function() return checkedMark end
+gtfoCheck.GetDisabledCheckedTexture = function() return disabledMark end
+local gtfoTitle = GTFO_MainFrame:CreateFontString(nil, 'ARTWORK', 'GameFontNormalLarge')
+gtfoTitle:SetText('GTFO 6.12.2'); gtfoTitle.GetText = function(self) return self.text end
+local gtfoValue = GTFO_MainFrame:CreateFontString(nil, 'ARTWORK', 'GameFontNormal')
+gtfoValue:SetText('3: Normal'); gtfoValue.GetText = function(self) return self.text end
+local restrictions = frame('Frame', 'GTFO_BrokenExplanationBox', GTFO_MainFrame)
+restrictions.backdrop = {bgFile = 'native'}
+local warning = restrictions:CreateFontString(nil, 'ARTWORK', 'GameFontNormalLarge')
+warning:SetText('Addon Restrictions'); warning.GetText = function(self) return self.text end
+GTFOLocal = {UI_BrokenExplanation_Header = 'Addon Restrictions'}
+local warningBody = restrictions:CreateFontString(nil, 'ARTWORK', 'GameFontHighlightSmall')
+warningBody:SetText('Native restriction explanation')
 local testButton = frame('Button', nil, GTFO_MainFrame)
 testButton.label = testButton:CreateFontString(nil, 'ARTWORK', 'GameFontNormal')
 testButton.action = function() return GTFO.PlaySound() end
@@ -1795,18 +2127,38 @@ volume:SetScript('OnValueChanged', function() sliderChanges = sliderChanges + 1 
 local valueHandler = volume.hooks.OnValueChanged
 local ignore = frame('CheckButton', nil, GTFO_IgnoreOptionsFrame)
 local gtfoInput = frame('EditBox', nil, GTFO_MainFrame)
-flush()
+GTFO_RefreshOptions(); flush()
 assert(gtfoInput.inputOptions.noBorder, 'GTFO soft input missing')
-assert(GTFO_MainFrame.accent and not GTFO_MainFrame.shell and not GTFO_IgnoreOptionsFrame.shell)
+assert(not GTFO_MainFrame.accent and not GTFO_IgnoreOptionsFrame.accent and not GTFO_MainFrame.shell and not GTFO_IgnoreOptionsFrame.shell)
+assert(checkedMark.path == 'solid' and checkedMark.color[1] == accent and disabledMark.color[1] == 0.4)
+assert(checkedMark.points[1][4] == 6 and checkedMark.points[2][4] == -6, 'GTFO check marker must match DBM inset')
+assert(checkedMark:IsShown() and not disabledMark:IsShown(), 'skin changed native check visibility')
+assert(gtfoTitle.textColor[1] == accent and gtfoValue.textColor[1] == 0.88)
+assert(restrictions.panel and warning.textColor[1] == accent and warningBody.text == 'Native restriction explanation')
+local gtfoScans = auditScans[GTFO_MainFrame]
+for _ = 1, 10 do
+    gtfoCheck:Disable(); assert(GTFO_EnabledButtonText.textColor[1] == 0.5)
+    gtfoCheck:Enable(); assert(GTFO_EnabledButtonText.textColor[1] == 0.88)
+    gtfoCheck:SetChecked(false); gtfoCheck.hooks.OnClick(gtfoCheck)
+    testButton.hooks.OnClick(testButton)
+end
+flush()
+assert(auditScans[GTFO_MainFrame] == gtfoScans, 'ordinary GTFO interactions scanned whole page')
+gtfoCheck:SetChecked(true)
+volume:Disable(); assert(thumb.color[1] == 0.4)
+volume:Enable(); assert(thumb.color[1] == accent)
+assert(volume.hooks.OnValueChanged == valueHandler)
 assert(gtfoCheck.checkbox and gtfoCheck.checked and ignore.checkbox and testButton.button and testButton.action() == 'alert-native')
 assert(thumb.width == 8 and thumb.height == 14 and nativeSliderEdge.alpha == 0, 'GTFO slider geometry/chrome incorrect')
 nativeSliderEdge:SetAlpha(1); assert(nativeSliderEdge.alpha == 0, 'GTFO slider native border returned')
 assert(volume.hooks.OnValueChanged == valueHandler and sliderChanges == 0, 'GTFO slider action changed')
 assert(volume.value == 3 and GTFO.Settings.Volume == 3 and GTFO.Settings.Enabled)
 local gtfoHook, objects = GTFO_RefreshOptions, #volume.regions
-accent = 0.35; assert(GTFO_RefreshOptions() == 'refresh-native'); flush(); assert(thumb.color[1] == accent)
+local buttonObjects, checkObjects, enableHook = #testButton.regions, #gtfoCheck.regions, gtfoCheck.Enable
+accent = 0.35; assert(GTFO_RefreshOptions() == 'refresh-native'); flush(); assert(thumb.color[1] == accent and checkedMark.color[1] == accent and gtfoTitle.textColor[1] == accent)
 for _ = 1, 5 do modules.GTFO.refresh(); flush() end
 assert(GTFO_RefreshOptions == gtfoHook and #volume.regions == objects)
+assert(#testButton.regions == buttonObjects and #gtfoCheck.regions == checkObjects and gtfoCheck.Enable == enableHook, 'GTFO duplicated art/hooks on refresh')
 combat = true; local deferred = frame('CheckButton', nil, GTFO_IgnoreOptionsFrame)
 GTFO_RefreshOptions(); flush(); assert(not deferred.checkbox)
 combat = false
@@ -1815,7 +2167,8 @@ flush(); assert(deferred.checkbox)
 enabled = false; local skipped = frame('CheckButton', nil, GTFO_MainFrame)
 GTFO_RefreshOptions(); flush(); assert(not skipped.checkbox)
 enabled = true
-print('PASS: GTFO late options, settings-only roots, preserved sound/actions/values, themes, combat/toggles and idempotence')
+print('PASS: GTFO native check states, local callbacks, late options, restrictions, sound/actions/values, themes, combat/toggles and idempotence')
+end
 local fills = 0; S.ApplyBarFill = function() fills = fills + 1 end
 -- Gargul's SetFont(rem, flags) overload must never receive a font path.
 Gargul = nil

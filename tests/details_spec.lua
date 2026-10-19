@@ -19,11 +19,13 @@ local function texture(kind, parent)
     function t:SetAlpha(v) self.alpha = v end
     function t:GetDrawLayer() return self.layer or 'ARTWORK' end
     function t:SetColorTexture(...) self.color = {...}; self.path = 'solid' end
+    function t:SetGradientAlpha(...) self.gradient = {...} end
     function t:SetVertexColor(...) self.color = {...} end
     function t:SetPoint(...) self.points[#self.points + 1] = {...} end
     function t:SetAllPoints(anchor) self.anchor = anchor end
     function t:ClearAllPoints() self.points = {} end
     function t:SetShown(v) self.shown = v end
+    function t:IsShown() return self.shown ~= false end
     function t:GetVertexColor() return table.unpack(self.color or {1, 1, 1, 1}) end
     function t:SetSize(w, h) self.width, self.height = w, h end
     function t:SetHeight(h) self.height = h end
@@ -101,9 +103,11 @@ local function frame(kind, name, parent)
     return f
 end
 CreateFrame = function(kind, name, parent) local f = frame(kind, name, parent); events[#events + 1] = f; return f end
+local auditButtonCalls, auditTabCalls, auditFontCalls = 0, 0, 0
 local S = {GetAccentColor = function() return accent, 0.6, 0.7 end}
-function S.Font(t, r, g, b) t:SetFont('eui'); if r then t:SetTextColor(r, g, b) end end
+function S.Font(t, r, g, b) auditFontCalls = auditFontCalls + 1; t:SetFont('eui'); if r then t:SetTextColor(r, g, b) end end
 function S.Button(f, keys)
+    auditButtonCalls = auditButtonCalls + 1
     local keep = {}; for _, key in ipairs(keys or {}) do keep[f[key] or false] = true end
     for _, t in ipairs(f.regions) do if t.kind == 'Texture' and not keep[t] then t:SetAlpha(0) end end
     f.button = true
@@ -114,7 +118,11 @@ function S.ScrollBar(f) f.scroll = true end
 function S.Panel(f, options) f.panel = true; f.panelOptions = options end
 function S.Shell(f, options) f.shell = true; f.shellOptions = options end
 function S.Tab(f) f.tab = true end
-function S.SetTabSelection(f, selected) f.selected = selected end
+function S.SetTabSelection(f, selected)
+    auditTabCalls = auditTabCalls + 1
+    f.selected = selected
+    if f.euiLabel then f.euiLabel:SetTextColor(1, 1, 1, selected and 1 or 0.5) end
+end
 function S.CloseButton(f) f.close = true end
 function S.Checkbox(f) f.checkbox = true end
 function S.EditBox(f, options)
@@ -160,6 +168,21 @@ local function font(parent)
     function t:GetFont() return self.font, self.size, self.flags end
     function t:SetFont(path, size, flags) self.font, self.size, self.flags = path, size or self.size, flags or ''; self.writes = (self.writes or 0) + 1 end
     return t
+end
+-- DF completes some sections from delayed native builders. Keep the source
+-- signatures and multiple returns; foreign framework users remain untouched.
+DetailsFramework = {}
+function DetailsFramework:BuildMenu(parent)
+    parent.builtLabel = parent.builtLabel or font(parent)
+    parent.builtLabel:SetFont('native-delayed-font', 12, '')
+    if not parent.builtControl then
+        parent.builtControl = frame('Button', nil, parent)
+        parent.builtControl.MyObject = {type = 'switch', checked_texture = parent.builtControl:CreateTexture()}
+    end
+    return parent, nil, 'build-native'
+end
+function DetailsFramework:BuildMenuVolatile(parent)
+    return self:BuildMenu(parent)
 end
 UIParent = frame()
 local settingsRegistered, openedCategory = 0
@@ -217,6 +240,8 @@ Details = {
     GetInstanceAttributeText = function() return 'Damage Done' end,
     GetShowingCombat = function(self) return {GetCombatTime = function() return self.elapsed or 6 end} end,
     SetTitleBarText = function() return 'title-native' end,
+    SetMode = function(self, mode) self.modo = mode; return 'mode-native' end,
+    SetDisplay = function() return 'display-native', nil, 3 end,
     RefreshMainWindow = function() return 'refresh-native' end,
     SetMenuOwner = function(_, owner) GameCooltip:SetHost(owner); return 'owner-native' end,
     SetBarRightTextSettings = function(self, total, ps, percent, bracket, sep)
@@ -346,13 +371,29 @@ assert(Details:OpenOptionsWindow() == 'options-native' and DetailsOptionsWindow.
 -- Source-shaped category reset: a page OnShow scan runs before Details applies
 -- the final selected template. Styling must be settled when the click returns.
 DetailsOptionsWindow.sectionFramesContainer = {}
+local originalTab, deferredTabs = S.Tab, {}
+S.Tab = function(f)
+    originalTab(f)
+    if not f.euiLabel then
+        f.euiLabel = font(f); deferredTabs[f] = true
+        -- Model the actual public EUI Tab helper's next-frame UpdateAllTabs.
+        f:HookScript('OnClick', function()
+            C_Timer.After(0, function()
+                for tab in pairs(deferredTabs) do
+                    tab.euiLabel:SetTextColor(1, 1, 1, tab.selected and 1 or 0.5)
+                end
+            end)
+        end)
+    end
+end
 for id = 1, 3 do
     local page = frame('Frame', nil, DetailsOptionsWindow); page:Hide()
     local button = frame('Button', nil, DetailsOptionsWindow); button.label = font(button)
     local widget = {widget = button, type = 'button', icon = button:CreateTexture()}
     button.MyObject, page.sectionButton = widget, widget
     function widget:SetTemplate()
-        button:SetBackdrop({bgFile = 'native-category'}); button.selected = nil
+        button:SetBackdrop({bgFile = 'native-category'}); button.nativeSelected = nil
+        button.label:SetFont('native-category-font', 12, '')
         button.label:SetAlpha(1)
     end
     function widget:SetIcon() self.icon:SetAlpha(1) end
@@ -364,6 +405,7 @@ Details222 = {OptionsPanel = {SelectOptionsSection = function(id)
     for _, page in ipairs(pages) do page:Hide(); page.sectionButton:SetTemplate(); page.sectionButton:SetIcon() end
     local page = pages[id]; page:Show()
     if page.hooks.OnShow then page.hooks.OnShow(page) end
+    if page.RefreshOptions then page:RefreshOptions() end
     page.sectionButton:SetTemplate(); page.sectionButton:SetIcon()
     return 'section-native'
 end}}
@@ -377,10 +419,96 @@ for _, id in ipairs({1, 2, 3, 1, 3}) do
         assert(button.backdrop == nil and button.tab and button.selected == (i == id), 'category styles/selection flashed after native reset')
         assert(section.sectionButton.icon.alpha == 0, 'native category marker returned')
         assert(button.label.alpha == 0, 'native template label overlapped the EUI tab label')
+        assert(button.euiLabel.textColor[1] == (i == id and accent or 0.88), 'visible section label missed selection contrast')
     end
     flush()
     assert(page.sectionButton.widget.selected, 'queued scan lost the selected category')
+    for i, section in ipairs(DetailsOptionsWindow.sectionFramesContainer) do
+        local text = section.sectionButton.widget.euiLabel
+        assert(text.textColor[1] == (i == id and accent or 0.88) and text.textColor[4] == 1,
+            'deferred EUI tab update reset category colour/opacity')
+    end
 end
+-- Repeated selection retains the completed tab highlight through native
+-- Hide/SetTemplate bursts and never scans the whole options/meter hierarchy.
+local selectedPage = DetailsOptionsWindow.sectionFramesContainer[3]
+local selectedButton = selectedPage.sectionButton.widget
+local selectionSetter, transientDeselections = S.SetTabSelection, 0
+S.SetTabSelection = function(button, selected)
+    if button == selectedButton and not selected then transientDeselections = transientDeselections + 1 end
+    return selectionSetter(button, selected)
+end
+auditScans[DetailsOptionsWindow], auditScans[selectedPage] = 0, 0
+local categoryPaints, categoryFonts = auditTabCalls, auditFontCalls
+for _ = 1, 50 do selectedButton.hooks.OnClick(selectedButton) end
+assert(transientDeselections == 0, 'active tab lost its highlight during native template reset')
+if not auditBaseline then
+    assert(auditTabCalls == categoryPaints, 'same-tab clicks repainted every category')
+    assert(auditFontCalls == categoryFonts, 'native category templates caused unrelated font rewrites')
+end
+print(('BENCH details_category_reset clicks=50 selection_writes=%d font_calls=%d'):format(auditTabCalls-categoryPaints, auditFontCalls-categoryFonts))
+assert(auditScans[DetailsOptionsWindow] == 0 and auditScans[selectedPage] == 50, 'tab clicks rescanned unrelated roots')
+flush()
+assert(auditScans[selectedPage] == 50, 'completed selection left a duplicate queued page scan')
+S.SetTabSelection = selectionSetter
+-- Native RefreshOptions may create controls after page OnShow. They must be
+-- ready synchronously, without pre-scanning all hidden sections.
+local lazyPage = DetailsOptionsWindow.sectionFramesContainer[2]
+local lazyControl
+lazyPage.RefreshOptions = function()
+    if not lazyControl then
+        lazyControl = frame('Button', nil, lazyPage)
+        lazyControl.MyObject = {type = 'switch', checked_texture = lazyControl:CreateTexture(), SetTemplate = function() end}
+    end
+end
+assert(Details222.OptionsPanel.SelectOptionsSection(2) == 'section-native')
+assert(lazyControl.button, 'post-OnShow controls waited for a deferred full refresh')
+flush()
+auditScans[DetailsOptionsWindow], auditScans[lazyPage] = 0, 0
+for _ = 1, 100 do lazyPage.hooks.OnShow(lazyPage) end
+flush()
+assert(auditScans[DetailsOptionsWindow] == 0 and auditScans[lazyPage] == 1, 'page show burst did not coalesce locally')
+auditScans[lazyPage] = 0
+lazyPage.hooks.OnShow(lazyPage); enabled = false; flush(); enabled = true
+assert(auditScans[lazyPage] == 0, 'queued page scan ignored disabled skin')
+lazyPage.hooks.OnShow(lazyPage); ns.DetailsSettings().menus = false; flush()
+assert(auditScans[lazyPage] == 0, 'queued page scan ignored disabled menus')
+ns.DetailsSettings().menus = true
+print('BENCH details_navigation full=0 page=50 clicks=50; show_burst page=1 callbacks=100')
+Details222.OptionsPanel.SelectOptionsSection(3); flush()
+-- Native delayed construction must be skinned before it returns, even on a
+-- hidden page. This is construction driven, not a poll or eager page traversal.
+local hiddenBuild = DetailsOptionsWindow.sectionFramesContainer[2]
+assert(not hiddenBuild:IsShown())
+auditScans[DetailsOptionsWindow], auditScans[hiddenBuild] = 0, 0
+C_Timer.After(0.2, function()
+    local result, empty, tail = DetailsFramework:BuildMenu(hiddenBuild)
+    assert(result == hiddenBuild and empty == nil and tail == 'build-native')
+    assert(hiddenBuild.builtLabel:GetFont() == 'eui' and hiddenBuild.builtControl.button,
+        'delayed hidden section was not styled at build completion')
+    assert(not hiddenBuild:IsShown(), 'preparing controls showed a hidden section')
+end)
+flush()
+assert(auditScans[DetailsOptionsWindow] == 0 and auditScans[hiddenBuild] == 1)
+local foreignBuild = frame('Frame', nil, UIParent)
+DetailsFramework:BuildMenu(foreignBuild)
+assert(foreignBuild.builtLabel:GetFont() == 'native-delayed-font' and not foreignBuild.builtControl.button)
+local builder = DetailsFramework.BuildMenu
+for _ = 1, 3 do modules.Details.refresh(); flush() end
+assert(DetailsFramework.BuildMenu == builder, 'framework builder hook duplicated')
+local result, empty, tail = DetailsFramework:BuildMenuVolatile(hiddenBuild)
+assert(result == hiddenBuild and empty == nil and tail == 'build-native' and hiddenBuild.builtLabel:GetFont() == 'eui')
+ns.DetailsSettings().menus = false
+DetailsFramework:BuildMenu(hiddenBuild)
+assert(hiddenBuild.builtLabel:GetFont() == 'native-delayed-font', 'disabled menus styled hidden builder')
+ns.DetailsSettings().menus = true
+combat = true
+DetailsFramework:BuildMenu(hiddenBuild)
+assert(hiddenBuild.builtLabel:GetFont() == 'native-delayed-font', 'hidden builder ignored combat')
+combat = false
+DetailsFramework:BuildMenu(hiddenBuild); flush()
+assert(hiddenBuild.builtLabel:GetFont() == 'eui')
+S.Tab = originalTab
 local input = frame('EditBox', nil, DetailsOptionsWindow)
 local description = font(DetailsOptionsWindow)
 local dfInput = frame('EditBox', nil, DetailsOptionsWindow)
@@ -397,6 +525,196 @@ assert(input.inputOptions.noBorder and dropdown.dropdown and check.button and ch
 assert(dfInput.inputOptions.padInput == false and not dfInput.padded and dfInput.points[1][4] == 2 and dfInput:GetWidth() == 120, 'DF field expanded across its description')
 assert(dfInput.value == 'saved-value' and dfInput.commit() == 'commit-native', 'DF input contents/commit changed')
 assert(infoBar.fill == 'eui-bar' and infoBar.value == 65)
+-- Source-shaped DF options: pooled switches, template bursts and native value editing.
+do
+    local page = DetailsOptionsWindow.sectionFramesContainer[3]
+    page:Show()
+    local heading, warning, desc = font(page), font(page), font(page)
+    heading:SetText('General:'); heading:SetTextColor(1, 0.82, 0)
+    warning:SetText('|cffff0000Warning|r'); warning:SetTextColor(1, 0.1, 0.1)
+    desc:SetText('Native description'); desc:SetTextColor(0.6, 0.6, 0.6)
+    page.widget_list_by_type = {label = {{widget = heading}, {widget = warning}, {widget = desc}}}
+    local title = font(DetailsOptionsWindow); title:SetText('Details! Options Panel')
+    DetailsOptionsWindow.title = {widget = title}
+    local close = frame('Button', 'DetailsOptionsWindowCloseButton', DetailsOptionsWindow)
+    close.action = function() return 'close-native' end
+    local button = frame('Button', nil, page); button:SetSize(20, 20)
+    local mark = button:CreateTexture(); mark:SetShown(true)
+    local label = font(page); label:SetText('Allow |cffff0000CLEAR|r')
+    local w = {widget = button, type = 'switch', checked_texture = mark, value = true, hasLabel = {widget = label}}
+    button.MyObject = w
+    w.highlightFrame = frame('Button', nil, page)
+    w.highlightFrame.highlightTexture = w.highlightFrame:CreateTexture(); w.highlightFrame.highlightTexture:SetShown(false)
+    local rowWash = w.highlightFrame:CreateTexture(); rowWash.layer = 'ARTWORK'
+    w.highlightFrame.action = function() return 'row-click-native' end
+    function w:SetTemplate()
+        mark:SetTexture('native-green-check'); mark:SetSize(32, 32); mark:SetVertexColor(0, 1, 0, 1)
+        button.backdrop = {bgFile = 'native-switch'}
+        return 'template-native', nil, 7
+    end
+    function w:SetValue(value) self.value = value; mark:SetShown(value); return 'value-native' end
+    function w:Disable() self.lockdown = true; mark:SetShown(false); return 'disable-native' end
+    function w:Enable() self.lockdown = false; mark:SetShown(self.value); return 'enable-native' end
+    button.action = function() return w:SetValue(not w.value) end
+    local drop = frame('Button', nil, page)
+    drop.arrowTexture, drop.arrowTexture2 = drop:CreateTexture(), drop:CreateTexture()
+    drop.arrowTexture2:SetShown(false)
+    local icon = drop:CreateTexture(); icon.path = 'selected-spell'; icon:SetAlpha(0.7)
+    local dropdownWidget = {widget = drop, type = 'dropdown', icon = icon}
+    drop.MyObject = dropdownWidget
+    function dropdownWidget:SetTemplate()
+        drop.arrowTexture:SetTexture('native-gold-arrow'); drop.arrowTexture:SetSize(32, 28)
+        return 'dropdown-template-native'
+    end
+    drop.dropdownframe = frame('ScrollFrame', nil, drop)
+    local range = frame('Slider', nil, page); range:SetSize(180, 20)
+    local thumb = range:CreateTexture(); range.GetThumbTexture = function() return thumb end
+    range.GetOrientation = function() return 'HORIZONTAL' end
+    local number = font(range); number:SetText('25')
+    local slider = {widget = range, slider = range, type = 'slider', amt = number, value = 25, creates = 0}
+    range.MyObject = slider
+    function slider:SetValueBox(shown, side, width, height, gap)
+        self.value_box_shown, self.value_box_side = shown, side
+        if not self.value_box then
+            self.creates = self.creates + 1
+            self.value_box = frame('EditBox', nil, range); self.value_box.MyObject = self
+            self.value_box.commit = function(value) self.value = math.max(1, math.min(50, value)); return 'commit-native' end
+        end
+        self.value_box:SetSize(width, height); self.value_box:SetPoint('LEFT', range, 'RIGHT', gap, 0)
+        number:SetShown(not shown)
+        self.value_box:Show()
+        if self.value_box.hooks.OnShow then self.value_box.hooks.OnShow(self.value_box) end
+    end
+    function slider:SetTemplate() range:SetWidth(180); self.value_box_shown = false; return 'slider-template-native' end
+    local hiddenPage = DetailsOptionsWindow.sectionFramesContainer[2]
+    hiddenPage:Hide()
+    local late = frame('Button', nil, hiddenPage)
+    late.MyObject = {type = 'switch', checked_texture = late:CreateTexture()}
+    local oldRange = frame('Slider', nil, page); oldRange:SetSize(180, 20)
+    local oldThumb = oldRange:CreateTexture(); oldRange.GetThumbTexture = function() return oldThumb end
+    oldRange.GetOrientation = function() return 'HORIZONTAL' end
+    oldRange.MyObject = {widget = oldRange, type = 'slider', amt = font(oldRange)}
+    local alreadyBoxed = frame('Slider', nil, page); alreadyBoxed:SetSize(120, 20)
+    local boxedThumb = alreadyBoxed:CreateTexture(); alreadyBoxed.GetThumbTexture = function() return boxedThumb end
+    alreadyBoxed.GetOrientation = function() return 'HORIZONTAL' end
+    local boxed = {widget = alreadyBoxed, type = 'slider', value_box_shown = true, value_box_side = 'left'}
+    boxed.value_box = frame('EditBox', nil, alreadyBoxed); boxed.value_box.MyObject = boxed
+    boxed.SetValueBox = function() error('existing native box must keep its layout') end
+    alreadyBoxed.MyObject = boxed
+    modules.Details.refresh(); flush()
+    assert(not late.button, 'hidden options content was skinned eagerly')
+    assert(oldRange:GetWidth() == 180 and oldRange.MyObject.value_box == nil, 'legacy numeric UI was replaced without native support')
+    assert(alreadyBoxed:GetWidth() == 120 and boxed.value_box_side == 'left', 'existing native value box layout changed')
+    assert(Details222.OptionsPanel.SelectOptionsSection(2) == 'section-native' and late.button, 'newly selected section was not styled synchronously')
+    Details222.OptionsPanel.SelectOptionsSection(3); flush()
+    local function Backdrop(parent)
+        for _, child in ipairs(parent.children) do
+            if #child.regions == 5 and child.regions[2].gradient then return child end
+        end
+    end
+    local background = Backdrop(DetailsOptionsWindow)
+    assert(background and background.mouse == false and background:GetFrameLevel() == DetailsOptionsWindow:GetFrameLevel())
+    assert(background.regions[1].color[1] == 0.055 and background.regions[1].color[4] == 0.82)
+    assert(background.regions[2].gradient[5] == 0 and background.regions[2].gradient[9] == 0.5)
+    assert(background.regions[3].gradient[5] == 0.5 and background.regions[3].gradient[9] == 0)
+    assert(not background.hooks.OnShow, 'visual background acquired a full-refresh show hook')
+    local function Contrast(parent)
+        for _, child in ipairs(parent.children) do
+            if #child.regions == 5 and (child.regions[2].width == 1 or child.regions[2].height == 1) then return child end
+        end
+    end
+    local checkVisual, dropVisual, inputVisual = Contrast(button), Contrast(drop), Contrast(slider.value_box)
+    assert(checkVisual and dropVisual and inputVisual)
+    assert(checkVisual.mouse == false and checkVisual.regions[1].color[1] == 0.095 and not checkVisual.hooks.OnShow)
+    assert(dropVisual.regions[1].color[1] == 0.065 and inputVisual.regions[1].color[1] == 0.065)
+    assert(checkVisual.regions[2].color[4] == 0.45 and checkVisual.regions[2].height == 1)
+    assert(rowWash.color[4] == 0.12 and rowWash.color[1] == 0 and not w.highlightFrame.highlightTexture:IsShown() and w.highlightFrame.action() == 'row-click-native')
+    -- Both modern colour objects and legacy gradients are supported, without a new asset.
+    local oldPanelColor, oldCreateColor = S.GetPanelColor, CreateColor
+    CreateColor = function(r,g,b,a) return {r=r,g=g,b=b,a=a} end
+    for i = 2, 5 do
+        background.regions[i].SetGradient = function(self, direction, first, last) self.modernGradient={direction,first,last} end
+    end
+    S.GetPanelColor = function() return 0.08,0.08,0.09,1 end
+    modules.Details.refresh(); flush()
+    assert(Backdrop(DetailsOptionsWindow) == background and background.regions[1].color[1] == 0.08)
+    assert(background.regions[2].modernGradient[2].a == 0 and background.regions[2].modernGradient[3].a == 0.5)
+    S.GetPanelColor, CreateColor = oldPanelColor, oldCreateColor
+    modules.Details.refresh(); flush()
+    assert(heading.textColor[1] == accent and warning.textColor[1] == 1 and warning.text == '|cffff0000Warning|r' and desc.textColor[1] == 0.6)
+    assert(title.textColor[1] == accent and DetailsOptionsWindow.shellOptions.noAccent and close.close and close.action() == 'close-native')
+    assert(mark.path == 'solid' and mark.color[1] == accent and mark.points[1][4] == 4 and mark.points[2][4] == -4 and mark:IsShown())
+    assert(button.action() == 'value-native' and not w.value and not mark:IsShown())
+    assert(w:SetValue(true) == 'value-native' and mark:IsShown())
+    assert(w:Disable() == 'disable-native' and not mark:IsShown() and label.textColor[1] == 0.5)
+    assert(w:Enable() == 'enable-native' and mark:IsShown() and label.text:find('|cffff0000CLEAR|r', 1, true))
+    assert(drop.arrowTexture.path:find('eui%-arrow%-down3') and drop.arrowTexture.width == 10 and not drop.arrowTexture2:IsShown())
+    assert(icon.path == 'selected-spell' and icon.alpha == 0.7)
+    assert(range:GetWidth() == 140 and slider.value_box:GetWidth() == 36 and slider.value_box.points[1][4] == 4 and not number:IsShown())
+    assert(slider.value_box.inputOptions.padInput == false and slider.value_box.commit(100) == 'commit-native' and slider.value == 50)
+    -- Account for work inside a scan, not just its entry count. Native page
+    -- refreshes set current switch values and re-enable dependencies repeatedly.
+    local calls, fonts = auditButtonCalls, label.writes or 0
+    for _ = 1, 100 do w:SetValue(w.value); w:Enable(); button.hooks.OnShow(button) end
+    print(('BENCH details_control_state callbacks=300 button_calls=%d label_font_writes=%d'):format(auditButtonCalls - calls, (label.writes or 0) - fonts))
+    if not auditBaseline then
+        assert(auditButtonCalls - calls == 0, 'unchanged value/enable/show callbacks reran the full button skinner')
+        assert((label.writes or 0) - fonts == 0, 'unchanged state callbacks rewrote the label font')
+    end
+    calls, fonts = auditButtonCalls, label.writes or 0
+    for _ = 1, 20 do Details222.OptionsPanel.SelectOptionsSection(3) end
+    flush()
+    print(('BENCH details_warm_tabs clicks=20 button_calls=%d label_font_writes=%d'):format(auditButtonCalls - calls, (label.writes or 0) - fonts))
+    if not auditBaseline then
+        assert(auditButtonCalls - calls == 0, 'warm tab selection reran control setup')
+        assert((label.writes or 0) - fonts == 0, 'warm tab selection rewrote unchanged fonts')
+    end
+    -- External/native font changes must still be repaired, despite the cache.
+    label:SetFont('native-reset-font', 12, ''); w:Enable()
+    assert(label:GetFont() == 'eui', 'cached label ignored a native font reset')
+    local savedAccent = accent
+    accent = 0.23; modules.Details.refresh(); flush()
+    assert(heading.textColor[1] == accent and mark.color[1] == accent and title.textColor[1] == accent)
+    assert(warning.textColor[1] == 1 and desc.textColor[1] == 0.6, 'theme changed semantic label colours')
+    accent = savedAccent; modules.Details.refresh(); flush()
+    local nativeParent = button.parent
+    button.parent = UIParent
+    w:SetTemplate(); assert(mark.path == 'native-green-check', 'stale widget hook styled a foreign owner')
+    button.parent = nativeParent
+    local settings = ns.DetailsSettings(); settings.menus = false
+    w:SetTemplate(); assert(mark.path == 'native-green-check', 'menu-disabled callback restyled a switch')
+    settings.menus = true; modules.Details.refresh(); flush()
+    local function VisualCount(f)
+        local n = #f.regions + 1
+        for _, child in ipairs(f.children) do n = n + VisualCount(child) end
+        return n
+    end
+    local visualCount = VisualCount(DetailsOptionsWindow)
+    local count, creates, hook = #button.regions + #drop.regions + #range.regions, slider.creates, w.SetTemplate
+    auditScans[DetailsOptionsWindow] = 0
+    for _ = 1, 100 do
+        local a, b, c = w:SetTemplate(); assert(a == 'template-native' and b == nil and c == 7)
+        assert(dropdownWidget:SetTemplate() == 'dropdown-template-native')
+        assert(slider:SetTemplate() == 'slider-template-native')
+    end
+    flush()
+    assert(auditScans[DetailsOptionsWindow] == 0 and slider.creates == creates and w.SetTemplate == hook)
+    assert(VisualCount(DetailsOptionsWindow) == visualCount, 'template updates duplicated readable surfaces')
+    assert(#button.regions + #drop.regions + #range.regions == count and range:GetWidth() == 140)
+    assert(mark.path == 'solid' and drop.arrowTexture.path:find('eui%-arrow%-down3') and icon.alpha == 0.7)
+    print('BENCH details_templates switches=100 dropdowns=100 sliders=100 full_scans=0 new_value_boxes=0')
+    local nav = DetailsOptionsWindow.sectionFramesContainer[1].sectionButton
+    nav.lockdown = true; nav:SetTemplate(); assert(nav.widget.euiLabel.textColor[1] == 0.5)
+    nav.lockdown = false; nav:SetTemplate(); assert(nav.widget.euiLabel.textColor[1] == 0.88)
+    local protected = frame('Button', nil, page); protected.protected = true
+    protected.MyObject = {type = 'switch', checked_texture = protected:CreateTexture()}
+    modules.Details.refresh(); flush(); assert(not protected.button)
+    combat = true; mark:SetTexture('combat-native'); w:SetTemplate(); assert(mark.path == 'native-green-check')
+    combat = false; modules.Details.refresh(); flush(); assert(mark.path == 'solid')
+    enabled = false; w:SetTemplate(); assert(mark.path == 'native-green-check')
+    enabled = true; modules.Details.refresh(); flush(); assert(mark.path == 'solid')
+end
+
 -- The designer is created after the options window and repopulates controls
 -- after object clicks. Native refreshes must finish with styled pooled rows.
 local editor = frame('Frame', 'DetailsOptionsDesignerEditor', DetailsOptionsWindow)
@@ -691,4 +1009,22 @@ assert(ns.DetailsSettings().tiny == true, 'existing meter users lost Tiny Threat
 EUIAddonSkinsDB.details.tiny = false
 assert(ns.DetailsSettings().tiny == false, 'migration overwrote an explicit Tiny Threat choice')
 EUIAddonSkinsDB.details = currentSettings
+-- A real DF slider refresh can call Details' bar-setting method. Such meter
+-- work must not refresh the options or invalidate every category's font cache.
+enabled = true; ns.DetailsSettings().menus = true; DetailsOptionsWindow:Show()
+modules.Details.refresh(); flush(); auditScans[DetailsOptionsWindow] = 0
+for _ = 1, 100 do
+    Details.SetBarSettings(meter, meter.row_info.height, meter.row_info.texture, nil,nil,nil,nil,nil,nil,nil,nil, meter.row_info.space.between)
+end
+flush()
+print(('BENCH details_meter_setters callbacks=100 options_scans=%d'):format(auditScans[DetailsOptionsWindow] or 0))
+if not auditBaseline then assert((auditScans[DetailsOptionsWindow] or 0) == 0, 'meter setting burst rescanned options') end
+auditScans[DetailsOptionsWindow] = 0
+for _ = 1, 20 do
+    assert(Details.SetMode(meter, meter.modo) == 'mode-native')
+    local a,b,c = Details.SetDisplay(meter)
+    assert(a == 'display-native' and b == nil and c == 3)
+end
+print(('BENCH details_meter_modes callbacks=40 options_scans=%d'):format(auditScans[DetailsOptionsWindow] or 0))
+if not auditBaseline then assert((auditScans[DetailsOptionsWindow] or 0) == 0, 'meter mode/display changes rescanned options') end
 print('PASS: Details quick submenu, independent Tiny Threat modes, native plugin redraws/restoration, meter styles, actions/data, dynamic controls, themes and combat guards')

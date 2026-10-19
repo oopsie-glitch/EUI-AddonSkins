@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.2 — Skin and Options Improvements
+
+- RestedXP: added a navigation-arrow skin toggle, clearer options buttons and themed confirmation dialogs with native fonts preserved.
+- KiwiFarm: improved reused dropdown menus and hover feedback; added Appearance > AddonSkins controls for background opacity, style and the accent line.
+- Myslot: refined the main window, addon options, checkboxes and buttons while preserving import/export controls.
+- GTFO: refined checkboxes, sliders and settings controls, with reduced repeated styling work.
+- Altoholic: refined options checkboxes, achievement panels and controls; reduced unnecessary tab refresh work.
+- Details: added a brighter options background and refined controls; fixed tab flicker and delayed font styling.
+- Forever Dungeon Journal: improved browsing, boss and quest backgrounds, Loot Filter and Favourites; fixed quest text colours and tabs reverting after clicks.
+- Forever Companion: improved row contrast, backgrounds, checkboxes, dropdowns and talent borders; reduced repeated font updates and overlapping scans.
+
 ## 1.5.1 — RestedXP and Gargul Improvements
 
 - Refined RestedXP guide headers, backgrounds and Active Targets/Items windows; fixed clipped titles and matched auxiliary-window opacity.

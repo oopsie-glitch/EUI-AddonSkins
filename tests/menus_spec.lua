@@ -40,7 +40,7 @@ end
 local function frame(kind, name, parent)
     local f = {kind = kind or 'Frame', name = name, shown = false, alpha = 1, children = {}, regions = {}, hooks = {}, scripts = {}}
     function f:GetObjectType() return self.kind end
-    function f:CreateTexture() local r = region(); self.regions[#self.regions + 1] = r; return r end
+    function f:CreateTexture(_, layer) local r = region(); r.layer = layer; self.regions[#self.regions + 1] = r; return r end
     function f:GetName() return self.name end
     function f:IsProtected() return self.protected end
     function f:IsForbidden() return self.forbidden end
@@ -247,3 +247,272 @@ assert(modernText:GetFontObject() == nativeFont and modern.NineSlice.alpha == 1,
 flush()
 assert(#errors == 0, table.concat(errors, '\n'))
 print('PASS: scoped legacy/library popup/submenu styling, native reuse/restoration, preserved emotes/actions/colors, live accents, independent toggles and combat deferral')
+
+do
+-- Shared confirmation dialogs: texture-only, no font or action setters.
+local popup = frame('Frame')
+function popup:Show() self.shown = true end
+popup.accept = frame('Button', nil, popup)
+popup.cancel = frame('Button', nil, popup)
+local border = frame('Frame', nil, popup)
+local edge, red = region(), region()
+border.regions = {edge}; popup.accept.regions = {red}
+local text = region('FontString'); popup.regions = {text}
+function text:SetFont() error('confirmation font must remain native') end
+function text:SetTextColor() error('confirmation colour must remain native') end
+local action = function() return 'accepted', nil, 7 end
+popup.accept.scripts.OnClick = action
+local panels = 0
+local dialogLooks = {}
+local dialogSkin = {
+    Panel = function(layer) panels = panels + 1 end,
+    OnLooksChanged = function(fn) dialogLooks[#dialogLooks+1] = fn end,
+}
+module.enabled = true; combat = false; popup.shown = true
+ns.StyleTextureDialog(dialogSkin, module, popup, true)
+assert(edge.alpha == 0 and red.alpha == 0 and text.alpha == 0.8)
+assert(panels == 3 and popup.accept.scripts.OnClick == action)
+local a,b,c = popup.accept.scripts.OnClick(); assert(a=='accepted' and b==nil and c==7)
+for _=1,30 do
+    ns.StyleTextureDialog(dialogSkin, module, popup, true)
+    popup:Hide()
+    assert(edge.alpha==0.8 and red.alpha==0.8)
+    popup:Show()
+    ns.StyleTextureDialog(dialogSkin, module, popup, true)
+end
+assert(panels==3 and #dialogLooks==1, 'popup reopening allocated layers/hooks')
+popup:Show()
+assert(edge.alpha==0.8 and red.alpha==0.8, 'visible popup replacement retained previous owner skin')
+ns.StyleTextureDialog(dialogSkin, module, popup, true)
+ns.StyleTextureDialog(dialogSkin, module, popup, false)
+assert(edge.alpha==0.8 and red.alpha==0.8, 'foreign owner retained dialog skin')
+combat=true;ns.StyleTextureDialog(dialogSkin,module,popup,true)
+assert(edge.alpha==0.8 and panels==3, 'combat created or styled popup')
+combat=false;ns.StyleTextureDialog(dialogSkin,module,popup,true)
+module.enabled=false;dialogLooks[1]()
+assert(edge.alpha==0.8, 'disabled popup skin not restored')
+module.enabled=true;popup.protected=true
+ns.StyleTextureDialog(dialogSkin,module,popup,true)
+assert(edge.alpha==0.8, 'protected popup styled')
+print('PASS: texture-only dialogs preserve fonts/actions; restore ownership/toggle/hide; reuse layers and skip combat/protected frames')
+end
+
+do
+-- KiwiFarm completion must repaint reused lists after native reconstruction,
+-- without queuing a full stats-window scan. Use the real guarded hook helper.
+assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
+local kiwiConfig
+KiwiFarm = nil
+ns.RegisterScopedSkin = function(id, _, config) if id == 'KiwiFarm' then kiwiConfig = config end end
+assert(loadfile('EUIAddonSkins/Skins/KiwiFarm.lua'))('EUIAddonSkins', ns)
+assert(kiwiConfig and not kiwiConfig.available(), 'missing KiwiFarm reported available')
+local kiwiModule = {enabled=true}
+local fullRefreshes, nativeOpens = 0, 0
+KiwiFarm = frame('Frame', 'KiwiFarm')
+local statsText=region('FontString');KiwiFarm.regions={statsText}
+local statsWrites=0
+function statsText:SetFont(...)statsWrites=statsWrites+1;self.font={...};return true,nil,19 end
+function statsText:SetText(value)self.text=value;return 'stats-native'end
+KiwiFarmPopupMenu = frame('Frame', 'KiwiFarmPopupMenu')
+local kiwiOwner = KiwiFarmPopupMenu
+local kiwiList = frame('Frame', 'DropDownList1')
+kiwiList.MenuBackdrop = frame('Frame', nil, kiwiList)
+local kiwiRow = frame('Button', nil, kiwiList)
+local kiwiText = region('FontString');kiwiRow.regions={kiwiText}
+function kiwiText:GetTextColor()return table.unpack(self.color)end
+function kiwiText:SetTextColor(...)self.color={...}end
+function kiwiText:GetText()return self.text end
+local nativeArrow=region();kiwiRow.ExpandArrow=nativeArrow
+local kiwiHighlight=region();kiwiRow.GetHighlightTexture=function()return kiwiHighlight end
+local previousCreate=kiwiRow.CreateTexture
+function kiwiRow:CreateTexture(...)
+    local texture=previousCreate(self,...)
+    function texture:SetTexture(value)self.path=value end
+    return texture
+end
+kiwiRow.name='KiwiTestRow'
+KiwiTestRowCheck=region();KiwiTestRowUnCheck=region();KiwiTestRowUnCheck.shown=false
+kiwiRow.GetFontString=function()return kiwiText end
+kiwiRow.callback=function()return 'session-native',nil,23 end
+local kiwiSub = frame('Frame', 'DropDownList2')
+kiwiSub.MenuBackdrop=frame('Frame',nil,kiwiSub)
+local subRow=frame('Button',nil,kiwiSub);local subText=region('FontString');subRow.regions={subText}
+function KiwiFarm:ShowMenu(newOwner)
+    nativeOpens=nativeOpens+1
+    if newOwner then kiwiOwner=newOwner end
+    kiwiList.dropdown,kiwiList.shown=kiwiOwner,true
+    if kiwiList.hooks.OnShow then kiwiList.hooks.OnShow()end
+    -- Renderer rebuilding after OnShow can overwrite an early skin pass.
+    kiwiText:SetFont('native-font',13,'OUTLINE')
+    kiwiSub.dropdown,kiwiSub.shown=kiwiRow,true
+    subText:SetFont('native-font',13,'OUTLINE')
+    return 'kiwi-native',nil,nativeOpens
+end
+function KiwiFarm:PLAYER_REGEN_ENABLED()return 'native-combat-end'end
+local H=ns.CreateSkinHelper(S,kiwiModule)
+local C={H=H,S=S,module=kiwiModule,MenuOwner=function(owner)ns.BindPopupOwner(S,kiwiModule,owner)end}
+local function fullRefresh()fullRefreshes=fullRefreshes+1 end
+kiwiConfig.hooks(C,fullRefresh)
+assert(statsText.font[1]=='eui-font'and statsText.font[2]==13 and statsText.font[3]=='',
+    'KiwiFarm stats font retains heavy outline or changes chosen size')
+local fa,fb,fc=statsText:SetFont('user-font',20,'OUTLINE')
+assert(fa==true and fb==nil and fc==19 and statsText.font[1]=='eui-font'and statsText.font[2]==20 and statsText.font[3]=='',
+    'native layout font reset lost themed font, size or return values')
+local stableFontWrites=statsWrites
+for i=1,100 do assert(statsText:SetText('Session '..i)=='stats-native')end
+assert(statsWrites==stableFontWrites,'recurring stats data triggered font work')
+assert(kiwiConfig.available())
+local x,y,z=KiwiFarm:ShowMenu()
+assert(x=='kiwi-native'and y==nil and z==1,'KiwiFarm ShowMenu native returns changed')
+assert(kiwiText.font[1]=='eui-font'and subText.font[1]=='eui-font','KiwiFarm completed menu did not repaint')
+assert(fullRefreshes==0,'KiwiFarm menu unnecessarily refreshes main stats window')
+local ownLayer=kiwiList.children[#kiwiList.children]
+assert(not ownLayer.accent,'KiwiFarm menu retains repeated top accent bars')
+assert(kiwiHighlight.color[4]==0.25,'KiwiFarm hover contrast did not increase')
+assert(nativeArrow.alpha==0 and KiwiTestRowCheck.alpha==0,'native gold arrow/checkbox was not replaced')
+local chevron=kiwiRow.regions[2]
+assert(chevron.path:match('eui%-arrow%-right.png')and chevron.color[1]==0.75,'EUI neutral chevron missing')
+kiwiText.text='Settings';ns.RefreshPopupMenusNow()
+assert(kiwiText.color[1]==accent and kiwiText.color[2]==0.5,'KiwiFarm heading does not follow accent')
+kiwiText.text='Session';ns.RefreshPopupMenusNow()
+assert(kiwiText.color[2]==0.82,'pooled heading row did not recover native text colour')
+local stableChildren=#kiwiList.children+#kiwiSub.children
+local stableMarkers=#kiwiRow.regions
+local stableShowHook=KiwiFarm.ShowMenu
+for i=1,100 do
+    kiwiList:Hide();kiwiSub:Hide();flush()
+    assert(kiwiText.font[1]=='native-font' and ownLayer.alpha==0,'KiwiFarm hide failed native restoration')
+    kiwiConfig.hooks(C,fullRefresh)
+    local result,empty,count=KiwiFarm:ShowMenu()
+    assert(result=='kiwi-native'and empty==nil and count==i+1)
+    assert(kiwiText.font[1]=='eui-font'and subText.font[1]=='eui-font'and ownLayer.alpha==1,
+        'KiwiFarm second/repeated open exposed native menu')
+end
+assert(KiwiFarm.ShowMenu==stableShowHook and #kiwiList.children+#kiwiSub.children==stableChildren,
+    'KiwiFarm repeated opens duplicated hooks or visual layers')
+assert(#kiwiRow.regions==stableMarkers,'KiwiFarm repeated opens allocated chevrons/checkbox markers')
+assert(fullRefreshes==0,'KiwiFarm repeated opens queued stats scans')
+local dynamicRow=frame('Button',nil,kiwiSub)
+local dynamicText=region('FontString');dynamicRow.regions={dynamicText}
+UIDropDownMenu_AddButton()
+assert(dynamicText.font[1]=='eui-font'and fullRefreshes==0,'dynamic KiwiFarm submenu row missed styling')
+-- Named global and active launcher can differ after native recreation.
+kiwiList:Hide();kiwiSub:Hide();flush()
+local replacement=frame('Frame');replacement.name='KiwiFarmPopupMenu'
+KiwiFarm:ShowMenu(replacement)
+assert(kiwiList.dropdown==replacement and kiwiText.font[1]=='eui-font','actual KiwiFarm owner not registered')
+assert(KiwiFarm:PLAYER_REGEN_ENABLED()=='native-combat-end'and fullRefreshes==0)
+kiwiList:Hide();kiwiSub:Hide();flush()
+kiwiModule.enabled=false;KiwiFarm:ShowMenu()
+for _,fn in ipairs(looks)do fn()end;flush()
+assert(statsText.font[1]=='user-font'and statsText.font[2]==20 and statsText.font[3]=='OUTLINE',
+    'disabled KiwiFarm did not restore native stats typography')
+assert(kiwiText.font[1]=='native-font'and ownLayer.alpha==0,'disabled KiwiFarm menu styled')
+kiwiList:Hide();kiwiSub:Hide();flush();kiwiModule.enabled=true;combat=true
+KiwiFarm:ShowMenu()
+assert(kiwiText.font[1]=='native-font','KiwiFarm menu styled during combat')
+combat=false;events.scripts.OnEvent(events,'PLAYER_REGEN_ENABLED');flush()
+assert(kiwiText.font[1]=='eui-font'and fullRefreshes==0,'KiwiFarm combat recovery lost styling')
+kiwiList:Hide();kiwiSub:Hide();flush()
+kiwiList.dropdown,kiwiList.shown=unrelated,true
+ns.RefreshPopupMenusNow()
+assert(kiwiText.font[1]=='native-font'and ownLayer.alpha==0,'unrelated menu inherited KiwiFarm skin')
+assert(nativeArrow.alpha==0.8 and KiwiTestRowCheck.alpha==0.8 and chevron.alpha==0,
+    'native menu artwork not restored for unrelated owner')
+assert(kiwiHighlight.color[4]==1,'KiwiFarm hover tint leaked to an unrelated menu')
+local aa,bb,cc=kiwiRow.callback();assert(aa=='session-native'and bb==nil and cc==23)
+assert(kiwiText.color[2]==0.82,'KiwiFarm semantic text colours changed')
+assert(#errors==0,table.concat(errors,'\n'))
+print('BENCH KiwiFarm 100 repeated opens: full-window refreshes=0; new layers=0; duplicate hooks=0 (mock)')
+print('PASS: KiwiFarm repeat opens/submenus/owner recreation, native actions/returns/colours, disable/combat, bounded layers/hooks')
+
+-- KiwiFarm's Appearance submenu controls only owned skin backgrounds.
+do
+    kiwiModule.enabled = true; combat = false
+    EUIAddonSkinsDB = {details = {meter = true}, kiwiFarm = {backgroundOpacity = 0.6, menuOpacity = 0.8}}
+    KiwiFarm.nativeColor = {0.1, 0.1, 0.1, 0.4}
+    function KiwiFarm:GetBackdropColor() return table.unpack(self.nativeColor) end
+    function KiwiFarm:SetBackdropColor(...) self.nativeColor = {...}; return 'colour-native' end
+    UIDropDownMenu_Initialize = function() return 'init-native', nil, 7 end
+    kiwiConfig.hooks(C, fullRefresh)
+    local oldBackground = KiwiFarm:CreateTexture(); oldBackground.layer = 'BACKGROUND'
+    kiwiConfig.visit(C, KiwiFarm, 'Frame')
+    local background
+    for _, child in ipairs(KiwiFarm.children) do if #child.regions == 3 and child.mouse == false then background = child end end
+    assert(background and background.alpha == 0.6 and background.regions[1].color[4] == 1 and oldBackground.alpha == 0)
+    local line = KiwiFarm.regions[#KiwiFarm.regions]
+    assert(line.alpha == 0 and KiwiFarm.alpha == 1 and statsText:GetAlpha() == 0.8)
+    ns.SkinRoots = function(_, options) return {{frame = KiwiFarm, options = options}} end
+    local roots = kiwiConfig.roots()
+    assert(roots[1].exclude[background], 'background was included in stats scans')
+    local appearance = {text = 'Appearance', menuList = {{text = 'Native appearance', func = function() return 'appearance-native' end}}}
+    local menu = {appearance}
+    local a,b,c = UIDropDownMenu_Initialize(kiwiOwner, function() end, 'MENU', nil, menu)
+    assert(a == 'init-native' and b == nil and c == 7 and #appearance.menuList == 2)
+    local settings = appearance.menuList[2]
+    assert(settings.text == 'AddonSkins' and appearance.menuList[1].func() == 'appearance-native')
+    for _ = 1, 100 do UIDropDownMenu_Initialize(kiwiOwner, nil, 'MENU', nil, menu) end
+    assert(#appearance.menuList == 2, 'settings entry duplicated on menu opens')
+    local other = {{text = 'Appearance', menuList = {}}}
+    UIDropDownMenu_Initialize(unrelated, nil, 'MENU', nil, other)
+    assert(#other[1].menuList == 0, 'unrelated addon menu received settings')
+    local function Find(list, text)
+        for _, item in ipairs(list) do
+            local name = type(item.text) == 'function' and item.text() or item.text
+            if name:sub(1, #text) == text then return item end
+        end
+        error('missing menu item: ' .. text)
+    end
+    local opacity = Find(settings.menuList, 'Background opacity')
+    Find(opacity.menuList, '0%').func()
+    assert(background.alpha == 0 and KiwiFarm.alpha == 1 and statsText:GetAlpha() == 0.8, 'background opacity changed text/frame alpha')
+    Find(opacity.menuList, '100%').func(); assert(background.alpha == 1)
+    Find(opacity.menuList, 'Use KiwiFarm opacity').func(); assert(background.alpha == 0.4)
+    assert(KiwiFarm:SetBackdropColor(0.2, 0.2, 0.2, 0.25) == 'colour-native' and background.alpha == 0.25)
+    Find(opacity.menuList, '60%').func()
+    KiwiFarm:SetBackdropColor(0.2, 0.2, 0.2, 0.9)
+    assert(background.alpha == 0.6 and KiwiFarm.nativeColor[4] == 0.9, 'skin overwrote the native colour setting')
+    local style = Find(settings.menuList, 'Background style')
+    Find(style.menuList, 'Flat charcoal').func()
+    assert(background.regions[2].color[4] == 0)
+    Find(style.menuList, 'Soft centre highlight').func()
+    assert(background.regions[2].color[4] > 0)
+    local accentOption = Find(settings.menuList, 'Show accent line')
+    accentOption.func(); assert(line.alpha == 1 and line.color[1] == accent, tostring(line.alpha)..':'..tostring(line.color[1])..':'..tostring(accent)..':'..tostring(EUIAddonSkinsDB.kiwiFarm.accent))
+    -- Reopen the actual legacy menu and change only its owned fill.
+    KiwiFarm:ShowMenu(); flush()
+    local menuOpacity = Find(settings.menuList, 'Menu background opacity')
+    Find(menuOpacity.menuList, '20%').func()
+    local fill
+    for _, texture in ipairs(ownLayer.regions) do if texture.color[1] == 0.065 then fill = texture end end
+    assert(fill and fill.color[4] == 0.2 and kiwiList.alpha == 1 and kiwiText:GetAlpha() == 0.8)
+    -- Rebuild the current owned submenu so native checkmarks stay current.
+    local nativeToggle, rebuilds = ToggleDropDownMenu, 0
+    ToggleDropDownMenu = function(...) rebuilds = rebuilds + 1; return nativeToggle(...) end
+    local list = frame('Frame', 'DropDownList4'); list.shown = true; list.dropdown = kiwiOwner
+    local anchor = {menuList = opacity.menuList}
+    list.GetPoint = function() return 'TOPLEFT', anchor end
+    UIDROPDOWNMENU_OPEN_MENU, UIDROPDOWNMENU_MENU_LEVEL = kiwiOwner, 4
+    Find(opacity.menuList, '60%').func(); assert(rebuilds == 1)
+    UIDROPDOWNMENU_OPEN_MENU = unrelated
+    Find(opacity.menuList, '60%').func(); assert(rebuilds == 1)
+    UIDROPDOWNMENU_OPEN_MENU, UIDROPDOWNMENU_MENU_LEVEL = nil, nil
+    list.shown = false; ToggleDropDownMenu = nativeToggle
+    local children, textures = #KiwiFarm.children, #KiwiFarm.regions
+    for _ = 1, 100 do KiwiFarm:ShowMenu() end
+    assert(#KiwiFarm.children == children and #KiwiFarm.regions == textures and fullRefreshes == 0)
+    combat = true; Find(opacity.menuList, '80%').func()
+    assert(EUIAddonSkinsDB.kiwiFarm.backgroundOpacity == 0.8 and background.alpha == 0.6)
+    combat = false; events.scripts.OnEvent(); assert(background.alpha == 0.8)
+    kiwiModule.enabled = false
+    Find(opacity.menuList, '10%').func(); assert(EUIAddonSkinsDB.kiwiFarm.backgroundOpacity == 0.8)
+    assert(settings.hidden())
+    kiwiModule.enabled = true
+    Find(settings.menuList, 'Reset skin settings').func()
+    assert(EUIAddonSkinsDB.kiwiFarm == nil and EUIAddonSkinsDB.details.meter)
+    assert(background.alpha == 0.9 and line.alpha == 0 and fill.color[4] == 0.95)
+    assert(KiwiFarm.nativeColor[4] == 0.9 and KiwiFarm.alpha == 1)
+    assert(#errors == 0, table.concat(errors, '\n'))
+    print('PASS: KiwiFarm Appearance settings, saved values, native opacity cooperation, independent backgrounds, reset, combat/disable, owner scoping and menu reuse')
+end
+end

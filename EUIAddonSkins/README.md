@@ -19,7 +19,7 @@ EllesmereUI skins for World of Warcraft addons.
 - Attune
 - TwitchEmotes (popup menu)
 - Questie (Journey, settings, tracker styling and popup menus)
-- Deadly Boss Mods (options window and controls)
+- Deadly Boss Mods (timer bars, options, range/radar and info frames)
 - AtlasLootClassic Continued
 - GTFO (settings controls)
 - Gargul (windows, dialogs and menus)
@@ -42,6 +42,9 @@ Install the addons you want to skin separately.
 Toggle individual skins in **Blizzard Skins+ > Window Skins > Third-Party Addons**.
 Details appearance is opt-in. Hover its settings icon > **EUI AddonSkins** for independent Details meter, Tiny Threat and menus/options switches. The same controls are available through `/euidetails`.
 
+RestedXP's navigation-arrow skin can be toggled in **Options > AddOns > EUI AddonSkins**.
+KiwiFarm skin options are under **Appearance > AddonSkins** in its right-click menu, including separate stats/menu opacity and background style.
+
 Skins follow EUI's theme and accent settings. Run `/reload` after disabling a skin.
 
 ## Commands
@@ -61,7 +64,7 @@ ItemRack’s secure equipment buttons and Attune’s quest graph/map retain thei
 
 PallyPower support targets the Forever beta layout. Its original lock button, secure actions, status colours and native layout are preserved.
 
-DBM combat alerts, timer bars and preview content retain DBM’s styling. Its newer Blizzard Menu popups are not included in this skin.
+DBM timer and range/radar/info appearance can be adjusted through **Skin Options** beside its options window. DBM controls positioning, size and spacing; encounter warning colours and behaviour remain native.
 
 ## License
 

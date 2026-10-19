@@ -8,6 +8,103 @@ local applying = false
 local menuFonts, fontSerial = {}, 0
 local modernInitializers = setmetatable({}, {__mode = "k"})
 
+-- Opt-in, texture-only decoration for shared confirmation dialogs. Native
+-- controls, fonts, scripts and layout stay owned by the dialog's library.
+local dialogRecords = setmetatable({}, {__mode = "k"})
+function ns.StyleTextureDialog(S, module, frame, active)
+    if not frame or not frame.GetObjectType then return end
+    local d = dialogRecords[frame]
+    local function RestoreDialog()
+        if not d or not d.active then return end
+        for region, alpha in pairs(d.alpha) do region:SetAlpha(alpha) end
+        for host, saved in pairs(d.backdrops) do
+            host:SetBackdrop(saved.value)
+            if saved.bg then host:SetBackdropColor(unpack(saved.bg)) end
+            if saved.edge then host:SetBackdropBorderColor(unpack(saved.edge)) end
+        end
+        for _, layer in pairs(d.layers) do layer:SetAlpha(0) end
+        for _, hover in ipairs(d.hovers) do hover:SetAlpha(0) end
+        d.active, d.alpha, d.backdrops = false, {}, {}
+    end
+    if not active or not ns.IsEnabled(module) then RestoreDialog(); return end
+    if InCombatLockdown and InCombatLockdown() then return end
+    if (frame.IsForbidden and frame:IsForbidden()) or (frame.IsProtected and frame:IsProtected()) then return end
+    if not d then
+        d = {alpha = {}, backdrops = {}, layers = {}, hovers = {}, looks = {}}
+        dialogRecords[frame] = d
+        -- A shared popup must start native on every acquisition, including one
+        -- from an addon which has never opted in to this helper.
+        -- Show may be called again while already visible; OnShow alone would
+        -- miss a different addon replacing the current confirmation in place.
+        hooksecurefunc(frame, 'Show', RestoreDialog)
+        frame:HookScript('OnHide', RestoreDialog)
+    end
+    d.S, d.module = S, module
+    if S.OnLooksChanged and not d.looks[S] then
+        d.looks[S] = true
+        S.OnLooksChanged(function()
+            if d.active and d.S == S then ns.StyleTextureDialog(S, d.module, frame, true) end
+        end)
+    end
+    d.active = true
+    local function FadeArt(host)
+        if not host or not host.GetRegions then return end
+        if (host.IsForbidden and host:IsForbidden()) or (host.IsProtected and host:IsProtected()) then return end
+        for _, region in ipairs({host:GetRegions()}) do
+            if region.GetObjectType and region:GetObjectType() == 'Texture' then
+                if d.alpha[region] == nil then d.alpha[region] = region:GetAlpha() end
+                region:SetAlpha(0)
+            end
+        end
+        if host.GetBackdrop and host.SetBackdrop and not d.backdrops[host] then
+            local value = host:GetBackdrop()
+            if value then
+                d.backdrops[host] = {value = value,
+                    bg = host.GetBackdropColor and {host:GetBackdropColor()},
+                    edge = host.GetBackdropBorderColor and {host:GetBackdropBorderColor()}}
+                host:SetBackdrop(nil)
+            end
+        end
+    end
+    local function Layer(host, button)
+        local layer = d.layers[host]
+        if not layer then
+            layer = CreateFrame('Frame', nil, host)
+            layer:SetAllPoints(host); layer:EnableMouse(false)
+            S.Panel(layer, {noBorder = true})
+            d.layers[host] = layer
+            if button then
+                local hover = layer:CreateTexture(nil, 'OVERLAY')
+                d.hovers[#d.hovers + 1] = hover
+                hover:SetAllPoints(layer); hover:SetColorTexture(1, 1, 1, 0.08); hover:SetAlpha(0)
+                host:HookScript('OnEnter', function() if d.active then hover:SetAlpha(1) end end)
+                host:HookScript('OnLeave', function() hover:SetAlpha(0) end)
+                host:HookScript('OnHide', function() hover:SetAlpha(0) end)
+            end
+        end
+        layer:SetFrameLevel(math.max(0, host:GetFrameLevel() - 1))
+        layer:SetAlpha(1)
+    end
+    -- AceConfig's anonymous DialogBorderOpaqueTemplate child contains the
+    -- frame art. Never traverse buttons or their FontStrings.
+    FadeArt(frame)
+    for _, child in ipairs({frame:GetChildren()}) do
+        if child ~= frame.accept and child ~= frame.cancel and not d.layers[child]
+            and child:GetObjectType() == 'Frame' then
+            local ownLayer = false
+            for _, layer in pairs(d.layers) do if child == layer then ownLayer = true; break end end
+            if not ownLayer then
+                FadeArt(child)
+                if child.NineSlice then FadeArt(child.NineSlice) end
+            end
+        end
+    end
+    Layer(frame)
+    for _, button in pairs({accept = frame.accept, cancel = frame.cancel}) do
+        FadeArt(button); Layer(button, true)
+    end
+end
+
 local function Allowed(f)
     return f and f.GetObjectType and not (f.IsForbidden and f:IsForbidden())
         and not (f.IsProtected and f:IsProtected())
@@ -51,10 +148,16 @@ local function Restore(f)
         for i = 1, 4 do if current[i] ~= applied[i] then same = false end end
         if same then texture:SetVertexColor(unpack(value)) end
     end
+    for text, value in pairs(r.textColors or {}) do
+        local current, applied = {text:GetTextColor()}, r.appliedTextColors[text]
+        if applied and current[1] == applied[1] and current[2] == applied[2]
+            and current[3] == applied[3] and current[4] == applied[4] then text:SetTextColor(unpack(value)) end
+    end
     if r.layer then r.layer:SetAlpha(0) end
     if r.fill then r.fill:SetAlpha(0) end
     if r.accent then r.accent:SetAlpha(0) end
     for _, marker in pairs(r.markers or {}) do marker:SetAlpha(0) end
+    for _, arrow in pairs(r.arrows or {}) do arrow:SetAlpha(0) end
     r.active = false
 end
 local function Hook(object, method, callback)
@@ -98,6 +201,36 @@ local function Marker(r, button, native, checked, S)
     marker:SetColorTexture(checked and red or 0.3, checked and green or 0.3, checked and blue or 0.3, 1)
     marker:SetAlpha(native:IsShown() and 1 or 0)
     Fade(r, native)
+end
+local function HeadingColor(r, text, heading, S)
+    if not text or not text.GetTextColor or not text.SetTextColor then return end
+    r.textColors, r.appliedTextColors = r.textColors or {}, r.appliedTextColors or {}
+    if heading then
+        if not r.textColors[text] then r.textColors[text] = {text:GetTextColor()} end
+        local red, green, blue = S.GetAccentColor()
+        text:SetTextColor(red, green, blue, 1)
+        r.appliedTextColors[text] = {red, green, blue, 1}
+    elseif r.textColors[text] then
+        local a, b, c, d = text:GetTextColor()
+        local applied = r.appliedTextColors[text]
+        if applied and a == applied[1] and b == applied[2] and c == applied[3] and d == applied[4] then
+            text:SetTextColor(unpack(r.textColors[text]))
+        end
+        r.textColors[text], r.appliedTextColors[text] = nil, nil
+    end
+end
+local function Chevron(r, button, native)
+    if not native or not native.IsShown or not button.CreateTexture then return end
+    r.arrows = r.arrows or {}
+    local arrow = r.arrows[native]
+    if not arrow then
+        arrow = button:CreateTexture(nil, 'OVERLAY')
+        arrow:SetTexture('Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-right.png')
+        arrow:SetSize(10, 10); arrow:SetPoint('CENTER', native, 'CENTER')
+        arrow:SetVertexColor(0.75, 0.75, 0.78, 1)
+        r.arrows[native] = arrow
+    end
+    arrow:SetAlpha(native:IsShown() and 1 or 0); Fade(r, native)
 end
 local function ModernFont(r, text, S)
     -- Compositor FontStrings forbid even indexing SetFont. Apply a standalone
@@ -153,7 +286,8 @@ local function ModernStyle(f, binding, owner)
     local red, green, blue
     if ns.AccentBarColor then red, green, blue = ns.AccentBarColor(S) else red, green, blue = S.GetAccentColor() end
     r.accent:SetColorTexture(red, green, blue, 1)
-    r.accent:SetAlpha((not ns.AccentBarShown or ns.AccentBarShown()) and 1 or 0)
+    r.accent:SetAlpha(not (binding.options and binding.options.noAccent)
+        and (not ns.AccentBarShown or ns.AccentBarShown()) and 1 or 0)
     Fade(r, f.Backdrop); Fade(r, f.MenuBackdrop); Fade(r, f.NineSlice)
     for _, region in ipairs({f:GetRegions()}) do
         if region ~= fill and region ~= r.accent and region.GetDrawLayer then
@@ -203,6 +337,7 @@ local function Style(f, binding, owner)
     if not r.active then
         r.alpha, r.fonts, r.colors = {}, {}, {}
         r.appliedFonts, r.appliedColors = {}, {}
+        r.textColors, r.appliedTextColors = {}, {}
         r.binding, r.owner, r.active = binding, owner, true
     end
     local S = binding.S
@@ -215,7 +350,7 @@ local function Style(f, binding, owner)
         layer:SetFrameLevel(math.max(0, f:GetFrameLevel() - 1))
         layer:EnableMouse(false)
         S.Shell(layer, {noTopBar = true})
-        ns.AttachAccent(S, layer)
+        if not (binding.options and binding.options.noAccent) then ns.AttachAccent(S, layer) end
         layer:SetAlpha(0)
         r.layers[binding.module] = layer
     end
@@ -234,18 +369,29 @@ local function Style(f, binding, owner)
     end
     for _, button in ipairs({f:GetChildren()}) do
         if Allowed(button) and button:GetObjectType() == "Button" then
-            Font(r, button.GetFontString and button:GetFontString(), S)
+            local text = button.GetFontString and button:GetFontString()
+            Font(r, text, S)
+            if binding.options and binding.options.isHeading then
+                HeadingColor(r, text, binding.options.isHeading(button, text), S)
+            end
             for _, region in ipairs({button:GetRegions()}) do
                 if region.GetObjectType and region:GetObjectType() == "FontString" then Font(r, region, S) end
             end
             local arrow = button.ExpandArrow or _G[(button.GetName and button:GetName() or "") .. "ExpandArrow"]
             if arrow and arrow.GetNormalTexture then arrow = arrow:GetNormalTexture() end
             local red, green, blue = S.GetAccentColor()
-            Tint(r, arrow, red, green, blue, 1)
+            if binding.options and binding.options.chevrons then Chevron(r, button, arrow)
+            else Tint(r, arrow, red, green, blue, 1) end
             local highlight = button.Highlight or (button.GetHighlightTexture and button:GetHighlightTexture())
-            Tint(r, highlight, 1, 1, 1, 0.1)
-            Marker(r, button, button.Check, true, S)
-            Marker(r, button, button.UnCheck, false, S)
+            Tint(r, highlight, 1, 1, 1, binding.options and binding.options.hoverAlpha or 0.1)
+            local check, uncheck = button.Check, button.UnCheck
+            if binding.options and binding.options.chevrons then
+                local buttonName = button.GetName and button:GetName()
+                check = check or buttonName and _G[buttonName .. 'Check']
+                uncheck = uncheck or buttonName and _G[buttonName .. 'UnCheck']
+            end
+            Marker(r, button, check, true, S)
+            Marker(r, button, uncheck, false, S)
             if not r.rowHooks[button] and button.HookScript then
                 r.rowHooks[button] = true
                 button:HookScript("OnClick", ns.RefreshPopupMenusNow)
@@ -300,12 +446,12 @@ function ns.RefreshPopupMenus()
         if not ok then geterrorhandler()(ADDON .. " / popup menus: " .. tostring(err)) end
     end)
 end
-function ns.BindPopupOwner(S, module, owner)
+function ns.BindPopupOwner(S, module, owner, options)
     if not owner then return end
     local binding = owners[owner]
-    local changed = not binding or binding.module ~= module or binding.S ~= S
+    local changed = not binding or binding.module ~= module or binding.S ~= S or binding.options ~= options
     if changed then
-        binding = {S = S, module = module}; owners[owner] = binding
+        binding = {S = S, module = module, options = options}; owners[owner] = binding
     end
     if not lookHooks[module] and S.OnLooksChanged then
         lookHooks[module] = true

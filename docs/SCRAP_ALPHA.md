@@ -25,3 +25,10 @@ Inspected Jaliborc/Scrap at `c768db5539b2cd52c01c89af46b4562bbd169a31` and its p
 - Use neutral text throughout interface options, including headings and theme/state refreshes.
 - Theme only CustomTutorials.frames[Scrap.Tutorials]: remove portrait/native framing, style close/previous/next controls, and preserve instructional images, text markup, native sizing/anchors, page state, save progress and callout animation. Bind completed module methods, with a generation guard for repeated pages.
 - Additional regression checks cover image preservation during shell stripping, menu text updates/restoration, neutral headings, padded logo geometry and 100 warm tutorial triggers without new scans/fonts/objects/hooks.
+
+
+## Alpha.3 merchant dropdown
+
+- Strip native borders in the owned popup background's child frames, including NineSlice pieces, using reversible snapshots.
+- Reparent cached skin artwork when Sushi supplies another pooled background. Preserve native menu actions and restore decoration before foreign reuse.
+- Regression coverage alternates two pooled backgrounds across 20 openings, checks nested-border restoration and ensures no extra skin objects or hooks are created.

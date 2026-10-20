@@ -116,8 +116,22 @@ ns.RegisterModule("Scrap", "Scrap", function() return type(_G.Scrap) == "table" 
             texture = host:CreateTexture(nil, layer or "BACKGROUND", nil, -6)
             record[key], record.art[texture] = texture, true
         end
+        -- A Sushi popup can acquire a different background from its frame pool.
+        -- Keep our cached art on the current host, including after reuse.
+        if texture.GetParent and texture.SetParent and texture:GetParent() ~= host then texture:SetParent(host) end
         texture:SetAlpha(1)
         return texture
+    end
+    local function Decoration(frame, record, depth)
+        if not H.Allowed(frame) or (depth or 0) > 3 then return end
+        Capture(record, frame)
+        for _, region in ipairs(H.Regions(frame)) do
+            if H.Texture(region) and not record.art[region] then region:SetAlpha(0) end
+        end
+        -- TooltipBackdropTemplate can draw its border inside a NineSlice child.
+        -- Snapshot these native pieces; permanent fade hooks would leak into
+        -- another addon's next acquisition of this background.
+        for _, child in ipairs(H.Children(frame)) do Decoration(child, record, (depth or 0) + 1) end
     end
     local function Panel(frame, record)
         Capture(record, frame)
@@ -244,7 +258,10 @@ ns.RegisterModule("Scrap", "Scrap", function() return type(_G.Scrap) == "table" 
         end
         local record = Record(group)
         Capture(record, group)
-        if context.menu and H.Allowed(group.bg) then Panel(group.bg, record) end
+        if context.menu and H.Allowed(group.bg) then
+            Decoration(group.bg, record)
+            Panel(group.bg, record)
+        end
         for _, text in ipairs(H.Regions(group)) do Font(text) end
         for _, child in ipairs(group.Children or {}) do
             if H.Allowed(child) then

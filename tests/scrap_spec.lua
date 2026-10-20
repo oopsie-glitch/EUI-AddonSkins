@@ -323,6 +323,12 @@ check:Release(); assert(check.normal.texture=='native-checkbox' and check.Text.p
 enabled=true
 -- Dropdowns use a shared Sushi pool but only Scrap's merchant is eligible.
 local drop=Widget('Frame',merchant); drop.Children={}; drop.bg=Object('Frame',drop); drop.bg.backdrop={edgeFile='native-popup'}
+local firstBackground=drop.bg
+firstBackground.NineSlice=Object('Frame',firstBackground)
+local nativeCorner=firstBackground.NineSlice:CreateTexture(nil,'BORDER'); nativeCorner:SetTexture('native-popup-corner')
+local nativeCenter=firstBackground.NineSlice:CreateTexture(nil,'BACKGROUND'); nativeCenter:SetTexture('native-popup-center')
+local childBorder=Object('Frame',firstBackground.NineSlice)
+local nativeEdge=childBorder:CreateTexture(nil,'BORDER'); nativeEdge:SetTexture('native-popup-edge')
 function drop:UpdateChildren() return 'native-popup-children' end
 drop.Update=drop.UpdateChildren; drop.SetChildren=drop.UpdateChildren
 local entry=Widget('CheckButton',drop); entry.Text=Text(entry); entry.Arrow=Object('Button',entry)
@@ -333,12 +339,33 @@ drop.Children={entry}
 LibStub=function(id,silent) assert(silent); if id=='Sushi-3.2' then return {Dropdown={Current=drop}} end end
 merchant.scripts.OnClick(); Flush()
 assert(entry.Text.text=='Options','native decorative icon remained')
+assert(nativeCorner.alpha==0 and nativeCenter.alpha==0 and nativeEdge.alpha==0,'nested popup framing remained native')
+local menuFill
+for _,art in ipairs(firstBackground.regions) do if art.layer=='BACKGROUND' then menuFill=art end end
+assert(menuFill and menuFill.anchor==firstBackground and menuFill:GetParent()==firstBackground)
 entry.isTitle=1; entry:SetEnabled(false); assert(entry.Text.color[1]==0.92,'menu title should remain readable')
 entry.isTitle=nil; entry:SetEnabled(true)
 entry.Text:SetText('Help  |T516770:13:13:0:0:64:64:14:50:14:50|t'); assert(entry.Text.text=='Help')
 assert(nativeMenuClicks==1,'native merchant OnClick was overwritten')
 assert(drop.bg.backdrop==nil and entry.Text.path=='EUI' and entry.scripts.OnClick()=='native-menu-action')
 entry:Release(); assert(entry.Text.text:find('|T516770:',1,true),'native menu label not restored'); drop:Release(); assert(drop.bg.backdrop.edgeFile=='native-popup' and entry.Text.path=='Native')
+assert(nativeCorner.alpha==1 and nativeCenter.alpha==1 and nativeEdge.alpha==1,'pooled popup border did not restore')
+local secondBackground=Object('Frame',drop); secondBackground.backdrop={edgeFile='second-native-popup'}
+secondBackground.NineSlice=Object('Frame',secondBackground)
+local secondCorner=secondBackground.NineSlice:CreateTexture(nil,'BORDER'); secondCorner:SetTexture('second-native-corner')
+local menuObjects,menuHooks=allocated,hookCount
+for i=1,20 do
+    drop.calls={}; entry.calls={}; entry:SetParent(drop); drop:SetParent(merchant)
+    drop.bg=i%2==0 and firstBackground or secondBackground
+    drop:UpdateChildren()
+    assert(menuFill.anchor==drop.bg and menuFill:GetParent()==drop.bg,'skin fill retained its old pooled parent')
+    assert(drop.bg.backdrop==nil and entry.Text.path=='EUI')
+    if drop.bg==firstBackground then assert(nativeCorner.alpha==0 and nativeEdge.alpha==0) else assert(secondCorner.alpha==0) end
+    entry:Release(); drop:Release()
+    assert(nativeCorner.alpha==1 and nativeEdge.alpha==1 and secondCorner.alpha==1)
+end
+assert(allocated==menuObjects and hookCount==menuHooks,'alternating popup backgrounds grew skin objects/hooks')
+assert(firstBackground.backdrop.edgeFile=='native-popup' and secondBackground.backdrop.edgeFile=='second-native-popup')
 drop:SetParent(foreign); drop.Children={entry}; entry:SetParent(drop); drop.calls={}; entry.calls={}
 drop:UpdateChildren(); assert(entry.Text.path=='Native' and drop.bg.backdrop.edgeFile=='native-popup')
 -- CustomTutorials owns one frame per embedded addon, never a shared global scan.

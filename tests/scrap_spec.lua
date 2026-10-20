@@ -244,6 +244,7 @@ assert(not merchant.button and not root.shell,'incomplete modules were styled')
 assert(merchant:OnLoad()=='native-merchant-load' and root:OnLoad()=='native-load')
 root:Show(); assert(nativeShows==1,'native OnShow lost')
 assert(merchant.button and merchant.icon.texture=='scrap-logo' and merchant.border.alpha==0)
+assert(merchant.icon.coords[1]==0 and merchant.icon.coords[2]==1 and merchant.icon.width==31 and merchant.icon.point[2]==merchant)
 assert(merchant.width==37 and merchant.point[4]==15 and merchant.scripts.OnReceiveDrag()=='native-drag-junk')
 assert(merchant:Sell()=='native-sale' and saleCalls==1)
 assert(root.shell and root.CloseButton.close and root.Inset.inset and bar.thumb.width==5)
@@ -290,6 +291,7 @@ function expand:GetChecked() return self.Right:GetAtlas()=='native-expanded' end
 group.Children={check,action,slider,header,expand}
 Event('Scrap_Config')
 assert(check.normal.width==14 and check.checkedArt.width==8 and check.checkedArt.color[1]==accent and check.checked)
+assert(header.Text.color[1]==0.92 and expand.Text.color[1]==0.92,'options headings must be neutral')
 assert(not check.disabledArt:IsShown() and check.width==16 and header.Line:IsShown() and header.Line.alpha==0)
 assert(action.normal.alpha==0 and action.Text.color[1]==0.92 and action.scripts.OnClick()=='native-keybindings')
 assert(slider.thumb.width==8 and slider.Edit.Bg.backdrop==nil and slider.Edit.path=='EUI')
@@ -324,17 +326,52 @@ local drop=Widget('Frame',merchant); drop.Children={}; drop.bg=Object('Frame',dr
 function drop:UpdateChildren() return 'native-popup-children' end
 drop.Update=drop.UpdateChildren; drop.SetChildren=drop.UpdateChildren
 local entry=Widget('CheckButton',drop); entry.Text=Text(entry); entry.Arrow=Object('Button',entry)
+entry.Text.text='Options  |A:worldquest-icon-engineering:12:12|a'
 entry.Highlight=entry:CreateTexture(nil,'HIGHLIGHT'); entry.Highlight:SetTexture('native-menu-hover')
 entry.scripts.OnClick=function() return 'native-menu-action' end
 drop.Children={entry}
 LibStub=function(id,silent) assert(silent); if id=='Sushi-3.2' then return {Dropdown={Current=drop}} end end
 merchant.scripts.OnClick(); Flush()
+assert(entry.Text.text=='Options','native decorative icon remained')
+entry.isTitle=1; entry:SetEnabled(false); assert(entry.Text.color[1]==0.92,'menu title should remain readable')
+entry.isTitle=nil; entry:SetEnabled(true)
+entry.Text:SetText('Help  |T516770:13:13:0:0:64:64:14:50:14:50|t'); assert(entry.Text.text=='Help')
 assert(nativeMenuClicks==1,'native merchant OnClick was overwritten')
 assert(drop.bg.backdrop==nil and entry.Text.path=='EUI' and entry.scripts.OnClick()=='native-menu-action')
-entry:Release(); drop:Release(); assert(drop.bg.backdrop.edgeFile=='native-popup' and entry.Text.path=='Native')
+entry:Release(); assert(entry.Text.text:find('|T516770:',1,true),'native menu label not restored'); drop:Release(); assert(drop.bg.backdrop.edgeFile=='native-popup' and entry.Text.path=='Native')
 drop:SetParent(foreign); drop.Children={entry}; entry:SetParent(drop); drop.calls={}; entry.calls={}
 drop:UpdateChildren(); assert(entry.Text.path=='Native' and drop.bg.backdrop.edgeFile=='native-popup')
+-- CustomTutorials owns one frame per embedded addon, never a shared global scan.
+local tutorial=Object('Frame',UIParent); tutorial.TitleText=Text(tutorial); tutorial.text=Text(tutorial)
+tutorial.text.text='Drag |cffffcc00items|r here'; tutorial.Inset=Object('Frame',tutorial)
+tutorial.NineSlice=Object('Frame',tutorial); tutorial.CloseButton=Button(tutorial)
+tutorial.prev,tutorial.next=Button(tutorial),Button(tutorial)
+tutorial.prev.scripts.OnClick=function() return 'native-prev' end
+tutorial.next.scripts.OnClick=function() return 'native-next' end
+tutorial.images={tutorial:CreateTexture(nil,'ARTWORK')}; tutorial.images[1]:SetTexture('native-instruction-art')
+tutorial.shine=Object('Frame',UIParent); tutorial.flash={running=true}
+Scrap.Tutorials={}
+local tutorialLib={frames={[Scrap.Tutorials]=tutorial}}
+function Scrap.Tutorials:RegisterTutorials() return 'native-register' end
+function Scrap.Tutorials:TriggerTutorial() self.index=(self.index or 0)+1; tutorial:Show(); return 'native-trigger' end
+function Scrap.Tutorials:Restart() return self:TriggerTutorial() end
+local oldLib=LibStub
+LibStub=function(id,silent) if id=='CustomTutorials-2.1' then return tutorialLib end; return oldLib(id,silent) end
+S.RemovePortrait=function(f) f.portraitRemoved=true end
+local oldShell=S.Shell
+S.Shell=function(f,...) oldShell(f,...); if f==tutorial then for _,t in ipairs(f.images) do t:SetAlpha(0) end end end
+Event('Scrap_Config')
+assert(tutorial.shell and tutorial.portraitRemoved and tutorial.CloseButton.close and tutorial.Inset.inset and tutorial.NineSlice.faded)
+assert(tutorial.images[1].alpha==1 and tutorial.images[1].texture=='native-instruction-art' and tutorial.text.text=='Drag |cffffcc00items|r here')
+assert(tutorial.prev.scripts.OnClick()=='native-prev' and tutorial.next.scripts.OnClick()=='native-next')
+assert(Scrap.Tutorials:RegisterTutorials()=='native-register' and Scrap.Tutorials:TriggerTutorial()=='native-trigger')
+c,r,o,h,w=childReads,regionReads,allocated,hookCount,fontWrites
+for i=1,100 do Scrap.Tutorials:TriggerTutorial() end
+assert(childReads==c and regionReads==r and allocated==o and hookCount==h and fontWrites==w,'warm tutorial re-skinned')
+header.calls={}; header:Show(); group.Children={header}; group:UpdateChildren()
+assert(header.Text.color[1]==0.92)
 accent=0.75; fontFace='EUI-new'; for _,fn in ipairs(looks) do fn() end; Flush()
+assert(header.Text.color[1]==0.92,'options heading regained accent')
 assert(row.Text.path=='EUI-new' and row.Text.color[3]==0.9)
 combat=true; w=fontWrites; module.refresh(); root.Scroll:update(); assert(fontWrites==w)
 combat=false; for _,f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.scripts.OnEvent(f,'PLAYER_REGEN_ENABLED') end end; Flush()

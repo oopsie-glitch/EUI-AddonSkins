@@ -81,6 +81,11 @@ ns.RegisterModule("Scrap", "Scrap", function() return type(_G.Scrap) == "table" 
     local function Restore(record)
         if not record.active then return end
         record.active = false -- Setter callbacks must not repaint during cleanup.
+        local decoration = record.decoration
+        if decoration and decoration.label:GetText() == decoration.cleaned then
+            decoration.label:SetText(decoration.original)
+        end
+        record.decoration = nil
         for frame, saved in pairs(record.saved) do
             if saved.hasBackdrop then
                 frame:SetBackdrop(saved.backdrop)
@@ -124,11 +129,25 @@ ns.RegisterModule("Scrap", "Scrap", function() return type(_G.Scrap) == "table" 
         end
         local r, g, b = S.GetPanelColor(); fill:SetColorTexture(r, g, b, 0.98)
     end
-    local function Label(frame, record, heading)
+    local function Label(frame, record)
         if not record.active or not Ready() or record.labelBusy then return end
         record.labelBusy = true
-        local shade = frame.IsEnabled and not frame:IsEnabled() and 0.5 or 0.92
-        Font(frame.Label or frame.GetFontString and frame:GetFontString(), shade, heading or frame.isTitle)
+        local shade = frame.isTitle and 0.92 or (frame.IsEnabled and not frame:IsEnabled() and 0.5 or 0.92)
+        local label = frame.Label or frame.GetFontString and frame:GetFontString()
+        Font(label, shade)
+        if frame.Arrow and H.Allowed(label) and label.GetText then
+            local original = label:GetText()
+            if type(original) == "string" then
+                -- Scrap adds tiny decorative symbols to these two menu entries.
+                -- Change only the displayed label; keep native menu data/actions.
+                local cleaned = original:gsub("%s*|A:worldquest%-icon%-engineering:.-|a", "")
+                    :gsub("%s*|T516770:.-|t", "")
+                if cleaned ~= original then
+                    record.decoration = {label = label, original = original, cleaned = cleaned}
+                    label:SetText(cleaned)
+                end
+            end
+        end
         record.labelBusy = false
     end
     local function Check(frame)
@@ -195,13 +214,15 @@ ns.RegisterModule("Scrap", "Scrap", function() return type(_G.Scrap) == "table" 
         -- Menu rows retain native check/radio/arrow/icon textures and actions.
         if frame.Arrow and H.Texture(frame.Highlight) then frame.Highlight:SetColorTexture(1, 1, 1, 0.10) end
         for _, text in ipairs(H.Regions(frame)) do Font(text) end
-        record.heading = H.Texture(frame.Line) or frame.isTitle
-        Label(frame, record, record.heading)
+        Label(frame, record)
         for _, name in ipairs({"UpdateFont", "SetEnabled", "SetSmall"}) do
-            H.Hook(frame, name, function() Label(frame, record, record.heading) end)
+            H.Hook(frame, name, function() Label(frame, record) end)
         end
         local label = frame.Label or frame.GetFontString and frame:GetFontString()
-        if H.Allowed(label) then H.Hook(label, "SetFontObject", function() Label(frame, record, record.heading) end) end
+        if H.Allowed(label) then
+            H.Hook(label, "SetFontObject", function() Label(frame, record) end)
+            if frame.Arrow then H.Hook(label, "SetText", function() Label(frame, record) end) end
+        end
         record.generation = generation
     end
     local function BindGroup(group, menu)
@@ -247,7 +268,10 @@ ns.RegisterModule("Scrap", "Scrap", function() return type(_G.Scrap) == "table" 
         if merchantPaints[frame] == generation then return end
         soft.Button(frame, {"icon"})
         if H.Texture(frame.border) then H.Fade(frame.border) end
-        S.SquareIcon(frame.icon)
+        -- The bag is a logo, not a square spell/item tile: cropping clips it.
+        local size = math.max(1, math.min(frame:GetWidth(), frame:GetHeight()) - 6)
+        frame.icon:SetTexCoord(0, 1, 0, 1)
+        frame.icon:ClearAllPoints(); frame.icon:SetPoint("CENTER", frame, "CENTER"); frame.icon:SetSize(size, size)
         merchantPaints[frame] = generation
     end
     local function Rows()
@@ -294,12 +318,43 @@ ns.RegisterModule("Scrap", "Scrap", function() return type(_G.Scrap) == "table" 
         end
         Tabs(); Rows()
     end
+    local tutorialPaints = {}
+    local function Tutorial()
+        if not Ready() then return end
+        local library = LibStub and LibStub("CustomTutorials-2.1", true)
+        local frame = library and library.frames and library.frames[app.Tutorials]
+        if not H.Allowed(frame) or tutorialPaints[frame] == generation then return end
+        local images = {}
+        for _, texture in pairs(frame.images or {}) do
+            if H.Texture(texture) then images[texture] = texture:GetAlpha() end
+        end
+        H.Shell(frame, Tutorial, {noAccent = true, noTopBar = true})
+        if S.RemovePortrait then S.RemovePortrait(frame) end
+        if H.Allowed(frame.Inset) then S.Inset(frame.Inset) end
+        if H.Allowed(frame.NineSlice) then S.FadeNineSlice(frame.NineSlice) end
+        if H.Allowed(frame.CloseButton) then S.CloseButton(frame.CloseButton) end
+        Font(frame.TitleText or frame.TitleContainer and frame.TitleContainer.TitleText, 0.92)
+        Font(frame.text, 0.92)
+        for i, button in ipairs({frame.prev, frame.next}) do
+            if H.Allowed(button) then
+                soft.SoftPageButton(button, i == 1 and "<" or ">")
+                for _, text in ipairs(H.Regions(button)) do Font(text) end
+            end
+        end
+        -- Shell stripping must never hide the tutorial's illustrations. Leave
+        -- page visibility, sizing/anchors, callout shine and animation native.
+        for texture, alpha in pairs(images) do texture:SetAlpha(alpha) end
+        tutorialPaints[frame] = generation
+    end
     local function Discover()
         local merchant, visualizer, options = app.Merchant, app.Visualizer or _G.ScrapVisualizer, app.Options
         H.Hook(merchant, "OnLoad", Refresh)
         H.Hook(visualizer, "OnLoad", Refresh); H.Hook(visualizer, "SetTab", Tabs)
         H.Hook(visualizer and visualizer.Scroll, "update", Rows)
         H.Hook(options, "OnLoad", Refresh)
+        for _, method in ipairs({"OnLoad", "Register", "Start", "Restart", "RegisterTutorials", "TriggerTutorial"}) do
+            H.Hook(app.Tutorials, method, Tutorial)
+        end
         if type(options) == "table" then
             for _, name in ipairs({"Main", "Filters", "Help", "Credits"}) do
                 local group = options[name]
@@ -309,7 +364,7 @@ ns.RegisterModule("Scrap", "Scrap", function() return type(_G.Scrap) == "table" 
                 end
             end
         end
-        Merchant(); Visualizer(); Menu(); soft.RefreshSoftBorders()
+        Merchant(); Visualizer(); Menu(); Tutorial(); soft.RefreshSoftBorders()
     end
     Refresh = function()
         if applying or not Ready() then return end

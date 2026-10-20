@@ -83,6 +83,7 @@ local function Object(kind, parent)
     function f:SetVertexColor(r,g,b,a)
         self.vertex=self.vertex or {}; self.vertex[1],self.vertex[2],self.vertex[3],self.vertex[4]=r,g,b,a
     end
+    function f:SetGradientAlpha(...) self.gradient={...} end
     function f:SetRotation(v) self.rotation=v end
     function f:SetTexture(v) self.texture=v end
     if kind=='Texture' then function f:GetTexture() return self.texture end end
@@ -247,6 +248,13 @@ local voting=targets.voting:GetFrame(); voting:Show()
 assert(voting.response.path=='EUI', 'the completed first show must be styled before the queued fallback')
 Flush()
 assert(voting.content.backdrop==nil and voting.title.backdrop==nil)
+local ramps={}
+for _,texture in ipairs(voting.content.regions) do if texture.gradient then ramps[#ramps+1]=texture end end
+assert(#ramps==2 and ramps[1].layer=='BACKGROUND' and ramps[2].layer=='BACKGROUND')
+assert(ramps[1].gradient[5]==0 and ramps[1].gradient[9]==0.24 and ramps[2].gradient[5]==0.24 and ramps[2].gradient[9]==0,
+    'body must have a subtle continuous centre lift with dark outer edges')
+assert(ramps[1].gradient[2]==0.16 and ramps[1].gradient[4]==0.17)
+assert(#voting.content.children>0 and not voting.panel, 'background accents must stay inside minimisable content')
 assert(not voting.panel and voting.position=='saved' and voting.scale==1.1 and voting.width==450)
 assert(voting.title.text.path=='EUI' and voting.title.text.color[1]==accent)
 assert(voting.response.path=='EUI' and voting.response.color[2]==1, 'response colours must survive: '..voting.response.path..' / '..table.concat(voting.response.color,','))
@@ -287,7 +295,16 @@ check.checkbg=check.frame:CreateTexture(nil,'BACKGROUND'); check.checkbg:SetText
 check.check=check.frame:CreateTexture(nil,'ARTWORK'); check.check:SetTexture('native-tick'); check.check:SetSize(24,24)
 check.SetValue=function(self,value) self.checked=value; return 'native-value' end
 check.SetDisabled=function(self,value) self.disabled=value; return 'native-disabled' end
-check.text=Text(check.frame); check.text.color={0.7,0.7,0.7,1}; check.checked=true
+check.frame:SetSize(200,24)
+check.checkbg:SetPoint('TOPLEFT',check.frame,'TOPLEFT',0,0)
+check.text=Text(check.frame); check.text:SetPoint('LEFT',check.checkbg,'RIGHT',0,0)
+check.image=check.frame:CreateTexture(nil,'ARTWORK')
+check.SetLabel=function(self,value) self.text:SetText(value); self.text:SetPoint('LEFT',self.checkbg,'RIGHT',0,0); return 'native-label' end
+check.SetImage=function(self,value) self.image:SetTexture(value); self.text:SetPoint('LEFT',self.image,'RIGHT',1,0); return 'native-image' end
+local nativePresses=0
+check.frame.scripts.OnMouseDown=function() nativePresses=nativePresses+1; check.text:SetPoint('LEFT',check.checkbg,'RIGHT',1,-1) end
+check.frame.scripts.OnMouseUp=function() check:SetValue(not check.checked) end
+check.text.color={0.7,0.7,0.7,1}; check.checked=true
 local action=Widget('Button',root.frame); action.frame.kind='Button'; action.frame.Text=Text(action.frame)
 action.text=action.frame.Text; action.text.color={1,0.82,0,1}
 action.SetDisabled=function(self,value) self.disabled=value; if value then self.frame:Disable() else self.frame:Enable() end; return 'native-button-state' end
@@ -323,6 +340,15 @@ root.closebutton.scripts.OnClick=function() return 'native-close-action' end
 local sr,container,id=dialog:FeedGroup('RCLootCouncil',{},root)
 assert(sr=='native-feed' and container==root and id=='RCLootCouncil')
 assert(check.check.width==8 and check.checkbg.width==14 and check.checked and check.text.path=='EUI')
+assert(check.checkbg.point[4]==5 and check.checkbg.point[5]==-5 and check.frame.width==200 and check.frame.height==24)
+assert(check.text.point[2]==check.checkbg and check.text.point[4]==6)
+assert(check:SetLabel('Only use in raids')=='native-label' and check.text.point[4]==6)
+check.frame.scripts.OnMouseDown(check.frame)
+assert(nativePresses==1 and check.text.point[4]==6 and check.text.point[5]==0, 'native pressed text must not overlap the flat square')
+local checkedBefore=check.checked
+check.frame.scripts.OnMouseUp(check.frame); assert(check.checked~=checkedBefore and check.text.point[4]==6)
+assert(check:SetImage('native-class-icon')=='native-image' and check.text.point[2]==check.image and check.text.point[4]==6)
+check:SetImage(nil); check:SetValue(true)
 assert(action.frame.scripts.OnClick()=='native-option')
 assert(action.text.color[1]==0.92 and action.text.color[4]==1, 'enabled Version Check-style buttons must be readable')
 assert(action:SetDisabled(true)=='native-button-state' and action.text.color[1]==0.5)
@@ -346,6 +372,8 @@ action.events={OnClick=function() dialog.popup:Show(); return 'native-confirm' e
 assert(action:Fire('OnClick')=='native-confirm' and dialog.popup.styled and dialog.popup.text.path=='Native')
 check:OnRelease(); action:OnRelease(); dropdown:OnRelease(); tabs:OnRelease(); inline:OnRelease(); scroll:OnRelease(); root:OnRelease()
 assert(check.check.texture=='native-tick' and check.check.width==24 and check.checkbg.texture=='native-check-bg')
+assert(check.text.point[4]==0 and check.checkbg.point[4]==0 and check.checkbg.point[5]==0,
+    'pool release must restore native checkbox and label anchors')
 assert(check.text.path=='Native' and action.frame.Text.path=='Native', 'pool release must restore native fonts')
 assert(action.text.color[1]==1 and action.text.color[2]==0.82 and inlineBorder.backdrop.edgeFile=='bevelled')
 assert(up.normal.alpha==1 and down.normal.alpha==1 and scroll.scrollbar.thumb.alpha==1)

@@ -11,7 +11,7 @@ end, function(S, module)
     local windows, icons, layers, nodes, pooled, owners = {}, {}, {}, {}, {}, {}
     local pooledButtons, dropdownArrows, closeGlyphs, nativeChecks, pooledThumbs = {}, {}, {}, {}, {}
     local fills, skinArt, tracks, arrows, labels = {}, {}, {}, {}, {}
-    local windowDirty, releaseLibraries = {}, {}
+    local windowDirty, releaseLibraries, lifts = {}, {}, {}
     local generation, waiting, applying = 1, false, false
     local Walk, PaintWidget, Refresh, Pullout
     local events = CreateFrame("Frame")
@@ -54,6 +54,34 @@ end, function(S, module)
         end
         local r, g, b = S.GetPanelColor()
         fill:SetColorTexture(r, g, b, 0.98); fill:SetAlpha(1)
+    end
+    local function Lift(f)
+        if not H.Allowed(f) then return end
+        local pair = lifts[f]
+        if pair and pair.generation == generation then return end
+        if not pair then
+            pair = {}; lifts[f] = pair
+            for i = 1, 2 do
+                pair[i] = f:CreateTexture(nil, "BACKGROUND", nil, -6)
+                skinArt[pair[i]] = true
+            end
+            pair[1]:SetPoint("TOPLEFT", f, "TOPLEFT")
+            pair[1]:SetPoint("BOTTOMRIGHT", f, "BOTTOM")
+            pair[2]:SetPoint("TOPLEFT", f, "TOP")
+            pair[2]:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT")
+        end
+        local r, g, b = S.GetPanelColor()
+        r, g, b = math.min(1, r + 0.10), math.min(1, g + 0.10), math.min(1, b + 0.10)
+        for i, texture in ipairs(pair) do
+            local first, last = i == 1 and 0 or 0.24, i == 1 and 0.24 or 0
+            texture:SetColorTexture(1, 1, 1, 1)
+            if texture.SetGradient and CreateColor then
+                texture:SetGradient("HORIZONTAL", CreateColor(r, g, b, first), CreateColor(r, g, b, last))
+            elseif texture.SetGradientAlpha then
+                texture:SetGradientAlpha("HORIZONTAL", r, g, b, first, r, g, b, last)
+            else texture:SetColorTexture(r, g, b, 0.08) end
+        end
+        pair.generation = generation
     end
     local function Label(f, text)
         if not H.Allowed(text) then return end
@@ -270,11 +298,11 @@ end, function(S, module)
         if not windows[f] then
             windows[f] = true
             H.Script(f, "OnShow", function() if Ready() then Window(f, false) end end)
-            H.Hook(f, "Update", function() if Ready() then Panel(f.content); Panel(f.title); Font(f.title and f.title.text, true) end end)
+            H.Hook(f, "Update", function() if Ready() then Panel(f.content); Lift(f.content); Panel(f.title); Font(f.title and f.title.text, true) end end)
             H.Hook(f, "UpdateSt", function() if Ready() then Walk(f.content, true) end end)
         end
         -- RCFrame minimises content only. Never put a full-size fill on its parent.
-        Panel(f.content); Panel(f.title); Font(f.title and f.title.text, true)
+        Panel(f.content); Lift(f.content); Panel(f.title); Font(f.title and f.title.text, true)
         Walk(f, force)
         for _, key in ipairs({"st", "date", "name"}) do
             local st = f[key]
@@ -307,9 +335,9 @@ end, function(S, module)
             if r.GetVertexColor then d.vertex = {r:GetVertexColor()} end
             if r.GetTexCoord then d.coords = {r:GetTexCoord()} end
             d.width, d.height = r:GetWidth(), r:GetHeight()
-            if r.GetNumPoints then
-                d.points = {}; for i = 1, r:GetNumPoints() do d.points[i] = {r:GetPoint(i)} end
-            end
+        end
+        if r.GetNumPoints then
+            d.points = {}; for i = 1, r:GetNumPoints() do d.points[i] = {r:GetPoint(i)} end
         end
         return d
     end
@@ -321,8 +349,8 @@ end, function(S, module)
             if d.vertex then r:SetVertexColor(unpack(d.vertex)) end
             if d.coords then r:SetTexCoord(unpack(d.coords)) end
             r:SetSize(d.width, d.height)
-            if d.points then r:ClearAllPoints(); for _, point in ipairs(d.points) do r:SetPoint(unpack(point)) end end
         end
+        if d.points then r:ClearAllPoints(); for _, point in ipairs(d.points) do r:SetPoint(unpack(point)) end end
     end
     local function Snapshot(f, record, depth)
         if not H.Allowed(f) or layers[f] == true or (depth or 0) > 24 then return end
@@ -367,6 +395,13 @@ end, function(S, module)
         if not record.active or not Ready() or not widget.checkbg or not widget.check then return end
         widget.checkbg:SetColorTexture(0.17, 0.17, 0.18, 1);
         widget.checkbg:SetVertexColor(1, 1, 1, 1); widget.checkbg:SetSize(14, 14)
+        -- Keep the compact square centred in AceGUI's original 24px control
+        -- slot. Its transparent native artwork supplied padding we must replace.
+        widget.checkbg:ClearAllPoints(); widget.checkbg:SetPoint("TOPLEFT", widget.frame, "TOPLEFT", 5, -5)
+        if H.Allowed(widget.text) then
+            local anchor = H.Texture(widget.image) and widget.image:GetTexture() and widget.image or widget.checkbg
+            widget.text:SetPoint("LEFT", anchor, "RIGHT", 6, 0)
+        end
         widget.checkbg:SetTexCoord(0, 1, 0, 1)
         if widget.highlight then widget.highlight:SetColorTexture(1, 1, 1, 0.08) end
         local r, g, b = S.GetAccentColor()
@@ -409,8 +444,11 @@ end, function(S, module)
         if widget.type == "BlizOptionsGroup" then Font(widget.label, true) end
         if widget.type == "CheckBox" and widget.checkbg and widget.check then
             PaintCheck(widget, record)
-            for _, method in ipairs({"SetValue", "SetType", "SetDisabled"}) do
+            for _, method in ipairs({"SetValue", "SetType", "SetDisabled", "SetLabel", "SetImage"}) do
                 H.Hook(widget, method, function() PaintCheck(widget, record) end)
+            end
+            for _, event in ipairs({"OnMouseDown", "OnMouseUp"}) do
+                H.Script(f, event, function() PaintCheck(widget, record) end)
             end
         elseif widget.type == "Dropdown" and H.Allowed(widget.dropdown) then
             -- The cover is a clickable sibling above the native text frame.

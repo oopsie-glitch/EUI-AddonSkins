@@ -38,3 +38,9 @@ Mock measurements: 100 warm window opens produced zero recursive child reads, ad
 - Clean up on AceGUI Release even for stock Button/InlineGroup widgets without an OnRelease method, including while the skin is disabled. No AceGUI factory or callback is replaced.
 
 Added regressions for the screenshot failures: dark enabled labels, native label resets, frame-level/reparent changes, actual InlineGroup/Dropdown/scrollbar structures, quality colours, thumb hit dimensions, popup ownership/restoration, confirmation routing and disabled release of a widget without OnRelease. One hundred button state changes plus native colour resets perform no recursive child reads or UI-object creation in the mock.
+
+## Alpha.3 refinements
+
+- Give standalone window bodies a restrained two-part centre lift: theme panel colour plus 0.10 at 24% peak opacity, fading to transparent at the outer edges. Titles, settings pages and controls retain their existing tones. The two cached background textures live on minimisable content, with no new frames or update scripts.
+- Centre each compact checkbox in the native 24px visual slot and add a six-unit label gap. Local label/image setters and mouse press/release hooks maintain the gap; optional checkbox images, the native right text anchor, click area, values and disabled colours are preserved. Native region anchors restore on pool release.
+- Regression fixtures cover the gradient endpoints and reuse, compact-square placement, label/image updates, pressed text, native click state changes, unchanged hit dimensions and restored anchors. All checks remain mocked; no new in-game validation is claimed.

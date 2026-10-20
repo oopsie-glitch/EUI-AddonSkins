@@ -35,6 +35,7 @@ Skins\KiwiFarm.lua
 Skins\Myslot.lua
 Skins\PallyPower.lua
 Skins\Questie.lua
+Skins\RCLootCouncil.lua
 Skins\RXPGuides.lua
 Skins\Spy.lua
 Skins\ThreatClassic2.lua

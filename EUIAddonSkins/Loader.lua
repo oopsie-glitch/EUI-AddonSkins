@@ -19,6 +19,7 @@ ns.skinCatalog = {
     {id = "Myslot", label = "Myslot", targets = {"Myslot"}},
     {id = "PallyPower", label = "PallyPower", targets = {"PallyPower"}},
     {id = "Questie", label = "Questie", targets = {"Questie"}},
+    {id = "RCLootCouncil", label = "RCLootCouncil", targets = {"RCLootCouncil"}},
     {id = "RXPGuides", label = "RestedXP Guides", targets = {"RXPGuides"}},
     {id = "Spy", label = "Spy", targets = {"Spy"}},
     {id = "ThreatClassic2", label = "ThreatClassic2", targets = {"ThreatClassic2"}},

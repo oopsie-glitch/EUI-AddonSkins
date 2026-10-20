@@ -26,6 +26,7 @@ EllesmereUI skins for World of Warcraft addons.
 - Details! (meter windows, options, breakdown/report windows and menus)
 - ThreatClassic2 (meter, context menu and options)
 - PallyPower (Blessing Assignments, options, menus and buff controls)
+- RCLootCouncil (Retail alpha: loot responses, voting, history, session/trade windows and options)
 
 Each skin is optional. Only installed, enabled targets appear in EUI settings; their skins activate when the target loads. Everything installs in one addon folder.
 

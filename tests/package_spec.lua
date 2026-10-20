@@ -5,7 +5,7 @@ for _, manifest in ipairs({'EUIAddonSkins.toc', 'EUIAddonSkins_Camelot.toc', 'EU
         if line:match('^## Interface:') then for value in line:gmatch('%d+') do interfaces[tonumber(value)] = true end end
     end
     assert(interfaces[120100] and interfaces[120105] and interfaces[16001], 'Retail/Forever interface coverage regressed: ' .. manifest)
-    for _, onlyTarget in ipairs({false, 'BugSack', 'PallyPower', 'BtWQuests'}) do
+    for _, onlyTarget in ipairs({false, 'BugSack', 'PallyPower', 'BtWQuests', 'HekiLight'}) do
         local ns, entries = {}, {}
         EUIAddonSkinsDB = nil
         C_AddOns = {

@@ -10,7 +10,7 @@ EllesmereUI skins for World of Warcraft addons.
 - Auctionator
 - Spy
 - What’s Training?
-- Hekili (recommendation frames and options)
+- HekiLight (recommendation frames and options)
 - ItemRack
 - KiwiFarm
 - Myslot

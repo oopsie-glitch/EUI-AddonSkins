@@ -111,6 +111,7 @@ S.Button=function(f) f.button=true end
 S.EditBox=function(f) f.input=true end
 S.Dropdown=function(f) f.dropdown=true end
 S.StateButtonLabel=function(f) f.stateLabel=true end
+S.Tab=function(f) assert(f.kind~='Frame', 'Frame-based ATT tab cannot use Button-only tab hooks') end
 S.PageButton=function(f,glyph) f.glyph=glyph end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins',ns)
 assert(loadfile(ATT_SKIN_PATH or 'EUIAddonSkins/Skins/AllTheThings.lua'))('EUIAddonSkins',ns)
@@ -216,6 +217,46 @@ end
 local other=Window(); AllTheThings.Windows.MiniList=other; handlers.OnWindowCreated(other,'MiniList')
 assert(other.CloseButton.close and other.Container.rows[1].Label.path=='EUI')
 if opacity then assert(Surface(other):GetAlpha()==0.42, 'new windows lost saved opacity') end
+-- The Retail auction side tab is a Frame, created lazily by UpdatePosition,
+-- not a normal ATT window/settings button. Keep its native toggle and logo.
+local ah=Object('Frame'); local sidebar=Object('Frame',ah); local foreign=Object('Frame',sidebar)
+local auction=Window(); auction.shown=false; auction.parent=ah
+auction.width=350; auction.nativeScanCalls=0
+auction.UpdatePosition=function(self)
+    self.positioned=(self.positioned or 0)+1
+    if not AllTheThings.AuctionHouseTab then
+        local tab=Object('Frame',sidebar)
+        tab.Icon=tab:CreateTexture(nil,'ARTWORK'); tab.Icon:SetTexture('native-ATT-logo'); tab.Icon:SetSize(24,24)
+        tab.native=tab:CreateTexture(nil,'ARTWORK'); tab.native:SetTexture('gold-native-tab')
+        tab.SetChecked=function(t,value) t.checked=value; return 'native-check-result' end
+        tab.IsChecked=function(t) return t.checked end
+        tab.checked=false
+        tab.scripts.OnMouseUp=function(t,button)
+            t:SetChecked(not t.checked); self.shown=t.checked; self.lastButton=button
+            return 'native-toggle-result',17
+        end
+        AllTheThings.AuctionHouseTab=tab
+    end
+    return 'native-position-result',nil,23
+end
+handlers.OnWindowCreated(auction,'Auctions') -- Emission may precede cache insertion.
+AllTheThings.Windows.Auctions=auction
+assert(not AllTheThings.AuctionHouseTab, 'skinning must not force auction tab creation')
+local result,empty,number=auction:UpdatePosition()
+local tab=AllTheThings.AuctionHouseTab
+assert(result=='native-position-result' and empty==nil and number==23)
+local tabMarker=tab.children[#tab.children].regions[1]
+assert(tab.button and tabMarker.color[4]==0 and tab.native.alpha==0 and not foreign.button)
+assert(tab.Icon.texture=='native-ATT-logo' and tab.Icon.width==24 and tab.Icon.height==24)
+assert(auction.CloseButton.close and Surface(auction) and auction.backdrop.bgFile=='native')
+local toggle,value=tab.scripts.OnMouseUp(tab,'LeftButton')
+assert(toggle=='native-toggle-result' and value==17 and tabMarker.color[4]==1 and auction.shown and auction.lastButton=='LeftButton')
+assert(tab:SetChecked(false)=='native-check-result' and tabMarker.color[4]==0)
+local auctionObjects,auctionHooks=allocated,hookCount
+for i=1,100 do auction:UpdatePosition(); tab:SetChecked(i%2==0) end
+assert(allocated==auctionObjects and hookCount==auctionHooks and auction.nativeScanCalls==0)
+assert(auction.width==350 and auction.parent==ah and tab.parent==sidebar and not foreign.button)
+if opacity then assert(Surface(auction):GetAlpha()==0.42, 'auction panel must follow ATT opacity') end
 local fresh,marker=settings:CreateOptionsPage('new'); assert(marker=='native-return' and nativeCalls==(settings.appearancePage and 2 or 1))
 local late=Object('CheckButton'); late.Text=Text(late); late.checkedArt=Object('Texture'); late.disabledArt=Object('Texture')
 fresh:RegisterObject(late); Flush(); assert(late.check and late.Text.path=='EUI', 'late settings controls missed')
@@ -239,6 +280,7 @@ assert(ATTEditBox.Button.button and ATTEditBox.EditBox.path=='EUI' and not ATTEd
 fontFace='EUI-new'; accent=0.7; looks[1](); Flush()
 assert(row.Label.path==fontFace and late.checkedArt.color[1]==0.7, 'theme/accent refresh missed')
 assert(prime.ScrollBar.thumb.color[1]==0.7, 'scrollbar accent did not refresh')
+assert(tabMarker.color[1]==0.7 and tabMarker.color[4]==1, 'auction tab accent/selection missed theme refresh')
 if opacity then
 assert(Surface(prime):GetAlpha()==0.42, 'theme refresh lost saved opacity')
 combat=true; opacity:SetValue(20); assert(Surface(prime):GetAlpha()==0.42)
@@ -256,6 +298,10 @@ enabled=true; combat=true; handlers.OnWindowCreated(disabled); assert(not disabl
 combat=false; for _,f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.scripts.OnEvent(f) end end
 Flush(); assert(disabled.CloseButton.close, 'combat-deferred window never styled')
 local protected=Window(); protected.protected=true; handlers.OnWindowCreated(protected); assert(not protected.CloseButton.close)
+enabled=false; tabMarker.color[4]=0; tab:SetChecked(true); assert(tabMarker.color[4]==0, 'disabled skin still updates tab')
+enabled=true; combat=true; tab:SetChecked(true); assert(tabMarker.color[4]==0)
+combat=false; for _,f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.scripts.OnEvent(f) end end
+Flush(); assert(tabMarker.color[4]==1, 'combat-deferred auction selection missed')
 assert(#errors==0,table.concat(errors,'\n'))
 if ATT_PERF_FIXTURE then
     return {prime=prime, check=check, page=page, Row=Row, Object=Object, Text=Text, S=S, Flush=Flush,

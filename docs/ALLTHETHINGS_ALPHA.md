@@ -59,3 +59,11 @@ Regression coverage includes both scrollbar families, up/down click returns, scr
 Open Options > AddOns > All The Things > EUI AddonSkins. Background opacity defaults to 65% and is adjustable from 0–100%. The choice is saved in EUI AddonSkins, applies immediately to existing and new ATT collection windows and its multiline dialog, and survives theme changes. Text, icons and controls remain fully opaque. ATT's own saved backdrop and profile colours remain unchanged.
 
 Dragging the slider updates only the adapter's background layers, without row traversal, font writes or a full skin refresh. Changes made during combat defer until combat ends; disabled skins do not apply them. Regression coverage includes persistence when reopening the page, new windows, theme refresh, foreground opacity, unrelated settings and stable object/hook/font counts across the full slider range.
+
+## Auction-house attachment (alpha.5)
+
+The `Auctions` collection panel uses ATT's normal window factory and now explicitly binds its completed `UpdatePosition` stage. Retail creates `AuctionHouseTab` lazily in that stage; the Frame-based side tab receives EllesmereUI's public button surface and an isolated selected accent marker (the public Tab primitive requires Button-only methods) while retaining ATT's logo, checked state, native mouse-up handler and shared-sidebar placement. No auction query, scan, database rebuild, window factory call or sidebar-wide walk is performed by the skin. Other addons' tabs remain untouched. Existing ATT window opacity applies to the auction panel.
+
+Regression fixtures cover late tab construction, pre-cache window events, preserved multi-value positioning/toggle returns, logo/size/sidebar geometry, selected/theme state, disabled/combat guards and 100 repeated positioning/selection calls without new objects or hooks.
+
+Task ZIPs contain the collection from their own branch. This ATT alpha does not include unmerged RCLootCouncil, GRM or SimulationCraft skins; installing another task ZIP replaces the collection runtime. Combine selected branches on a separately validated release/integration branch before distributing one build containing them all.

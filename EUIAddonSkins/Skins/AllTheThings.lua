@@ -12,7 +12,8 @@ end, function(S, module)
     local painted, states, highlights = {}, {}, {}
     local generation = 0
     local pending, painting, waiting = {}, false, false
-    local PaintWindow, BindWindow, BindObject, PaintObject, Refresh
+    local PaintWindow, BindWindow, BindObject, PaintObject, Refresh, PaintAuctionTab, BindAuction
+    local auctionWindow, auctionTabs = nil, {}
     local function Opacity()
         EUIAddonSkinsDB = EUIAddonSkinsDB or {}
         local db = EUIAddonSkinsDB
@@ -144,8 +145,55 @@ end, function(S, module)
         Rows(window)
         if H.Texture(window.Grip) then H.Resize(window, true) end
         Scroll(window.ScrollBar)
+        if window == auctionWindow then PaintAuctionTab() end
     end
-    BindWindow = function(window) Run(PaintWindow, window) end
+    PaintAuctionTab = function()
+        local tab = app.AuctionHouseTab
+        if not H.Allowed(tab) then return end
+        local state = auctionTabs[tab]
+        if not state then
+            local art = {}
+            for _, region in ipairs(H.Regions(tab)) do
+                if H.Texture(region) and region ~= tab.Icon and region ~= tab.IconMask then art[#art + 1] = region end
+            end
+            soft.Button(tab, {"Icon", "IconMask"})
+            for _, region in ipairs(art) do H.Fade(region) end
+            -- QuestLogTabButtonTemplate is a Frame, not a Button: S.Tab would
+            -- try to hook its absent SetText/OnClick. Use the public Button
+            -- surface and an isolated selected marker above its background.
+            local markerHost = CreateFrame("Frame", nil, tab)
+            markerHost:SetAllPoints(tab); markerHost:EnableMouse(false)
+            local marker = markerHost:CreateTexture(nil, "OVERLAY")
+            marker:SetPoint("TOPLEFT", tab, "TOPLEFT", 1, -1)
+            marker:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 1, 1); marker:SetWidth(2)
+            state = {marker = marker}; auctionTabs[tab] = state
+            H.Hook(tab, "SetChecked", function() Run(PaintAuctionTab) end)
+            H.Script(tab, "OnShow", function() Run(PaintAuctionTab) end)
+        end
+        local selected
+        if type(tab.GetChecked) == "function" then selected = tab:GetChecked()
+        elseif type(tab.IsChecked) == "function" then selected = tab:IsChecked()
+        else selected = auctionWindow and auctionWindow:IsShown() end
+        local r, g, b
+        if ns.AccentBarColor then r, g, b = ns.AccentBarColor(S) else r, g, b = S.GetAccentColor() end
+        local visible = selected and (not ns.AccentBarShown or ns.AccentBarShown())
+        state.marker:SetColorTexture(r, g, b, visible and 1 or 0)
+        -- Keep ATT's logo dimensions, native selection, sidebar position and
+        -- mouse-up handler. Never touch other addons' tabs on the shared rail.
+    end
+    BindAuction = function(window)
+        if not H.Allowed(window) then return end
+        auctionWindow = window
+        -- Retail builds create the side tab lazily inside this non-yielding
+        -- positioning stage. Observe completion without wrapping data rebuilds.
+        H.Hook(window, "UpdatePosition", function() Run(PaintAuctionTab) end)
+        H.Script(window, "OnHide", function() Run(PaintAuctionTab) end)
+        PaintAuctionTab()
+    end
+    BindWindow = function(window, suffix)
+        Run(PaintWindow, window)
+        if suffix == "Auctions" then Run(BindAuction, window) end
+    end
 
     local function Check(f)
         S.Checkbox(f, {borderInset = 4, hover = 0.05})
@@ -233,8 +281,9 @@ end, function(S, module)
     Refresh = function()
         waiting = false
         generation = generation + 1
-        for _, window in pairs(app.Windows) do
+        for suffix, window in pairs(app.Windows) do
             PaintWindow(window); if surfaces[window] then Surface(window) end
+            if suffix == "Auctions" then BindAuction(window) end
         end
         Settings()
         EditDialog()

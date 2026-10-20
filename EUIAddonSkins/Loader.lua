@@ -20,6 +20,7 @@ ns.skinCatalog = {
     {id = "PallyPower", label = "PallyPower", targets = {"PallyPower"}},
     {id = "Questie", label = "Questie", targets = {"Questie"}},
     {id = "RXPGuides", label = "RestedXP Guides", targets = {"RXPGuides"}},
+    {id = "RareScanner", label = "RareScanner", targets = {"RareScanner"}},
     {id = "Spy", label = "Spy", targets = {"Spy"}},
     {id = "ThreatClassic2", label = "ThreatClassic2", targets = {"ThreatClassic2"}},
     {id = "TwitchEmotes", label = "TwitchEmotes", targets = {"TwitchEmotes"}},

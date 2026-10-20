@@ -8,6 +8,7 @@ EllesmereUI skins for World of Warcraft addons.
 - Forever Dungeon Journal
 - RestedXP Guides (legacy and V2 windows)
 - Auctionator
+- Scrap (merchant button, junk lists and settings)
 - Spy
 - What’s Training?
 - ItemRack

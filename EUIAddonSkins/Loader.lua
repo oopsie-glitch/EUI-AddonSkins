@@ -18,6 +18,7 @@ ns.skinCatalog = {
     {id = "KiwiFarm", label = "KiwiFarm", targets = {"KiwiFarm"}},
     {id = "Myslot", label = "Myslot", targets = {"Myslot"}},
     {id = "PallyPower", label = "PallyPower", targets = {"PallyPower"}},
+    {id = "QuestCompletist", label = "Quest Completist", targets = {"QuestCompletist"}},
     {id = "Questie", label = "Questie", targets = {"Questie"}},
     {id = "RXPGuides", label = "RestedXP Guides", targets = {"RXPGuides"}},
     {id = "Spy", label = "Spy", targets = {"Spy"}},

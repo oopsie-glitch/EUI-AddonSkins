@@ -14,6 +14,7 @@ ns.skinCatalog = {
     {id = "ForeverDungeonJournal", label = "Forever Dungeon Journal", targets = {"ForeverDungeonJournal"}},
     {id = "GTFO", label = "GTFO", targets = {"GTFO"}},
     {id = "Gargul", label = "Gargul", targets = {"Gargul"}},
+    {id = "Hekili", label = "Hekili", targets = {"Hekili"}},
     {id = "ItemRack", label = "ItemRack", targets = {"ItemRack", "ItemRackOptions"}},
     {id = "KiwiFarm", label = "KiwiFarm", targets = {"KiwiFarm"}},
     {id = "Myslot", label = "Myslot", targets = {"Myslot"}},

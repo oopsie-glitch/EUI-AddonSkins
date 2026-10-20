@@ -1,7 +1,7 @@
 -- RCLootCouncil source-shaped factories, loot pooling and shared options lifecycle.
 local enabled, combat, allocated, hookCount = true, false, 0, 0
 local errors, timers, looks, events, handlers = {}, {}, {}, {}, {}
-local menuBindings=0
+local menuBindings, dialogStyles=0,0
 local module, factory, fontFace, accent = nil, nil, 'EUI', 0.25
 local fontWrites, checkboxPaints, colourWrites = 0, 0, 0
 local childReads, regionReads, parentReads = 0, 0, 0
@@ -10,6 +10,7 @@ ns.RegisterSkinDefinition = function(id, fn) assert(id == 'RCLootCouncil'); fact
 ns.RegisterModule = function(id, _, available, install) module = {id=id, available=available, install=install} end
 ns.BindPopupList=function(_,_,owner,list) assert(owner==list.dropdown); menuBindings=menuBindings+1 end
 ns.RefreshPopupMenusNow=function() end
+ns.StyleTextureDialog=function(_,_,popup,active) dialogStyles=dialogStyles+1; popup.styled=active end
 MSA_ToggleDropDownMenu=function() return 'native-menu' end
 geterrorhandler = function() return function(e) errors[#errors+1] = e end end
 InCombatLockdown = function() return combat end
@@ -49,6 +50,7 @@ local function Object(kind, parent)
     function f:SetChecked(value) self.checked=value end
     function f:GetChecked() return self.checked end
     function f:HighlightText() self.selections=(self.selections or 0)+1 end
+    function f:SetParent(p) self.parent=p end
     function f:GetParent() parentReads=parentReads+1; return self.parent end
     function f:GetBackdrop() return self.backdrop end
     function f:GetBackdropColor() return table.unpack(self.bg or {0.2,0.2,0.2,1}) end
@@ -81,6 +83,7 @@ local function Object(kind, parent)
     function f:SetVertexColor(r,g,b,a)
         self.vertex=self.vertex or {}; self.vertex[1],self.vertex[2],self.vertex[3],self.vertex[4]=r,g,b,a
     end
+    function f:SetRotation(v) self.rotation=v end
     function f:SetTexture(v) self.texture=v end
     if kind=='Texture' then function f:GetTexture() return self.texture end end
     function f:SetTexCoord(...) self.coords={...} end
@@ -234,9 +237,10 @@ end
 function targets.voting.SetCellGear(_,cell)
     cell:SetNormalTexture('gear'); return 'native-gear'
 end
+local gui={Release=function(_,widget) if widget.OnRelease then widget:OnRelease() end; widget.frame:Hide(); widget.frame:SetParent(UIParent); return 'native-release' end}
 local dialog={OpenFrames={},BlizOptions={RCLootCouncil={}}}
 function dialog:FeedGroup(id,_,container) self.feeds=(self.feeds or 0)+1; return 'native-feed',container,id end
-LibStub=function(id,silent) assert(silent); if id=='AceConfigDialog-3.0' then return dialog end end
+LibStub=function(id,silent) assert(silent); if id=='AceConfigDialog-3.0' then return dialog elseif id=='AceGUI-3.0' then return gui end end
 RCLootCouncil=app
 assert(module.available()); module.install(S,module); Flush()
 local voting=targets.voting:GetFrame(); voting:Show()
@@ -285,12 +289,32 @@ check.SetValue=function(self,value) self.checked=value; return 'native-value' en
 check.SetDisabled=function(self,value) self.disabled=value; return 'native-disabled' end
 check.text=Text(check.frame); check.text.color={0.7,0.7,0.7,1}; check.checked=true
 local action=Widget('Button',root.frame); action.frame.kind='Button'; action.frame.Text=Text(action.frame)
+action.text=action.frame.Text; action.text.color={1,0.82,0,1}
+action.SetDisabled=function(self,value) self.disabled=value; if value then self.frame:Disable() else self.frame:Enable() end; return 'native-button-state' end
+action.Fire=function(self,event) if self.events and self.events[event] then return self.events[event]() end; return 'native-fire' end
 table.insert(root.children,action)
 action.frame.scripts.OnClick=function() return 'native-option' end
 local dropdown=Widget('Dropdown',root.frame); table.insert(root.children,dropdown)
 dropdown.dropdown=Object('Frame',dropdown.frame); dropdown.button=Object('Button',dropdown.dropdown)
 dropdown.button.normal=dropdown.button:CreateTexture(nil,'ARTWORK'); dropdown.button.normal:SetTexture('native-arrow')
 dropdown.button.scripts.OnClick=function() return 'native-dropdown' end
+dropdown.button_cover=Object('Button',dropdown.frame)
+dropdown.nativeArt=dropdown.dropdown:CreateTexture(nil,'ARTWORK'); dropdown.nativeArt:SetTexture('native-selector-border')
+dropdown.text=Text(dropdown.dropdown); dropdown.text.color={0.1,0.7,1,1}
+local popup={type='Dropdown-Pullout',frame=Object('Frame',UIParent),items={},userdata={obj=dropdown}}
+popup.frame.obj=popup; popup.frame.backdrop={bgFile='native-popup',edgeFile='ornate'}
+popup.Open=function(self) self.frame:Show(); return 'native-open',17 end
+local popupItem={text=Text(popup.frame)}; popupItem.text.color={0.4,0.5,0.6,1}; popup.items={popupItem}
+dropdown.pullout=popup
+local inline=Widget('InlineGroup',root.frame); table.insert(root.children,inline)
+local inlineBorder=Object('Frame',inline.frame); inlineBorder.backdrop={bgFile='native-inline',edgeFile='bevelled'}
+inline.content=Object('Frame',inlineBorder); inline.titletext=Text(inline.frame)
+local scroll=Widget('ScrollFrame',root.frame); table.insert(root.children,scroll)
+scroll.scrollbar=CreateFrame('Slider','ActualAceScrollbar',scroll.frame); scroll.scrollbar.obj=scroll
+scroll.scrollbar.thumb=scroll.scrollbar:CreateTexture(nil,'ARTWORK'); scroll.scrollbar.thumb:SetTexture('native-thumb'); scroll.scrollbar.thumb:SetSize(20,28)
+local up=CreateFrame('Button','ActualAceScrollbarScrollUpButton',scroll.scrollbar); up:SetNormalTexture('native-up')
+local down=CreateFrame('Button','ActualAceScrollbarScrollDownButton',scroll.scrollbar); down:SetNormalTexture('native-down')
+down.scripts.OnClick=function() return 'native-step' end
 local tabs=Widget('TabGroup',root.frame); table.insert(root.children,tabs)
 tabs.tabs={Object('Button',tabs.frame),Object('Button',tabs.frame)}
 for i,tab in ipairs(tabs.tabs) do tab.Text=Text(tab); tab.selected=i==1 end
@@ -300,14 +324,38 @@ local sr,container,id=dialog:FeedGroup('RCLootCouncil',{},root)
 assert(sr=='native-feed' and container==root and id=='RCLootCouncil')
 assert(check.check.width==8 and check.checkbg.width==14 and check.checked and check.text.path=='EUI')
 assert(action.frame.scripts.OnClick()=='native-option')
-check:OnRelease(); action:OnRelease(); dropdown:OnRelease(); tabs:OnRelease(); root:OnRelease()
+assert(action.text.color[1]==0.92 and action.text.color[4]==1, 'enabled Version Check-style buttons must be readable')
+assert(action:SetDisabled(true)=='native-button-state' and action.text.color[1]==0.5)
+action:SetDisabled(false); action.text:SetTextColor(0.05,0.05,0.01,1)
+assert(action.text.color[1]==0.92, 'native text resets must not leave enabled actions dark')
+action.frame:SetFrameLevel(40); action.frame:SetParent(inline.content)
+assert(#action.frame.children==0, 'action backgrounds must stay behind text without frame-level child overlays')
+assert(inlineBorder.backdrop==nil and inline.titletext.color[1]==accent)
+assert(dropdown.nativeArt.alpha==0 and dropdown.text.color[3]==1, 'selector art is removed while quality colours survive')
+assert(up.normal.alpha==0 and down.normal.alpha==0 and down.scripts.OnClick()=='native-step')
+assert(scroll.scrollbar.thumb.width==20 and scroll.scrollbar.thumb.height==28 and scroll.scrollbar.thumb.alpha==0, 'visual grip must preserve native drag dimensions')
+local opened,openValue=popup:Open()
+assert(opened=='native-open' and openValue==17 and popup.frame.backdrop==nil and popupItem.text.path=='EUI')
+popup.frame:Hide()
+assert(popup.frame.backdrop.edgeFile=='ornate' and popupItem.text.path=='Native' and popupItem.text.color[1]==0.4)
+popup:Open(); popup.userdata.obj={}; popup:Open()
+assert(popupItem.text.path=='Native' and popup.frame.backdrop.edgeFile=='ornate', 'foreign popup reuse restores native styling')
+popup.userdata.obj=dropdown
+dialog.popup=Object('Frame',UIParent); dialog.popup.text=Text(dialog.popup)
+action.events={OnClick=function() dialog.popup:Show(); return 'native-confirm' end}
+assert(action:Fire('OnClick')=='native-confirm' and dialog.popup.styled and dialog.popup.text.path=='Native')
+check:OnRelease(); action:OnRelease(); dropdown:OnRelease(); tabs:OnRelease(); inline:OnRelease(); scroll:OnRelease(); root:OnRelease()
 assert(check.check.texture=='native-tick' and check.check.width==24 and check.checkbg.texture=='native-check-bg')
 assert(check.text.path=='Native' and action.frame.Text.path=='Native', 'pool release must restore native fonts')
+assert(action.text.color[1]==1 and action.text.color[2]==0.82 and inlineBorder.backdrop.edgeFile=='bevelled')
+assert(up.normal.alpha==1 and down.normal.alpha==1 and scroll.scrollbar.thumb.alpha==1)
 local nativeWidgets=allocated
 dialog:FeedGroup('AnotherAddon',{},root); check.frame:Show()
 assert(check.text.path=='Native' and allocated==nativeWidgets, 'other addons must not trigger the skin')
 dialog:FeedGroup('RCLootCouncil',{},root)
-assert(check.check.width==8 and action.frame.children[1].alpha==1, 'owned pool reacquisition restores skin art')
+assert(check.check.width==8, 'owned pool reacquisition restores skin art')
+local actionFill; for _,r in ipairs(action.frame.regions) do if r.layer=='BACKGROUND' then actionFill=r end end
+assert(actionFill and actionFill.alpha==1 and actionFill.anchor==action.frame)
 assert(dropdown.button.scripts.OnClick()=='native-dropdown' and dropdown.button.normal.alpha==0)
 assert(root.closebutton.scripts.OnClick()=='native-close-action' and root.closebutton.normal.alpha==0)
 local beforeStateWalks,beforeStateObjects=childReads,allocated
@@ -317,6 +365,10 @@ assert(check.check.color[1]==0.45 and check.checked==true)
 local callbacks=hookCount
 for i=1,40 do dialog:FeedGroup('RCLootCouncil',{},root) end
 assert(hookCount==callbacks and allocated==nativeWidgets, 'repeated page feeds must reuse skin objects and hooks')
+local beforeLabels,beforeLabelObjects=childReads,allocated
+for i=1,100 do action:SetDisabled(i%2==0); action.text:SetTextColor(0.1,0.1,0.1,1) end
+assert(action.text.color[1]==0.5 and childReads==beforeLabels and allocated==beforeLabelObjects, 'button state repairs must stay local')
+action:SetDisabled(false)
 local menu=CreateFrame('Frame','RCLootCouncil_VotingFrame_FilterMenu',UIParent)
 MSA_DROPDOWNMENU_OPEN_MENU=menu
 MSA_DropDownList1=Object('Button',UIParent); MSA_DropDownList1.dropdown=menu
@@ -335,6 +387,10 @@ enabled=false
 local disabled=RCFrame('DisabledCreated'); local disabledButton=Button(disabled.content)
 Flush(); assert(not disabledButton.button)
 check:OnRelease(); assert(check.text.path=='Native', 'disabled cleanup still restores shared widgets')
+action.OnRelease=nil -- Stock AceGUI Button has no OnRelease method.
+assert(gui:Release(action)=='native-release' and action.text.path=='Native' and action.text.color[1]==1)
+action:SetDisabled(false); action.text:SetTextColor(0.2,0.3,0.4,1)
+assert(action.text.color[1]==0.2, 'released foreign buttons must not inherit active label hooks')
 assert(#errors==0,table.concat(errors,'\n'))
 print('BENCH RCLootCouncil warm opens=100 recursive_reads=0 new_objects=0 new_hooks=0; checkbox_state_calls=200 recursive_reads=0 new_objects=0 (mock)')
 print('PASS: RCLootCouncil factories, dynamic loot/vote actions, native timers, minimising, warm-window caching, shared widget restoration, themes, combat and disabled gating')

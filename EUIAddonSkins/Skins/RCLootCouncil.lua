@@ -10,9 +10,10 @@ end, function(S, module)
     local unpack = unpack or table.unpack
     local windows, icons, layers, nodes, pooled, owners = {}, {}, {}, {}, {}, {}
     local pooledButtons, dropdownArrows, closeGlyphs, nativeChecks, pooledThumbs = {}, {}, {}, {}, {}
-    local windowDirty = {}
+    local fills, skinArt, tracks, arrows, labels = {}, {}, {}, {}, {}
+    local windowDirty, releaseLibraries = {}, {}
     local generation, waiting, applying = 1, false, false
-    local Walk, PaintWidget, Refresh
+    local Walk, PaintWidget, Refresh, Pullout
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
     local function Ready()
@@ -30,21 +31,58 @@ end, function(S, module)
         end
         if heading then text:SetTextColor(S.GetAccentColor()) end
     end
+    local function Strip(f, keep)
+        if not H.Allowed(f) then return end
+        if f.SetBackdrop then f:SetBackdrop(nil) end
+        for _, r in ipairs(H.Regions(f)) do
+            if H.Texture(r) and not skinArt[r] and r ~= keep then r:SetAlpha(0) end
+        end
+    end
     local function Panel(f)
         if not H.Allowed(f) then return end
-        if not layers[f] then
-            -- A separate non-interactive child never intercepts loot or drag clicks.
-            local layer = CreateFrame("Frame", nil, f)
-            layers[f], layers[layer] = layer, true
-            layer:SetAllPoints(f); layer:EnableMouse(false)
-            layer:SetFrameLevel(math.max(0, f:GetFrameLevel() - 1))
-            S.Panel(layer, {noBorder = true})
+        local fill = fills[f]
+        if not fill then
+            -- Same-frame BACKGROUND art cannot be lifted above native text by
+            -- AceGUI's recursive frame-level repair when a page is reparented.
+            fill = f:CreateTexture(nil, "BACKGROUND", nil, -7)
+            fill:SetAllPoints(f); fills[f], skinArt[fill] = fill, true
         end
         if f.SetBackdrop then f:SetBackdrop(nil) end
         for _, r in ipairs(H.Regions(f)) do
             local layer = r.GetDrawLayer and r:GetDrawLayer()
-            if H.Texture(r) and (layer == "BACKGROUND" or layer == "BORDER") then r:SetAlpha(0) end
+            if H.Texture(r) and not skinArt[r] and (layer == "BACKGROUND" or layer == "BORDER") then r:SetAlpha(0) end
         end
+        local r, g, b = S.GetPanelColor()
+        fill:SetColorTexture(r, g, b, 0.98); fill:SetAlpha(1)
+    end
+    local function Label(f, text)
+        if not H.Allowed(text) then return end
+        local state = labels[f]
+        if not state then
+            state = {}; labels[f] = state
+            local painting = false
+            state.paint = function()
+                local record = owners[f]
+                if painting or not record or not record.active or not Ready() then return end
+                painting = true
+                Font(state.text)
+                local disabled = f.IsEnabled and not f:IsEnabled()
+                if record.widget.frame == f and record.widget.disabled then disabled = true end
+                local shade = disabled and 0.5 or 0.92
+                state.text:SetTextColor(shade, shade, disabled and 0.52 or 0.94, 1)
+                painting = false
+            end
+            for _, method in ipairs({"Enable", "Disable", "SetEnabled"}) do H.Hook(f, method, state.paint) end
+            for _, event in ipairs({"OnEnable", "OnDisable", "OnEnter", "OnLeave", "OnMouseDown", "OnMouseUp"}) do
+                H.Script(f, event, state.paint)
+            end
+        end
+        state.text = text
+        -- SetFontObject and native colour writes can follow Enable/hover. Repair
+        -- only this active action label, never a page or unrelated pooled widget.
+        H.Hook(text, "SetTextColor", state.paint)
+        H.Hook(text, "SetFontObject", state.paint)
+        state.paint()
     end
     local function PoolButton(f)
         Panel(f)
@@ -52,9 +90,10 @@ end, function(S, module)
         if not hover then
             hover = f:CreateTexture(nil, "HIGHLIGHT")
             hover:SetAllPoints(f); hover:SetColorTexture(1, 1, 1, 0.08)
-            pooledButtons[f] = hover
+            pooledButtons[f], skinArt[hover] = hover, true
         end
-        for _, r in ipairs(H.Regions(f)) do if H.Texture(r) and r ~= hover then r:SetAlpha(0) end end
+        Strip(f)
+        Label(f, f.GetFontString and f:GetFontString())
     end
     local function PooledClose(f)
         if not H.Allowed(f) then return end
@@ -75,34 +114,60 @@ end, function(S, module)
         -- Retain its colour, desaturation, texture and visibility logic.
         if f.GetBackdrop and f:GetBackdrop() then H.ThinBackdrop(f) end
     end
+    local function Arrow(button, direction)
+        if not H.Allowed(button) then return end
+        Strip(button)
+        local glyph = arrows[button]
+        if not glyph then
+            glyph = button:CreateTexture(nil, "OVERLAY")
+            glyph:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
+            glyph:SetPoint("CENTER", button, "CENTER"); glyph:SetSize(12, 12)
+            if direction == "^" and glyph.SetRotation then glyph:SetRotation(math.pi) end
+            arrows[button], skinArt[glyph] = glyph, true
+        end
+        glyph:SetVertexColor(0.85, 0.85, 0.85, 1)
+    end
     local function Scroll(f, temporary)
         if f.GetThumbTexture and f:GetThumbTexture() then
             local thumb = f:GetThumbTexture()
             if temporary then
-                -- No alpha-lock hooks on shared widgets: native art is restored
-                -- when AceGUI releases this acquisition.
-                for _, r in ipairs(H.Regions(f)) do if r ~= thumb and H.Texture(r) then r:SetAlpha(0) end end
-                if f.SetBackdrop then f:SetBackdrop(nil) end
-                local r, g, b = S.GetAccentColor(); thumb:SetColorTexture(r, g, b, 0.8)
-                for _, pair in ipairs({{f.ScrollUpButton, "^"}, {f.ScrollDownButton, "v"}}) do
-                    -- Keep native arrow art and its hit target on pooled sliders.
-                    -- The track/thumb are themed without persistent API hooks.
-                    if H.Allowed(pair[1]) then Font(pair[1].Text) end
+                Strip(f); thumb:SetAlpha(0)
+                local horizontal = f.GetOrientation and f:GetOrientation() == "HORIZONTAL"
+                local track = tracks[f]
+                if not track then
+                    track = f:CreateTexture(nil, "BACKGROUND"); tracks[f], skinArt[track] = track, true
+                    if horizontal then track:SetPoint("LEFT", f, "LEFT"); track:SetPoint("RIGHT", f, "RIGHT"); track:SetHeight(2)
+                    else track:SetPoint("TOP", f, "TOP"); track:SetPoint("BOTTOM", f, "BOTTOM"); track:SetWidth(2) end
                 end
-            else H.LegacySlider(f) end
-            if f.GetOrientation and f:GetOrientation() == "HORIZONTAL" then thumb:SetSize(8, 14)
-            else thumb:SetWidth(5) end
+                track:SetColorTexture(0.23, 0.23, 0.24, 1)
+                local grip = pooledThumbs[thumb]
+                if not grip then
+                    grip = f:CreateTexture(nil, "ARTWORK"); pooledThumbs[thumb], skinArt[grip] = grip, true
+                    grip:SetPoint("CENTER", thumb, "CENTER")
+                    if horizontal then grip:SetSize(8, 14)
+                    else grip:SetPoint("TOP", thumb, "TOP"); grip:SetPoint("BOTTOM", thumb, "BOTTOM"); grip:SetWidth(5) end
+                end
+                local r, g, b = S.GetAccentColor(); grip:SetColorTexture(r, g, b, 0.85)
+                local name = f.GetName and f:GetName()
+                Arrow(f.ScrollUpButton or name and _G[name .. "ScrollUpButton"], "^")
+                Arrow(f.ScrollDownButton or name and _G[name .. "ScrollDownButton"], "v")
+            else
+                H.LegacySlider(f)
+                if f.GetOrientation and f:GetOrientation() == "HORIZONTAL" then thumb:SetSize(8, 14)
+                else thumb:SetWidth(5) end
+            end
         elseif temporary then
             local thumb = f.Track and f.Track.Thumb or f.GetThumb and f:GetThumb()
             if H.Allowed(thumb) then
+                Strip(thumb)
                 local fill = pooledThumbs[thumb]
                 if not fill then
-                    fill = thumb:CreateTexture(nil, "ARTWORK"); pooledThumbs[thumb] = fill
+                    fill = thumb:CreateTexture(nil, "ARTWORK"); pooledThumbs[thumb], skinArt[fill] = fill, true
                     fill:SetPoint("TOP", thumb, "TOP"); fill:SetPoint("BOTTOM", thumb, "BOTTOM"); fill:SetWidth(5)
                 end
-                for _, r in ipairs(H.Regions(thumb)) do if H.Texture(r) and r ~= fill then r:SetAlpha(0) end end
                 local r, g, b = S.GetAccentColor(); fill:SetColorTexture(r, g, b, 0.8)
             end
+            Arrow(f.Back, "^"); Arrow(f.Forward, "v")
         else
             S.ScrollBar(f, true)
             if H.Allowed(f.Back) then soft.SoftPageButton(f.Back, "^") end
@@ -141,7 +206,7 @@ end, function(S, module)
         elseif kind == "EditBox" then
             Font(f)
             if not (f.IsMultiLine and f:IsMultiLine()) then
-                if owners[f] then Panel(f) else soft.EditBox(f, {padInput = false}) end
+                if owners[f] then Strip(f); Panel(f) else soft.EditBox(f, {padInput = false}) end
             end
         elseif kind == "Button" then
             local label = f.GetFontString and f:GetFontString()
@@ -214,12 +279,13 @@ end, function(S, module)
         for _, key in ipairs({"st", "date", "name"}) do
             local st = f[key]
             if type(st) == "table" and H.Allowed(st.frame) then
-                Panel(st.frame)
+                Strip(st.frame)
                 H.Hook(st, "Refresh", function()
                     if Ready() then Walk(st.frame, false) end
                 end)
             end
         end
+        if type(f.moreInfoDropdown) == "table" then PaintWidget(f.moreInfoDropdown) end
         if H.Allowed(f.moreInfoBtn) then
             H.ThinBackdrop(f.moreInfoBtn) -- Keep native expand/collapse direction.
         end
@@ -293,13 +359,16 @@ end, function(S, module)
             if d.font then f:SetFont(unpack(d.font)); f:SetTextColor(unpack(d.color)) end
             for r, saved in pairs(d.regions) do RestoreRegion(r, saved) end
         end
+        for text, saved in pairs(record.menuFonts or {}) do RestoreRegion(text, saved) end
         for art in pairs(record.art or {}) do art:SetAlpha(0) end
-        record.saved = {}
+        record.saved, record.menuFonts = {}, nil
     end
     local function PaintCheck(widget, record)
         if not record.active or not Ready() or not widget.checkbg or not widget.check then return end
-        widget.checkbg:SetColorTexture(0.1, 0.1, 0.11, 1); widget.checkbg:SetSize(14, 14)
+        widget.checkbg:SetColorTexture(0.17, 0.17, 0.18, 1);
+        widget.checkbg:SetVertexColor(1, 1, 1, 1); widget.checkbg:SetSize(14, 14)
         widget.checkbg:SetTexCoord(0, 1, 0, 1)
+        if widget.highlight then widget.highlight:SetColorTexture(1, 1, 1, 0.08) end
         local r, g, b = S.GetAccentColor()
         widget.check:SetVertexColor(1, 1, 1, 1)
         widget.check:SetColorTexture(widget.disabled and 0.45 or r, widget.disabled and 0.45 or g, widget.disabled and 0.45 or b, 1)
@@ -330,22 +399,38 @@ end, function(S, module)
             for _, child in ipairs(H.Children(node)) do before[child] = true end
         end
         for node in pairs(record.saved) do owners[node] = record end
-        if widget.type == "Window" or widget.type == "Frame" then Panel(f) end
+        if widget.type == "Window" or widget.type == "Frame" or widget.type == "Dropdown-Pullout" then Strip(f); Panel(f) end
+        if widget.type == "InlineGroup" and H.Allowed(widget.content) then
+            local border = widget.content:GetParent()
+            if H.Allowed(border) and border ~= f then Strip(border); Panel(border) end
+            Font(widget.titletext, true)
+        end
+        if widget.type == "Heading" then Strip(f); Font(widget.label, true) end
+        if widget.type == "BlizOptionsGroup" then Font(widget.label, true) end
         if widget.type == "CheckBox" and widget.checkbg and widget.check then
             PaintCheck(widget, record)
             for _, method in ipairs({"SetValue", "SetType", "SetDisabled"}) do
                 H.Hook(widget, method, function() PaintCheck(widget, record) end)
             end
         elseif widget.type == "Dropdown" and H.Allowed(widget.dropdown) then
-            local host = H.Allowed(widget.button_cover) and widget.button_cover or widget.dropdown
-            PoolButton(host)
+            -- The cover is a clickable sibling above the native text frame.
+            -- Put the fill on the text's frame, but size it to the cover, so it
+            -- cannot obscure labels or inherit the template's -15/+17 margins.
+            local host = widget.dropdown
+            local bounds = H.Allowed(widget.button_cover) and widget.button_cover or host
+            Strip(host); PoolButton(host)
+            fills[host]:ClearAllPoints(); fills[host]:SetAllPoints(bounds)
+            pooledButtons[host]:ClearAllPoints(); pooledButtons[host]:SetAllPoints(bounds)
             if not dropdownArrows[host] then
                 local arrow = host:CreateTexture(nil, "OVERLAY")
                 arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
-                arrow:SetSize(12, 12); arrow:SetPoint("RIGHT", host, "RIGHT", -5, 0)
-                dropdownArrows[host] = arrow
+                arrow:SetSize(12, 12)
+                if H.Allowed(widget.button) then arrow:SetPoint("CENTER", widget.button, "CENTER")
+                else arrow:SetPoint("RIGHT", bounds, "RIGHT", -5, 0) end
+                dropdownArrows[host], skinArt[arrow] = arrow, true
             end
             dropdownArrows[host]:SetAlpha(0.8)
+            Pullout(widget)
             if H.Allowed(widget.button) then
                 for _, r in ipairs(H.Regions(widget.button)) do if H.Texture(r) then r:SetAlpha(0) end end
             end
@@ -362,7 +447,27 @@ end, function(S, module)
             end
         end
         for _, key in ipairs({"border", "treeframe"}) do if H.Allowed(widget[key]) then Panel(widget[key]) end end
+        for _, item in ipairs(widget.items or {}) do
+            if H.Allowed(item.text) then
+                record.menuFonts = record.menuFonts or {}
+                if not record.menuFonts[item.text] then record.menuFonts[item.text] = RegionState(item.text) end
+                Font(item.text)
+            end
+        end
         Walk(f, true, record)
+        if widget.type == "Button" then
+            Label(f, widget.text or f.GetFontString and f:GetFontString())
+            H.Hook(widget, "SetDisabled", function() if labels[f] then labels[f].paint() end end)
+        end
+        if ns.StyleTextureDialog then
+            H.Hook(widget, "Fire", function(_, event)
+                if event ~= "OnClick" and event ~= "OnValueChanged" and event ~= "OnEnterPressed" then return end
+                local dialog = LibStub and LibStub("AceConfigDialog-3.0", true)
+                local popup = dialog and dialog.popup
+                if popup and popup:IsShown() then ns.StyleTextureDialog(S, module, popup, record.active) end
+            end)
+        end
+        if widget.slider then Scroll(widget.slider, true) end
         record.art = record.art or {}
         for node in pairs(record.saved) do
             for _, r in ipairs(H.Regions(node)) do if not before[r] then record.art[r] = r:GetAlpha() end end
@@ -370,7 +475,39 @@ end, function(S, module)
         end
         for _, child in ipairs(widget.children or {}) do PaintWidget(child) end
     end
+    Pullout = function(widget)
+        local popup = widget.pullout
+        if type(popup) ~= "table" or not H.Allowed(popup.frame) then return end
+        pooled[popup] = pooled[popup] or {widget = popup, nodes = {}, saved = {}}
+        local record = pooled[popup]
+        if not record.hideHook then
+            record.hideHook = true
+            popup.frame:HookScript("OnHide", function() Restore(record) end)
+        end
+        if not record.openHook and type(popup.Open) == "function" then
+            record.openHook = true
+            hooksecurefunc(popup, "Open", function()
+                H.Safe(function()
+                    local owner = popup.userdata and popup.userdata.obj
+                    if ns.IsEnabled(module) and owner and pooled[owner] and pooled[owner].active and Ready() then PaintWidget(popup)
+                    else Restore(record) end
+                end)
+            end)
+        end
+        if popup.frame:IsShown() and popup.userdata and popup.userdata.obj == widget and pooled[widget].active and Ready() then
+            PaintWidget(popup)
+        end
+    end
     local function Options()
+        local gui = LibStub and LibStub("AceGUI-3.0", true)
+        if gui and type(gui.Release) == "function" and not releaseLibraries[gui] then
+            releaseLibraries[gui] = true
+            -- Release cleanup must also run when this skin is disabled. Several
+            -- stock Ace widgets (Button/InlineGroup) have no OnRelease method.
+            hooksecurefunc(gui, "Release", function(_, widget)
+                if pooled[widget] then H.Safe(Restore, pooled[widget]) end
+            end)
+        end
         local dialog = LibStub and LibStub("AceConfigDialog-3.0", true)
         if not dialog then return end
         H.Hook(dialog, "FeedGroup", function(_, id, _, container)

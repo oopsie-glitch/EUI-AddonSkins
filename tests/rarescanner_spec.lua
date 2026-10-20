@@ -226,12 +226,13 @@ explorer.lootItemsPool={EnumerateActive=function() return next,{[loot]=true},nil
 local gui={Release=function(_,widget) if widget.OnRelease then widget:OnRelease() end; widget.frame:Hide(); widget.frame:SetParent(UIParent); return 'native-release' end}
 local dialog={OpenFrames={},BlizOptions={['RareScanner General']={}}}
 function dialog:FeedGroup(id,_,container) self.feeds=(self.feeds or 0)+1; return 'native-feed',container,id end
+local targetApp={SetupOptions=function() return "native-setup" end}
 local libDialog={}
 function libDialog:Spawn(reference,data) self.last=Object('Frame',UIParent); self.last.Text=Text(self.last); return self.last end
 function libDialog:ActiveDialog() return self.last end
 LibStub=function(id,silent)
     assert(silent)
-    if id=='AceConfigDialog-3.0' then return dialog elseif id=='AceGUI-3.0' then return gui elseif id=='LibDialog-1.0RS' then return libDialog end
+    if id=='AceConfigDialog-3.0' then return dialog elseif id=='AceGUI-3.0' then return gui elseif id=='LibDialog-1.0RS' then return libDialog elseif id=='AceAddon-3.0' then return {GetAddon=function(_,id,quiet) assert(id=='RareScanner' and quiet); return targetApp end} end
 end
 RSLootMixin={AddItem=function(self,id) self.itemID=id; return 'native-item' end}
 assert(module.available()); module.install(S,module); Flush()
@@ -301,10 +302,75 @@ down.scripts.OnClick=function() return 'native-step' end
 local tabs=Widget('TabGroup',root.frame); table.insert(root.children,tabs)
 tabs.tabs={Object('Button',tabs.frame),Object('Button',tabs.frame)}
 for i,tab in ipairs(tabs.tabs) do tab.Text=Text(tab); tab.selected=i==1 end
+local media=Widget('LSM30_Sound',root.frame); table.insert(root.children,media)
+media.frame.label=Text(media.frame); media.frame.label.color={1,0.82,0,1}
+media.frame.text=Text(media.frame); media.frame.text.text='Horn'
+for _,k in ipairs({'DLeft','DMiddle','DRight'}) do media.frame[k]=media.frame:CreateTexture(nil,'ARTWORK'); media.frame[k]:SetTexture('native-lsm-border') end
+media.frame.dropButton=Object('Button',media.frame); media.frame.dropButton:SetNormalTexture('native-down')
+media.soundbutton=Object('Button',media.frame); media.soundbutton.obj=media
+media.speaker=media.soundbutton:CreateTexture(nil,'BACKGROUND'); media.speaker:SetTexture('native-speaker')
+media.soundbutton.scripts.OnClick=function() return 'native-sound-preview' end
+local mediaPopup=Object('Frame',UIParent); mediaPopup.backdrop={bgFile='native-media',edgeFile='ornate'}
+local mediaRow=Object('Button',mediaPopup); mediaRow.obj=media; mediaRow.text=Text(mediaRow)
+mediaRow.text.color={1,1,1,1}; mediaRow.highlight=mediaRow:CreateTexture(nil,'HIGHLIGHT'); mediaRow.highlight:SetTexture('native-highlight')
+mediaRow.scripts.OnClick=function() return 'native-sound-choice' end
+mediaRow.check=mediaRow:CreateTexture(nil,'ARTWORK'); mediaRow.check:SetTexture('native-tick'); mediaRow.check:Show()
+mediaPopup.contentRepo={mediaRow}
+mediaPopup.slider=Object('Slider',mediaPopup); mediaPopup.slider.thumb=mediaPopup.slider:CreateTexture(); mediaPopup.slider.thumb:SetTexture('media-thumb'); mediaPopup.slider.thumb:SetSize(20,28)
+mediaPopup:Hide()
+local mediaToggles=0
+media.frame.dropButton.scripts.OnClick=function()
+    mediaToggles=mediaToggles+1
+    if media.dropdown then mediaPopup:Hide(); media.dropdown=nil else media.dropdown=mediaPopup; mediaPopup:Show() end
+    return 'native-media-toggle'
+end
+local binding=Widget('Keybinding',root.frame); table.insert(root.children,binding)
+binding.button=Object('Button',binding.frame); binding.button.obj=binding; binding.button.Text=Text(binding.button)
+binding.button:SetNormalTexture('native-red-button'); binding.key='CTRL-A'
+binding.msgframe=Object('Frame',UIParent); binding.msgframe.Text=Text(binding.msgframe); binding.msgframe:Hide()
+binding.button.scripts.OnClick=function() binding.waiting=true; binding.msgframe:Show(); return 'native-key-capture' end
+binding.button.scripts.OnKeyDown=function(_,key) binding.key=key; binding.waiting=false; binding.msgframe:Hide(); return 'native-bind' end
 root.closebutton=Object('Button',root.frame); root.closebutton:SetNormalTexture('native-close')
 root.closebutton.scripts.OnClick=function() return 'native-close-action' end
+-- Reproduce a real Blizzard canvas: its native OnShow builds its content.
+-- The shared library then receives a newer FeedGroup method after skin setup.
+root.frame:Hide()
+root.frame.scripts.OnShow=function() dialog:FeedGroup('RareScanner General',{},root) end
+assert(targetApp:SetupOptions()=='native-setup')
+local replacedFeeds=0
+dialog.FeedGroup=function(self,id,_,container) replacedFeeds=replacedFeeds+1; return 'native-feed',container,id end
+root.frame:Show()
+assert(replacedFeeds==1 and check.checkbg.width==14 and action.text.color[1]==0.92,'canvas fallback missed replaced library')
 local sr,container,id=dialog:FeedGroup('RareScanner General',{},root)
 assert(sr=='native-feed' and container==root and id=='RareScanner General')
+assert(media.frame.DLeft.alpha==0 and media.speaker.alpha==1 and media.frame.label.color[1]==0.86)
+assert(media.soundbutton.scripts.OnClick()=='native-sound-preview')
+media.frame.dropButton.scripts.OnClick()
+assert(mediaToggles==1 and mediaPopup.backdrop==nil and mediaRow.text.path=='EUI')
+assert(mediaPopup.slider.thumb.width==20 and mediaPopup.slider.thumb.height==28 and mediaPopup.slider.thumb.alpha==0)
+assert(mediaRow.scripts.OnClick()=='native-sound-choice' and mediaRow.check:IsShown())
+media.frame.dropButton.scripts.OnClick(); assert(mediaToggles==2 and media.dropdown==nil)
+assert(mediaPopup.backdrop.edgeFile=='ornate' and mediaRow.text.path=='Native' and mediaPopup.slider.thumb.alpha==1,'media popup cleanup leaked')
+assert(binding.button.normal.alpha==0 and binding.button.Text.color[1]==0.92)
+binding.button.scripts.OnClick(); assert(binding.waiting and binding.msgframe.styled)
+assert(binding.button.scripts.OnKeyDown(binding.button,'SHIFT-B')=='native-bind' and binding.key=='SHIFT-B')
+local stableReads,stableRegions,stableObjects,stableHooks,stableFonts=childReads,regionReads,allocated,hookCount,fontWrites
+for i=1,100 do
+    for _,event in ipairs(events) do if event.events and event.events.ADDON_LOADED then event.scripts.OnEvent(event,'ADDON_LOADED','UnrelatedAddon') end end
+end
+assert(childReads==stableReads and regionReads==stableRegions and allocated==stableObjects and hookCount==stableHooks and fontWrites==stableFonts,'unchanged libraries caused options work')
+local popupObjects,popupHooks=allocated,hookCount
+for i=1,20 do media.frame.dropButton.scripts.OnClick(); media.frame.dropButton.scripts.OnClick() end
+assert(allocated==popupObjects and hookCount==popupHooks and mediaPopup.backdrop.edgeFile=='ornate','media popup reuse grew/leaked styling')
+-- A normal native feed during OnShow must not cause a second full paint.
+local cr,rr=childReads,regionReads
+dialog:FeedGroup('RareScanner General',{},root)
+local expectedChildren,expectedRegions=childReads-cr,regionReads-rr
+cr,rr=childReads,regionReads; root.frame:Show()
+assert(childReads-cr==expectedChildren and regionReads-rr==expectedRegions,'page OnShow duplicated its completed feed')
+print('BENCH RareScanner unrelated_addon_loads=100 hierarchy_reads=0 font_writes=0; media_reopen=20 new_UI_objects=0 new_hooks=0')
+
+
 assert(check.check.width==8 and check.checkbg.width==14 and check.checked and check.text.path=='EUI')
 assert(check.checkbg.point[4]==5 and check.checkbg.point[5]==-5 and check.frame.width==200 and check.frame.height==24)
 assert(check.text.point[2]==check.checkbg and check.text.point[4]==6)
@@ -336,12 +402,13 @@ popup.userdata.obj=dropdown
 dialog.popup=Object('Frame',UIParent); dialog.popup.text=Text(dialog.popup)
 action.events={OnClick=function() dialog.popup:Show(); return 'native-confirm' end}
 assert(action:Fire('OnClick')=='native-confirm' and dialog.popup.styled and dialog.popup.text.path=='Native')
-check:OnRelease(); action:OnRelease(); dropdown:OnRelease(); tabs:OnRelease(); inline:OnRelease(); scroll:OnRelease(); root:OnRelease()
+check:OnRelease(); action:OnRelease(); dropdown:OnRelease(); tabs:OnRelease(); inline:OnRelease(); scroll:OnRelease(); media:OnRelease(); binding:OnRelease(); root:OnRelease()
 assert(check.check.texture=='native-tick' and check.check.width==24 and check.checkbg.texture=='native-check-bg')
 assert(check.text.point[4]==0 and check.checkbg.point[4]==0 and check.checkbg.point[5]==0,
     'pool release must restore native checkbox and label anchors')
 assert(check.text.path=='Native' and action.frame.Text.path=='Native', 'pool release must restore native fonts')
 assert(action.text.color[1]==1 and action.text.color[2]==0.82 and inlineBorder.backdrop.edgeFile=='bevelled')
+assert(media.frame.DLeft.alpha==1 and media.frame.label.color[1]==1 and binding.button.normal.alpha==1,'new widget styles leaked on release')
 assert(up.normal.alpha==1 and down.normal.alpha==1 and scroll.scrollbar.thumb.alpha==1)
 local nativeWidgets=allocated
 dialog:FeedGroup('AnotherAddon',{},root); check.frame:Show()
@@ -372,10 +439,12 @@ local oldCalls=fontWrites; module.refresh(); scanner:ShowButton(); listView.fn(l
 assert(fontWrites==oldCalls,'combat styling occurred')
 combat=false; for _,event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.scripts.OnEvent(event) end end; Flush()
 enabled=false
+gui.Release=function(_,widget) widget.frame:Hide(); return 'native-release' end
+for _,event in ipairs(events) do if event.events and event.events.ADDON_LOADED then event.scripts.OnEvent(event,'ADDON_LOADED','LibraryUpgrade') end end
 check:OnRelease(); action.OnRelease=nil
 assert(gui:Release(action)=='native-release' and check.text.path=='Native' and action.text.path=='Native')
 action:SetDisabled(false); action.text:SetTextColor(0.2,0.3,0.4,1); assert(action.text.color[1]==0.2)
 local objects=allocated; module.refresh(); scanner:ShowButton(); explorer:Show(); Flush(); assert(allocated==objects)
 assert(#errors==0,table.concat(errors,'\n'))
 RARESCANNER_BUTTON,RSExplorerFrame,RSLootMixin=nil,nil,nil
-print('PASS: RareScanner secure macro/model/click preservation, Explorer map exclusion/status colours/dynamic rows, warm reuse, Ace restoration, dialogs, themes/combat/disable')
+print('PASS: RareScanner secure alert/Explorer, page activation after Ace replacement, LSM sound menus/scrollbars, keybindings, native actions/pool restoration, themes/combat/disable')

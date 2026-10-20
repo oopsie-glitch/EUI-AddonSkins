@@ -9,11 +9,13 @@ end, function(S, module)
     local icons, layers, nodes, pooled, owners = {}, {}, {}, {}, {}
     local pooledButtons, dropdownArrows, closeGlyphs, nativeChecks, pooledThumbs = {}, {}, {}, {}, {}
     local fills, skinArt, tracks, arrows, labels = {}, {}, {}, {}, {}
-    local releaseLibraries, lifts, views = {}, {}, {}
+    local lifts, views = {}, {}
+    local optionGroups, libraryHooks, mediaRecords = {}, {}, {}
     local generation, waiting, applying = 1, false, false
-    local Walk, PaintWidget, Refresh, Pullout
+    local Walk, PaintWidget, Refresh, Pullout, Options, BindGroup, MediaPopup
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
+    events:RegisterEvent("ADDON_LOADED")
     local function Ready()
         if not ns.IsEnabled(module) then return false end
         if InCombatLockdown and InCombatLockdown() then waiting = true; return false end
@@ -28,6 +30,16 @@ end, function(S, module)
         return kind == "PlayerModel" or kind == "ModelScene" or kind == "GameTooltip"
             or root and root.RareInfo and f == root.RareInfo.Map
             or type(f.GetView) == "function" -- virtualized rows use initialization callbacks
+    end
+    local function LibraryHook(object, key, callback, cleanup)
+        if type(object) ~= "table" or type(object[key]) ~= "function" then return end
+        local bound = libraryHooks[object]
+        if not bound then bound = {}; libraryHooks[object] = bound end
+        if bound[key] == object[key] then return end
+        hooksecurefunc(object, key, function(...)
+            if cleanup or ns.IsEnabled(module) then H.Safe(callback, ...) end
+        end)
+        bound[key] = object[key]
     end
     local function Font(text, heading)
         if not H.Allowed(text) or not text.GetFont then return end
@@ -455,6 +467,24 @@ end, function(S, module)
             if H.Allowed(widget.button) then
                 for _, r in ipairs(H.Regions(widget.button)) do if H.Texture(r) then r:SetAlpha(0) end end
             end
+        elseif type(widget.type) == "string" and widget.type:match("^LSM30_") and H.Allowed(f.dropButton) then
+            for _, key in ipairs({"DLeft", "DMiddle", "DRight"}) do if H.Texture(f[key]) then f[key]:SetAlpha(0) end end
+            Panel(f)
+            fills[f]:ClearAllPoints()
+            fills[f]:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -18)
+            fills[f]:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT")
+            Arrow(f.dropButton, "v")
+            if H.Allowed(f.text) then Label(f, f.text) end
+            H.Script(f.dropButton, "OnClick", function() MediaPopup(widget) end)
+            H.Hook(widget, "ToggleDrop", function() MediaPopup(widget) end)
+            MediaPopup(widget)
+        elseif widget.type == "Keybinding" then
+            if H.Allowed(widget.button) then PoolButton(widget.button) end
+            H.Script(widget.button, "OnClick", function()
+                if record.active and Ready() and widget.msgframe and widget.msgframe:IsShown() and ns.StyleTextureDialog then
+                    ns.StyleTextureDialog(S, module, widget.msgframe, true)
+                end
+            end)
         elseif widget.type == "TabGroup" then
             for _, tab in pairs(widget.tabs or {}) do
                 if H.Allowed(tab) then
@@ -476,6 +506,10 @@ end, function(S, module)
             end
         end
         Walk(f, true, record)
+        if widget.type ~= "Heading" and widget.type ~= "BlizOptionsGroup" and H.Allowed(widget.label or f.label) then
+            local label = widget.label or f.label
+            Font(label); label:SetTextColor(0.86, 0.86, 0.88, 1)
+        end
         if widget.type == "Button" then
             Label(f, widget.text or f.GetFontString and f:GetFontString())
             H.Hook(widget, "SetDisabled", function() if labels[f] then labels[f].paint() end end)
@@ -519,25 +553,90 @@ end, function(S, module)
             PaintWidget(popup)
         end
     end
-    local function Options()
-        local gui = LibStub and LibStub("AceGUI-3.0", true)
-        if gui and type(gui.Release) == "function" and not releaseLibraries[gui] then
-            releaseLibraries[gui] = true
-            -- Release cleanup must also run when this skin is disabled. Several
-            -- stock Ace widgets (Button/InlineGroup) have no OnRelease method.
-            hooksecurefunc(gui, "Release", function(_, widget)
-                if pooled[widget] then H.Safe(Restore, pooled[widget]) end
-            end)
+    MediaPopup = function(widget)
+        local own = pooled[widget]
+        local frame = widget.dropdown
+        if not Ready() or not own or not own.active or not H.Allowed(frame) or not frame:IsShown() then return end
+        local record = mediaRecords[frame]
+        if not record then
+            record = {nodes = {}, saved = {}}; mediaRecords[frame] = record
+            -- ReturnDropDownFrame clears its rows before hiding. Restore these
+            -- native rows as well, before their next foreign acquisition.
+            frame:HookScript("OnHide", function() H.Safe(Restore, record) end)
         end
+        if record.active and record.widget ~= widget then Restore(record) end
+        record.widget = widget
+        if not record.active then
+            record.active, record.saved = true, {}
+            for art, alpha in pairs(record.art or {}) do art:SetAlpha(alpha) end
+        end
+        Snapshot(frame, record)
+        local before = {}
+        for node in pairs(record.saved) do
+            owners[node] = record
+            for _, r in ipairs(H.Regions(node)) do before[r] = true end
+            for _, child in ipairs(H.Children(node)) do before[child] = true end
+        end
+        Strip(frame, frame.bgTex); Panel(frame)
+        if H.Allowed(frame.slider) then Scroll(frame.slider, true) end
+        for _, row in ipairs(frame.contentRepo or {}) do
+            Font(row.text)
+            local highlight = row.GetHighlightTexture and H.Texture(row:GetHighlightTexture())
+            if highlight then highlight:SetColorTexture(1, 1, 1, 0.09) end
+            if H.Texture(row.check) then row.check:SetVertexColor(S.GetAccentColor()) end
+        end
+        record.art = record.art or {}
+        for node in pairs(record.saved) do
+            for _, r in ipairs(H.Regions(node)) do if not before[r] then record.art[r] = r:GetAlpha() end end
+            for _, child in ipairs(H.Children(node)) do if not before[child] then record.art[child] = child:GetAlpha() end end
+        end
+    end
+    BindGroup = function(widget)
+        if type(widget) ~= "table" or widget.type ~= "BlizOptionsGroup" or not H.Allowed(widget.frame) then return end
+        if optionGroups[widget] then return end
+        local state = {fed = false}; optionGroups[widget] = state
+        -- Native OnShow fires AceConfig synchronously. Our script runs after
+        -- construction, even if a later Ace library replaces FeedGroup/Open.
+        H.Script(widget.frame, "OnShow", function()
+            if not Ready() then return end
+            Options(true)
+            if not state.fed then PaintWidget(widget) end
+            state.fed = false
+        end)
+        H.Script(widget.frame, "OnHide", function() state.fed = false end)
+    end
+    local function WatchRelease(gui)
+        LibraryHook(gui, "Release", function(_, widget)
+            if pooled[widget] then Restore(pooled[widget]) end
+        end, true)
+    end
+    Options = function(bindOnly)
+        local ace = LibStub and LibStub("AceAddon-3.0", true)
+        local target = ace and ace.GetAddon and ace:GetAddon("RareScanner", true)
+        H.Hook(target, "SetupOptions", function() Options(true) end)
+        local gui = LibStub and LibStub("AceGUI-3.0", true)
+        WatchRelease(gui)
         local dialog = LibStub and LibStub("AceConfigDialog-3.0", true)
         if not dialog then return end
-        H.Hook(dialog, "FeedGroup", function(_, id, _, container)
-            if OptionID(id) and Ready() then PaintWidget(container) end
+        LibraryHook(dialog, "FeedGroup", function(_, id, _, container)
+            if OptionID(id) and Ready() then
+                BindGroup(container)
+                PaintWidget(container)
+                if optionGroups[container] then optionGroups[container].fed = true end
+            end
         end)
-        for id, open in pairs(dialog.OpenFrames or {}) do if OptionID(id) then PaintWidget(open) end end
+        LibraryHook(dialog, "AddToBlizOptions", function(_, id)
+            if OptionID(id) then Options(true) end
+        end)
+        for id, open in pairs(dialog.OpenFrames or {}) do
+            if not bindOnly and OptionID(id) then PaintWidget(open) end
+        end
         for id, entries in pairs(dialog.BlizOptions or {}) do
             if OptionID(id) then
-                for _, widget in pairs(entries) do if widget.frame and widget.frame:IsShown() then PaintWidget(widget) end end
+                for _, widget in pairs(entries) do
+                    BindGroup(widget)
+                    if not bindOnly and widget.frame and widget.frame:IsShown() then PaintWidget(widget) end
+                end
             end
         end
     end
@@ -664,7 +763,24 @@ end, function(S, module)
     end)
     module.refresh = function() generation = generation + 1; Refresh() end
     if S.OnLooksChanged then S.OnLooksChanged(module.refresh) end
-    events:SetScript("OnEvent", function() if waiting then waiting = false; generation = generation + 1; Refresh() end end)
+    events:SetScript("OnEvent", function(_, event)
+        if event == "ADDON_LOADED" then
+            local gui = LibStub and LibStub("AceGUI-3.0", true)
+            local gh = gui and libraryHooks[gui]
+            -- Pool cleanup stays active after disabling the skin.
+            if gui and (not gh or gh.Release ~= gui.Release) then WatchRelease(gui) end
+            if not ns.IsEnabled(module) then return end
+            local dialog = LibStub and LibStub("AceConfigDialog-3.0", true)
+            local dh = dialog and libraryHooks[dialog]
+            -- Constant-time identity checks. Bind only when a library method
+            -- changes; never traverse options on unrelated addon-load events.
+            if dialog and (not dh or dh.FeedGroup ~= dialog.FeedGroup) then
+                if Ready() then Options(true) end
+            end
+        elseif waiting then
+            waiting = false; generation = generation + 1; Refresh()
+        end
+    end)
     Refresh()
 end)
 end

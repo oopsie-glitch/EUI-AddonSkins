@@ -32,3 +32,13 @@ Targeted mocks verify secure macro/model/click preservation, skipped map/secure 
 No WoW client is available here. Automated checks do not establish in-game appearance or taint safety. Runtime version stays 1.5.2 until release integration; the ZIP filename identifies this alpha.
 
 This build excludes other unmerged task alphas. No release tag or CurseForge/Wago publication is created.
+
+## Alpha.2 — options pass
+
+- Bind RareScanner's own Blizzard options canvases after native OnShow construction and after SetupOptions/AddToBlizOptions. This also recovers when a shared Ace library replaces its methods after startup. Completed feeds avoid a duplicate canvas paint.
+- Observe method identity changes on ADDON_LOADED; unchanged libraries trigger no option traversal or repaint. Pool-release cleanup also rebinds after disabling the skin.
+- Add the SharedMedia sound selectors and their separate, opaque popup lists, including their scrollbars. Speaker previews, selected ticks and sound values remain native; popup art/fonts/slider geometry restore on hide and reuse.
+- Flatten keybinding controls and texture-style their capture hint without replacing keyboard handlers. Refine field captions to soft white while headings follow the accent; retain the existing settings-window background.
+- Scrollbars, slider tracks/grips, numeric fields, inputs, standard dropdowns and clean checkboxes use the existing pooled control treatment once the page activates.
+
+Regression fixtures now reproduce a native canvas opening after FeedGroup replacement and a Release replacement while the skin is disabled. They also cover sound selection/preview, keyboard capture, popup cleanup/reuse and prevention of duplicate page paints. In mocks, 100 unchanged-library addon-load events perform zero hierarchy reads/font writes, and 20 media popup reopen cycles add zero UI objects/hooks. All 23 suites and packaging validation pass. In-game appearance is unverified.

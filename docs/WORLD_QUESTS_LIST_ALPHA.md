@@ -23,3 +23,9 @@ Menu labels are repaired locally after native FontObject setters; new rows are b
 `python3 scripts/package.py` runs syntax validation, the full regression suite and one-folder/license/manifest checks. The focused mock covers native private updater calls/returns, new rows, 300 warm updates with no hierarchy walks/UI allocations/font writes, repeated/rebuilt menus, checked-state visibility, filters/actions, lazy dialogs, native opacity, theme changes and combat/toggle recovery.
 
 No in-game rendering, FPS or taint verification has been performed.
+
+## Dedicated performance review
+
+ELib retains its largest popup pool (`MaxLines`) when a shorter menu is opened. Limit per-open styling to the current `LinesNow` budget, which native code sets before Show and uses during Reload. Previously the skin revisited every historical pooled row. Existing fonts, callbacks and current-row construction remain synchronous.
+
+The new regression expands a menu to 12 rows, reopens it at 2, verifies the other 10 rows remain untouched, and expands again to confirm reacquired rows are skinned. The full suite and install archive checks pass. No new polling, global hooks or runtime dependencies are added. Main/background/quest colours and actions remain unchanged.

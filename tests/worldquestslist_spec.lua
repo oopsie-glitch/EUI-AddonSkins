@@ -250,10 +250,13 @@ for i=1,3 do
 end
 local function OpenMenu(menu,count)
  for i=#menu.Buttons+1,count do menu.Buttons[i]=MenuRow(menu)end
+ menu.LinesNow=count
  menu:Show() -- native ToggleDropDownMenu shows first, Reload follows
  for i,f in ipairs(menu.Buttons)do
+  if i<=count then
   f:SetNormalFontObject();f:SetHighlightFontObject();f.NormalText:SetText('setting '..i)
   f.checkButton:SetChecked(i%2==0);f.checkButton.checkedArt:SetShown(i%2==0);f:Show()
+  else f:Hide()end
  end
  return'menu-native'
 end
@@ -282,6 +285,14 @@ local objects,hooks=allocated,hookCount
 for i=1,50 do menu:Hide();OpenMenu(menu,10)end
 assert(allocated==objects and hookCount==hooks,'menu hooks/objects duplicated')
 OpenMenu(menu,12);assert(menu.Buttons[12].NormalText.path=='EUI')
+-- The native pool keeps maximum-size menus. Reopening a shorter menu must
+-- leave retired rows alone even before Reload hides their previous visibility.
+local retired=menu.Buttons[12].checkButton.checkedArt
+retired:SetColorTexture(.123,.234,.345,1)
+OpenMenu(menu,2)
+assert(retired.color[1]==.123 and not menu.Buttons[12].shown,'short menu repainted hidden pooled rows')
+OpenMenu(menu,12)
+assert(retired.color[1]==accent,'expanded menu did not repaint reacquired row')
 assert(menu.Buttons[1].scripts.OnClick()=='menu-action')
 W.BlackListWindow:Show();assert(W.BlackListWindow.shell.noAccent and W.BlackListWindow.L[4].n.path=='EUI')
 assert(W.BlackListWindow.bar.thumb.width==6)

@@ -142,7 +142,12 @@ end,function(API,module)
     Menu=function(f)
         if not Ready()or not H.Allowed(f)then return end
         Surface(f);H.Fade(f.Background)
-        for _,button in ipairs(f.Buttons or{})do
+        -- MaxLines retains the largest menu ever opened. LinesNow is assigned
+        -- before Show and bounds the current Reload; do not repaint old rows.
+        local buttons=f.Buttons or{}
+        local count=math.min(#buttons,f.LinesNow or #buttons)
+        for i=1,count do
+            local button=buttons[i]
             local d=styled[button]or{};styled[button]=d
             if not d.menu then
                 d.menu=true

@@ -23,6 +23,7 @@ ns.skinCatalog = {
     {id = "Spy", label = "Spy", targets = {"Spy"}},
     {id = "ThreatClassic2", label = "ThreatClassic2", targets = {"ThreatClassic2"}},
     {id = "TwitchEmotes", label = "TwitchEmotes", targets = {"TwitchEmotes"}},
+    {id = "WaypointUI", label = "Waypoint UI", targets = {"WaypointUI"}},
     {id = "WhatsTraining", label = "What's Training?", targets = {"WhatsTraining"}},
 }
 ns.skinCatalogByID = {}

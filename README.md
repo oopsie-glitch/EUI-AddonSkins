@@ -18,6 +18,7 @@ EllesmereUI skins for World of Warcraft addons.
 - Altoholic
 - Attune
 - TwitchEmotes (popup menu)
+- Waypoint UI (settings, prompts, selection menus and waypoint text)
 - Questie (Journey, settings, tracker styling and popup menus)
 - Deadly Boss Mods (timer bars, options, range/radar and info frames)
 - AtlasLootClassic Continued

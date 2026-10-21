@@ -43,7 +43,33 @@ end, function(S, module)
     end
     local function Check(frame)
         if not checks[frame] then
-            soft.Checkbox(frame, {borderInset = 4, hover = 0.08})
+            local regions, children = {}, {}
+            for _, region in ipairs(H.Regions(frame)) do regions[region] = true end
+            for _, child in ipairs(H.Children(frame)) do children[child] = true end
+            S.Checkbox(frame, {borderInset = 4, hover = 0.08})
+            -- Keep the public checkbox treatment, but give its visuals explicit
+            -- square bounds. The native hit area and label anchors stay intact.
+            for _, region in ipairs(H.Regions(frame)) do
+                if not regions[region] and H.Texture(region) then
+                    region:ClearAllPoints(); region:SetPoint("CENTER", frame, "CENTER"); region:SetSize(14, 14)
+                end
+            end
+            -- Replace only the API-created border host. Draw all four edges on
+            -- the control itself so an inset child's edge cannot be obscured.
+            for _, child in ipairs(H.Children(frame)) do
+                if not children[child] and H.Allowed(child) then child:SetAlpha(0); child:EnableMouse(false) end
+            end
+            for _, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+                local edge = frame:CreateTexture(nil, "OVERLAY", nil, 1)
+                edge:SetColorTexture(0.25, 0.25, 0.25, 1)
+                if side == "TOP" or side == "BOTTOM" then
+                    local y = side == "TOP" and 7 or -7
+                    edge:SetPoint("LEFT", frame, "CENTER", -7, y); edge:SetPoint("RIGHT", frame, "CENTER", 7, y); edge:SetHeight(1)
+                else
+                    local x = side == "LEFT" and -7 or 7
+                    edge:SetPoint("TOP", frame, "CENTER", x, 7); edge:SetPoint("BOTTOM", frame, "CENTER", x, -7); edge:SetWidth(1)
+                end
+            end
             local function State()
                 if InCombatLockdown and InCombatLockdown() then waiting = true; return end
                 local text = Label(frame)
@@ -119,6 +145,11 @@ end, function(S, module)
             -- All native rows/control anchors fit in this compact outer shell.
             root:SetSize(360, 450)
             H.Fade(root.qcPortrait); H.Fade(root.qcPortraitMask)
+            local icon = root:CreateTexture(nil, "OVERLAY")
+            local original = H.Texture(root.qcPortrait)
+            icon:SetTexture(original and original:GetTexture() or "Interface\\Icons\\TRADE_ARCHAEOLOGY_DRAENEI_TOME")
+            icon:SetSize(32, 32); icon:SetPoint("TOPLEFT", root, "TOPLEFT", 12, -10)
+            if S.SquareIcon then S.SquareIcon(icon) end
             painted[root] = true
         end
         for _, key in ipairs({"qcTitleText", "qcSelectedCategory", "qcCurrentCategoryQuestCount"}) do Font(root[key]) end
@@ -133,6 +164,9 @@ end, function(S, module)
         local search = _G.qcSearchBox
         if Owned(search, root) and not painted[search] then
             soft.EditBox(search, {padInput = true}); painted[search] = true
+            -- Quest Completist writes its own placeholder into the editable
+            -- text. SearchBoxTemplate's separate Instructions would duplicate it.
+            H.Fade(search.Instructions)
             -- The search's native placeholder, focus, clear-button and text
             -- callbacks must retain control of content, colour and visibility.
             for _, child in ipairs(H.Children(search)) do

@@ -21,3 +21,11 @@ Mock benchmark: 1,000 repeated list/scroll/window/options cycles produce zero ad
 Reference sources were inspected for frame identities and lifecycle only. No target addon code, ElvUI integration code, external libraries or assets are bundled. Implementation uses EllesmereUI's public skin API and existing collection utilities.
 
 Input archive SHA-256: `1c1c486c8fb4c5a143f7e2481cd6e541c8ba84cbe65c36d25764da7bfdbf2796`.
+
+
+## Alpha.2 refinements
+
+- Keep the public checkbox styling with a fixed 14px square fill/hover and four explicit 1px edges. Suppress only the newly created decorative border host; preserve native children, hit areas, state textures and labels.
+- Hide SearchBoxTemplate's redundant Instructions label. Quest Completist's native editable placeholder, query, focus, typing and clear actions remain unchanged.
+- Restore a separate, unmasked 32px square copy of the original icon, inset 12px from the left and 10px from the top. The original circular portrait/mask stay hidden.
+- Regression checks cover all four edges, native child preservation, duplicate-label suppression after native refresh, typed/placeholder/clear text, icon crop/containment, theme updates and warm reuse.

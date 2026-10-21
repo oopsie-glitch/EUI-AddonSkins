@@ -155,6 +155,7 @@ S.EditBox=function(f) f.input=true end
 S.Dropdown=function(f) f.dropdown=true end
 S.StateButtonLabel=function(f) f.stateLabel=true end
 S.PageButton=function(f,glyph) f.glyph=glyph end
+S.SquareIcon=function(t) t.square=true; t:SetTexCoord(.08,.92,.08,.92) end
 
 S.Shell=function(f,options)
     f.shell=options
@@ -180,7 +181,8 @@ local function Build()
         b.scripts.OnClick=function() clicks=clicks+1; return 'native-action' end
     end
     local box=CreateFrame('EditBox','qcSearchBox',root); box.text='native search'; box.color={.5,.5,.5,1}
-    box.scripts.OnTextChanged=function(_,user) updates=updates+1; return user end
+    box.Instructions=Text(box);box.Instructions:SetText('Search')
+    box.scripts.OnTextChanged=function(_,user) updates=updates+1; box.Instructions:SetText('Search');box.Instructions:SetAlpha(1);return user end
     local clear=CreateFrame('Button',nil,box); clear.scripts.OnClick=function() box.text='';return 'native-clear' end
     local slider=CreateFrame('Slider','qcMenuSlider',root); slider.thumb=slider:CreateTexture(nil,'ARTWORK')
     slider.value=13;slider.minimum=1;slider.maximum=100
@@ -214,6 +216,7 @@ qcInterfaceOptions_OnShow=function(self)
     for i=1,4 do
         local check=CreateFrame('CheckButton','qcIO_TEST'..i,self);check.Text=Text(check)
         check.checkedArt=check:CreateTexture(nil,'ARTWORK');check.disabledArt=check:CreateTexture(nil,'ARTWORK')
+        check.nativeChild=Object('Button',check);check.nativeChild.mouse=true
         check.checked=i%2==0
         check.scripts.OnClick=function() check.checked=not check.checked;return 'native-check' end
     end
@@ -231,9 +234,21 @@ qcToastLogo=qcToast:CreateTexture(nil,'ARTWORK')
 assert(module.available());module.install(S,module);Flush()
 assert(root.shell.noAccent and root.shell.noTopBar and root.width==360 and root.height==450)
 assert(root.qcPortrait.alpha==0 and root.qcPortraitMask.alpha==0 and root.qcTitleText.path=='EUI')
+local portrait
+for _,region in ipairs(root.regions)do if region.kind=='Texture' and region.texture=='native-portrait' and region.alpha==1 then portrait=region end end
+assert(portrait and portrait.square and portrait.width==32 and portrait.height==32)
+assert(portrait.point[1]=='TOPLEFT' and portrait.point[2]==root and portrait.point[4]==12 and portrait.point[5]==-10)
+assert(portrait.coords[1]==.08 and root.qcPortrait.alpha==0 and root.qcPortraitMask.alpha==0)
 assert(qcOptionsButton.button and qcCategoryDropdownButton.button and qcXButton.close)
 assert(qcSearchBox.input and qcSearchBox.text=='native search' and qcSearchBox.color[1]==.5)
+assert(qcSearchBox.Instructions.alpha==0 and qcSearchBox.Instructions.text=='Search')
 assert(qcSearchBox.scripts.OnTextChanged(qcSearchBox,true)==true)
+assert(qcSearchBox.Instructions.alpha==0 and qcSearchBox.text=='native search','duplicate placeholder returned or native text changed')
+qcSearchBox.text='Search';qcSearchBox.scripts.OnTextChanged(qcSearchBox,false)
+assert(qcSearchBox.Instructions.alpha==0 and qcSearchBox.text=='Search')
+local clear=qcSearchBox.children[1];assert(clear.scripts.OnClick()=='native-clear' and qcSearchBox.text=='')
+qcSearchBox.text='typed quest';qcSearchBox.scripts.OnTextChanged(qcSearchBox,true)
+assert(qcSearchBox.text=='typed quest' and qcSearchBox.Instructions.alpha==0)
 assert(qcMenuSlider.thumb.width==5 and qcMenuSlider.thumb.height==20 and qcMenuSlider.value==13)
 assert(qcMenuSlider.minimum==1 and qcMenuSlider.maximum==100)
 assert(qcOptionsButton.scripts.OnClick()=='native-action' and clicks==1)
@@ -244,6 +259,14 @@ assert(qcToastLogo.alpha==0 and qcToast.panel)
 qcInterfaceOptions:Show();Flush()
 assert(qcIO_TEST1.check and qcIO_TEST2.checked and not qcIO_TEST1.checked)
 assert(qcIO_TEST1.checkedArt.width==8 and qcIO_TEST1.checkedArt.color[1]==accent)
+assert(qcIO_TEST1.checkFill.width==14 and qcIO_TEST1.checkFill.height==14 and qcIO_TEST1.checkHover.width==14)
+assert(qcIO_TEST1.checkBorder.alpha==0 and qcIO_TEST1.checkBorder.mouse==false)
+assert(qcIO_TEST1.nativeChild.alpha==1 and qcIO_TEST1.nativeChild.mouse==true,'native child was hidden')
+local edgeCount=0
+for _,r in ipairs(qcIO_TEST1.regions)do if r.kind=='Texture' and r.layer=='OVERLAY' then
+    edgeCount=edgeCount+1;assert(r.width==1 or r.height==1);assert(r.alpha==1 and r.color[1]==.25)
+end end
+assert(edgeCount==4,'checkbox does not have exactly four visible edges')
 assert(qcIO_TEST1.scripts.OnClick()=='native-check' and qcIO_TEST1.checked)
 qcIO_TEST1:Disable();assert(qcIO_TEST1.Text.color[1]==.5)
 qcIO_TEST1:Enable();assert(qcIO_TEST1.Text.color[1]==.9)
@@ -256,6 +279,7 @@ assert(qcMenuButton1.QuestName.color[1]==.1 and qcMenuButton1.QuestIcon.alpha==1
 fontFace='EUI-next';accent=.75;looks[1]();Flush()
 assert(qcMenuButton1.QuestName.path=='EUI-next' and qcMenuButton1.QuestName.color[1]==.1)
 assert(qcIO_TEST1.checkedArt.color[1]==.75 and allocated==objects)
+assert(portrait.alpha==1 and portrait.width==32 and qcSearchBox.Instructions.alpha==0)
 assert(tooltipText.path=='Native' and tooltipText.text=='|cff00ff00Completed|r')
 combat=true;qcIO_TEST1:Disable();looks[1]();Flush();combat=false
 for _,event in ipairs(events)do if event.events and event.events.PLAYER_REGEN_ENABLED then event.scripts.OnEvent(event,'PLAYER_REGEN_ENABLED')end end

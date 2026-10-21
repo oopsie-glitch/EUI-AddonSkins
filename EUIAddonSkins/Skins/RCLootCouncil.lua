@@ -12,6 +12,8 @@ end, function(S, module)
     local pooledButtons, dropdownArrows, closeGlyphs, nativeChecks, pooledThumbs = {}, {}, {}, {}, {}
     local fills, skinArt, tracks, arrows, labels = {}, {}, {}, {}, {}
     local windowDirty, releaseLibraries, lifts = {}, {}, {}
+    local tableFrames, retiredTables = {}, {}
+    local entryItems = setmetatable({}, {__mode = "k"})
     local generation, waiting, applying = 1, false, false
     local Walk, PaintWidget, Refresh, Pullout
     local events = CreateFrame("Frame")
@@ -267,7 +269,7 @@ end, function(S, module)
         end
     end
     Walk = function(f, force, owner, depth)
-        if not H.Allowed(f) or layers[f] == true or (depth or 0) > 24 then return end
+        if not H.Allowed(f) or layers[f] == true or retiredTables[f] or (depth or 0) > 24 then return end
         local kind = f:GetObjectType()
         if kind == "GameTooltip" or kind == "Texture" or kind == "FontString" then return end
         local state = nodes[f]
@@ -292,6 +294,22 @@ end, function(S, module)
         state.regions = f.GetNumRegions and f:GetNumRegions()
         state.generation = generation
     end
+    local function Tables(f)
+        local known = tableFrames[f]
+        if not known then known = {}; tableFrames[f] = known end
+        for _, key in ipairs({"st", "date", "name"}) do
+            local st = f[key]
+            local current = type(st) == "table" and H.Allowed(st.frame) and st.frame or nil
+            local previous = known[key]
+            if previous and previous ~= current then retiredTables[previous] = true end
+            known[key] = current
+            if current then
+                retiredTables[current] = nil
+                Strip(current)
+                H.Hook(st, "Refresh", function() if Ready() then Walk(current, false) end end)
+            end
+        end
+    end
     local function Window(f, force)
         if not H.Allowed(f) then return end
         if windowDirty[f] then force = true; windowDirty[f] = nil end
@@ -299,20 +317,21 @@ end, function(S, module)
             windows[f] = true
             H.Script(f, "OnShow", function() if Ready() then Window(f, false) end end)
             H.Hook(f, "Update", function() if Ready() then Panel(f.content); Lift(f.content); Panel(f.title); Font(f.title and f.title.text, true) end end)
-            H.Hook(f, "UpdateSt", function() if Ready() then Walk(f.content, true) end end)
         end
+        -- UI:Embed runs before GetFrame attaches this method. Try on every
+        -- completed window discovery; H.Hook still binds each instance once.
+        H.Hook(f, "UpdateSt", function()
+            if not Ready() then return end
+            Tables(f)
+            local st = f.st
+            if type(st) == "table" and H.Allowed(st.frame) then
+                Strip(st.frame); Walk(st.frame, true)
+            end
+        end)
+        Tables(f)
         -- RCFrame minimises content only. Never put a full-size fill on its parent.
         Panel(f.content); Lift(f.content); Panel(f.title); Font(f.title and f.title.text, true)
         Walk(f, force)
-        for _, key in ipairs({"st", "date", "name"}) do
-            local st = f[key]
-            if type(st) == "table" and H.Allowed(st.frame) then
-                Strip(st.frame)
-                H.Hook(st, "Refresh", function()
-                    if Ready() then Walk(st.frame, false) end
-                end)
-            end
-        end
         if type(f.moreInfoDropdown) == "table" then PaintWidget(f.moreInfoDropdown) end
         if H.Allowed(f.moreInfoBtn) then
             H.ThinBackdrop(f.moreInfoBtn) -- Keep native expand/collapse direction.
@@ -422,7 +441,6 @@ end, function(S, module)
         end
         if not record.active then
             record.active, record.saved = true, {}
-            Snapshot(f, record)
             for art, alpha in pairs(record.art or {}) do art:SetAlpha(alpha) end
         end
         -- Snapshot newly introduced native subframes before this pass; a
@@ -615,7 +633,12 @@ end, function(S, module)
             local manager = target.EntryManager
             H.Hook(manager, "GetEntry", function(_, item)
                 local entry = manager.entries and manager.entries[item]
-                if Ready() and entry then Walk(entry.frame, true) end
+                if Ready() and entry then
+                    -- Native GetEntry returns immediately for an existing item.
+                    -- Recycled entries still need a full pass after native Update.
+                    Walk(entry.frame, entryItems[entry] ~= item)
+                    entryItems[entry] = item
+                end
             end)
         end
     end

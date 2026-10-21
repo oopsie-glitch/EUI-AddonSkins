@@ -171,7 +171,7 @@ S.Dropdown=function(f) f.dropdown=true end
 S.StateButtonLabel=function(f) f.stateLabel=true end
 S.PageButton=function(f,glyph) f.glyph=glyph end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins',ns)
-assert(loadfile('EUIAddonSkins/Skins/RCLootCouncil.lua'))('EUIAddonSkins',ns)
+assert(loadfile(os.getenv('RC_SKIN_PATH') or 'EUIAddonSkins/Skins/RCLootCouncil.lua'))('EUIAddonSkins',ns)
 RCLootCouncil=nil
 assert(factory and not module)
 local allocationBefore=allocated; factory()
@@ -243,6 +243,13 @@ local dialog={OpenFrames={},BlizOptions={RCLootCouncil={}}}
 function dialog:FeedGroup(id,_,container) self.feeds=(self.feeds or 0)+1; return 'native-feed',container,id end
 LibStub=function(id,silent) assert(silent); if id=='AceConfigDialog-3.0' then return dialog elseif id=='AceGUI-3.0' then return gui end end
 RCLootCouncil=app
+local tableWindow=RCFrame('TableLifecycle')
+tableWindow.UpdateSt=function()
+ if tableWindow.st then tableWindow.st.frame:Hide()end
+ local st={frame=Object('Frame',tableWindow.content),Refresh=function()return'refresh-native'end}
+ st.label=Text(st.frame);st.button=Button(st.frame);tableWindow.st=st
+ return'rebuild-native',nil,11
+end
 assert(module.available()); module.install(S,module); Flush()
 local voting=targets.voting:GetFrame(); voting:Show()
 assert(voting.response.path=='EUI', 'the completed first show must be styled before the queued fallback')
@@ -278,6 +285,52 @@ local gear=Object('Button',voting.content)
 assert(targets.voting.SetCellGear(nil,gear)=='native-gear' and gear.normal.coords[1]==0.08)
 local protected=Object('Button',voting.content); protected.protected=true; protected.Text=Text(protected)
 module.refresh(); assert(not protected.button and protected.Text.path=='Native')
+local perfBaseline=os.getenv('RC_PERF_BASELINE')=='1'
+local reads,regions,objects,hooks,writes=childReads,regionReads,allocated,hookCount,fontWrites
+for i=1,300 do
+ local cached,kind=targets.loot.EntryManager:GetEntry(item)
+ assert(cached==entry and kind=='existing')
+end
+local entryReads=childReads-reads
+if not perfBaseline then assert(entryReads==0 and regionReads==regions and allocated==objects and hookCount==hooks and fontWrites==writes,
+ 'cached loot entry lookup rescanned or repainted its controls')end
+-- Existing entries can be recycled for a different item; native resets need
+-- one completed repaint. New children on the same frame also remain supported.
+local recycled={id=456};targets.loot.EntryManager.entries[recycled]=entry
+entry.button.Text:SetFontObject('Native')
+targets.loot.EntryManager:GetEntry(recycled)
+assert(entry.button.Text.path=='EUI','recycled loot entry was not restyled')
+local lateEntryButton=Button(entry.frame)
+targets.loot.EntryManager:GetEntry(recycled)
+assert(lateEntryButton.button,'new entry control was skipped')
+targets.voting.frame=tableWindow;targets.voting:GetFrame();Flush()
+local historyReads=0
+for i=1,20 do
+ local retired=tableWindow.st and tableWindow.st.frame
+ local child,region=retired and retired.walks or 0,regionReads
+ local a,b,c=tableWindow.UpdateSt()
+ assert(a=='rebuild-native'and b==nil and c==11 and tableWindow.st.label.path=='EUI'and tableWindow.st.button.button)
+ if retired then historyReads=historyReads+(retired.walks or 0)-child end
+end
+if not perfBaseline then assert(historyReads==0,'voting table rebuild scanned retired tables')end
+-- Also reproduce the normal first-open ordering: Embed sees the RCFrame,
+-- then GetFrame attaches UpdateSt, then returns the completed window.
+if not perfBaseline then
+ local lateTable=RCFrame('LateTableMethod')
+ lateTable.UpdateSt=function()
+  if lateTable.st then lateTable.st.frame:Hide()end
+  local st={frame=Object('Frame',lateTable.content),Refresh=function()return 'native-refresh'end}
+  st.label=Text(st.frame);lateTable.st=st
+ end
+ targets.voting.frame=lateTable;targets.voting:GetFrame();Flush()
+ lateTable.UpdateSt();assert(lateTable.st.label.path=='EUI','late completed UpdateSt hook was not bound')
+ local old=lateTable.st.frame;local walks=old.walks or 0
+ lateTable.UpdateSt();assert(lateTable.st.label.path=='EUI'and (old.walks or 0)==walks)
+ local retiredLabel=old.regions[1];local oldPath=retiredLabel and retiredLabel.path
+ module.refresh();assert(not retiredLabel or retiredLabel.path==oldPath,'theme refresh traversed a retired table')
+end
+targets.voting.frame=voting
+print(('BENCH RCLootCouncil cached_entries=300 child_reads=%d; table_rebuilds=20 retired_table_reads=%d (mock)'):format(entryReads,historyReads))
 local beforeHooks,beforeObjects,beforeWalks,beforeFonts=hookCount,allocated,childReads,fontWrites
 for i=1,100 do targets.voting:GetFrame(); voting:Show() end
 Flush()

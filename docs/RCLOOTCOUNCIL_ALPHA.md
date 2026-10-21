@@ -44,3 +44,21 @@ Added regressions for the screenshot failures: dark enabled labels, native label
 - Give standalone window bodies a restrained two-part centre lift: theme panel colour plus 0.10 at 24% peak opacity, fading to transparent at the outer edges. Titles, settings pages and controls retain their existing tones. The two cached background textures live on minimisable content, with no new frames or update scripts.
 - Centre each compact checkbox in the native 24px visual slot and add a six-unit label gap. Local label/image setters and mouse press/release hooks maintain the gap; optional checkbox images, the native right text anchor, click area, values and disabled colours are preserved. Native region anchors restore on pool release.
 - Regression fixtures cover the gradient endpoints and reuse, compact-square placement, label/image updates, pressed text, native click state changes, unchanged hit dimensions and restored anchors. All checks remain mocked; no new in-game validation is claimed.
+
+## Dedicated performance review
+
+The review compared alpha.3 (`8df070b33ce0c0a93a37facf8a6f75cecccea952`) with the same source-shaped workload after these changes:
+
+- Cached `EntryManager:GetEntry(item)` calls now use the existing node guard. A different item on a recycled entry still forces one complete repaint, and new controls remain discoverable.
+- A completed `UpdateSt` styles the current voting table only. Retired table frames are excluded from subsequent discovery/theme traversal instead of repeatedly visiting hidden history.
+- Bind the `UpdateSt` hook after completed window discovery as well as initial construction. `UI:Embed` can run before the target assigns this method.
+- Remove the duplicate initial pooled-widget snapshot. One snapshot still captures newly added native regions before each styling pass; restoration on pool release remains unchanged.
+
+| Mock workload | Alpha.3 | Updated |
+| --- | ---: | ---: |
+| 300 cached loot entry lookups: child-list reads | 600 | 0 |
+| 20 voting table rebuilds: reads of the immediately retired table | 19 | 0 |
+
+These counts are from the same Lua fixture, not CPU/FPS or live memory measurements. The baseline still passes all pre-existing action/state/restoration tests. New performance assertions are skipped only in the explicit baseline runner; they remain mandatory in normal validation.
+
+Reproduce with `python3 benchmarks/run_rc.py --baseline` and `python3 benchmarks/run_rc.py`. The full `python3 scripts/package.py` also covers recycled items, newly introduced controls, native returns, late table methods, theme/combat/disabled gates and shared widget cleanup. Native options construction and fresh pool acquisitions still require snapshots and traversal. There is no global AceGUI factory hook or gameplay polling.

@@ -8,7 +8,6 @@ Existing queue (branches reserved; implementation not started):
 
 - Angrier World Quests — `skin/angrier-world-quests-initial`
 - HandyNotes — `skin/handynotes-initial`
-- Waypoint UI — `skin/waypoint-ui-initial`
 - Plumber — `skin/plumber-initial`
 - LiteMount — `skin/litemount-initial`
 - Mythic Dungeon Tools (MDT) — `skin/mythic-dungeon-tools-initial`
@@ -39,6 +38,7 @@ Checked against main's skin modules, repository branches and all existing pull r
 - HekiLight — PR #35 (replaces closed Hekili PR #34)
 - Scrap — PR #36
 - Quest Completist — PR #37 (`skin/questcompletist-initial`, alpha.2)
+- Waypoint UI — PR #39 (`skin/waypoint-ui-initial`, alpha.1)
 
 These remain separate from pending work and must not be assumed released. No tags should be created simply to track this queue.
 

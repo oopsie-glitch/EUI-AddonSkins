@@ -54,11 +54,32 @@ end,function(API,module)
         local d=styled[f]or{};styled[f]=d
         if not d.check then
             d.check=true;Borders(f)
+            local before
+            if f==W.WorldMapHideWQLCheck then
+                before={}
+                for _,r in ipairs(H.Regions(f))do before[r]=true end
+                for _,c in ipairs(H.Children(f))do before[c]=true end
+            end
             S.Checkbox(f,{borderInset=1,hover=.1})
+            if before then
+                d.mapArt={}
+                for _,r in ipairs(H.Regions(f))do
+                    if not before[r]and H.Texture(r)then d.mapArt[#d.mapArt+1]={region=r,inset=4}end
+                end
+                for _,c in ipairs(H.Children(f))do
+                    if not before[c]and H.Allowed(c)then d.mapArt[#d.mapArt+1]={region=c,inset=1}end
+                end
+            end
             local function Paint()if Ready()then Check(f)end end
             H.Script(f,'OnEnable',Paint);H.Script(f,'OnDisable',Paint)
         end
         local disabled=f.IsEnabled and not f:IsEnabled()
+        -- Compact only the map's World Quests List checkbox artwork. Keep its
+        -- native hit area, label size/anchors and checked/click behaviour.
+        for _,art in ipairs(d.mapArt or{})do
+            art.region:ClearAllPoints();art.region:SetPoint('CENTER',f,'CENTER')
+            art.region:SetSize(math.max(2,f:GetWidth()-art.inset*2)*.7,math.max(2,f:GetHeight()-art.inset*2)*.7)
+        end
         -- Custom ELib menu checks are only 12px wide. Fixed inset prevents
         -- the larger default CheckButton geometry from clipping them.
         local inset=(f:GetWidth()<=14)and 3 or 6
@@ -67,7 +88,13 @@ end,function(API,module)
             if t then
                 t:SetVertexColor(1,1,1,1)
                 if disabled or i==2 then t:SetColorTexture(.4,.4,.4,.8)else t:SetColorTexture(S.GetAccentColor())end
-                t:ClearAllPoints();t:SetPoint('TOPLEFT',f,'TOPLEFT',inset,-inset);t:SetPoint('BOTTOMRIGHT',f,'BOTTOMRIGHT',-inset,inset)
+                t:ClearAllPoints()
+                if f==W.WorldMapHideWQLCheck then
+                    t:SetPoint('CENTER',f,'CENTER')
+                    t:SetSize(math.max(2,f:GetWidth()-inset*2)*.7,math.max(2,f:GetHeight()-inset*2)*.7)
+                else
+                    t:SetPoint('TOPLEFT',f,'TOPLEFT',inset,-inset);t:SetPoint('BOTTOMRIGHT',f,'BOTTOMRIGHT',-inset,inset)
+                end
             end
         end
         Font(f.text)

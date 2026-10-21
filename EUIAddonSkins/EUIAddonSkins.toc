@@ -40,3 +40,4 @@ Skins\Spy.lua
 Skins\ThreatClassic2.lua
 Skins\TwitchEmotes.lua
 Skins\WhatsTraining.lua
+Skins\WorldQuestsList.lua

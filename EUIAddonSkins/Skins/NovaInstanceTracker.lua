@@ -9,7 +9,7 @@ end, function(S, module)
     local layers, nodes, pooled, owners = {}, {}, {}, {}
     local pooledButtons, dropdownArrows, closeGlyphs, nativeChecks, pooledThumbs = {}, {}, {}, {}, {}
     local fills, skinArt, tracks, arrows, labels, edges = {}, {}, {}, {}, {}, {}
-    local lifts, views = {}, {}
+    local views = {}
     local optionGroups, libraryHooks = {}, {}
     local generation, waiting, applying = 1, false, false
     local Walk, PaintWidget, Refresh, Pullout, Options, BindGroup
@@ -65,7 +65,7 @@ end, function(S, module)
             if H.Texture(r) and not skinArt[r] and r ~= keep then r:SetAlpha(0) end
         end
     end
-    local function Panel(f, keep)
+    local function Panel(f, keep, opacity)
         if not H.Allowed(f) then return end
         local fill = fills[f]
         if not fill then
@@ -80,35 +80,7 @@ end, function(S, module)
             if H.Texture(r) and r ~= keep and not skinArt[r] and (layer == "BACKGROUND" or layer == "BORDER") then r:SetAlpha(0) end
         end
         local r, g, b = S.GetPanelColor()
-        fill:SetColorTexture(r, g, b, 0.98); fill:SetAlpha(1)
-    end
-    local function Lift(f)
-        if not H.Allowed(f) then return end
-        local pair = lifts[f]
-        if pair and pair.generation == generation then return end
-        if not pair then
-            pair = {}; lifts[f] = pair
-            for i = 1, 2 do
-                pair[i] = f:CreateTexture(nil, "BACKGROUND", nil, -6)
-                skinArt[pair[i]] = true
-            end
-            pair[1]:SetPoint("TOPLEFT", f, "TOPLEFT")
-            pair[1]:SetPoint("BOTTOMRIGHT", f, "BOTTOM")
-            pair[2]:SetPoint("TOPLEFT", f, "TOP")
-            pair[2]:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT")
-        end
-        local r, g, b = S.GetPanelColor()
-        r, g, b = math.min(1, r + 0.10), math.min(1, g + 0.10), math.min(1, b + 0.10)
-        for i, texture in ipairs(pair) do
-            local first, last = i == 1 and 0 or 0.18, i == 1 and 0.18 or 0
-            texture:SetColorTexture(1, 1, 1, 1)
-            if texture.SetGradient and CreateColor then
-                texture:SetGradient("HORIZONTAL", CreateColor(r, g, b, first), CreateColor(r, g, b, last))
-            elseif texture.SetGradientAlpha then
-                texture:SetGradientAlpha("HORIZONTAL", r, g, b, first, r, g, b, last)
-            else texture:SetColorTexture(r, g, b, 0.08) end
-        end
-        pair.generation = generation
+        fill:SetColorTexture(r, g, b, opacity or 0.98); fill:SetAlpha(1)
     end
     local function Label(f, text)
         if not H.Allowed(text) then return end
@@ -459,7 +431,9 @@ end, function(S, module)
             for _, child in ipairs(H.Children(node)) do before[child] = true end
         end
         for node in pairs(record.saved) do owners[node] = record end
-        if widget.type == "Window" or widget.type == "Frame" or widget.type == "Dropdown-Pullout" then Strip(f); Panel(f); if widget.type == "Frame" then Lift(f) end end
+        if widget.type == "Window" or widget.type == "Frame" then
+            Strip(f); Panel(f, nil, 0.5)
+        elseif widget.type == "Dropdown-Pullout" then Strip(f); Panel(f) end
         if widget.type == "InlineGroup" and H.Allowed(widget.content) then
             local border = widget.content:GetParent()
             if H.Allowed(border) and border ~= f then Strip(border); Panel(border) end
@@ -686,16 +660,19 @@ end, function(S, module)
             H.Script(f, "OnShow", function() Root(f) end)
         end
         if state.generation ~= generation then
-            Panel(f); Lift(f)
+            Panel(f, nil, 0.5)
             if H.Allowed(f.NineSlice) then S.FadeNineSlice(f.NineSlice) end
-            if H.Allowed(f.topFrame) then Panel(f.topFrame) end
+            if H.Allowed(f.topFrame) then Strip(f.topFrame) end
             state.generation = generation
         end
         Walk(f, force)
         -- A Level Log creates its rows through private methods on this frame.
-        H.Hook(f, "createSimpleLineFrame", function(count)
-            if Ready() then Walk(f.simpleLineFrames and f.simpleLineFrames[count], false) end
-        end)
+        if not state.rowHook and type(f.createSimpleLineFrame) == "function" then
+            state.rowHook = true
+            H.Hook(f, "createSimpleLineFrame", function(count)
+                if Ready() then Walk(f.simpleLineFrames and f.simpleLineFrames[count], false) end
+            end)
+        end
     end
     local function MainWindows()
         if not Ready() then return end
@@ -704,7 +681,7 @@ end, function(S, module)
         if H.Allowed(copyHeader) then
             local state = views[copyHeader]
             if not state or state.generation ~= generation then
-                Panel(copyHeader)
+                Panel(copyHeader, nil, 0.5)
                 if H.Allowed(copyHeader.NineSlice) then S.FadeNineSlice(copyHeader.NineSlice) end
                 views[copyHeader] = {generation = generation}
             end
@@ -732,6 +709,9 @@ end, function(S, module)
                 if Ready() and (type(id) == "string" or type(id) == "number") then Walk(_G[tostring(id) .. suffix], false) end
             end)
         end
+        H.Hook(app, "createTitleInstanceLineFrame", function()
+            if Ready() then Walk(_G.titleNITInstanceLine, false) end
+        end)
         for _, key in ipairs({"createSimpleTextFrame", "createSimpleScrollFrame"}) do
             H.Hook(app, key, function(_, name)
                 if type(name) == "string" then Root(_G[name]) end

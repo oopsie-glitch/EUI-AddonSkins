@@ -229,6 +229,14 @@ NIT.createInstanceLineFrame=function(_,id)
  f.scripts.OnClick=function()return 'native-post-stats'end
  return 'native-row',f
 end
+NIT.createTitleInstanceLineFrame=function()
+ if not titleNITInstanceLine then
+  titleNITInstanceLine=CreateFrame('Frame','titleNITInstanceLine',editor.EditBox)
+  titleNITInstanceLine.fs=Text(titleNITInstanceLine)
+  titleNITInstanceLine.fs:SetText('|cffffff00Last hour: 0|r')
+ end
+ return 'native-title'
+end
 NIT.createSimpleScrollFrame=function(_,name)
  local f=CreateFrame('Frame',name,UIParent);f.close=Button(f,name..'Close')
  f.scrollChild=Object('Frame',f);f.scrollChild.fs=Text(f.scrollChild)
@@ -389,8 +397,12 @@ assert(action.text.path=='Native'and check.check.color[1]==.8)
 local stand=Widget('Frame',UIParent);stand.titletext=Text(stand.frame);stand.frame.backdrop={bgFile='native-standalone'}
 dialog.OpenFrames.NovaInstanceTracker=stand;dialog:FeedGroup('NovaInstanceTracker',{},stand)
 assert(stand.frame.backdrop==nil)
-local gradient=false;for _,art in ipairs(stand.frame.regions)do if art.gradient then gradient=true end end
-assert(gradient,'standalone options lack subtle centre lift')
+local translucent=false
+for _,art in ipairs(stand.frame.regions)do
+ if art.layer=='BACKGROUND'and art.color[4]==.5 and art.alpha==1 then translucent=true end
+ assert(not art.gradient,'standalone options retained a second background gradient')
+end
+assert(translucent and stand.frame.alpha==1,'standalone opacity faded foreground controls')
 assert(#errors==0,table.concat(errors,'; '))
 print('PASS: NovaInstanceTracker canvas/standalone options, local tree updates, native logs, rows, links, actions/status colours, pooled menus/restoration, dynamic controls, themes and combat/disabled guards')
 print('BENCH NovaInstanceTracker 1000 warm options feeds/editor shows: new_UI_objects=0 new_hooks=0 font_writes=0; unrelated_addon_loads=100 hierarchy_reads=0 (mock)')
@@ -453,3 +465,32 @@ local model=Object('ModelScene',editor);local modelControl=Object('Button',model
 module.refresh()
 assert(not secure.button and not secure.walks and not model.walks and not modelControl.button)
 print('BENCH NovaInstanceTracker mock: 1000 native timer updates: skin scans/objects/font writes=0; 100 new rows: whole-log scans=0; 1000 stable check setters: geometry/colour writes=0')
+
+-- A native title is created below the cached EditBox after the window itself.
+local mainReads,editReads=editor.walks,editor.EditBox.walks
+assert(NIT:createTitleInstanceLineFrame()=='native-title')
+assert(titleNITInstanceLine.fs.path==fontFace and titleNITInstanceLine.fs.text=='|cffffff00Last hour: 0|r')
+assert(editor.walks==mainReads and editor.EditBox.walks==editReads,'title discovery scanned ancestors')
+local function Background(frame)
+ local fill
+ for _,region in ipairs(frame.regions)do
+  if region.layer=='BACKGROUND'and region.anchor==frame and region.color[4]==.5 then fill=region end
+  assert(not region.gradient,'native window retained a stacked gradient')
+ end
+ assert(fill and frame.alpha==1,'window lacks a translucent background or faded its foreground')
+ return fill
+end
+local bg=Background(editor);Background(lockouts);Background(level)
+assert(editor.fs.alpha==1 and editor.legend.alpha==1 and nativeCheck.alpha==1)
+local c,r,o,h,w,g=childReads,regionReads,allocated,hookCount,fontWrites,geometryWrites
+for _=1,1000 do NIT:openInstanceLogFrame();NIT:createTitleInstanceLineFrame();editor.scripts.OnUpdate()end
+assert(childReads==c and regionReads==r and allocated==o and hookCount==h and fontWrites==w and geometryWrites==g,
+ 'warm native open/title/timer cycle performed new skin work')
+assert(Background(editor)==bg,'background was recreated')
+fontFace='ThirdTheme';module.refresh()
+assert(Background(editor)==bg and bg.color[4]==.5 and editor.fs.alpha==1)
+-- Restoring a shared standalone window returns its native backdrop/alpha.
+assert(gui:Release(stand)=='native-release')
+assert(stand.frame.backdrop.bgFile=='native-standalone'and stand.frame.alpha==1)
+assert(bg.alpha==1 and #errors==0,table.concat(errors,'; '))
+print('BENCH NovaInstanceTracker transparent alpha: 1000 warm open/title/timer cycles: hierarchy reads, UI objects, hooks, font/geometry writes=0; foreground alpha=1; local title discovery and pool restoration pass')

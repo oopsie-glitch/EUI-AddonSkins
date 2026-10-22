@@ -26,7 +26,7 @@ end, function(S, module)
     local function Own(f)
         for _ = 1, 32 do
             if not H.Allowed(f) then return false end
-            if owned[f] then return true end
+            if owned[f]or shared[f]and shared[f].active then return true end
             f = f.GetParent and f:GetParent()
         end
         return false
@@ -147,16 +147,25 @@ end, function(S, module)
                 end
             end
             d.track:SetColorTexture(.2,.2,.21,1);d.grip:SetColorTexture(S.GetAccentColor())
-        elseif f.Track and H.Allowed(f.Track.Thumb) then
-            local host = f.Track.Thumb
-            Fade(host)
-            if not d.grip then
-                d.grip=host:CreateTexture(nil,'ARTWORK');art[d.grip]=true
-                d.grip:SetPoint('TOP');d.grip:SetPoint('BOTTOM');d.grip:SetWidth(5)
+        else
+            local host=f.Track and f.Track.Thumb or f.GetThumb and f:GetThumb()or f.Thumb
+            if not H.Allowed(host)then return end
+            if not shared[f]and(f.Track and f.Track.Thumb or type(f.GetThumb)=='function')then
+                -- MinimalScrollBar's supported accessor differs between client
+                -- versions. Use EUI's native scrollbar primitive for both.
+                S.ScrollBar(f,true)
+            else
+                if H.Allowed(f.Track)then Fade(f.Track)end
+                Fade(host)
+                if not d.grip then
+                    d.grip=host:CreateTexture(nil,'ARTWORK');art[d.grip]=true
+                    d.grip:SetPoint('TOP');d.grip:SetPoint('BOTTOM');d.grip:SetWidth(4)
+                end
+                d.grip:SetColorTexture(1,1,1,.35)
             end
-            d.grip:SetColorTexture(S.GetAccentColor())
         end
     end
+
     local function Glyph(f, direction)
         if not H.Allowed(f) then return end
         Fade(f)
@@ -190,7 +199,13 @@ end, function(S, module)
         local role = kinds[f]
         if not role and kind=='Frame'and f.GetBackdrop then
             local backdrop=f:GetBackdrop()
-            if backdrop and backdrop.edgeFile then role='panel';kinds[f]=role end
+            if backdrop and backdrop.edgeFile then
+                -- GGUI's scroll border is a raised sibling spanning its rows.
+                -- It must remain transparent; a fill here covers the contents.
+                local alpha
+                if f.GetBackdropColor then local _,_,_,a=f:GetBackdropColor();alpha=a end
+                role=backdrop.bgFile and alpha~=0 and 'panel'or 'border';kinds[f]=role
+            end
         end
         if role == 'graph' or kind == 'GameTooltip' or kind == 'ModelScene' or kind == 'PlayerModel' then return end
         if role == 'icon' then
@@ -206,6 +221,8 @@ end, function(S, module)
             if not d.shell then S.Shell(f, {noTopBar=true,noBorder=true}); d.shell=true end
             if f.SetBackdrop then f:SetBackdrop(nil) end
             Lift(f)
+        elseif role == 'border' then
+            if f.SetBackdrop then f:SetBackdrop(nil)end
         elseif role == 'panel' then
             if f.SetBackdrop then f:SetBackdrop(nil) end
             Fade(f); Fill(f)
@@ -221,9 +238,11 @@ end, function(S, module)
             end
             d.minus:SetColorTexture(.85,.85,.87,1)
         elseif kind == 'CheckButton' then Check(f)
-        elseif kind == 'Slider' or f.Track and f.Track.Thumb then Slider(f)
+        elseif kind=='Slider'or f.Track and f.Track.Thumb or type(f.GetThumb)=='function'or H.Allowed(f.Thumb)then Slider(f)
         elseif kind == 'EditBox' then
-            Fade(f);Fill(f,true);Edges(f);Font(f)
+            Fade(f);Fill(f,true);Edges(f)
+            if not(f.IsMultiLine and f:IsMultiLine())then Font(f)end
+        elseif kind=='ScrollingMessageFrame'then Font(f)
         elseif role ~= 'row' and (kind == 'DropdownButton' or type(f.initialize) == 'function') then
             local r=shared[f]
             if not r then S.Dropdown(f) else Fade(f);Fill(f);Edges(f);Glyph(f,'down') end
@@ -238,7 +257,8 @@ end, function(S, module)
             end
             Font(f:GetFontString(), f)
         end
-        for key,direction in pairs({Back='left',Forward='right',DecrementButton='left',IncrementButton='right',ScrollUpButton='up',ScrollDownButton='down'})do
+        local horizontal=f.GetOrientation and f:GetOrientation()=='HORIZONTAL'
+        for key,direction in pairs({Back=horizontal and 'left'or 'up',Forward=horizontal and 'right'or 'down',DecrementButton='left',IncrementButton='right',ScrollUpButton='up',ScrollDownButton='down'})do
             local button=Raw(f[key])
             if button then Glyph(button,direction)end
         end
@@ -271,6 +291,12 @@ end, function(S, module)
                 if raw and raw ~= f then
                     widgets[value] = true
                     if CS.GGUI and CS.GGUI.Icon and value.is and value:is(CS.GGUI.Icon)then kinds[raw]='icon'end
+                    if CS.GGUI and CS.GGUI.FrameList and value.is and value:is(CS.GGUI.FrameList)then
+                        for _,row in ipairs(value.rows or {})do
+                            local frame=Raw(row);if frame then kinds[frame]='row'end
+                            for _,column in ipairs(row.columns or {})do if H.Allowed(column)then kinds[column]='row'end end
+                        end
+                    end
                 end
             end
         end
@@ -293,7 +319,13 @@ end, function(S, module)
         if not f then return end
         owned[f]=true;roots[f]=true
         if window then kinds[f]='window' end
-        H.Script(f,'OnShow',function()if Ready()then Walk(f)end end)
+        H.Script(f,'OnShow',function()
+            if not Ready()then return end
+            local d=State(f)
+            -- Frame constructors return before native descendants are added.
+            -- Inspect the complete subtree on its first show only.
+            Walk(f,not d.shown);d.shown=true
+        end)
         Walk(f)
     end
     local function Tag(wrapper, role)
@@ -320,18 +352,21 @@ end, function(S, module)
             local close=f.closeButton or f.CloseButton
             if close then Tag(close,'close')end
             if f.collapseButton then Tag(f.collapseButton,'collapse')end
-        elseif role=='Icon' then Tag(w,'icon')
+        elseif role=='Icon'or role=='SpellIcon' then Tag(w,'icon')
         elseif role=='FrameList' then
             Tag(w)
-            for _,row in ipairs(w.rows or {})do Tag(row,'row');Walk(row.frame)end
+            for _,row in ipairs(w.rows or {})do
+                for _,column in ipairs(row.columns or {})do if H.Allowed(column)then kinds[column]='row'end end
+                Tag(row,'row');Walk(row.frame)
+            end
             if w.scrollFrame then
                 local raw=Raw(w.scrollFrame);if raw then owned[raw]=true;Walk(raw)end
                 if w.scrollFrame.scrollBar then owned[w.scrollFrame.scrollBar]=true;Slider(w.scrollFrame.scrollBar)end
             end
-        elseif role=='ScrollFrame' then
+        elseif role=='ScrollFrame'or role=='ScrollingMessageFrame' then
             Root(w,false)
             if H.Allowed(w.scrollBar)then owned[w.scrollBar]=true;Slider(w.scrollBar)end
-        elseif role=='CustomDropdown' then
+        elseif role=='CustomDropdown'or role=='ItemSelector' then
             Tag(w)
             if w.selectionFrame then Root(w.selectionFrame,true)end
             if w.selectionList then PaintWidget(w.selectionList,'FrameList')end
@@ -429,22 +464,68 @@ end, function(S, module)
     end
     local menus=setmetatable({}, {__mode='k'})
     local menuDescriptions=setmetatable({}, {__mode='k'})
+    local unpack=unpack or table.unpack
+    local function RememberMarker(d,t)
+        if not H.Texture(t)or d.markers[t]then return end
+        local points={}
+        for i=1,(t.GetNumPoints and t:GetNumPoints()or 0)do points[i]={t:GetPoint(i)}end
+        d.markers[t]={path=t:GetTexture(),atlas=t.GetAtlas and t:GetAtlas(),width=t:GetWidth(),height=t:GetHeight(),
+            vertex=t.GetVertexColor and {t:GetVertexColor()},coords=t.GetTexCoord and {t:GetTexCoord()},points=points}
+    end
+    local function MenuControls(row,d,depth)
+        if not H.Allowed(row)or(depth or 0)>6 then return end
+        for _,child in ipairs(H.Children(row))do
+            local kind=child:GetObjectType()
+            if kind=='EditBox'or kind=='Slider'or kind=='CheckButton'then
+                -- Embedded queue amount / TSM expression controls are native
+                -- widgets, not compositor FontString proxies. Style only the
+                -- control; release its cosmetics with this menu acquisition.
+                SharedRow(child);d.controls[child]=true
+            elseif kind=='Frame'then MenuControls(child,d,(depth or 0)+1)end
+        end
+    end
+    local function MenuMarker(row,description,list)
+        if not Ready()or not row or not description then return end
+        local d=menus[list]
+        if not d or not d.active then return end
+        MenuControls(row,d)
+        local check=description.IsCheckbox and description:IsCheckbox()or description.IsRadio and description:IsRadio()
+        if not check then return end
+        local outer,mark=H.Texture(row.leftTexture1),H.Texture(row.leftTexture2)
+        if outer then
+            RememberMarker(d,outer);outer:SetColorTexture(.16,.16,.17,1);outer:SetSize(12,12)
+        end
+        if outer and mark then
+            RememberMarker(d,mark);mark:SetColorTexture(S.GetAccentColor());mark:SetSize(7,7)
+            mark:ClearAllPoints();mark:SetPoint('CENTER',outer,'CENTER')
+        end
+        -- Native compositor visibility still owns checked/unchecked state.
+        -- Never read or replace compositor FontString:SetFont.
+    end
     MenuList=function(list)
         if not Ready()or not H.Allowed(list)or type(list.AttachTexture)~='function'then return end
         local d=menus[list]
         if not d then
-            d={alpha={}};menus[list]=d
+            d={alpha={},markers={},controls={}};menus[list]=d
             list:HookScript('OnHide',function()
+                for f in pairs(d.controls)do Restore(shared[f])end
                 for t,a in pairs(d.alpha)do t:SetAlpha(a)end
-                d.alpha={};d.active=false
+                for t,v in pairs(d.markers)do
+                    if v.atlas and t.SetAtlas then t:SetAtlas(v.atlas)else t:SetTexture(v.path)end
+                    if v.vertex then t:SetVertexColor(unpack(v.vertex))end
+                    if v.coords then t:SetTexCoord(unpack(v.coords))end
+                    t:SetSize(v.width,v.height);t:ClearAllPoints()
+                    for _,point in ipairs(v.points)do t:SetPoint(unpack(point))end
+                end
+                d.alpha={};d.markers={};d.controls={};d.active=false
                 -- Compositor-owned art is released by the compositor itself.
             end)
         end
         if not d.active then
             d.active=true
             d.fill=list:AttachTexture();d.fill:SetDrawLayer('BACKGROUND',-8);d.fill:SetAllPoints(list)
-            d.fill:SetColorTexture(S.GetPanelColor())
         end
+        d.fill:SetColorTexture(S.GetPanelColor())
         for _,key in ipairs({'Backdrop','MenuBackdrop','NineSlice'})do
             local f=list[key]
             if H.Allowed(f)and d.alpha[f]==nil then d.alpha[f]=f:GetAlpha();f:SetAlpha(0)end
@@ -455,35 +536,68 @@ end, function(S, module)
                 if(layer=='BACKGROUND'or layer=='BORDER')and d.alpha[t]==nil then d.alpha[t]=t:GetAlpha();t:SetAlpha(0)end
             end
         end
+        for _,row in ipairs(H.Children(list))do
+            if row.GetElementDescription then MenuMarker(row,row:GetElementDescription(),list)end
+        end
         if list.EnumerateElementDescriptions then
             list:EnumerateElementDescriptions(function(_,description)
-                if description.AddInitializer and not menuDescriptions[description]then
-                    menuDescriptions[description]=true
-                    description:AddInitializer(function(_,_,submenu)
-                        if d.active and submenu then MenuList(submenu)end
+                if not description.AddInitializer then return end
+                local context=menuDescriptions[description]
+                if not context then
+                    context={};menuDescriptions[description]=context
+                    description:AddInitializer(function(row,desc,target)
+                        if not Ready()or not context.record.active then return end
+                        target=target or context.list
+                        if target~=context.list and not(menus[target]and menus[target].active)then MenuList(target)end
+                        MenuMarker(row,desc,target)
                     end)
                 end
+                context.record=d;context.list=list
             end)
         end
     end
     local function OwnedOptions(options)
         if type(options)~='table'then return false end
         if CS.INIT and options.frameTable==CS.INIT.FRAMES and options.frameTable then return true end
+        if options.frameID=='CRAFT_LIST_NAME_POPUP'or options.frameID=='CRAFT_LIST_IMPORT_POPUP'then return true end
         if options.frameID and CS.CONST and CS.CONST.FRAMES then
             for _,id in pairs(CS.CONST.FRAMES)do if id==options.frameID then return true end end
         end
         return Own(options.parent)or Own(options.anchorParent)
     end
-    local classes={'Frame','Button','Text','Checkbox','Dropdown','CustomDropdown','BlizzardTab','Tab','TextInput','NumericInput','Slider','ScrollFrame','FrameList','Icon','ToggleButton'}
+    local classes={'Frame','Button','Text','Checkbox','Dropdown','CustomDropdown','BlizzardTab','Tab','TextInput','NumericInput','Slider','ScrollFrame','FrameList','Icon','SpellIcon','ToggleButton','CheckboxSelector','FilterButton','ItemSelector','CurrencyInput','ScrollingMessageFrame'}
     Bind=function()
         local G=CS.GGUI
         if not G then return end
+        local manager=Menu and Menu.GetManager and Menu.GetManager()
+        local function Opened()
+            if not Ready()then return end
+            local list=manager and manager.GetOpenMenu and manager:GetOpenMenu()
+            local owner=list and list.GetOwnerRegion and list:GetOwnerRegion()
+            if Own(owner)then MenuList(list)end
+        end
+        H.Hook(manager,'OpenMenu',Opened);H.Hook(manager,'OpenContextMenu',Opened)
         local context=CS.WIDGETS and CS.WIDGETS.ContextMenu
         H.Hook(context,'Open',function()
             if not Ready()then return end
             local manager=Menu and Menu.GetManager and Menu.GetManager()
             local list=manager and manager.GetOpenMenu and manager:GetOpenMenu()
             MenuList(list)
+        end)
+        H.Hook(CS.UTIL,'ShowTextCopyBox',function()
+            if not Ready()then return end
+            local f=_G.KethoEditBox
+            if not H.Allowed(f)then return end
+            local d=State(f)
+            if not d.exportHook then
+                d.exportHook=true
+                -- This global helper can be reused by other addons. Release
+                -- cosmetics on every Show, even while disabled, before opting
+                -- in again only after CraftSim's own export call completes.
+                hooksecurefunc(f,'Show',function()Restore(shared[f])end)
+                f:HookScript('OnHide',function()Restore(shared[f])end)
+            end
+            kinds[f]='panel';SharedRow(f)
         end)
         for _,name in ipairs(classes)do
             local role=name
@@ -498,7 +612,10 @@ end, function(S, module)
         local row=G.FrameList and G.FrameList.Row
         if type(row)=='table'and type(row.new)=='function'and classHooks[row]~=row.new then
             hooksecurefunc(row,'new',function(w,f,_,_,list)
-                if Ready()and(Own(f)or list and Own(list.frame))then Tag(w,'row');Walk(f)end
+                if Ready()and(Own(f)or list and Own(list.frame))then
+                    for _,column in ipairs(w.columns or {})do if H.Allowed(column)then kinds[column]='row'end end
+                    Tag(w,'row');Walk(f)
+                end
             end)
             classHooks[row]=row.new
         end
@@ -512,7 +629,9 @@ end, function(S, module)
             if type(component)=='table'and type(component.UI)=='table'then
                 for name,fn in pairs(component.UI)do
                     if type(fn)=='function'and name:match('^Init')then
-                        H.Hook(component.UI,name,function()if Ready()then H.Queue(module,Discover)end end)
+                        H.Hook(component.UI,name,function()
+                            if Ready()then H.Queue(module,function()generation=generation+1;Discover()end)end
+                        end)
                     end
                 end
             end
@@ -560,6 +679,7 @@ end, function(S, module)
         for f,r in pairs(shared)do
             if r.active and r.root==f then for raw in pairs(r.saved)do H.Safe(Paint,raw)end end
         end
+        for list,d in pairs(menus)do if d.active then H.Safe(MenuList,list)end end
         applying=false
     end
     module.refresh=function()generation=generation+1;Refresh()end

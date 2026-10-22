@@ -81,6 +81,7 @@ local function Object(kind, parent)
     function f:SetAlpha(v) self.alpha=v end
     function f:SetColorTexture(r,g,b,a)
         colourWrites=colourWrites+1; self.color[1],self.color[2],self.color[3],self.color[4]=r,g,b,a
+        if self.kind=='Texture'then self.texture='solid'end
     end
     function f:SetVertexColor(r,g,b,a)
         self.vertex=self.vertex or {}; self.vertex[1],self.vertex[2],self.vertex[3],self.vertex[4]=r,g,b,a
@@ -152,7 +153,14 @@ S.Tab=function(f)
     end
 end
 S.SetTabSelection=function(f,v) f.selected=v end
-S.ScrollBar=function(f) f.scroll=true end
+S.ScrollBar=function(f)
+ f.scroll=true
+ local thumb=f.Track and f.Track.Thumb or f.GetThumb and f:GetThumb()
+ if not thumb then return end
+ for _,host in ipairs({f.Track,thumb})do for _,t in ipairs(host.regions)do t:SetAlpha(0)end end
+ if not thumb.grip then thumb.grip=thumb:CreateTexture(nil,'ARTWORK');thumb.grip:SetWidth(4)end
+ thumb.grip:SetColorTexture(1,1,1,.35);thumb.grip:SetAlpha(1)
+end
 S.CloseButton=function(f)
     f.close=true
     if not f.closeGlyph then f.closeGlyph=f:CreateTexture(nil,'OVERLAY') end
@@ -243,6 +251,15 @@ Class('ScrollFrame',function(w,o)
  w.scrollFrame=Object('ScrollFrame',o.parent);w.content=Object('Frame',w.scrollFrame)
  w.scrollBar=Object('Frame',w.scrollFrame);w.scrollBar.Track=Object('Frame',w.scrollBar)
  w.scrollBar.Track.Thumb=Object('Frame',w.scrollBar.Track);w.scrollBar.Track.Thumb.native=w.scrollBar.Track.Thumb:CreateTexture()
+ w.scrollBar.Track.native=w.scrollBar.Track:CreateTexture(nil,'BACKGROUND')
+ w.scrollBar.Back=Object('Button',w.scrollBar);w.scrollBar.Back.native=w.scrollBar.Back:CreateTexture()
+ w.scrollBar.Forward=Object('Button',w.scrollBar);w.scrollBar.Forward.native=w.scrollBar.Forward:CreateTexture()
+ if o.accessor then
+  w.scrollBar.nativeThumb=w.scrollBar.Track.Thumb;w.scrollBar.Track.Thumb=nil
+  if o.accessor=='GetThumb'then function w.scrollBar:GetThumb()return self.nativeThumb end
+  else w.scrollBar.Thumb=w.scrollBar.nativeThumb end
+ end
+ w.borderFrame=Object('Frame',o.parent);w.borderFrame.backdrop={edgeFile='native-border'};w.borderFrame:SetFrameLevel(99)
 end)
 Class('FrameList',function(w,o)
  w.frame=Object('Frame',o.parent);w.rows={};w.rowConstructor=o.rowConstructor
@@ -280,10 +297,41 @@ function layout:AddInitializer()return 'native-new-init'end
 local category={};CS.OPTIONS.category=category
 SettingsPanel={GetLayout=function(_,c)if c==category then return layout end end,GetCurrentLayout=function()return layout end}
 CS.WIDGETS={ContextMenu={Open=function()return 'native-context'end}}
-local menu=Object('Frame',UIParent);local nativeMenu=menu:CreateTexture(nil,'BACKGROUND')
-function menu:AttachTexture()return self:CreateTexture(nil,'BACKGROUND')end
-function menu:EnumerateElementDescriptions(fn)end
-Menu={GetManager=function()return {GetOpenMenu=function()return menu end}end}
+local function MenuFrame()
+ local f=Object('Frame',UIParent);f.descriptions={}
+ function f:GetOwnerRegion()return self.owner end
+ function f:AttachTexture()
+  self.fill=self.fill or self:CreateTexture(nil,'BACKGROUND');return self.fill
+ end
+ function f:EnumerateElementDescriptions(fn)for _,d in ipairs(self.descriptions)do fn(nil,d)end end
+ function f:AddCheck(selected)
+  local d={initializers={},checkbox=true}
+  function d:IsCheckbox()return self.checkbox end
+  function d:AddInitializer(fn)self.initializers[#self.initializers+1]=fn end
+  local row=Object('Frame',self);row.leftTexture1=row:CreateTexture(nil,'ARTWORK');row.leftTexture1:SetTexture('native-box')
+  row.leftTexture2=row:CreateTexture(nil,'ARTWORK');row.leftTexture2:SetTexture('native-tick');row.leftTexture2:SetShown(selected)
+  -- Compositor proxies prohibit even looking up SetFont.
+  row.Text=setmetatable({}, {__index=function(_,key)assert(key~='SetFont','compositor font access')end})
+  function row:GetElementDescription()return d end
+  function row:Reinitialize(target)
+   self.leftTexture1:SetTexture('native-box');self.leftTexture2:SetTexture('native-tick')
+   for _,fn in ipairs(d.initializers)do fn(self,d,target or f)end
+  end
+  self.descriptions[#self.descriptions+1]=d;return row,d
+ end
+ return f
+end
+local menu=MenuFrame();local nativeMenu=menu:CreateTexture(nil,'BACKGROUND')
+local checked,checkedDescription=menu:AddCheck(true)
+local unchecked=menu:AddCheck(false)
+local radio,radioDescription=menu:AddCheck(true)
+radioDescription.checkbox=false
+function radioDescription:IsRadio()return true end
+local customInput=Object('EditBox',unchecked);customInput:SetText('native queue expression')
+local manager={GetOpenMenu=function(self)return self.list or menu end}
+function manager:OpenMenu(owner,list)self.list=list or menu;self.list.owner=owner;self.list:Show();return 'native-open'end
+function manager:OpenContextMenu(owner,list)return self:OpenMenu(owner,list)end
+Menu={GetManager=function()return manager end}
 assert(module.available());module.install(S,module);Flush()
 assert(#errors==0,table.concat(errors,'; '))
 assert(pre.frame.shell and pre.frame.backdrop==nil)
@@ -315,6 +363,7 @@ end
 assert(allocated==a and hookCount==h and fontWrites==w and childReads==c and regionReads==r,'data updates triggered skin scans or allocations')
 assert(dataCalls==2000)
 local sharedRow=Object('Frame',UIParent)
+local sharedScroll=G.ScrollFrame{parent=sharedRow,accessor='GetThumb'}
 sharedRow.Checkbox=Object('CheckButton',sharedRow);sharedRow.Checkbox.checkedArt=sharedRow.Checkbox:CreateTexture(nil,'ARTWORK');sharedRow.Checkbox.checkedArt:SetTexture('native-tick');sharedRow.Checkbox.checked=true
 sharedRow.Text=Text(sharedRow);sharedRow.Text:SetText('Show profit')
 sharedRow.Dropdown=Object('DropdownButton',sharedRow);sharedRow.Dropdown.Text=Text(sharedRow.Dropdown)
@@ -322,11 +371,13 @@ sharedRow.Dropdown.scripts.OnMouseDown=function()menu.owner=sharedRow.Dropdown;m
 function menu:GetOwnerRegion()return self.owner end
 assert(initializer:InitFrame(sharedRow)=='native-init')
 assert(sharedRow.Checkbox.checkedArt.alpha==0 and sharedRow.Text.path=='EUI')
+assert(sharedScroll.scrollBar.nativeThumb.native.alpha==0 and sharedScroll.scrollBar.Track.native.alpha==0)
 assert(sharedRow.Dropdown.scripts.OnMouseDown()=='native-settings-dropdown'and nativeMenu.alpha==0)
 menu:Hide();assert(nativeMenu.alpha==1)
 local checkHost=sharedRow.Checkbox.children[1];assert(checkHost and checkHost.mark.color[1]==accent)
 enabled=false;assert(initializer:Resetter(sharedRow)=='native-reset')
 assert(sharedRow.Checkbox.checkedArt.alpha==1 and sharedRow.Text.path=='Native'and not checkHost.shown)
+assert(sharedScroll.scrollBar.nativeThumb.native.alpha==1 and sharedScroll.scrollBar.Track.native.alpha==1,'pooled scrollbar art not restored')
 sharedRow.Checkbox:SetChecked(false);assert(not checkHost.shown)
 enabled=true;initializer:InitFrame(sharedRow);assert(checkHost.shown)
 local objs,hooks=allocated,hookCount
@@ -376,3 +427,127 @@ assert(fontWrites==beforeFont,'unchanged hover rewrote fonts')
 dynamic.frame.Text:SetFontObject();assert(dynamic.frame.Text.path=='NewEUI','native label font reset was not repaired')
 assert(#errors==0,table.concat(errors,'; '))
 print('PASS: shared Settings dropdown ownership/restoration and local hover/font-object repair')
+
+-- Raised scroll/quality outlines must not receive an opaque covering panel.
+local border=list.scrollFrame.borderFrame
+pre.frame:Show()
+assert(border.level==99 and border.backdrop==nil and #border.regions==0,'raised border got a fill over queue rows')
+assert(row.frame.bg[2]==.5 and row.text.frame:GetAlpha()==1,'queue selection/data were obscured')
+local transparent=Object('Frame',pre.content)
+transparent.backdrop={bgFile='white',edgeFile='border'};transparent.bg={1,1,1,0}
+module.refresh();assert(transparent.backdrop==nil and #transparent.regions==0,'transparent border acquired an opaque fill')
+local filled=Object('Frame',pre.content);filled.backdrop={bgFile='white',edgeFile='border'}
+module.refresh();assert(#filled.regions==1 and filled.regions[1].color[4]==.97,'real panel lost its background')
+
+-- Both MinimalScrollBar accessors and direct-thumb fallback retain native hit areas.
+for _,accessor in ipairs({'Track','GetThumb','Thumb'})do
+ local scroll=G.ScrollFrame{parent=pre.content,accessor=accessor~='Track'and accessor or nil}
+ local bar=scroll.scrollBar;local thumb=bar.Track.Thumb or bar.nativeThumb
+ local tw,th,bw,bh=thumb.width,thumb.height,bar.width,bar.height
+ assert(thumb.native.alpha==0 and bar.Track.native.alpha==0,'native scrollbar art survived '..accessor)
+ assert(tw==16 and th==20 and bw==16 and bh==20,'scrollbar hit area resized')
+ local up,down
+ for _,t in ipairs(bar.Back.regions)do if t.rotation then up=t end end
+ for _,t in ipairs(bar.Forward.regions)do if t.rotation then down=t end end
+ assert(up and up.rotation==math.pi and down and down.rotation==0,'vertical scrollbar arrows point sideways')
+ local before=allocated;module.refresh();assert(allocated==before,'scrollbar refresh duplicated UI objects')
+ assert(thumb.width==tw and thumb.height==th and bar.width==bw and bar.height==bh)
+end
+
+-- Modern menu markers repaint on native row initialization without touching fonts/state.
+manager:OpenMenu(dynamic.frame,menu)
+assert(checked.leftTexture1.width==12 and checked.leftTexture2.width==7)
+assert(checked.leftTexture2.shown and not unchecked.leftTexture2.shown,'skin changed native checked visibility')
+assert(checked.leftTexture2.color[1]==accent and checked.leftTexture1.texture=='solid')
+assert(radio.leftTexture1.width==12 and radio.leftTexture2.width==7 and radio.leftTexture2.shown)
+assert(customInput.path==fontFace and customInput.text=='native queue expression','embedded menu input missed')
+checked:Reinitialize();assert(checked.leftTexture1.texture=='solid'and checked.leftTexture2.texture=='solid')
+local na,nh=allocated,hookCount
+for _=1,100 do manager:OpenMenu(dynamic.frame,menu);checked:Reinitialize()end
+assert(allocated==na and hookCount==nh and #checkedDescription.initializers==1,'menu reuse duplicated hooks/layers')
+local sub=MenuFrame();local subcheck=sub:AddCheck(true)
+checked:Reinitialize(sub)
+-- The inherited initializer paints its target row, including ownerless submenus.
+for _,fn in ipairs(checkedDescription.initializers)do fn(subcheck,checkedDescription,sub)end
+assert(subcheck.leftTexture1.texture=='solid'and subcheck.leftTexture2.width==7)
+sub:Hide();menu:Hide()
+assert(checked.leftTexture1.texture=='native-box'and checked.leftTexture1.width==16)
+assert(customInput.path=='Native','embedded menu input not restored')
+assert(checked.leftTexture2.texture=='native-tick'and checked.leftTexture2.shown)
+manager:OpenMenu(foreignButton.frame,menu)
+assert(nativeMenu.alpha==1 and checked.leftTexture1.texture=='native-box','foreign menu reuse inherited styling')
+menu:Hide();combat=true;manager:OpenMenu(dynamic.frame,menu)
+assert(nativeMenu.alpha==1 and checked.leftTexture1.texture=='native-box');menu:Hide();combat=false
+enabled=false;manager:OpenMenu(dynamic.frame,menu);assert(nativeMenu.alpha==1);menu:Hide();enabled=true
+
+-- Non-registry list dialogs and composite GGUI controls are covered lazily.
+for _,id in ipairs({'CRAFT_LIST_NAME_POPUP','CRAFT_LIST_IMPORT_POPUP'})do
+ local popup=G.Frame{parent=UIParent,frameID=id}
+ local text=G.TextInput{parent=popup.content,initialValue='keep native list string'}
+ local check=G.Checkbox{parent=popup.content}
+ local nativeInput=Object('EditBox',popup.content);nativeInput:SetText('native appended input')
+ popup.frame:Show()
+ assert(popup.frame.shell and text.frame.path==fontFace and check.frame.checkedArt.alpha==0)
+ assert(text.frame.text=='keep native list string')
+ assert(nativeInput.path==fontFace and nativeInput.text=='native appended input','first show missed appended controls')
+end
+
+local nested=Object('Frame',pre.content);local lateNative=Object('CheckButton',nested)
+lateNative.checkedArt=lateNative:CreateTexture();lateNative.checkedArt:SetTexture('late-check')
+CS.STATISTICS.UI:Init();Flush()
+assert(lateNative.checkedArt.alpha==0,'completed UI initialization missed nested native controls')
+
+-- Remaining composite constructors used by modules retain their values/actions.
+Class('SpellIcon',function(w,o)
+ w.frame=Object('Button',o.parent);w.frame.normal=w.frame:CreateTexture();w.frame.normal:SetTexture('native-spell')
+end)
+Class('ScrollingMessageFrame',function(w,o)
+ w.frame=Object('ScrollingMessageFrame',o.parent);w.frame.message='|cff00ff00Crafted item|r'
+ w.scrollBar=Object('Frame',w.frame);w.scrollBar.Track=Object('Frame',w.scrollBar)
+ w.scrollBar.Track.Thumb=Object('Frame',w.scrollBar.Track);w.scrollBar.Track.Thumb.native=w.scrollBar.Track.Thumb:CreateTexture()
+end)
+Class('ItemSelector',function(w,o)
+ w.icon=G.Icon{parent=o.parent};w.button=w.icon.frame
+ w.selectionFrame=G.Frame{parent=o.parent}
+end)
+for _,name in ipairs({'CheckboxSelector','FilterButton'})do
+ Class(name,function(w,o)w.frame=Object('DropdownButton',o.parent);w.frame.Text=Text(w.frame)end)
+end
+module.refresh()
+local spell=G.SpellIcon{parent=pre.content};assert(spell.frame.normal.coords[1]==.08 and spell.frame.normal.alpha==1)
+local log=G.ScrollingMessageFrame{parent=pre.content}
+assert(log.frame.path==fontFace and log.frame.message=='|cff00ff00Crafted item|r'and log.scrollBar.Track.Thumb.native.alpha==0)
+local selector=G.ItemSelector{parent=pre.content}
+assert(selector.selectionFrame.frame.shell and selector.icon.frame.normal.alpha==1)
+for _,name in ipairs({'CheckboxSelector','FilterButton'})do
+ local control=G[name]{parent=pre.content};assert(control.frame.dropdown)
+ assert(manager:OpenContextMenu(control.frame,menu)=='native-open')
+ assert(nativeMenu.alpha==0 and checked.leftTexture1.texture=='solid');menu:Hide()
+end
+
+-- Shared text export restores native cosmetics on foreign reuse, even disabled.
+CS.UTIL={ShowTextCopyBox=function(_,text)
+ if not KethoEditBox then
+  KethoEditBox=Object('Frame',UIParent);KethoEditBox.backdrop={bgFile='dialog',edgeFile='border'}
+  KethoEditBoxEditBox=Object('EditBox',KethoEditBox)
+  function KethoEditBoxEditBox:IsMultiLine()return true end
+  KethoEditBoxEditBox.path='NativeExportFont'
+  KethoEditBox.scroll=Object('Slider',KethoEditBox);KethoEditBox.scroll.thumb=KethoEditBox.scroll:CreateTexture()
+ end
+ KethoEditBoxEditBox:SetText(text);KethoEditBoxEditBox:HighlightText();KethoEditBox:Show()
+ return 'native-export',text
+end}
+module.refresh()
+local export,value=CS.UTIL:ShowTextCopyBox('exact export data')
+assert(export=='native-export'and value=='exact export data')
+assert(KethoEditBox.backdrop==nil and KethoEditBox.scroll.thumb.alpha==0)
+assert(KethoEditBoxEditBox.path=='NativeExportFont'and KethoEditBoxEditBox.text=='exact export data'and KethoEditBoxEditBox.selections==1)
+local ea,eh=allocated,hookCount
+for _=1,100 do CS.UTIL:ShowTextCopyBox('exact export data')end
+assert(allocated==ea and hookCount==eh,'export reuse duplicated UI objects/hooks')
+enabled=false;KethoEditBox:Show()
+assert(KethoEditBox.backdrop.bgFile=='dialog'and KethoEditBox.scroll.thumb.alpha==1,'foreign export did not restore')
+enabled=true;CS.UTIL:ShowTextCopyBox('last export');KethoEditBox:Hide()
+assert(KethoEditBox.backdrop.bgFile=='dialog'and KethoEditBox.scroll.thumb.alpha==1)
+assert(#errors==0,table.concat(errors,'; '))
+print('PASS: raised transparent queue/quality borders, three scrollbar variants, vertical arrows, managed menu checks/submenus/reuse, craft-list popups and shared exports')

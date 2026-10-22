@@ -64,7 +64,8 @@ local function HUD(C)
     -- Native ApplyStyle restores current profile values. These snapshots supply
     -- the XML anchors, crops and text properties that DBT does not reset.
     local properties = {
-        {"GetFontObject", "SetFontObject"}, {"GetFont", "SetFont"}, {"GetTextColor", "SetTextColor"},
+        -- Restore concrete font/shadow properties, never a borrowed FontObject.
+        {"GetFont", "SetFont"}, {"GetTextColor", "SetTextColor"},
         {"GetShadowColor", "SetShadowColor"}, {"GetShadowOffset", "SetShadowOffset"},
         {"GetJustifyH", "SetJustifyH"}, {"GetJustifyV", "SetJustifyV"},
         {"CanWordWrap", "SetWordWrap"}, {"CanNonSpaceWrap", "SetNonSpaceWrap"},
@@ -1287,11 +1288,13 @@ local function HUD(C)
         if not Allowed(d.frame) or not Allowed(text) or not text.GetFont then return end
         local state = d.fonts[text]
         if not state then
-            state = {font = {text:GetFont()}, object = text.GetFontObject and text:GetFontObject()}
+            state = {font = {text:GetFont()},
+                shadowColor = text.GetShadowColor and {text:GetShadowColor()},
+                shadowOffset = text.GetShadowOffset and {text:GetShadowOffset()}}
             d.fonts[text] = state
         end
         local function PaintFont()
-            if d.paintingFont or not Allowed(d.frame) or not Allowed(text) or not AuxEnabled() then return end
+            if d.paintingFont or not d.styled or not Allowed(d.frame) or not Allowed(text) or not AuxEnabled() then return end
             d.paintingFont = true
             local ok, err = pcall(S.Font, text)
             d.paintingFont = false
@@ -1309,8 +1312,9 @@ local function HUD(C)
                 if d.paintingFont then return end
                 local native = d.fonts[text]
                 if native then
-                    native.object = object
                     native.font[1], native.font[2], native.font[3] = text:GetFont()
+                    native.shadowColor = text.GetShadowColor and {text:GetShadowColor()}
+                    native.shadowOffset = text.GetShadowOffset and {text:GetShadowOffset()}
                 end
                 PaintFont()
             end)
@@ -1461,8 +1465,9 @@ local function HUD(C)
                 for text, state in pairs(d.fonts) do
                     if Allowed(text) then
                         local r, g, b, a = text:GetTextColor()
-                        if state.object and text.SetFontObject then text:SetFontObject(state.object) end
                         if state.font[1] then text:SetFont(unpack(state.font)) end
+                        if state.shadowColor then text:SetShadowColor(unpack(state.shadowColor)) end
+                        if state.shadowOffset then text:SetShadowOffset(unpack(state.shadowOffset)) end
                         text:SetTextColor(r, g, b, a)
                     end
                 end

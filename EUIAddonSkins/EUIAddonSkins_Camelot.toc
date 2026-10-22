@@ -30,6 +30,7 @@ Skins\ForeverCompanion.lua
 Skins\ForeverDungeonJournal.lua
 Skins\GTFO.lua
 Skins\Gargul.lua
+Skins\HomeBound.lua
 Skins\ItemRack.lua
 Skins\KiwiFarm.lua
 Skins\Myslot.lua

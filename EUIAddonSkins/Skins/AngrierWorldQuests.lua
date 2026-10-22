@@ -8,6 +8,8 @@ end, function(S, module)
     local controls, layers = setmetatable({}, {__mode='k'}), setmetatable({}, {__mode='k'})
     local pooled, groups = setmetatable({}, {__mode='k'}), setmetatable({}, {__mode='k'})
     local fontGeneration = setmetatable({}, {__mode='k'})
+    local widgetHooks, widgetPullouts = setmetatable({}, {__mode='k'}), setmetatable({}, {__mode='k'})
+    local empty = {}
     local Refresh, Profiles, PaintWidget
     local function Ready()
         return ns.IsEnabled(module) and not (InCombatLockdown and InCombatLockdown())
@@ -52,28 +54,54 @@ end, function(S, module)
         end
         layer.arrow:SetVertexColor(.8,.8,.82); layer.arrow:SetAlpha(1)
     end
-    local function FadeArt(frame, save)
-        for _, r in ipairs(H.Regions(frame)) do
-            if H.Texture(r) and r ~= (layers[frame] and layers[frame].hover)
-                and r ~= (layers[frame] and layers[frame].arrow) then
+    local function FadeRegions(frame,save,...)
+        local layer = layers[frame]
+        for i=1,select('#',...) do
+            local r = select(i,...)
+            if H.Texture(r) and r ~= (layer and layer.hover) and r ~= (layer and layer.arrow) then
                 if save and save[r] == nil then save[r] = r:GetAlpha() end
-                r:SetAlpha(0)
+                if r:GetAlpha() ~= 0 then r:SetAlpha(0) end
             end
         end
+    end
+    local function FadeArt(frame,save) FadeRegions(frame,save,frame:GetRegions()) end
+    local function CheckboxHost(parent)
+        local host = CreateFrame('Frame',nil,parent)
+        host:SetSize(22,22); host:SetPoint('CENTER',parent,'CENTER')
+        host:EnableMouse(false)
+        S.Checkbox(host,{borderInset=4,hover=.05})
+        -- A solid outer rectangle with an inset fill keeps all four edges
+        -- inside the visible square. Thin independently snapped strips can
+        -- lose one side at fractional effective scales.
+        local outline = host:CreateTexture(nil,'OVERLAY',nil,0)
+        outline:SetColorTexture(.25,.25,.25,1)
+        outline:SetPoint('TOPLEFT',host,'TOPLEFT',4,-4)
+        outline:SetPoint('BOTTOMRIGHT',host,'BOTTOMRIGHT',-4,4)
+        local fill = host:CreateTexture(nil,'OVERLAY',nil,1)
+        fill:SetColorTexture(.02,.02,.02,1)
+        local function Layout()
+            local pixel = 1
+            if PixelUtil and PixelUtil.GetNearestPixelSize and host.GetEffectiveScale then
+                pixel = PixelUtil.GetNearestPixelSize(1,host:GetEffectiveScale(),1)
+            end
+            fill:ClearAllPoints()
+            fill:SetPoint('TOPLEFT',outline,'TOPLEFT',pixel,-pixel)
+            fill:SetPoint('BOTTOMRIGHT',outline,'BOTTOMRIGHT',-pixel,pixel)
+        end
+        Layout()
+        local mark = host:CreateTexture(nil,'OVERLAY',nil,2)
+        mark:SetSize(8,8); mark:SetPoint('CENTER',host,'CENTER')
+        return host,mark,Layout
     end
     local checkHosts = setmetatable({}, {__mode='k'})
     local function Check(frame)
         local state = checkHosts[frame]
         if not state then
             FadeArt(frame)
-            local host = CreateFrame('Frame',nil,frame)
-            host:SetSize(22,22); host:SetPoint('CENTER',frame,'CENTER')
-            host:EnableMouse(false)
-            S.Checkbox(host,{borderInset=4,hover=.05})
-            local mark = host:CreateTexture(nil,'OVERLAY')
-            mark:SetSize(8,8); mark:SetPoint('CENTER',host,'CENTER')
-            state = {host=host,mark=mark}; checkHosts[frame] = state
+            local host,mark,layout = CheckboxHost(frame)
+            state = {host=host,mark=mark,layout=layout}; checkHosts[frame] = state
         end
+        if state.generation ~= generation then state.layout(); state.generation=generation end
         if frame.IsEnabled and not frame:IsEnabled() then state.mark:SetColorTexture(.4,.4,.4,.8)
         else state.mark:SetColorTexture(S.GetAccentColor()) end
         state.mark:SetShown(frame.GetChecked and frame:GetChecked() or false)
@@ -178,13 +206,8 @@ end, function(S, module)
             if native then
                 local state = questChecks[box]
                 if not state then
-                    local host = CreateFrame('Frame', nil, box)
-                    host:SetSize(22,22); host:SetPoint('CENTER',box,'CENTER')
-                    host:EnableMouse(false)
-                    S.Checkbox(host, {borderInset=4,hover=.05})
-                    local mark = host:CreateTexture(nil,'OVERLAY')
-                    mark:SetSize(8,8); mark:SetPoint('CENTER',host,'CENTER')
-                    state = {mark=mark}; questChecks[box] = state
+                    local host,mark,layout = CheckboxHost(box)
+                    state = {mark=mark,layout=layout}; questChecks[box] = state
                     H.Fade(native)
                     local function Visible()
                         if not Ready() then return end
@@ -196,6 +219,7 @@ end, function(S, module)
                 end
                 state.visible()
                 if state.generation ~= generation then
+                    state.layout()
                     state.mark:SetColorTexture(S.GetAccentColor())
                     state.generation = generation
                 end
@@ -221,26 +245,30 @@ end, function(S, module)
         end
         pooled[widget] = nil
     end
+    local function WidgetFont(state,text,owner)
+        if H.Allowed(text) and text:GetObjectType() == 'FontString' then
+            if not state.text[text] then
+                state.text[text] = {font={text:GetFont()},color={text:GetTextColor()},
+                    object=text.GetFontObject and text:GetFontObject()}
+            end
+            Text(text,owner)
+        end
+    end
     PaintWidget = function(widget)
         if type(widget) ~= 'table' or not H.Allowed(widget.frame) then return end
         local state = pooled[widget]
         if not state then
             state = {art={},text={},layers={}}; pooled[widget] = state
         end
-        local function Font(text, owner)
-            if H.Allowed(text) and text:GetObjectType() == 'FontString' then
-                if not state.text[text] then
-                    state.text[text] = {font={text:GetFont()},color={text:GetTextColor()},
-                        object=text.GetFontObject and text:GetFontObject()}
-                end
-                Text(text, owner)
+        WidgetFont(state,widget.text,widget.frame)
+        WidgetFont(state,widget.label); WidgetFont(state,widget.titletext)
+        if widgetHooks[widget] ~= widget.frame then
+            widgetHooks[widget] = widget.frame
+            local function StateChanged()
+                if pooled[widget] and Ready() then Text(widget.text,widget.frame) end
             end
+            for _, key in ipairs({'Enable','Disable','SetEnabled'}) do H.Hook(widget.frame,key,StateChanged) end
         end
-        Font(widget.text,widget.frame); Font(widget.label); Font(widget.titletext)
-        local function StateChanged()
-            if pooled[widget] and Ready() then Text(widget.text,widget.frame) end
-        end
-        for _, key in ipairs({'Enable','Disable','SetEnabled'}) do H.Hook(widget.frame,key,StateChanged) end
         local frame = widget.type == 'EditBox' and widget.editbox
             or widget.type == 'Dropdown' and widget.dropdown
             or widget.type == 'Button' and widget.frame
@@ -252,22 +280,27 @@ end, function(S, module)
                 -- Existing arrow button and cover keep their native click paths.
                 if ns.BindPopupOwner then ns.BindPopupOwner(S,module,frame) end
             end
-            Font(frame.GetFontString and frame:GetFontString(),frame)
+            WidgetFont(state,frame.GetFontString and frame:GetFontString(),frame)
         end
-        for _, child in ipairs(widget.children or {}) do PaintWidget(child) end
+        for _, child in ipairs(widget.children or empty) do PaintWidget(child) end
         if widget.type == 'Dropdown' and widget.pullout then
             local pullout = widget.pullout
-            local function PaintPullout()
-                local current = pooled[widget]
-                if not current or not Ready() or not H.Allowed(pullout.frame) then return end
-                FadeArt(pullout.frame,current.art); Layer(pullout.frame)
-                current.layers[pullout.frame] = true
-                for _, item in ipairs(pullout.items or {}) do
-                    PaintWidget(item)
+            local binding = widgetPullouts[widget]
+            if not binding or binding.pullout ~= pullout then
+                local function PaintPullout()
+                    local current = pooled[widget]
+                    if not current or not Ready() or not H.Allowed(pullout.frame) then return end
+                    FadeArt(pullout.frame,current.art); Layer(pullout.frame)
+                    current.layers[pullout.frame] = true
+                    for _, item in ipairs(pullout.items or empty) do PaintWidget(item) end
                 end
+                -- Store the callback once; widget releases replace snapshots,
+                -- while the same AceGUI widget and pullout are reused.
+                H.Hook(pullout,'Open',PaintPullout)
+                binding = {pullout=pullout,paint=PaintPullout}
+                widgetPullouts[widget] = binding
             end
-            H.Hook(pullout,'Open',PaintPullout)
-            if pullout.frame and pullout.frame:IsShown() then PaintPullout() end
+            if pullout.frame and pullout.frame:IsShown() then binding.paint() end
         end
     end
     Profiles = function()
@@ -319,7 +352,7 @@ end, function(S, module)
     end)
     if S.OnLooksChanged then S.OnLooksChanged(Refresh) end
     local events = CreateFrame('Frame')
-    events:RegisterEvent('ADDON_LOADED'); events:RegisterEvent('PLAYER_REGEN_ENABLED')
+    events:RegisterEvent('ADDON_LOADED'); events:RegisterEvent('PLAYER_REGEN_ENABLED'); events:RegisterEvent('UI_SCALE_CHANGED')
     events:SetScript('OnEvent',function() if ns.IsEnabled(module) then H.Queue(module,Refresh) end end)
     Refresh()
 end)

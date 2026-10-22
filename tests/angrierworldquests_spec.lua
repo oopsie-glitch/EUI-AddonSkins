@@ -10,7 +10,9 @@ InCombatLockdown=function()return combat end
 geterrorhandler=function()return function(err)errors[#errors+1]=err end end
 hooksecurefunc=function(obj,key,fn)local old=obj[key];obj[key]=function(...)local r=table.pack(old(...));fn(...);return table.unpack(r,1,r.n)end end
 local function flush()local n=0;while #timers>0 do local t=timers;timers={};for _,fn in ipairs(t)do fn()end;n=n+1;assert(n<20,'Myslot refresh loop')end end
-local writes,objects=0,0
+local writes,objects,pixelCalls=0,0,0
+local effectiveScale=.711111
+PixelUtil={GetNearestPixelSize=function(_,scale)pixelCalls=pixelCalls+1;return 1/scale end}
 local function region(kind)
  local r={kind=kind or'Texture',alpha=1,font={'native',12,''},color={1,.82,0,1},text=''}
  function r:GetObjectType()return self.kind end
@@ -70,6 +72,7 @@ local function frame(kind,parent)
  function f:Hide()self.shown=false;if self.hooks.OnHide then self.hooks.OnHide(self)end end
  function f:SetBackdrop(v)assert(not combat);self.backdrop=v end
  function f:GetBackdrop()return self.backdrop end
+ function f:GetEffectiveScale()return effectiveScale end
  function f:GetFrameLevel()return 5 end
  function f:SetFrameLevel(v)self.level=v end
  function f:SetAllPoints()end
@@ -172,8 +175,8 @@ local dd=frame('Button',canvas);dd.SetupMenu=function()end;dd.configKey='sortMet
 AngrierWorldQuestsConfigDropDown1=dd
 local r,n,num=canvas:OnRefresh();assert(r=='refresh-native'and n==nil and num==8)
 assert(check.children[1].checkbox and check.children[1].w==22 and dd.dropdown and check.Text.color[1]>.8)
-check:SetChecked(true);assert(check.children[1].regions[1].shown)
-check:SetChecked(false);assert(not check.children[1].regions[1].shown)
+check:SetChecked(true);assert(check.children[1].regions[#check.children[1].regions].shown)
+check:SetChecked(false);assert(not check.children[1].regions[#check.children[1].regions].shown)
 assert(check.scripts.OnClick()=='setting-native'and clicks==2)
 local objectsBefore,writesBefore,hooksBefore=objects,writes,hookCount
 for _=1,100 do canvas:OnRefresh();tab:SetChecked(false)end
@@ -222,7 +225,7 @@ local first=questRow(true);local second=questRow(false)
 local qr,qn,qv=quest:QuestLog_Update();assert(qr=='quests-native'and qn==nil and qv==12)
 local box=first.Checkbox;local host=box.children[1];local mark=host.regions[#host.regions]
 assert(host.checkbox and host.mouse==false and mark.shown and box.CheckMark.alpha==0)
-assert(second.Checkbox.children[1].regions[1].shown==false)
+assert(second.Checkbox.children[1].regions[#second.Checkbox.children[1].regions].shown==false)
 assert(first.scripts.OnClick()=='track-native'and questCheck.Text.font[1]=='native')
 box.CheckMark:Hide();assert(not mark.shown)
 box.CheckMark:Show();assert(mark.shown)
@@ -236,3 +239,52 @@ box.CheckMark:Hide();assert(mark.shown) -- combat postpones cosmetic updates
 combat=false;m.refresh();assert(skipped.Checkbox.children[1].checkbox and not mark.shown)
 assert(#errors==0,table.concat(errors,'; '))
 print('PASS: AWQ-only pooled quest checkboxes, native tracking visibility/actions, late rows, warm reuse, disabled/combat guards')
+
+-- A continuous outer rectangle and inset fill keep every edge inside bounds
+-- at fractional UI scales; neither native geometry nor hit areas are resized.
+local settingsHost=check.children[1]
+local edge,fill=settingsHost.regions[1],settingsHost.regions[2]
+assert(edge.point[1]=='BOTTOMRIGHT'and edge.point[4]==-4 and edge.point[5]==4)
+assert(fill.point[1]=='BOTTOMRIGHT'and fill.point[4]<0 and fill.point[5]>0)
+local function assertScale(scale)
+ effectiveScale=scale;m.refresh()
+ assert(math.abs(fill.point[5]*scale-1)<.00001,'outline is not one physical pixel')
+ assert(settingsHost.w==22 and check.w==24 and check.h==24,'native hit area changed')
+end
+for _,scale in ipairs({.533333,.64,.711111,.9,1,1.25})do assertScale(scale)end
+local t,p=objects,pixelCalls
+for _=1,100 do canvas:OnRefresh();quest:QuestLog_Update()end
+assert(objects==t and pixelCalls==p,'warm refresh rebuilt outline geometry')
+print('PASS: contained checkbox outline at six fractional scales; native geometry and warm layout reuse preserved')
+-- Timings/heap are measured in this mock, not in the WoW client.
+local function benchmark(name,fn)
+ collectgarbage('collect')
+ local heap=collectgarbage('count');local o,w,h=objects,writes,hookCount
+ collectgarbage('stop');local start=os.clock()
+ for _=1,1000 do fn()end
+ local elapsed=os.clock()-start;local allocated=collectgarbage('count')-heap
+ collectgarbage('restart');collectgarbage('collect')
+ assert(objects==o and writes==w and hookCount==h,name..' repeated creation/font/hook work')
+ print(string.format('BENCH AWQ %s: 1000 callbacks %.3f ms; temporary Lua heap %.2f KiB; objects=0 font_writes=0 new_hooks=0 (mock)',name,elapsed*1000,allocated))
+end
+benchmark('warm settings refresh',function()canvas:OnRefresh()end)
+benchmark('quest rebuild completion',function()quest:QuestLog_Update()end)
+benchmark('Profiles feed',function()dialog:FeedGroup('AWQ-Profiles',{},profiles)end)
+
+-- Startup/load bursts coalesce into one integration refresh, with no polling.
+local eventFrame
+for _,f in ipairs(events)do
+ if f.events and f.events.UI_SCALE_CHANGED then eventFrame=f end
+end
+assert(eventFrame and #timers==0)
+for _=1,1000 do eventFrame.scripts.OnEvent(eventFrame,'ADDON_LOADED','ForeignAddon')end
+assert(#timers==1,'load burst queued duplicate full refreshes')
+flush();assert(#timers==0)
+local so,sh=objects,hookCount
+for _=1,100 do
+ gui:Release(action);gui:Release(dropdown);gui:Release(edit);gui:Release(item)
+ dialog:FeedGroup('AWQ-Profiles',{},profiles)
+end
+assert(objects==so and hookCount==sh,'Profiles release/reuse grew objects or hooks')
+assert(questReads==0 and #errors==0,table.concat(errors,'; '))
+print('PASS: 1000 load events coalesce once; 100 Profiles release/reuse cycles add no UI objects or hooks')

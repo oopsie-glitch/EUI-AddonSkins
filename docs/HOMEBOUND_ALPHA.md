@@ -25,3 +25,14 @@ Blizzard filter/submenu styling is scoped to HomeBound's filter-owner chain and 
 In a mock, 1,000 warm BuildUI/manifest cycles, including pooled row hide/show reuse, add zero skin UI objects, hooks, font writes or child/region enumerations. The show burst queues at most one timer batch. These are simulated work counters, not in-game CPU/FPS measurements. Actual rendering, protected-client behaviour and housing API availability remain unverified outside WoW.
 
 The alpha filename identifies this untagged branch build. Core and TOC version remain 1.5.2 until release integration. Blueprints assets must be installed separately to use HomeBound's Blueprints content.
+
+
+## Alpha.2 compact Settings controls and performance review
+
+The native UICheckButtonTemplate hit rectangle is larger than the desired visible box. Checkbox artwork now lives on a mouse-disabled 22-unit host, giving a 14-unit visible box/highlight and 8-unit accent mark. The native control dimensions, label anchors and click area remain unchanged. Click, checked and enabled-state callbacks update this control only, including grey disabled marks and native automatic click toggles.
+
+The horizontal scale slider now uses a 6 x 14-unit accent grip anchored to the existing native thumb, with a 2-unit track and themed stepper arrows. The original thumb dimensions, drag target, slider range/steps/value callbacks and scale setting are retained. No OnUpdate or OnValueChanged skin handler is added. Native scrollbar handling remains separate.
+
+Review found no skin polling, OnUpdate hooks, collection/data calls or global construction/AceGUI hooks. The previous checkbox handler did reset two texture anchors/sizes/colours on each state setter; it now updates mark visibility and changes colour only for enabled/theme changes. A new 1,000-cycle mock requires zero hierarchy reads, UI allocations, hook registrations, geometry writes, texture-colour writes or font writes for stable checkbox/slider state. Hover bounds, native hit areas, click toggles, disabled state and thumb visibility are covered. The existing 1,000 warm list/reuse benchmark still passes.
+
+All 23 suites, Lua syntax and the 40-file package check pass. These counters demonstrate bounded/reduced skin work; in-game CPU/FPS and live appearance remain unmeasured.

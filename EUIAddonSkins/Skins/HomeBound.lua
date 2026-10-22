@@ -93,20 +93,60 @@ ns.RegisterModule('HomeBound','Home Bound',function() return _G.HB_MainFrame ~= 
     end
     local function Check(f)
         local d=State(f)
-        if not d.check then S.Checkbox(f,{borderInset=4,hover=.08});d.check=true end
-        for i,key in ipairs({'GetCheckedTexture','GetDisabledCheckedTexture'}) do
-            local t=f[key] and H.Texture(f[key](f))
-            if t then
-                t:SetVertexColor(1,1,1,1)
-                if i==1 then t:SetColorTexture(S.GetAccentColor()) else t:SetColorTexture(.4,.4,.4,.8) end
-                t:ClearAllPoints();t:SetPoint('CENTER',f,'CENTER');t:SetSize(8,8)
-            end
+        if not d.check then
+            -- UICheckButtonTemplate has a large hit rectangle. Theme a fixed
+            -- visual host instead of letting its artwork fill that rectangle.
+            for _,t in ipairs(H.Regions(f)) do if H.Texture(t) then H.Fade(t) end end
+            local host=CreateFrame('Frame',nil,f);host:SetSize(22,22)
+            host:SetPoint('CENTER',f,'CENTER');host:EnableMouse(false)
+            S.Checkbox(host,{borderInset=4})
+            host.mark=host:CreateTexture(nil,'OVERLAY',nil,2)
+            host.mark:SetSize(8,8);host.mark:SetPoint('CENTER',host,'CENTER')
+            host.hover=host:CreateTexture(nil,'OVERLAY',nil,1)
+            host.hover:SetSize(14,14);host.hover:SetPoint('CENTER',host,'CENTER')
+            host.hover:SetColorTexture(1,1,1,.08);host.hover:SetAlpha(0)
+            d.check=host;art[host]=true
+            H.Script(f,'OnEnter',function()
+                if Ready() and (not f.IsEnabled or f:IsEnabled()) then host.hover:SetAlpha(1) end
+            end)
+            for _,event in ipairs({'OnLeave','OnHide'}) do H.Script(f,event,function()host.hover:SetAlpha(0)end) end
         end
-        local label=f.Text or f.text
-        Text(label,true)
-        if H.Allowed(label) then
-            if f.IsEnabled and not f:IsEnabled() then label:SetTextColor(.5,.5,.52)
-            else label:SetTextColor(.9,.9,.92) end
+        local host=d.check
+        local checked=f.GetChecked and f:GetChecked() or false
+        local enabled=not f.IsEnabled or f:IsEnabled()
+        if host.mark:IsShown()~=checked then host.mark:SetShown(checked) end
+        if d.checkGeneration~=generation or d.checkEnabled~=enabled then
+            if enabled then host.mark:SetColorTexture(S.GetAccentColor())
+            else host.mark:SetColorTexture(.4,.4,.4,.8);host.hover:SetAlpha(0) end
+            local label=f.Text or f.text
+            Text(label,true)
+            if H.Allowed(label) then
+                if enabled then label:SetTextColor(.9,.9,.92) else label:SetTextColor(.5,.5,.52) end
+            end
+            d.checkGeneration,d.checkEnabled=generation,enabled
+        end
+    end
+    local function ScaleSlider(f)
+        if not H.Allowed(f) then return end
+        local thumb=f.GetThumbTexture and H.Texture(f:GetThumbTexture())
+        if not thumb then return end
+        local d=State(f)
+        if not d.scaleGrip then
+            for _,t in ipairs(H.Regions(f)) do if H.Texture(t) then H.Fade(t) end end
+            Backdrop(f)
+            d.scaleTrack=f:CreateTexture(nil,'BACKGROUND');art[d.scaleTrack]=true
+            d.scaleTrack:SetPoint('LEFT',f,'LEFT');d.scaleTrack:SetPoint('RIGHT',f,'RIGHT');d.scaleTrack:SetHeight(2)
+            d.scaleTrack:SetColorTexture(.2,.2,.22,1)
+            d.scaleGrip=f:CreateTexture(nil,'ARTWORK');art[d.scaleGrip]=true
+            d.scaleGrip:SetPoint('CENTER',thumb,'CENTER');d.scaleGrip:SetSize(6,14)
+            local function Visible()
+                if Ready() then d.scaleGrip:SetShown(thumb:IsShown()) end
+            end
+            for _,method in ipairs({'Show','Hide','SetShown'}) do H.Hook(thumb,method,Visible) end
+            Visible()
+        end
+        if d.sliderGeneration~=generation then
+            d.scaleGrip:SetColorTexture(S.GetAccentColor());d.sliderGeneration=generation
         end
     end
     local function Dropdown(f)
@@ -166,16 +206,24 @@ ns.RegisterModule('HomeBound','Home Bound',function() return _G.HB_MainFrame ~= 
                 end)
             end
         end
+        if H.Allowed(f.Slider) then
+            ScaleSlider(f.Slider)
+            if H.Allowed(f.Back) then soft.SoftPageButton(f.Back,'<') end
+            if H.Allowed(f.Forward) then soft.SoftPageButton(f.Forward,'>') end
+        end
         if kind=='EditBox' then
             soft.EditBox(f);Text(f.Instructions,true)
             -- Keep search text, focus, input padding and import codes native.
         elseif kind=='CheckButton' then
             Check(f)
+            H.Script(f,'OnClick',function() if Ready() then Check(f) end end)
             for _,method in ipairs({'SetChecked','Enable','Disable','SetEnabled'}) do H.Hook(f,method,function() if Ready() then Check(f) end end) end
         elseif type(f.SetupMenu)=='function' then Dropdown(f)
         elseif kind=='Slider' then
-            if H.Texture(f.GetThumbTexture and f:GetThumbTexture()) then H.LegacySlider(f) end
-            if H.Allowed(f.Slider) then H.LegacySlider(f.Slider) end
+            if H.Texture(f.GetThumbTexture and f:GetThumbTexture()) then
+                if State(f).scaleGrip or f.GetOrientation and f:GetOrientation()=='HORIZONTAL' then ScaleSlider(f)
+                else H.LegacySlider(f) end
+            end
             if H.Allowed(f.Back) then soft.SoftPageButton(f.Back,'<') end
             if H.Allowed(f.Forward) then soft.SoftPageButton(f.Forward,'>') end
         elseif kind=='Button' and not f.isLine and not f.isHeader and not f.qtyText and not f.bp then
@@ -333,3 +381,4 @@ end)
 end
 if ns.RegisterSkinDefinition then ns.RegisterSkinDefinition('HomeBound',DefineSkin)
 else DefineSkin() end
+

@@ -1,9 +1,10 @@
--- SimulationCraft export-window lifecycle, editor actions and native saved settings.
+-- Home Bound owned UI, native actions/artwork and refresh performance.
 local enabled, combat, allocated, hookCount = true, false, 0, 0
 local errors, timers, looks, events, handlers = {}, {}, {}, {}, {}
 local module, factory, fontFace, accent = nil, nil, 'EUI', 0.25
 local fontWrites, checkboxPaints, colourWrites = 0, 0, 0
 local childReads, regionReads, parentReads = 0, 0, 0
+local geometryWrites=0
 local ns = {IsEnabled = function() return enabled end}
 ns.RegisterSkinDefinition = function(id, fn) assert(id == 'HomeBound'); factory = fn end
 ns.RegisterModule = function(id, _, available, install) module = {id=id, available=available, install=install} end
@@ -82,8 +83,8 @@ local function Object(kind, parent)
     if kind=='Texture' then function f:GetTexture() return self.texture end end
     function f:SetTexCoord(...) self.coords={...} end
     function f:SetText(v) self.text=v end
-    function f:SetPoint(...) self.point={...} end
-    function f:ClearAllPoints() self.point=nil end
+    function f:SetPoint(...) geometryWrites=geometryWrites+1;self.point={...} end
+    function f:ClearAllPoints() geometryWrites=geometryWrites+1;self.point=nil end
     function f:SetAllPoints(p) self.anchor=p end
     function f:SetFrameLevel(v) self.level=v end
     function f:GetFrameLevel() return self.level or 4 end
@@ -92,7 +93,7 @@ local function Object(kind, parent)
     function f:SetHeight(v) self.height=v end
     function f:GetWidth() return self.width end
     function f:GetHeight() return self.height end
-    function f:SetSize(w,h) self.width,self.height=w,h end
+    function f:SetSize(w,h) geometryWrites=geometryWrites+1;self.width,self.height=w,h end
     function f:GetDrawLayer() return self.layer end
     function f:IsShown() return self.shown end
     function f:Show() self.shown=true; if self.scripts.OnShow then self.scripts.OnShow(self) end end
@@ -209,9 +210,9 @@ local row=Object('Button',list);row.isLine=true;row.text=Text(row);row.text:SetT
 row.text.color={.2,1,.2,1};row.dot=row:CreateTexture(nil,'OVERLAY');row.dot:SetTexture('native-collected')
 row.scripts.OnClick=function() return 'native-favorite' end
 HB_ConfigFrame=CreateFrame('Frame','HB_ConfigFrame',UIParent)
-local check=Object('CheckButton',HB_ConfigFrame);check.Text=Text(check)
+local check=Object('CheckButton',HB_ConfigFrame);check:SetSize(32,32);check.Text=Text(check);check:SetChecked(true)
 check.checkedArt=check:CreateTexture(nil,'ARTWORK');check.disabledArt=check:CreateTexture(nil,'ARTWORK')
-check.scripts.OnClick=function()check:SetChecked(not check:GetChecked());return 'native-setting'end
+check.scripts.OnClick=function()check.checked=not check.checked;return 'native-setting'end
 HB_RewardFrame=CreateFrame('Frame','HB_RewardFrame',UIParent)
 local preview=HB_RewardFrame:CreateTexture(nil,'ARTWORK');preview:SetTexture('native-reward-preview')
 local model=Object('PlayerModel',HB_RewardFrame);model.scripts.OnUpdate=function()return 'native-rotation'end
@@ -220,9 +221,27 @@ local smallImage=HB_SmallPreviewFrame:CreateTexture(nil,'ARTWORK');smallImage:Se
 local menu={OpenMenu=function()return 'native-open'end,GetOpenMenu=function(self)return self.list end}
 Menu={GetManager=function()return menu end}
 Settings={RegisterCanvasLayoutCategory=function()return 'native-category'end}
+local scale=Object('Frame',HB_ConfigFrame)
+scale.Slider=Object('Slider',scale);scale.Slider.orientation='HORIZONTAL'
+scale.Slider.width,scale.Slider.height=200,20
+scale.Slider.thumb=scale.Slider:CreateTexture(nil,'ARTWORK');scale.Slider.thumb:SetSize(20,20)
+scale.Slider.scripts.OnValueChanged=function(_,v)scale.value=v;return 'native-scale'end
+scale.Back=Object('Button',scale);scale.Forward=Object('Button',scale)
 assert(module.available());module.install(S,module);Flush()
+local checkHost
+for _,child in ipairs(check.children)do if child.mark then checkHost=child end end
+local grip
+for _,t in ipairs(scale.Slider.regions)do if t.width==6 and t.height==14 then grip=t end end
+assert(checkHost and checkHost.width==22 and checkHost.height==22 and checkHost.mouse==false)
+assert(checkHost.hover.width==14 and checkHost.hover.height==14,'hover exceeds visible checkbox')
+assert(checkHost.mark.width==8 and checkHost.mark.height==8)
+assert(grip and scale.Slider.thumb.alpha==0 and scale.Slider.thumb.width==20 and scale.Slider.thumb.height==20)
+assert(scale.Slider.width==200 and scale.Slider.height==20,'native slider geometry changed')
+assert(scale.Slider.scripts.OnValueChanged(scale.Slider,1.2)=='native-scale'and scale.value==1.2)
+assert(scale.Back.glyph=='<'and scale.Forward.glyph=='>')
 assert(HB_MainFrame.panel and close.close and HB_FilterButton.dropdown and HB_FilterButton.regenerate)
-assert(check.check and check.checkedArt.color[1]==accent and check.width==16)
+assert(checkHost.check and checkHost.mark.color[1]==accent and check.width==32 and check.height==32)
+assert(check.checkedArt.alpha==0 and check.disabledArt.alpha==0)
 assert(scroll.ScrollBar.scroll and HB_SearchBox.text=='search-kept')
 assert(tab.icon.alpha==1 and tab.caption.color[1]==accent and not bpTab.selected)
 assert(preview.alpha==1 and smallImage.alpha==1 and not model.walks and model.scripts.OnUpdate()=='native-rotation')
@@ -300,3 +319,30 @@ Flush();assert(late.qtyText.path=='EUI' or late.qtyText.path=='NextTheme')
 enabled=false;local off=Object('CheckButton',HB_ConfigFrame);module.refresh();assert(not off.check)
 assert(#errors==0,table.concat(errors,'; '))
 print('PASS: HomeBound main/options/late Blueprints, native data/actions/previews/rarity/manifest colours, owned menus, combat/theme/toggles and 1000 warm list cycles')
+
+
+-- Native hit rectangles and value callbacks remain unchanged while visual
+-- state updates stay local, including disabled/checked and hover combinations.
+enabled=true;module.refresh();Flush()
+check:SetChecked(true);check:Enable()
+assert(check.scripts.OnClick(check)=='native-setting'and not checkHost.mark:IsShown())
+assert(check.scripts.OnClick(check)=='native-setting'and checkHost.mark:IsShown())
+check.scripts.OnEnter(check);assert(checkHost.hover.alpha==1)
+check.scripts.OnLeave(check);assert(checkHost.hover.alpha==0)
+check:SetChecked(false);assert(not checkHost.mark:IsShown())
+check:SetChecked(true);check:Disable();assert(checkHost.mark:IsShown()and checkHost.mark.color[1]==.4)
+check.scripts.OnEnter(check);assert(checkHost.hover.alpha==0,'disabled checkbox has an enabled highlight')
+check:Enable();assert(checkHost.mark.color[1]==accent)
+local a,h,c,r,g,colors,fonts=allocated,hookCount,childReads,regionReads,geometryWrites,colourWrites,fontWrites
+for _=1,1000 do
+ check:SetChecked(true);check:Enable()
+ scale.Slider.scripts.OnValueChanged(scale.Slider,1)
+end
+assert(allocated==a and hookCount==h and childReads==c and regionReads==r)
+assert(geometryWrites==g and colourWrites==colors and fontWrites==fonts,'unchanged state reset checkbox geometry/artwork')
+local thumbPoint=scale.Slider.thumb.point
+scale.Slider.thumb:Hide();assert(not grip:IsShown())
+scale.Slider.thumb:Show();assert(grip:IsShown()and scale.Slider.thumb.point==thumbPoint)
+assert(check.width==32 and check.height==32 and scale.Slider.thumb.width==20)
+assert(#errors==0,table.concat(errors,'; '))
+print('BENCH HomeBound 1000 stable checkbox/slider callbacks: hierarchy reads=0 UI_objects=0 hooks=0 geometry_writes=0 texture_colour_writes=0 font_writes=0 (mock)')

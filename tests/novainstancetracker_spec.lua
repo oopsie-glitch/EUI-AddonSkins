@@ -399,7 +399,7 @@ dialog.OpenFrames.NovaInstanceTracker=stand;dialog:FeedGroup('NovaInstanceTracke
 assert(stand.frame.backdrop==nil)
 local translucent=false
 for _,art in ipairs(stand.frame.regions)do
- if art.layer=='BACKGROUND'and art.color[4]==.5 and art.alpha==1 then translucent=true end
+ if art.layer=='BACKGROUND'and art.color[4]==.8 and art.alpha==1 then translucent=true end
  assert(not art.gradient,'standalone options retained a second background gradient')
 end
 assert(translucent and stand.frame.alpha==1,'standalone opacity faded foreground controls')
@@ -474,7 +474,7 @@ assert(editor.walks==mainReads and editor.EditBox.walks==editReads,'title discov
 local function Background(frame)
  local fill
  for _,region in ipairs(frame.regions)do
-  if region.layer=='BACKGROUND'and region.anchor==frame and region.color[4]==.5 then fill=region end
+  if region.layer=='BACKGROUND'and region.anchor==frame and region.color[4]==.8 then fill=region end
   assert(not region.gradient,'native window retained a stacked gradient')
  end
  assert(fill and frame.alpha==1,'window lacks a translucent background or faded its foreground')
@@ -488,7 +488,7 @@ assert(childReads==c and regionReads==r and allocated==o and hookCount==h and fo
  'warm native open/title/timer cycle performed new skin work')
 assert(Background(editor)==bg,'background was recreated')
 fontFace='ThirdTheme';module.refresh()
-assert(Background(editor)==bg and bg.color[4]==.5 and editor.fs.alpha==1)
+assert(Background(editor)==bg and bg.color[4]==.8 and editor.fs.alpha==1)
 -- Restoring a shared standalone window returns its native backdrop/alpha.
 assert(gui:Release(stand)=='native-release')
 assert(stand.frame.backdrop.bgFile=='native-standalone'and stand.frame.alpha==1)

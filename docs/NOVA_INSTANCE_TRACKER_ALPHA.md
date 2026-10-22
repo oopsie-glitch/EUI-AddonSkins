@@ -4,7 +4,7 @@ Branch: `skin/novainstancetracker-initial`, based on stable 1.5.2. Untagged; not
 
 ## Scope
 
-Independently written runtime cosmetics for the supplied Nova Instance Tracker 2.31. Covers instance history, characters/rested XP, trade log/export, copy/delete dialogs, raid lockouts, post-instance sharing, level log, loot-reminder lists and the options canvas/standalone AceConfig window. Standalone windows use flat charcoal backgrounds at 50% opacity; text and controls remain fully opaque. Native red action buttons, close buttons, dropdowns, scrollbars, horizontal sliders and checkbox artwork receive the existing theme treatment. No top accent stripe. Native checkbox hit areas and log geometry remain intact; selected checks/grips follow the EllesmereUI accent. Options labels are neutral.
+Independently written runtime cosmetics for the supplied Nova Instance Tracker 2.31. Covers instance history, characters/rested XP, trade log/export, copy/delete dialogs, raid lockouts, post-instance sharing, level log, loot-reminder lists and the options canvas/standalone AceConfig window. Standalone windows use flat charcoal backgrounds at 80% opacity; text and controls remain fully opaque. Native red action buttons, close buttons, dropdowns, scrollbars, horizontal sliders and checkbox artwork receive the existing theme treatment. No top accent stripe. Native checkbox hit areas and log geometry remain intact; selected checks/grips follow the EllesmereUI accent. Options labels are neutral.
 
 Status legends, coloured log text, realm/class/status information, item/coin icons, hyperlinks, reminder animation, sharing/copy/whisper actions, deletion, history, filters, settings and saved layout remain controlled by Nova. Background fills are BACKGROUND textures on the owning frame; no raised opaque overlay is placed over data. Models, tooltips owned by Blizzard and protected frames are excluded. Main runtime version remains 1.5.2 until release integration; the test ZIP name identifies the alpha.
 
@@ -27,6 +27,10 @@ Instance/character/trade/level logs, lockouts, copy/delete/list windows and stan
 The audit found one missed lazy path: Nova creates its instance-summary title below an already-cached EditBox. A completed title-constructor hook now styles that row locally, without a log/ancestor scan. Level-log row-constructor hooks also bind once when the method first exists, avoiding discarded binding closures on each warm reopen. No native tick/recalc logic, geometry, data or shared helper changed.
 
 Added tests cover transparent backgrounds on pre-existing/lazy windows, foreground alpha, theme persistence, reuse of the same fill, original standalone backdrop restoration after release, local summary-title discovery and 1,000 warm open/title/timer cycles. Those cycles add zero hierarchy reads, skin objects/hooks or font/geometry writes in the mock. The full 23-suite, syntax and 40-file install-package validation passes. Actual in-game lag/FPS, rendering, taint, retained memory and native crashes remain outside this environment's verification.
+
+## Alpha 3 — window opacity
+
+Set standalone window backgrounds to 80% opacity at the owner's request. Foreground alpha stays at 100%; the flat single-fill layout and performance guards remain. Opacity/reuse/theme regressions, all 23 suites and packaging validation pass.
 
 ## Source and package boundaries
 

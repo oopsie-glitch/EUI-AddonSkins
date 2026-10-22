@@ -432,7 +432,7 @@ end, function(S, module)
         end
         for node in pairs(record.saved) do owners[node] = record end
         if widget.type == "Window" or widget.type == "Frame" then
-            Strip(f); Panel(f, nil, 0.5)
+            Strip(f); Panel(f, nil, 0.8)
         elseif widget.type == "Dropdown-Pullout" then Strip(f); Panel(f) end
         if widget.type == "InlineGroup" and H.Allowed(widget.content) then
             local border = widget.content:GetParent()
@@ -660,7 +660,7 @@ end, function(S, module)
             H.Script(f, "OnShow", function() Root(f) end)
         end
         if state.generation ~= generation then
-            Panel(f, nil, 0.5)
+            Panel(f, nil, 0.8)
             if H.Allowed(f.NineSlice) then S.FadeNineSlice(f.NineSlice) end
             if H.Allowed(f.topFrame) then Strip(f.topFrame) end
             state.generation = generation
@@ -681,7 +681,7 @@ end, function(S, module)
         if H.Allowed(copyHeader) then
             local state = views[copyHeader]
             if not state or state.generation ~= generation then
-                Panel(copyHeader, nil, 0.5)
+                Panel(copyHeader, nil, 0.8)
                 if H.Allowed(copyHeader.NineSlice) then S.FadeNineSlice(copyHeader.NineSlice) end
                 views[copyHeader] = {generation = generation}
             end

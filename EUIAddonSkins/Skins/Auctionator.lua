@@ -138,6 +138,58 @@ end, function(S, module)
         radioMarks[button]:SetColorTexture(r, g, b, 1)
         radioMarks[button]:SetShown(button:GetChecked() and true or false)
     end
+    -- Settings use large native CheckButtons. Keep their hit/label geometry,
+    -- but draw the compact square on a mouse-disabled child instead.
+    local configChecks, checkArt = {}, {}
+    local function ConfigCheckbox(f)
+        if not configChecks[f] then
+            local parent = f
+            local owned = false
+            for _ = 1, 16 do
+                if not H.Allowed(parent) then break end
+                local name = parent.GetName and parent:GetName()
+                if type(name) == "string" and name:match("^AuctionatorConfig.*Frame$") then owned = true; break end
+                parent = parent.GetParent and parent:GetParent()
+            end
+            if not owned then return false end
+            local host = CreateFrame("Frame", nil, f)
+            host:SetSize(22, 22); host:SetPoint("CENTER", f, "CENTER"); host:EnableMouse(false)
+            raw.Checkbox(host, {borderInset = 4, hover = 0.05})
+            local mark = host:CreateTexture(nil, "OVERLAY", nil, 2)
+            mark:SetSize(8, 8); mark:SetPoint("CENTER", host, "CENTER")
+            local hover = host:CreateTexture(nil, "OVERLAY", nil, 1)
+            hover:SetSize(14, 14); hover:SetPoint("CENTER", host, "CENTER")
+            hover:SetColorTexture(1, 1, 1, 0.08); hover:SetAlpha(0)
+            local state = {host = host, mark = mark, hover = hover}
+            configChecks[f], checkArt[host] = state, true
+            for _, region in ipairs(H.Regions(f)) do if H.Texture(region) then H.Fade(region) end end
+            local function Paint()
+                if not ns.IsEnabled(module) then return end
+                if InCombatLockdown() then waiting = true; return end
+                local enabled = not f.IsEnabled or f:IsEnabled()
+                local checked = f.GetChecked and not not f:GetChecked() or false
+                if state.checked ~= checked then mark:SetShown(checked); state.checked = checked end
+                local r, g, b = raw.GetAccentColor()
+                if not enabled then r, g, b = 0.4, 0.4, 0.4; hover:SetAlpha(0) end
+                if state.r ~= r or state.g ~= g or state.b ~= b or state.enabled ~= enabled then
+                    mark:SetColorTexture(r, g, b, enabled and 1 or 0.8)
+                    state.r, state.g, state.b, state.enabled = r, g, b, enabled
+                end
+            end
+            state.paint = Paint
+            for _, method in ipairs({"SetChecked", "Enable", "Disable", "SetEnabled"}) do H.Hook(f, method, Paint) end
+            H.Script(f, "OnClick", Paint)
+            H.Script(f, "OnEnable", Paint); H.Script(f, "OnDisable", Paint)
+            H.Script(f, "OnShow", Paint)
+            H.Script(f, "OnEnter", function()
+                if not InCombatLockdown() and (not f.IsEnabled or f:IsEnabled()) then hover:SetAlpha(1) end
+            end)
+            H.Script(f, "OnLeave", function() hover:SetAlpha(0) end)
+            H.Script(f, "OnHide", function() hover:SetAlpha(0) end)
+            Paint()
+        else configChecks[f].paint() end
+        return true
+    end
     -- Pooled bag buttons re-mask and re-crop their icon on every fill, so the
     -- square inset icon is restored from the icon's own setters.
     local function Square(f, icon)
@@ -571,7 +623,9 @@ end, function(S, module)
     local MODERN_FONTS = {"Title", "NoResultsText", "ResultsText"}
     local LEGACY_FONTS = {"Title", "SearchLabel", "Deposit", "Total", "NoResultsText", "ResultsText"}
     local function Visit(f, kind)
+        if checkArt[f] then return true end
         local modern = Modern()
+        if kind == "CheckButton" and ConfigCheckbox(f) then return true end
         if kind == "Slider" then Scroll(f); return true end
         if headers[f] then return true end
         if modern and f.cells then Row(f); return true end

@@ -9,3 +9,7 @@ EllesmereUI and supported addons must be installed separately.
 All trademarks and addon names belong to their respective owners.
 
 Licensed under the MIT License.
+
+## Addon authors
+
+If you prefer that your addon is not supported by this skin collection, please contact us through [GitHub Issues](https://github.com/oopsie-glitch/EUI-AddonSkins/issues). We will remove the skin on request.

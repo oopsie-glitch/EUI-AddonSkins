@@ -1,9 +1,23 @@
 [
   [
+    "AllTheThings",
+    "AllTheThings",
+    [
+      "AllTheThings"
+    ]
+  ],
+  [
     "Altoholic",
     "Altoholic",
     [
       "Altoholic"
+    ]
+  ],
+  [
+    "AngrierWorldQuests",
+    "Angrier World Quests",
+    [
+      "AngrierWorldQuests"
     ]
   ],
   [
@@ -42,11 +56,25 @@
     ]
   ],
   [
+    "CraftSim",
+    "CraftSim",
+    [
+      "CraftSim"
+    ]
+  ],
+  [
     "DBM",
     "Deadly Boss Mods",
     [
       "DBM-Core",
       "DBM-GUI"
+    ]
+  ],
+  [
+    "DecorVendor",
+    "Decor Vendor",
+    [
+      "DecorVendor"
     ]
   ],
   [
@@ -71,6 +99,13 @@
     ]
   ],
   [
+    "Gargul",
+    "Gargul",
+    [
+      "Gargul"
+    ]
+  ],
+  [
     "GTFO",
     "GTFO",
     [
@@ -78,10 +113,31 @@
     ]
   ],
   [
-    "Gargul",
-    "Gargul",
+    "GuildRosterManager",
+    "Guild Roster Manager",
     [
-      "Gargul"
+      "Guild_Roster_Manager"
+    ]
+  ],
+  [
+    "HandyNotes",
+    "HandyNotes",
+    [
+      "HandyNotes"
+    ]
+  ],
+  [
+    "HekiLight",
+    "HekiLight",
+    [
+      "HekiLight"
+    ]
+  ],
+  [
+    "HomeBound",
+    "Home Bound",
+    [
+      "HomeBound"
     ]
   ],
   [
@@ -100,10 +156,24 @@
     ]
   ],
   [
+    "LiteMount",
+    "LiteMount",
+    [
+      "LiteMount"
+    ]
+  ],
+  [
     "Myslot",
     "Myslot",
     [
       "Myslot"
+    ]
+  ],
+  [
+    "NovaInstanceTracker",
+    "Nova Instance Tracker",
+    [
+      "NovaInstanceTracker"
     ]
   ],
   [
@@ -114,10 +184,45 @@
     ]
   ],
   [
+    "Pawn",
+    "Pawn",
+    [
+      "Pawn"
+    ]
+  ],
+  [
+    "PremadeGroupsFilter",
+    "Premade Groups Filter",
+    [
+      "PremadeGroupsFilter"
+    ]
+  ],
+  [
+    "QuestCompletist",
+    "Quest Completist",
+    [
+      "QuestCompletist"
+    ]
+  ],
+  [
     "Questie",
     "Questie",
     [
       "Questie"
+    ]
+  ],
+  [
+    "RareScanner",
+    "RareScanner",
+    [
+      "RareScanner"
+    ]
+  ],
+  [
+    "RCLootCouncil",
+    "RCLootCouncil",
+    [
+      "RCLootCouncil"
     ]
   ],
   [
@@ -128,10 +233,33 @@
     ]
   ],
   [
+    "Scrap",
+    "Scrap",
+    [
+      "Scrap",
+      "Scrap_Merchant",
+      "Scrap_Config"
+    ]
+  ],
+  [
+    "Simulationcraft",
+    "SimulationCraft",
+    [
+      "Simulationcraft"
+    ]
+  ],
+  [
     "Spy",
     "Spy",
     [
       "Spy"
+    ]
+  ],
+  [
+    "TalentLoadoutManager",
+    "Talent Loadout Manager",
+    [
+      "TalentLoadoutManager"
     ]
   ],
   [
@@ -153,6 +281,13 @@
     "What's Training?",
     [
       "WhatsTraining"
+    ]
+  ],
+  [
+    "WorldQuestsList",
+    "World Quests List",
+    [
+      "WorldQuestsList"
     ]
   ]
 ]

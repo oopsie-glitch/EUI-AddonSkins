@@ -5,7 +5,7 @@
 ## Author: Smarre
 ## X-License: MIT
 ## X-Wago-ID: aN0a2M6j
-## Version: 1.5.2
+## Version: 1.6.0
 ## Dependencies: EllesmereUI, EllesmereUIBlizzardSkin
 ## SavedVariables: EUIAddonSkinsDB
 
@@ -18,25 +18,44 @@ Widgets.lua
 Scoped.lua
 Menus.lua
 Loader.lua
+Skins\AllTheThings.lua
 Skins\Altoholic.lua
+Skins\AngrierWorldQuests.lua
 Skins\AtlasLootContinued.lua
 Skins\Attune.lua
 Skins\Auctionator.lua
 Skins\BtWQuests.lua
 Skins\BugSack.lua
+Skins\CraftSim.lua
 Skins\DBM.lua
+Skins\DecorVendor.lua
 Skins\Details.lua
 Skins\ForeverCompanion.lua
 Skins\ForeverDungeonJournal.lua
-Skins\GTFO.lua
 Skins\Gargul.lua
+Skins\GTFO.lua
+Skins\GuildRosterManager.lua
+Skins\HandyNotes.lua
+Skins\HekiLight.lua
+Skins\HomeBound.lua
 Skins\ItemRack.lua
 Skins\KiwiFarm.lua
+Skins\LiteMount.lua
 Skins\Myslot.lua
+Skins\NovaInstanceTracker.lua
 Skins\PallyPower.lua
+Skins\Pawn.lua
+Skins\PremadeGroupsFilter.lua
+Skins\QuestCompletist.lua
 Skins\Questie.lua
+Skins\RareScanner.lua
+Skins\RCLootCouncil.lua
 Skins\RXPGuides.lua
+Skins\Scrap.lua
+Skins\Simulationcraft.lua
 Skins\Spy.lua
+Skins\TalentLoadoutManager.lua
 Skins\ThreatClassic2.lua
 Skins\TwitchEmotes.lua
 Skins\WhatsTraining.lua
+Skins\WorldQuestsList.lua

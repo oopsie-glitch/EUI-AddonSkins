@@ -122,8 +122,11 @@ local function object(kind, name, parent)
         if self.kind == 'Button' and not self.label then self.label = self:CreateFontString() end
         if self.kind == 'Button' then self.label.text = v end
     end
-    function o:SetFontObject(v) self.font, self.fontObject = v, v end
-    function o:GetFontObject() return self.fontObject or 'native-object' end
+    function o:SetFontObject(v)
+        assert(not debug.getinfo(2,'S').source:find('Skins/DBM.lua',1,true),'DBM skin reassigned a borrowed font object')
+        self.font, self.fontObject = v, v
+    end
+    function o:GetFontObject() error('DBM skin must not capture a borrowed font object') end
     function o:SetWordWrap(v) self.wordWrap = v end
     function o:SetNonSpaceWrap(v) self.nonSpaceWrap = v end
     function o:SetJustifyH(v) self.justifyH = v end
@@ -892,7 +895,8 @@ do
     restored:SetText('Restore |Tknown:40:40|t')
     local appliedObjects, appliedHooks = created, hooks
     checked(style, false)
-    assert(rb.fill.path == 'dbm-gloss' and rb.h == DBT.Options.Height and rn.font == 'native' and rn.fontObject == 'native-shadow', 'native style did not return')
+    assert(rb.fill.path == 'dbm-gloss' and rb.h == DBT.Options.Height and rn.font == 'native', 'native visual style did not return')
+    assert(rn.fontObject=='eui-shadow','restoration reassigned font-object inheritance instead of concrete properties')
     assert(rb.points[1][2] == rf and rb.points[1][4] == 0 and ri.points[1][3] == 'LEFT' and ri.w == 20)
     local ulx, uly, _, _, urx = ri:GetTexCoord()
     assert(ulx == 0 and uly == 0 and urx == 1 and rn.wordWrap and rn.shadowOffset[1] == 0)
@@ -1259,6 +1263,7 @@ do
         f:SetPoint('CENTER', UIParent, 'CENTER', 40, -20)
         f.backdrop = {bgFile = 'native-background'}
         f.header = f:CreateFontString(); f.header:SetPoint('BOTTOMLEFT',f,'TOPLEFT',2,2)
+        f.header:SetShadowColor(.15,.25,.35,.45);f.header:SetShadowOffset(2,-2)
         f.header:SetText(kind == 'info' and 'Native header' or 'Range:10 Players:1')
         if kind ~= 'info' then f.text = f.header end
         f.lines = {}
@@ -1320,6 +1325,7 @@ do
     assert(not DBMRangeCheck and not DBMInfoFrame, 'skin forced auxiliary windows to initialize')
     assert(DBM.RangeCheck:Show() == 'native-range' and DBM.InfoFrame:Show() == 'native-info')
     local radar,info,range = DBMRangeCheckRadar,DBMInfoFrame,DBMRangeCheck
+    for _,f in ipairs({radar,info,range})do f.header:SetShadowOffset(8,8)end
     for _,f in ipairs({radar,info,range}) do
         assert(f.header.font == 'eui' and f.header.points[1][1] == 'TOPLEFT' and f.header.points[1][4] == 8 and f.header.points[1][5] == -8)
         assert(f.points[1][4] == 40 and f.points[1][5] == -20 and f:GetWidth() == (f == radar and 128 or 170), 'auxiliary skin changed native geometry')
@@ -1471,6 +1477,10 @@ do
     assert(info.backdrop, 'missing restored backdrop: '..table.concat(errors,';'))
     assert(not info.children[1]:IsShown() and info.backdrop.bgFile == 'updated-native' and radar.background.alpha == 0.3)
     for _,f in ipairs({radar,info,range}) do assert(f.header.color[1] == 1 and f.header.color[2] == 1, 'disable did not restore native heading colour') end
+    for _,f in ipairs({radar,info,range})do
+        assert(f.header.shadowOffset[1]==2 and f.header.shadowOffset[2]==-2,'auxiliary native shadow geometry was not restored')
+        assert(f.header.shadow[1]==.15 and f.header.shadow[4]==.45,'auxiliary native shadow colour was not restored')
+    end
     assert(radar.circle.path == 'native-radar' and radar.circle:GetBlendMode() == 'ADD' and radar.circle.color[1] == 1 and radar.arrow.w == 32 and radar.header.text == 'Range:10 Players:1', 'native radar artwork/header restoration failed')
     assert(first.font == 'new-native' and first.size == 18 and first.w == 123 and first.points[1][4] == 6 and first.points[1][5] == -6 and first.color[2] == 0.9, 'auxiliary disable lost native font/updated geometry/colours')
     local disabledObjects,disabledFonts = created,fontWrites
@@ -1507,6 +1517,16 @@ first:SetVariance(); assert(variance.path == 'native-gradient')
 first:ApplyStyle(); assert(b.fill.path == 'dbm-gloss')
 local skipped = DBT:CreateBar(20, 'disabled'); assert(_G[skipped.frame.name .. 'Bar'].fill.path == 'dbm-gloss')
 assert(#errors == 0, table.concat(errors, '\n'))
+-- Repeated native restoration must use metrics, not borrowed FontObjects.
+enabled=true;modules.DBM.refresh();flush();enabled=false;modules.DBM.refresh();flush()
+local fontRestoreObjects,fontRestoreHooks=created,hooks
+for _=1,50 do
+    enabled=true;modules.DBM.refresh();flush()
+    enabled=false;modules.DBM.refresh();flush()
+end
+assert(created==fontRestoreObjects and hooks==fontRestoreHooks,'font-safe toggles duplicated UI objects/hooks')
+assert(#errors==0,table.concat(errors,'\n'))
+print('PASS: native font metrics/shadows restore without FontObject capture/reassignment; 50 repeated toggles add no UI objects/hooks')
 DBM, DBT, C_Secrets, DebuffTypeColor, AuraUtil = nil, nil, nil, nil, nil
 DBMWarning1, DBMSpecialWarning1, issecretvalue = nil, nil, nil
 UIParent = previousUIParent

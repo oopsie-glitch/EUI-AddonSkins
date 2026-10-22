@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.6.0 — Expanded Addon Support
+
+### New skins
+
+- AllTheThings
+- Angrier World Quests
+- CraftSim
+- Decor Vendor
+- Guild Roster Manager
+- HandyNotes
+- HekiLight
+- Home Bound (including Blueprints)
+- LiteMount
+- Nova Instance Tracker
+- Pawn
+- Premade Groups Filter
+- Quest Completist
+- RareScanner
+- RCLootCouncil
+- Scrap
+- SimulationCraft
+- Talent Loadout Manager
+- World Quests List
+
+### Improvements and fixes
+
+- Auctionator: replaced oversized settings checkboxes and yellow ticks with compact accent-coloured square indicators, preserving click areas and settings.
+- DBM: safer restoration of shared options fonts.
+- Added scoped refreshes and control reuse for the new integrations to reduce repeated styling work.
+- AllTheThings: adjustable window opacity and support for its auction-house panel.
+- Nova Instance Tracker: flat backgrounds at 80% opacity, compact controls and local styling for newly created log rows.
+
 ## 1.5.2 — Skin and Options Improvements
 
 - RestedXP: added a navigation-arrow skin toggle, clearer options buttons and themed confirmation dialogs with native fonts preserved.

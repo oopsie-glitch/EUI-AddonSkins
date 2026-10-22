@@ -1,0 +1,93 @@
+{
+  "base": "961ff417d1c1d86217bb8fc10faf83ba1e8618e5",
+  "selected": [
+    {
+      "branch": "skin/allthethings-initial",
+      "sha": "62ff0674e209083fefd7e11ab09edb096d741f66"
+    },
+    {
+      "branch": "skin/guild-roster-manager",
+      "sha": "966fea295c4d520a10ec74c859827f4a12ec6713"
+    },
+    {
+      "branch": "skin/simulationcraft-initial",
+      "sha": "679d59cc9deb42fb55ed099a7dbb6acc02b7fd3a"
+    },
+    {
+      "branch": "skin/rclootcouncil-initial",
+      "sha": "17bf210d27c266c726e1d9a306d01f7e26b877b1"
+    },
+    {
+      "branch": "skin/premadegroupsfilter-initial",
+      "sha": "152617865221129fc768dc5fe83168533fc5aaef"
+    },
+    {
+      "branch": "skin/pawn-initial",
+      "sha": "8df0d58380397b3516d2c1c8f5b2a7cddb278d52"
+    },
+    {
+      "branch": "skin/rarescanner-initial",
+      "sha": "9168afccd1abc43799334b1b9d4052840a27bd99"
+    },
+    {
+      "branch": "skin/hekilight-initial",
+      "sha": "7a7114ca73e7a70d2f709ecedd27f3d394adfe7f"
+    },
+    {
+      "branch": "skin/scrap-initial",
+      "sha": "bfaabca0ef558588f7b6e70a8e577eeec60a86a7"
+    },
+    {
+      "branch": "skin/questcompletist-initial",
+      "sha": "d66d01d737841a55e5f3272e71d0f1180194f02d"
+    },
+    {
+      "branch": "skin/world-quests-list-initial",
+      "sha": "0322d0a22751931bf00852df67c04c0d1f916fb4"
+    },
+    {
+      "branch": "skin/angrier-world-quests-initial",
+      "sha": "8b030a5c11be2455f86c299fe2e5a22c12e5a151"
+    },
+    {
+      "branch": "skin/litemount-initial",
+      "sha": "fe99f4e3164cbec097a483f22f0565ec43973d3c"
+    },
+    {
+      "branch": "skin/handynotes-initial",
+      "sha": "30e3a162a330f10b24a15298d1f486d17bd77972"
+    },
+    {
+      "branch": "skin/craftsim-initial",
+      "sha": "bb68716280884bfe18e88e66e176396873701e70"
+    },
+    {
+      "branch": "skin/talentloadoutmanager-initial",
+      "sha": "aa55d13389f7d5b3da5e6ae8f6d926538e4983b5"
+    },
+    {
+      "branch": "skin/homebound-initial",
+      "sha": "eb16d71a54607dbd8c3d94e9b6a18c9ff468eef7"
+    },
+    {
+      "branch": "skin/decorvendor-initial",
+      "sha": "ebf56375f88a0059ac864308f05d764375f04dda"
+    },
+    {
+      "branch": "skin/novainstancetracker-initial",
+      "sha": "943713aacf48b40c12ce474fced3a340cd9311a4"
+    },
+    {
+      "branch": "skin/dbm-font-restoration",
+      "sha": "223911b900bef2e9f9a83d8fb9e73f1516206044"
+    },
+    {
+      "branch": "skin/auctionator-options-checkboxes",
+      "sha": "5a763bec843f7cb6c35c7fb1ac2ffc071aab9892"
+    },
+    {
+      "branch": "chore/skin-performance-review",
+      "sha": "ce4ecad7efd063d1d52885e31e7eb367363588eb"
+    }
+  ]
+}

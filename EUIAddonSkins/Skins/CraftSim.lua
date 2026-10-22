@@ -178,17 +178,42 @@ end, function(S, module)
         d.glyph:SetRotation(direction=='left'and -math.pi/2 or direction=='right'and math.pi/2 or direction=='up'and math.pi or 0)
         d.glyph:SetVertexColor(.82,.82,.84,1);d.glyph:SetAlpha(1)
     end
-    local function LocalPaint(f)
+    local function Dropdown(f)
+        local d=Fill(f)
+        d.dropdown=true
+        Fade(f)
+        -- WowStyle1FilterDropdownTemplate varies by client. Strip only its
+        -- art, leaving the native button, label, menu and hit area intact.
+        for _,key in ipairs({'Background','Texture','Arrow','NineSlice'})do
+            local native=f[key]
+            if H.Texture(native)and not art[native]then native:SetAlpha(0)
+            elseif H.Allowed(native)then Fade(native)end
+        end
+        Edges(f);Glyph(f,'down')
+        if not d.dropdownHover then
+            d.dropdownHover=f:CreateTexture(nil,'HIGHLIGHT');art[d.dropdownHover]=true
+            d.dropdownHover:SetAllPoints(f);d.dropdownHover:SetColorTexture(1,1,1,.08)
+        end
+        local enabled=not f.IsEnabled or f:IsEnabled()
+        d.dropdownHover:SetAlpha(enabled and 1 or 0)
+        d.glyph:SetAlpha(enabled and 1 or .45)
+        Font(H.Allowed(f.Text)and f.Text or f.GetFontString and f:GetFontString(),f)
+    end
+    local function LocalPaint(f, clicked)
         if not Ready() then return end
         local r = shared[f]
         if r and not r.active then return end
         local d=State(f)
         if d.painting then return end
         d.painting=true;H.Safe(Paint,f);d.painting=false
-        if r and f:GetObjectType()=='DropdownButton'and MenuList then
+        if d.dropdown and MenuList then
             local manager=Menu and Menu.GetManager and Menu.GetManager()
             local list=manager and manager.GetOpenMenu and manager:GetOpenMenu()
-            if list and list.GetOwnerRegion and list:GetOwnerRegion()==f then MenuList(list)end
+            local owner=list and list.GetOwnerRegion and list:GetOwnerRegion()
+            -- CraftSim's control-panel/sort buttons sometimes open a context
+            -- menu anchored to UIParent. Adopt that menu only synchronously
+            -- after this owned dropdown's click, never on state/hover updates.
+            if owner==f or clicked and owner==UIParent and Own(f)then MenuList(list)end
         end
     end
     Paint = function(f)
@@ -253,10 +278,13 @@ end, function(S, module)
             Fade(f);Fill(f,true);Edges(f)
             if not(f.IsMultiLine and f:IsMultiLine())then Font(f)end
         elseif kind=='ScrollingMessageFrame'then Font(f)
-        elseif role ~= 'row' and (kind == 'DropdownButton' or type(f.initialize) == 'function') then
+        elseif role ~= 'row' and (kind == 'DropdownButton' or type(f.SetupMenu)=='function'or type(f.initialize) == 'function') then
             local r=shared[f]
-            if not r then S.Dropdown(f) else Fade(f);Fill(f);Edges(f);Glyph(f,'down') end
-            if ns.BindPopupOwner and not r then ns.BindPopupOwner(S,module,f) end
+            if kind=='DropdownButton'or type(f.SetupMenu)=='function'or r then Dropdown(f)
+            else S.Dropdown(f)end
+            if ns.BindPopupOwner and not r and not d.menuOwner then
+                ns.BindPopupOwner(S,module,f);d.menuOwner=true
+            end
         elseif role ~= 'row' and kind == 'Button' and f.GetFontString and H.Allowed(f:GetFontString())
             and f:GetFontString().GetText and f:GetFontString():GetText() and f:GetFontString():GetText()~='' then
             if not d.button then
@@ -277,7 +305,7 @@ end, function(S, module)
         if not d.bound then
             d.bound=true
             for _, method in ipairs({'Enable','Disable','SetEnabled','SetChecked'}) do H.Hook(f,method,function()LocalPaint(f)end) end
-            H.Script(f,'OnClick',function()LocalPaint(f)end)
+            H.Script(f,'OnClick',function()LocalPaint(f,true)end)
             if kind=='Button'then
                 for _,event in ipairs({'OnEnter','OnLeave','OnMouseDown','OnMouseUp'})do H.Script(f,event,function()LocalPaint(f)end)end
                 local text=f.GetFontString and f:GetFontString()
@@ -458,6 +486,7 @@ end, function(S, module)
                 if own.grip then own.grip:SetAlpha(0)end
                 if own.track then own.track:SetAlpha(0)end
                 if own.glyph then own.glyph:SetAlpha(0)end
+                if own.dropdownHover then own.dropdownHover:SetAlpha(0)end
                 for _,t in ipairs(own.edges or {})do t:SetAlpha(0)end
             end
         end

@@ -138,10 +138,20 @@ CreateFrame = function(kind,name,parent) local f=Object(kind,parent); f.name=nam
 local function Text(parent)
     local f=Object('FontString'); f.parent=parent; parent.regions[#parent.regions+1]=f; return f
 end
+local function ModernDropdown(parent,label)
+ -- Retail can expose a DropdownButton as Button; SetupMenu is the API contract.
+ local f=Object('Button',parent);f.Text=Text(f);f.Text:SetText(label)
+ function f:SetupMenu(fn)self.menuInitializer=fn;return 'native-setup'end
+ f.Background=f:CreateTexture(nil,'BACKGROUND');f.Background:SetTexture('native-dropdown-background')
+ f.Arrow=f:CreateTexture(nil,'ARTWORK');f.Arrow:SetTexture('native-yellow-arrow')
+ f.NineSlice=Object('Frame',f);f.NineSlice.edge=f.NineSlice:CreateTexture(nil,'BORDER')
+ f.NineSlice.edge:SetTexture('native-dropdown-outline')
+ return f
+end
 local S = {GetFont=function() return fontFace,'' end, GetAccentColor=function() return accent,0.6,0.8 end,
     GetPanelColor=function() return 0.06,0.06,0.07,0.95 end, OnLooksChanged=function(fn) looks[#looks+1]=fn end}
 S.SquareIcon=function(t) t:SetTexCoord(0.08,0.92,0.08,0.92) end
-S.Font=function(f,r,g,b) assert(not combat); fontWrites=fontWrites+1; f:SetFont(fontFace, f.size, ''); if r then f:SetTextColor(r,g,b,1) end end
+S.Font=function(f,r,g,b) assert(not combat); fontWrites=fontWrites+1;f.fontWrites=(f.fontWrites or 0)+1; f:SetFont(fontFace, f.size, ''); if r then f:SetTextColor(r,g,b,1) end end
 S.Panel=function(f) if not f.panel then f.panel=true; f:CreateTexture(nil,'BACKGROUND') end end
 S.Inset=function(f) f.inset=true end
 S.FadeNineSlice=function(f) f.faded=true end
@@ -512,7 +522,7 @@ Class('ItemSelector',function(w,o)
  w.selectionFrame=G.Frame{parent=o.parent}
 end)
 for _,name in ipairs({'CheckboxSelector','FilterButton'})do
- Class(name,function(w,o)w.frame=Object('DropdownButton',o.parent);w.frame.Text=Text(w.frame)end)
+ Class(name,function(w,o)w.frame=ModernDropdown(o.parent,o.label or name)end)
 end
 module.refresh()
 local spell=G.SpellIcon{parent=pre.content};assert(spell.frame.normal.coords[1]==.08 and spell.frame.normal.alpha==1)
@@ -521,7 +531,8 @@ assert(log.frame.path==fontFace and log.frame.message=='|cff00ff00Crafted item|r
 local selector=G.ItemSelector{parent=pre.content}
 assert(selector.selectionFrame.frame.shell and selector.icon.frame.normal.alpha==1)
 for _,name in ipairs({'CheckboxSelector','FilterButton'})do
- local control=G[name]{parent=pre.content};assert(control.frame.dropdown)
+ local control=G[name]{parent=pre.content}
+ assert(control.frame.Background.alpha==0 and control.frame.Arrow.alpha==0 and control.frame.NineSlice.edge.alpha==0)
  assert(manager:OpenContextMenu(control.frame,menu)=='native-open')
  assert(nativeMenu.alpha==0 and checked.leftTexture1.texture=='solid');menu:Hide()
 end
@@ -628,3 +639,63 @@ assert(progress.fill.texture=='native-quality-fill'and progress.fill.alpha==1 an
 assert(#qualityOutline.regions==0 and qualityOutline.backdrop==nil)
 assert(#errors==0,table.concat(errors,'; '))
 print('PASS: anonymous decorations at nine level/opacity combinations add no skin fills; native data art, hit targets, validation errors and quality-meter values stay intact')
+
+-- The four reported controls share SetupMenu but need not report their object
+-- type as DropdownButton. Raw control-panel/sort buttons and GGUI selectors
+-- must receive the same styling without replacing native menus or geometry.
+local modernControls={}
+for _,label in ipairs({'CraftSim 27.0.7','Expansion Filter','Simulate Buffs','Sort By'})do
+ local f=ModernDropdown(pre.content,label);f:SetSize(180,25);f:SetPoint('TOPLEFT',pre.content,'TOPLEFT',20,-30)
+ f:SetupMenu(function()return 'native-configuration'end)
+ f.scripts.OnClick=function()
+  manager:OpenMenu(UIParent,menu);return 'native-dropdown-action',label
+ end
+ modernControls[#modernControls+1]=f
+end
+module.refresh()
+for _,f in ipairs(modernControls)do
+ assert(f.Background.alpha==0 and f.Arrow.alpha==0 and f.NineSlice.edge.alpha==0,'modern template art survived')
+ assert(f.width==180 and f.height==25 and f.point[4]==20 and f.point[5]==-30,'dropdown geometry changed')
+ assert(f.Text.path==fontFace and f.menuInitializer()=='native-configuration')
+ local result,label=f.scripts.OnClick(f)
+ assert(result=='native-dropdown-action'and label==f.Text.text and nativeMenu.alpha==0,'owned UIParent context not styled synchronously')
+ menu:Hide();assert(nativeMenu.alpha==1)
+ f:Disable();assert(f.Text.color[1]==.5);f:Enable();assert(f.Text.color[1]==.92)
+ -- Native templates can reset their art on interaction; local repaint wins.
+ f.Background:SetAlpha(1);f.Arrow:SetAlpha(1);f.NineSlice.edge:SetAlpha(1)
+ f.scripts.OnEnter(f)
+ assert(f.Background.alpha==0 and f.Arrow.alpha==0 and f.NineSlice.edge.alpha==0)
+end
+local foreignModern=ModernDropdown(foreign.content,'Foreign modern selector')
+module.refresh();assert(foreignModern.Background.alpha==1 and foreignModern.Arrow.alpha==1)
+manager:OpenMenu(UIParent,menu)
+assert(nativeMenu.alpha==1,'unrelated UIParent menu was adopted')
+modernControls[1]:Enable();modernControls[1].scripts.OnEnter(modernControls[1])
+assert(nativeMenu.alpha==1,'state/hover update adopted an unrelated UIParent menu');menu:Hide()
+
+-- Warm before measuring. Native menu contents may be restyled, but no owned
+-- windows/lists may be traversed or UI/hook/font resources recreated.
+for _,f in ipairs(modernControls)do f.scripts.OnClick(f);menu:Hide()end
+local ma,mh,mw=allocated,hookCount,fontWrites
+local function ButtonFontWrites()
+ local total=0;for _,f in ipairs(modernControls)do total=total+(f.Text.fontWrites or 0)end;return total
+end
+local buttonWrites=ButtonFontWrites()
+local pw,lw,nw=pre.frame.walks,list.frame.walks,newWindow.frame.walks
+local priorData,priorDB,priorCrafts=dataCalls,dbReads,crafts
+for _=1,250 do
+ for _,f in ipairs(modernControls)do
+  f:Disable();f:Enable();f.scripts.OnEnter(f);f.scripts.OnLeave(f)
+  f.scripts.OnClick(f);menu:Hide()
+ end
+end
+assert(allocated==ma and hookCount==mh and ButtonFontWrites()==buttonWrites,'modern dropdown interaction duplicated UI/hooks/button fonts')
+assert(pre.frame.walks==pw and list.frame.walks==lw and newWindow.frame.walks==nw,'dropdown callback scanned addon windows')
+assert(dataCalls==priorData and dbReads==priorDB and crafts==priorCrafts,'skin performed data/crafting operations')
+local pooledFontWrites=fontWrites-mw
+enabled=false;local off=ModernDropdown(pre.content,'Disabled skin');module.refresh();assert(off.Background.alpha==1)
+enabled=true;combat=true;local locked=ModernDropdown(pre.content,'Combat');module.refresh();assert(locked.Background.alpha==1)
+combat=false;module.refresh();assert(off.Background.alpha==0 and locked.Background.alpha==0)
+assert(#errors==0,table.concat(errors,'; '))
+print('BENCH CraftSim 1000 modern dropdown state/hover/menu cycles: owned_window_scans=0 button_font_writes=0 new_UI_objects=0 new_hooks=0; pooled_menu_font_writes='..pooledFontWrites..' (mock; native font restored between menu acquisitions)')
+print('PASS: SetupMenu Button variants, four dropdowns, native actions/geometry/disabled state, synchronous UIParent context ownership, foreign isolation and combat deferral')

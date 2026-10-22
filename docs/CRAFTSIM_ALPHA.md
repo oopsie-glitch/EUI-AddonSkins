@@ -2,6 +2,16 @@
 
 Branch: `skin/craftsim-initial`, based on stable 1.5.2. Untagged; no CurseForge/Wago upload.
 
+## Alpha.5 dropdown controls and performance
+
+Expansion Filter, Simulate Buffs, Sort By and the profession-header CraftSim menu share the modern dropdown API. Detection now accepts the `SetupMenu` contract even when the client reports the frame as a Button. Local cosmetics strip the template's native background, arrow and NineSlice art, then apply a reusable flat fill, thin outline, down arrow and hover highlight. Label/arrow dimming follows native enabled state. Native size, anchors, click target, SetupMenu callback and return values remain intact. CraftSim can legitimately disable Simulate Buffs until simulation is enabled.
+
+Owned dropdown clicks also style their newly opened UIParent-anchored CraftSim context menus synchronously. State/hover callbacks cannot adopt unrelated UIParent menus, and UIParent is never registered as a global popup owner. Shared Settings dropdown cosmetics, including hover art, restore on release.
+
+Performance review: no OnUpdate, gameplay polling, calculation/provider hook or full-window refresh was introduced. Completed UI construction and theme/recovery refreshes retain cached/coalesced discovery; ordinary control state/hover/click callbacks repaint the control and its current menu only. In 1,000 simulated dropdown interaction cycles, owned window/list traversals, new UI objects, new hooks and button-label font rewrites are all zero. A pooled embedded menu input still requires one font application per acquisition because its native font is restored on release; this is intentional scoped cleanup. Existing 1,000-cycle data-update and warm window/tab checks remain zero for skin hierarchy reads, font writes, UI objects and hooks. These are mock counters, not in-game CPU, memory or FPS measurements.
+
+All 23 automated suites and the 40-file installation-package checks pass. New checks cover SetupMenu buttons reporting Button, all four labels, native actions/geometry/disabled states, art reset on hover, synchronous context ownership, foreign menus/GGUI controls, repeated reuse and disabled/combat recovery. Changes remain local to CraftSim plus its tests/documentation.
+
 ## Alpha.4 content-layer audit
 
 The author overview image was cross-checked against the source creation paths, including panels requiring professions, recipe data or other character prerequisites. Anonymous child backdrops no longer qualify for a skin fill. Only confirmed GGUI windows and actual controls receive new backgrounds. Generic filled decorations retain their original fill texture, colour and opacity while losing their decorative edge; their existing region art is not faded. Border-only frames remain unfilled. Input validation frames exposing GGUI's `SetValid` contract remain completely native, preserving the red invalid-value indicator and its visibility changes. No shared skin helper changed.

@@ -32,6 +32,7 @@ Skins\GTFO.lua
 Skins\Gargul.lua
 Skins\ItemRack.lua
 Skins\KiwiFarm.lua
+Skins\LiteMount.lua
 Skins\Myslot.lua
 Skins\PallyPower.lua
 Skins\Questie.lua

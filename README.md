@@ -12,6 +12,7 @@ EllesmereUI skins for World of Warcraft addons.
 - What’s Training?
 - ItemRack
 - KiwiFarm
+- LiteMount (settings, mount lists/models, rules, profiles and dialogs)
 - Myslot
 - BtWQuests (Retail journal, category/chain views, search and menus)
 - BugSack

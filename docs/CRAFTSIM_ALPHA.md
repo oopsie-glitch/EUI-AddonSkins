@@ -2,6 +2,12 @@
 
 Branch: `skin/craftsim-initial`, based on stable 1.5.2. Untagged; no CurseForge/Wago upload.
 
+## Alpha.3 queue-overlay follow-up
+
+The queued-recipe rectangle can retain a skin fill when a raised decoration is classified before its completed FrameList wrapper becomes available. Alpha.3 identifies the scroll-border sibling from the completed list structure and retires any previously created fill. Later theme refreshes keep that fill hidden. Native rows, hover/click behavior, list stacking, dimensions and scroll targets are unchanged. Blizzard's shared HelpPlate/tutorial-tooltip subtrees are excluded from discovery even when reparented into a CraftSim window.
+
+Regression coverage reproduces the already-painted overlay, attaches its completed list wrapper, and verifies that both immediate repair and subsequent theme refreshes leave the contents visible. Ordinary filled panels and native tutorial text/art remain intact. The full automated package checks pass; live rendering remains unverified outside WoW.
+
 ## Alpha.2 corrections
 
 - Queue/list and quality-meter border-only frames remain transparent. GGUI raises these frames above their contents; alpha.1 incorrectly added an opaque panel fill over the rows. Real filled panels retain their background, and native row selection colours remain intact.

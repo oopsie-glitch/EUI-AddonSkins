@@ -262,7 +262,7 @@ end, function(S, module)
             local button=Raw(f[key])
             if button then Glyph(button,direction)end
         end
-        if d.fill then d.fill:SetAlpha(1) end
+        if d.fill then d.fill:SetAlpha(role=='border'and 0 or 1) end
         for _, t in ipairs(H.Regions(f)) do Font(t) end
         if not d.bound then
             d.bound=true
@@ -274,6 +274,23 @@ end, function(S, module)
                 if H.Allowed(text)then H.Hook(text,'SetFontObject',function()LocalPaint(f)end)end
             end
             if kind=='DropdownButton'and shared[f]then H.Script(f,'OnMouseDown',function()LocalPaint(f)end)end
+        end
+    end
+    local function ListBorder(w)
+        local scroll=Raw(w.scrollFrame)
+        local parent=scroll and scroll.GetParent and scroll:GetParent()
+        if not H.Allowed(parent)then return end
+        -- FrameList's scroll-border sibling sits ABOVE its scroll rows. Some
+        -- templates expose a background as well as an edge, and it may have
+        -- been seen before the completed FrameList wrapper was stored. Use
+        -- this known structure, not background colour, to exclude its fill.
+        for _,child in ipairs(H.Children(parent))do
+            if child~=scroll and child~=w.header and H.Allowed(child)
+                and(child.GetBackdrop and child:GetBackdrop()or kinds[child]=='panel')
+                and child.GetNumChildren and child:GetNumChildren()==0
+                and child:GetFrameLevel()>scroll:GetFrameLevel()then
+                kinds[child]='border';Paint(child)
+            end
         end
     end
     local function Inspect(f)
@@ -292,6 +309,7 @@ end, function(S, module)
                     widgets[value] = true
                     if CS.GGUI and CS.GGUI.Icon and value.is and value:is(CS.GGUI.Icon)then kinds[raw]='icon'end
                     if CS.GGUI and CS.GGUI.FrameList and value.is and value:is(CS.GGUI.FrameList)then
+                        ListBorder(value)
                         for _,row in ipairs(value.rows or {})do
                             local frame=Raw(row);if frame then kinds[frame]='row'end
                             for _,column in ipairs(row.columns or {})do if H.Allowed(column)then kinds[column]='row'end end
@@ -303,6 +321,9 @@ end, function(S, module)
     end
     Walk = function(f, force, depth)
         if not H.Allowed(f) or art[f] or (depth or 0)>24 then return end
+        -- Blizzard reparents its shared tutorial overlay to the current addon.
+        -- It is not CraftSim content and must not acquire persistent panel art.
+        if f==_G.HelpPlate or f==_G.HelpPlateTooltip then return end
         local kind=f:GetObjectType()
         if kind=='Texture'or kind=='Line'or kind=='FontString'or kind=='GameTooltip'or kind=='ModelScene'or kind=='PlayerModel' then return end
         if kinds[f]=='graph' or type(f.AddDataSeries)=='function' then kinds[f]='graph';return end
@@ -354,6 +375,7 @@ end, function(S, module)
             if f.collapseButton then Tag(f.collapseButton,'collapse')end
         elseif role=='Icon'or role=='SpellIcon' then Tag(w,'icon')
         elseif role=='FrameList' then
+            ListBorder(w)
             Tag(w)
             for _,row in ipairs(w.rows or {})do
                 for _,column in ipairs(row.columns or {})do if H.Allowed(column)then kinds[column]='row'end end

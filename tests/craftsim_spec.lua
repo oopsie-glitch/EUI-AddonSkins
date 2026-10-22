@@ -262,6 +262,7 @@ Class('ScrollFrame',function(w,o)
  w.borderFrame=Object('Frame',o.parent);w.borderFrame.backdrop={edgeFile='native-border'};w.borderFrame:SetFrameLevel(99)
 end)
 Class('FrameList',function(w,o)
+ if o.reuse then w.frame=o.reuse.frame;w.scrollFrame=o.reuse.scrollFrame;w.rows={};return end
  w.frame=Object('Frame',o.parent);w.rows={};w.rowConstructor=o.rowConstructor
  w.scrollFrame=G.ScrollFrame{parent=w.frame}
  function w:Add(fill)
@@ -551,3 +552,30 @@ enabled=true;CS.UTIL:ShowTextCopyBox('last export');KethoEditBox:Hide()
 assert(KethoEditBox.backdrop.bgFile=='dialog'and KethoEditBox.scroll.thumb.alpha==1)
 assert(#errors==0,table.concat(errors,'; '))
 print('PASS: raised transparent queue/quality borders, three scrollbar variants, vertical arrows, managed menu checks/submenus/reuse, craft-list popups and shared exports')
+
+-- A list border may look like a filled panel before its wrapper is known.
+-- Reclassification must retire an ALREADY CREATED skin fill, including after
+-- subsequent theme refreshes, without changing rows or input hit areas.
+local lateContainer=Object('Frame',pre.content)
+local lateScroll=Object('ScrollFrame',lateContainer)
+local lateBorder=Object('Frame',lateContainer);lateBorder:SetFrameLevel(99)
+lateBorder.backdrop={bgFile='template-white',edgeFile='template-border'}
+local lateRow=Object('Frame',lateScroll);local lateText=Text(lateRow);lateText:SetText('Visible queued recipe')
+module.refresh()
+local coveringFill=lateBorder.regions[1]
+assert(coveringFill and coveringFill.alpha==1,'fixture did not reproduce preclassified overlay')
+local completedList=G.FrameList{parent=pre.content,reuse={frame=lateContainer,scrollFrame={scrollFrame=lateScroll}}}
+assert(coveringFill.alpha==0 and lateBorder.backdrop==nil,'late list border retained covering skin texture')
+module.refresh();module.refresh()
+assert(coveringFill.alpha==0 and lateRow.alpha==1 and lateText.alpha==1 and lateText.text=='Visible queued recipe')
+assert(lateBorder.level==99 and lateScroll:GetFrameLevel()==4,'fix changed native list stacking')
+assert(filled.regions[1].alpha==1,'ordinary panel background was removed')
+
+HelpPlate=Object('Frame',pre.content);HelpPlate.backdrop={bgFile='tutorial-shade',edgeFile='tutorial-glow'}
+local tutorialText=Text(HelpPlate);tutorialText:SetText('Queued recipes are listed here')
+local tutorialChild=Object('Frame',HelpPlate)
+module.refresh()
+assert(HelpPlate.backdrop.bgFile=='tutorial-shade'and #HelpPlate.regions==1)
+assert(tutorialText.path=='Native'and not tutorialChild.walks,'shared tutorial overlay was adopted as skin content')
+assert(#errors==0,table.concat(errors,'; '))
+print('PASS: completed list structure retires cached covering fills; theme refreshes cannot restore them; shared tutorial overlays stay native')

@@ -232,7 +232,7 @@ local function HUD(C)
             variance:SetTexture(WHITE)
             variance:SetBlendMode("BLEND")
             variance:SetVertexColor(0.14, 0.14, 0.16, 0.65)
-            -- DBT calculates this width from the full row. The concept layout
+            -- DBT calculates this width from the full row. The inset layout
             -- uses a narrower progress strip; retain the same time proportion.
             local bar = _G[name .. "Bar"]
             if Allowed(bar) and type(obj.varianceDuration) == "number" and type(obj.totalTime) == "number" and obj.totalTime > 0 then

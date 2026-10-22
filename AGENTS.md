@@ -2,9 +2,9 @@
 
 Read CONTRIBUTING.md and docs/RELEASING.md before changing code or preparing a release.
 
-## Pinned DBM release reminder
+## Engineering checks
 
-Before preparing the current DBM alpha for a release package or merging it into a release branch, review the pinned checklist in docs/DBM_REFERENCE_REVIEW.md. Tell the user which useful follow-ups remain unfinished before packaging or publication; do not silently omit them. Keep the checklist current as work lands. This reminder applies to release preparation, not each iterative alpha test ZIP. DBM positioning, row spacing and configured sizes remain user-controlled.
+Read docs/ENGINEERING.md before adding a skin, changing shared utilities or reviewing performance. Use benchmarks/README.md to choose repeatable workloads. Historical reports in docs/history/development are evidence for earlier snapshots, not pending work. Carry forward unresolved concerns in the relevant task or release notes.
 
 ## Branches and scope
 

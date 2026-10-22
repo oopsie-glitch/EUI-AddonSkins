@@ -1,0 +1,77 @@
+# CraftSim alpha
+
+> Historical development snapshot. Versions, branch status and validation counts describe that snapshot; use [the engineering guide](../../ENGINEERING.md) and [release procedure](../../RELEASING.md) for current work.
+
+Branch: `skin/craftsim-initial`, based on stable 1.5.2. Untagged; no CurseForge/Wago upload.
+
+## Alpha.6 native crash mitigation
+
+Two supplied Retail 12.1.5.70448 crash reports with CraftSim 27.0.7 contain the same native `STACK_OVERFLOW` at `EditBox:SetFontObject`, directly called by this adapter's shared-control restoration. One occurred during Blizzard menu reinitialization after a selection; the other while opening the main CraftSim menu. The reports identify the adapter's triggering call, but do not expose the client's internal FontObject inheritance graph. Raw crash reports and personal/system data are not committed.
+
+Removed font-object snapshot/reassignment from shared control acquisition/release. Shared menu inputs, Settings controls/labels and export widgets now retain native fonts throughout; only their textures/backdrops are decorated and restored. Shared-region/parent ownership also prevents generic font passes from changing these fonts. Owned CraftSim windows/buttons keep their existing font styling. The four dropdown-button fixes and the content-layer safeguards remain intact.
+
+A before/after mock reproduces the unsafe native SetFontObject call with alpha.5 during menu acquisition/reinitialization/release; the fixed adapter makes no font-object reads or assignments in that sequence. Regression guards now cover pooled menu inputs, Settings labels and the export EditBox. Repeated theme/menu lifecycle tests and 1,000 dropdown cycles require zero pooled-input font writes as well as zero new UI objects/hooks or owned-window scans. Earlier fixtures had no native font-object accessor and therefore failed to exercise the unsafe restore operation; the tests now explicitly model it. The alpha.5 font-restoration behavior described below is superseded by this fix.
+
+Validation: all 23 suites, Lua syntax and the one-folder 40-file package checks pass. Native client stack overflow itself is not reproduced in the test runtime, and live crash prevention is not claimed as verified. No DMP is needed to identify/remove the call shown by both supplied text reports. Earlier CraftSim alphas retain this unsafe font-restoration path; use alpha.6 onward.
+
+## Alpha.5 dropdown controls and performance
+
+Expansion Filter, Simulate Buffs, Sort By and the profession-header CraftSim menu share the modern dropdown API. Detection now accepts the `SetupMenu` contract even when the client reports the frame as a Button. Local cosmetics strip the template's native background, arrow and NineSlice art, then apply a reusable flat fill, thin outline, down arrow and hover highlight. Label/arrow dimming follows native enabled state. Native size, anchors, click target, SetupMenu callback and return values remain intact. CraftSim can legitimately disable Simulate Buffs until simulation is enabled.
+
+Owned dropdown clicks also style their newly opened UIParent-anchored CraftSim context menus synchronously. State/hover callbacks cannot adopt unrelated UIParent menus, and UIParent is never registered as a global popup owner. Shared Settings dropdown cosmetics, including hover art, restore on release.
+
+Performance review: no OnUpdate, gameplay polling, calculation/provider hook or full-window refresh was introduced. Completed UI construction and theme/recovery refreshes retain cached/coalesced discovery; ordinary control state/hover/click callbacks repaint the control and its current menu only. In 1,000 simulated dropdown interaction cycles, owned window/list traversals, new UI objects, new hooks and button-label font rewrites are all zero. A pooled embedded menu input still requires one font application per acquisition because its native font is restored on release; this is intentional scoped cleanup. Existing 1,000-cycle data-update and warm window/tab checks remain zero for skin hierarchy reads, font writes, UI objects and hooks. These are mock counters, not in-game CPU, memory or FPS measurements.
+
+All 23 automated suites and the 40-file installation-package checks pass. New checks cover SetupMenu buttons reporting Button, all four labels, native actions/geometry/disabled states, art reset on hover, synchronous context ownership, foreign menus/GGUI controls, repeated reuse and disabled/combat recovery. Changes remain local to CraftSim plus its tests/documentation.
+
+## Alpha.4 content-layer audit
+
+The author overview image was cross-checked against the source creation paths, including panels requiring professions, recipe data or other character prerequisites. Anonymous child backdrops no longer qualify for a skin fill. Only confirmed GGUI windows and actual controls receive new backgrounds. Generic filled decorations retain their original fill texture, colour and opacity while losing their decorative edge; their existing region art is not faded. Border-only frames remain unfilled. Input validation frames exposing GGUI's `SetValid` contract remain completely native, preserving the red invalid-value indicator and its visibility changes. No shared skin helper changed.
+
+| Source area | Content/layer checks |
+| --- | --- |
+| Recipe scan, concentration, cooldowns, queue, pricing, customer history | Scroll borders and list columns/rows cannot acquire anonymous covering fills; native selection, click targets and semantic values remain owned by CraftSim. |
+| Simulation, specialization, reagent optimization, queue editing and TSM controls | Numeric/currency input validation remains native; input geometry, values, native actions and quality-meter progress/art are preserved. |
+| Statistics, profit, top gear and work-order variants | Confirmed window backgrounds sit on their own window frame; child data, graphs, gear and status artwork are not generic panel decorations. |
+| Craft logs and buffs | Scrolling message frames and selectors use owned control paths; log text, item results, buff/status artwork and native state remain intact. |
+| Shopping, import/name/export, rewards, support/help/debug | Constructors/registry or explicit scoped utility calls supply ownership; no blanket traversal of Blizzard profession windows or UIParent. Shared exports, menus and Settings release cosmetics on reuse. |
+
+Added regressions cover nine frame-level/opacity combinations with native data art, unchanged positions/dimensions/hit callbacks, unmodified shared backdrop tables, native input validation, quality-meter values/colours and repeated theme refreshes. The late-list regression now asserts the stronger rule that no covering skin fill is created even before the wrapper is known. Existing first-show, dynamic/lazy control, menu reuse and warm-path checks remain in place.
+
+CraftSim 19.9.0's slash handler has no single show-all-windows command. Most panels are created/shown through recipe/profession module flows. This audit did not execute every CraftSim function in a live client or simulate crafting transactions. Static source review and automated frame mocks support the coverage assessment; they do not establish pixel rendering, taint safety or absence of all client-specific visual faults.
+
+## Alpha.3 queue-overlay follow-up
+
+The queued-recipe rectangle can retain a skin fill when a raised decoration is classified before its completed FrameList wrapper becomes available. Alpha.3 identifies the scroll-border sibling from the completed list structure and retires any previously created fill. Later theme refreshes keep that fill hidden. Native rows, hover/click behavior, list stacking, dimensions and scroll targets are unchanged. Blizzard's shared HelpPlate/tutorial-tooltip subtrees are excluded from discovery even when reparented into a CraftSim window.
+
+Regression coverage reproduces the already-painted overlay, attaches its completed list wrapper, and verifies that both immediate repair and subsequent theme refreshes leave the contents visible. Ordinary filled panels and native tutorial text/art remain intact. The full automated package checks pass; live rendering remains unverified outside WoW.
+
+## Alpha.2 corrections
+
+- Queue/list and quality-meter border-only frames remain transparent. GGUI raises these frames above their contents; alpha.1 incorrectly added an opaque panel fill over the rows. Real filled panels retain their background, and native row selection colours remain intact.
+- Scrollbars support `Track.Thumb`, `GetThumb()` and the direct-thumb fallback. Native tracks/thumb artwork is replaced without resizing drag targets; vertical arrows point up/down.
+- Modern popout check/radio markers use compact square art and the selected accent. Native checked state, callbacks and compositor fonts remain untouched. SetupMenu-based selectors/filter menus and submenus are covered; embedded queue-amount/TSM-expression inputs receive scoped styling. Cosmetics restore when shared menu controls are released.
+- Added explicit coverage for craft-list name/import dialogs, item selectors, spell icons and scrolling craft logs. CraftSim's shared text-copy/export window receives temporary styling; export strings, selection and multiline font stay native. Other addons regain its original cosmetics on reuse.
+- First show checks the completed window once for native controls added after its constructor. Completed module UI initializers invalidate cached discovery; repeated warm window/tab and native data updates do not trigger full scans.
+
+Source coverage review: inspected UI creation/lifecycle paths across all 121 CraftSim-owned Lua files outside bundled libraries, data, locales and developer tools, at source tree `e15fb18c1004b2f373ee3247b2ade0b917fbea69`, plus the screenshot version 19.9.0 and pinned GGUI implementations. This includes recipe info/scans, statistics, top gear, pricing/reagent optimization, simulation/item selectors, queue/list/edit/import/export tools, patron rewards, work orders, shopping, customer history, craft logs, buffs, concentration/cooldowns, settings/TSM, support/patch-note/explanation windows and debug tools. Tutorial/help/quality/acquisition artwork and interactive graphs keep their semantic appearance. This is source-path coverage, not a claim that every live window was visually exercised.
+
+The adapter follows CraftSim's GGUI frame registry and owned constructors rather than a fixed list of screenshot windows. This covers statistics, top gear, cost/reagent tools, recipe scans, craft queues/logs, buffs, concentration/cooldown tools, other registered modules and their lazy controls. Legacy canvas options and current Retail native Settings initializers are supported. Buttons, tabs, input fields, checks, sliders/scrollbars, dropdowns, close/minimize controls and item icons use the existing theme. Main windows use `S.Shell` (including EllesmereUI's own selected backdrop) with a restrained lighter centre and darker top/bottom edges. Meaningful warning/profit/loss, selection and item-quality colours are retained.
+
+Graph canvases, grid lines, axes, data series, money strings, native crafting/simulation actions, configuration, input geometry, module positioning and collapse behavior stay controlled by CraftSim. The surrounding Blizzard profession interface is not traversed. Modern context menus receive scoped texture styling without registering UIParent as a menu owner or modifying compositor fonts. Shared Settings controls restore their cosmetics through their own initializer reset; unrelated GGUI users are excluded.
+
+GGUI constructor completion hooks style new owned widgets and rows. Native recipe calculations, price updates, FrameList Add/UpdateDisplay/UpdateRows, and module Update functions are not hooked. Window shows use cached child counts; tab state changes repaint selection only. There is no OnUpdate, polling, global CreateFrame replacement or database/provider query. Addon-load events check library identities before rebinding. Completed UI construction callbacks coalesce discovery. Theme changes and combat recovery refresh the owned windows.
+
+Validation: `python3 scripts/package.py` passes Lua syntax and all 23 regression suites, then verifies a 40-file install ZIP with one EUIAddonSkins folder, the new adapter and unchanged MIT license. Tests cover pre-existing/lazy registry windows, constructor ownership, rows, icons, graph exclusions, native return values/data/actions, protected and macro controls, modern Settings reuse/restoration, context menus, hover/font repair, themes, combat and disabled skins.
+
+Alpha.2 regressions additionally model raised border-only and transparent-background siblings, three scrollbar variants, arrow direction and unchanged hit areas, managed check/radio marker repaint/restoration, ownerless submenus, forbidden compositor font access, foreign menu reuse, embedded menu inputs, first-show native descendants, completed UI initialization, craft-list dialogs, composite widgets and shared export reuse. Reopening menus and export windows 100 times adds no UI objects or hooks in the mock.
+
+Mock results: 1,000 row-data/display/module-update cycles and 1,000 warm window/tab cycles each add no skin hierarchy reads, font writes, UI objects or hooks. Reusing a Settings row 100 times creates no additional UI objects or hooks; unrelated addon-load events do not traverse windows. These counters do not measure in-game CPU, memory, GC pressure or FPS. Actual rendering, client taint and live module coverage remain unverified without WoW.
+
+API/lifecycle references inspected: [CraftSim 19.9.0](https://github.com/derfloh205/CraftSim/tree/19.9.0) (the screenshot version), [current CraftSim](https://github.com/derfloh205/CraftSim), and their pinned GGUI revisions. No CraftSim, GGUI or third-party source/assets are bundled. CraftSim and EllesmereUI are installed separately. Tests and reference sources are excluded from the player ZIP.
+
+## Concentration Cost Curve overlay review
+
+The supplied Statistics > Concentration screenshot maps to `STATISTICS.UI:InitConcentrationTab`, which creates `content.concentrationCurveGraph` using LibGraph's `CreateGraphLine`. The existing traversal returns before painting or enumerating any frame with `AddDataSeries`; the entire graph subtree stays native. Its parent window shell uses same-frame BACKGROUND textures rather than a raised content-covering child.
+
+Added a targeted fixture matching the statistics window/tab/graph hierarchy, with a raised plot, separate grid/curve/marker textures, native axes/hover handler and graph children added after initial styling. Repeated refresh/show cycles must attach no skin surfaces or overlays, perform no graph child scans or data operations, and preserve plot/hover backdrops, texture alpha, label fonts, samples and hover returns. Full 23-suite, Lua and package checks pass. No runtime change or new alpha ZIP is required: alpha.6 already contains the exclusion. Mock/source validation cannot establish live rendering.

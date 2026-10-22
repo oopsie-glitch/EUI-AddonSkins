@@ -38,4 +38,4 @@ These are starting points, not a replacement for checking callers. The automated
 
 If more development lands during release preparation, update the release branch and rerun the checks. An individual branch passing does not establish that the combined release passes.
 
-Historical alpha reports remain in docs. Retired branch heads are recorded in docs/history/BRANCHES.md for traceability.
+Read [the engineering checklist](docs/ENGINEERING.md) before adding a skin or changing shared callbacks. Historical reports remain in docs/history/development; retired branch heads are recorded in docs/history/BRANCHES.md for traceability.

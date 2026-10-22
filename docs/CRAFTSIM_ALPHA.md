@@ -2,6 +2,22 @@
 
 Branch: `skin/craftsim-initial`, based on stable 1.5.2. Untagged; no CurseForge/Wago upload.
 
+## Alpha.4 content-layer audit
+
+The author overview image was cross-checked against the source creation paths, including panels requiring professions, recipe data or other character prerequisites. Anonymous child backdrops no longer qualify for a skin fill. Only confirmed GGUI windows and actual controls receive new backgrounds. Generic filled decorations retain their original fill texture, colour and opacity while losing their decorative edge; their existing region art is not faded. Border-only frames remain unfilled. Input validation frames exposing GGUI's `SetValid` contract remain completely native, preserving the red invalid-value indicator and its visibility changes. No shared skin helper changed.
+
+| Source area | Content/layer checks |
+| --- | --- |
+| Recipe scan, concentration, cooldowns, queue, pricing, customer history | Scroll borders and list columns/rows cannot acquire anonymous covering fills; native selection, click targets and semantic values remain owned by CraftSim. |
+| Simulation, specialization, reagent optimization, queue editing and TSM controls | Numeric/currency input validation remains native; input geometry, values, native actions and quality-meter progress/art are preserved. |
+| Statistics, profit, top gear and work-order variants | Confirmed window backgrounds sit on their own window frame; child data, graphs, gear and status artwork are not generic panel decorations. |
+| Craft logs and buffs | Scrolling message frames and selectors use owned control paths; log text, item results, buff/status artwork and native state remain intact. |
+| Shopping, import/name/export, rewards, support/help/debug | Constructors/registry or explicit scoped utility calls supply ownership; no blanket traversal of Blizzard profession windows or UIParent. Shared exports, menus and Settings release cosmetics on reuse. |
+
+Added regressions cover nine frame-level/opacity combinations with native data art, unchanged positions/dimensions/hit callbacks, unmodified shared backdrop tables, native input validation, quality-meter values/colours and repeated theme refreshes. The late-list regression now asserts the stronger rule that no covering skin fill is created even before the wrapper is known. Existing first-show, dynamic/lazy control, menu reuse and warm-path checks remain in place.
+
+CraftSim 19.9.0's slash handler has no single show-all-windows command. Most panels are created/shown through recipe/profession module flows. This audit did not execute every CraftSim function in a live client or simulate crafting transactions. Static source review and automated frame mocks support the coverage assessment; they do not establish pixel rendering, taint safety or absence of all client-specific visual faults.
+
 ## Alpha.3 queue-overlay follow-up
 
 The queued-recipe rectangle can retain a skin fill when a raised decoration is classified before its completed FrameList wrapper becomes available. Alpha.3 identifies the scroll-border sibling from the completed list structure and retires any previously created fill. Later theme refreshes keep that fill hidden. Native rows, hover/click behavior, list stacking, dimensions and scroll targets are unchanged. Blizzard's shared HelpPlate/tutorial-tooltip subtrees are excluded from discovery even when reparented into a CraftSim window.

@@ -195,16 +195,16 @@ end, function(S, module)
         if not H.Allowed(f) or art[f] then return end
         local d, kind = State(f), f:GetObjectType()
         if kind == 'Texture' or kind == 'Line' then return end
+        if type(f.SetValid)=='function'then return end
         if kind == 'FontString' then Font(f); return end
         local role = kinds[f]
         if not role and kind=='Frame'and f.GetBackdrop then
             local backdrop=f:GetBackdrop()
             if backdrop and backdrop.edgeFile then
-                -- GGUI's scroll border is a raised sibling spanning its rows.
-                -- It must remain transparent; a fill here covers the contents.
-                local alpha
-                if f.GetBackdropColor then local _,_,_,a=f:GetBackdropColor();alpha=a end
-                role=backdrop.bgFile and alpha~=0 and 'panel'or 'border';kinds[f]=role
+                -- An anonymous backdrop is not evidence of a content panel:
+                -- GGUI also uses these for raised borders and validation art.
+                -- Never add a filled texture to an unclassified child frame.
+                role=backdrop.bgFile and 'decoration'or 'border';kinds[f]=role
             end
         end
         if role == 'graph' or kind == 'GameTooltip' or kind == 'ModelScene' or kind == 'PlayerModel' then return end
@@ -223,6 +223,16 @@ end, function(S, module)
             Lift(f)
         elseif role == 'border' then
             if f.SetBackdrop then f:SetBackdrop(nil)end
+        elseif role=='decoration'then
+            local backdrop=f.GetBackdrop and f:GetBackdrop()
+            if backdrop and backdrop.edgeFile then
+                local r,g,b,a=f:GetBackdropColor()
+                local stripped={}
+                for key,value in pairs(backdrop)do
+                    if key~='edgeFile'and key~='edgeSize'then stripped[key]=value end
+                end
+                f:SetBackdrop(stripped);f:SetBackdropColor(r,g,b,a)
+            end
         elseif role == 'panel' then
             if f.SetBackdrop then f:SetBackdrop(nil) end
             Fade(f); Fill(f)
@@ -286,7 +296,8 @@ end, function(S, module)
         -- this known structure, not background colour, to exclude its fill.
         for _,child in ipairs(H.Children(parent))do
             if child~=scroll and child~=w.header and H.Allowed(child)
-                and(child.GetBackdrop and child:GetBackdrop()or kinds[child]=='panel')
+                and type(child.SetValid)~='function'
+                and(child.GetBackdrop and child:GetBackdrop()or kinds[child]=='panel'or kinds[child]=='decoration')
                 and child.GetNumChildren and child:GetNumChildren()==0
                 and child:GetFrameLevel()>scroll:GetFrameLevel()then
                 kinds[child]='border';Paint(child)
@@ -324,6 +335,7 @@ end, function(S, module)
         -- Blizzard reparents its shared tutorial overlay to the current addon.
         -- It is not CraftSim content and must not acquire persistent panel art.
         if f==_G.HelpPlate or f==_G.HelpPlateTooltip then return end
+        if type(f.SetValid)=='function'then return end
         local kind=f:GetObjectType()
         if kind=='Texture'or kind=='Line'or kind=='FontString'or kind=='GameTooltip'or kind=='ModelScene'or kind=='PlayerModel' then return end
         if kinds[f]=='graph' or type(f.AddDataSeries)=='function' then kinds[f]='graph';return end

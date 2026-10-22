@@ -436,9 +436,9 @@ assert(border.level==99 and border.backdrop==nil and #border.regions==0,'raised 
 assert(row.frame.bg[2]==.5 and row.text.frame:GetAlpha()==1,'queue selection/data were obscured')
 local transparent=Object('Frame',pre.content)
 transparent.backdrop={bgFile='white',edgeFile='border'};transparent.bg={1,1,1,0}
-module.refresh();assert(transparent.backdrop==nil and #transparent.regions==0,'transparent border acquired an opaque fill')
+module.refresh();assert(transparent.backdrop.bgFile=='white'and transparent.backdrop.edgeFile==nil and transparent.bg[4]==0 and #transparent.regions==0,'transparent border acquired an opaque fill')
 local filled=Object('Frame',pre.content);filled.backdrop={bgFile='white',edgeFile='border'}
-module.refresh();assert(#filled.regions==1 and filled.regions[1].color[4]==.97,'real panel lost its background')
+module.refresh();assert(#filled.regions==0 and filled.backdrop.bgFile=='white'and filled.bg[4]==1,'generic panel acquired skin art or lost native fill')
 
 -- Both MinimalScrollBar accessors and direct-thumb fallback retain native hit areas.
 for _,accessor in ipairs({'Track','GetThumb','Thumb'})do
@@ -554,22 +554,21 @@ assert(#errors==0,table.concat(errors,'; '))
 print('PASS: raised transparent queue/quality borders, three scrollbar variants, vertical arrows, managed menu checks/submenus/reuse, craft-list popups and shared exports')
 
 -- A list border may look like a filled panel before its wrapper is known.
--- Reclassification must retire an ALREADY CREATED skin fill, including after
--- subsequent theme refreshes, without changing rows or input hit areas.
+-- No fill may be created even BEFORE its wrapper becomes available; later
+-- structural classification and theme changes must keep that invariant.
 local lateContainer=Object('Frame',pre.content)
 local lateScroll=Object('ScrollFrame',lateContainer)
 local lateBorder=Object('Frame',lateContainer);lateBorder:SetFrameLevel(99)
 lateBorder.backdrop={bgFile='template-white',edgeFile='template-border'}
 local lateRow=Object('Frame',lateScroll);local lateText=Text(lateRow);lateText:SetText('Visible queued recipe')
 module.refresh()
-local coveringFill=lateBorder.regions[1]
-assert(coveringFill and coveringFill.alpha==1,'fixture did not reproduce preclassified overlay')
+assert(#lateBorder.regions==0,'generic discovery created a covering fill before wrapper discovery')
 local completedList=G.FrameList{parent=pre.content,reuse={frame=lateContainer,scrollFrame={scrollFrame=lateScroll}}}
-assert(coveringFill.alpha==0 and lateBorder.backdrop==nil,'late list border retained covering skin texture')
+assert(#lateBorder.regions==0 and lateBorder.backdrop==nil,'late list border retained covering skin texture')
 module.refresh();module.refresh()
-assert(coveringFill.alpha==0 and lateRow.alpha==1 and lateText.alpha==1 and lateText.text=='Visible queued recipe')
+assert(#lateBorder.regions==0 and lateRow.alpha==1 and lateText.alpha==1 and lateText.text=='Visible queued recipe')
 assert(lateBorder.level==99 and lateScroll:GetFrameLevel()==4,'fix changed native list stacking')
-assert(filled.regions[1].alpha==1,'ordinary panel background was removed')
+assert(filled.backdrop.bgFile=='white'and filled.bg[4]==1,'ordinary panel background was removed')
 
 HelpPlate=Object('Frame',pre.content);HelpPlate.backdrop={bgFile='tutorial-shade',edgeFile='tutorial-glow'}
 local tutorialText=Text(HelpPlate);tutorialText:SetText('Queued recipes are listed here')
@@ -578,4 +577,54 @@ module.refresh()
 assert(HelpPlate.backdrop.bgFile=='tutorial-shade'and #HelpPlate.regions==1)
 assert(tutorialText.path=='Native'and not tutorialChild.walks,'shared tutorial overlay was adopted as skin content')
 assert(#errors==0,table.concat(errors,'; '))
-print('PASS: completed list structure retires cached covering fills; theme refreshes cannot restore them; shared tutorial overlays stay native')
+print('PASS: generic list discovery cannot create covering fills before or after wrapper discovery; shared tutorial overlays stay native')
+
+-- Cross-window decoration policy: test layered anonymous frames with native
+-- data art at several levels/opacities, rather than assuming every backdrop
+-- is a panel. These shapes occur in scans, pricing, logs and simulation UIs.
+local decorations={}
+for _,level in ipairs({5,50,200})do
+ for _,alpha in ipairs({0,.5,1})do
+  local f=Object('Frame',pre.content);f:SetFrameLevel(level)
+  local sourceBackdrop={bgFile='native-fill',edgeFile='native-outline',edgeSize=16,tile=true}
+  f.backdrop=sourceBackdrop;f.bg={.12,.24,.36,alpha};f:SetSize(300,160);f:SetPoint('TOPLEFT',pre.content,'TOPLEFT',10,-15)
+  local semantic=f:CreateTexture(nil,'ARTWORK');semantic:SetTexture('native-result-status')
+  local value=Text(f);value:SetText('|cff00ff00Native result|r')
+  f.scripts.OnMouseDown=function()return 'native-select'end
+  decorations[#decorations+1]={frame=f,source=sourceBackdrop,semantic=semantic,value=value,alpha=alpha,level=level}
+ end
+end
+local editable=G.TextInput{parent=pre.content,initialValue='100'}
+local invalid=Object('Frame',editable.frame)
+local validationBackdrop={edgeFile='native-validation',edgeSize=25}
+invalid.backdrop=validationBackdrop;invalid:SetSize(45,32);invalid:SetFrameLevel(200)
+function invalid:SetValid(valid)
+ self:SetShown(not valid);if not valid then self:SetBackdropBorderColor(1,0,0,.5)end
+end
+invalid:SetValid(false)
+local quality=Object('Frame',pre.content)
+local progress=Object('StatusBar',quality);progress.value=75;progress.minimum=0;progress.maximum=100
+progress.fill=progress:CreateTexture(nil,'ARTWORK');progress.fill:SetTexture('native-quality-fill')
+progress.fill:SetVertexColor(.2,.8,.1,1)
+local qualityOutline=Object('Frame',quality);qualityOutline.backdrop={edgeFile='native-quality-outline'}
+qualityOutline:SetFrameLevel(100)
+for _=1,3 do module.refresh()end
+for _,entry in ipairs(decorations)do
+ local f=entry.frame
+ assert(#f.regions==2,'anonymous frame acquired new background layers')
+ assert(f.backdrop.bgFile=='native-fill'and f.backdrop.edgeFile==nil)
+ assert(entry.source.edgeFile=='native-outline'and entry.source.edgeSize==16,'shared native backdrop table was mutated')
+ assert(f.bg[1]==.12 and f.bg[2]==.24 and f.bg[3]==.36 and f.bg[4]==entry.alpha and f:GetFrameLevel()==entry.level)
+ assert(f.width==300 and f.height==160 and f.point[4]==10 and f.point[5]==-15)
+ assert(entry.semantic.texture=='native-result-status'and entry.semantic.alpha==1)
+ assert(entry.value.text=='|cff00ff00Native result|r'and entry.value.alpha==1)
+ assert(f.scripts.OnMouseDown()=='native-select')
+end
+assert(invalid.backdrop==validationBackdrop and invalid.shown and invalid.edge[1]==1 and invalid.edge[4]==.5)
+assert(#invalid.regions==0 and invalid.width==45 and invalid.height==32,'validation marker covered the numeric input')
+invalid:SetValid(true);assert(not invalid.shown);invalid:SetValid(false);assert(invalid.shown)
+assert(editable.frame.text=='100'and progress.value==75 and progress.minimum==0 and progress.maximum==100)
+assert(progress.fill.texture=='native-quality-fill'and progress.fill.alpha==1 and progress.fill.vertex[2]==.8)
+assert(#qualityOutline.regions==0 and qualityOutline.backdrop==nil)
+assert(#errors==0,table.concat(errors,'; '))
+print('PASS: anonymous decorations at nine level/opacity combinations add no skin fills; native data art, hit targets, validation errors and quality-meter values stay intact')

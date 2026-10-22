@@ -306,9 +306,6 @@ end, function(S, module)
         if not state then return end
         for region, alpha in pairs(state.art) do region:SetAlpha(alpha) end
         for text, value in pairs(state.text) do
-            if value.object and text.SetFontObject then text:SetFontObject(value.object) end
-            if value.font[1] then text:SetFont(unpack(value.font)) end
-            fontGeneration[text] = nil
             text:SetTextColor(unpack(value.color))
         end
         for frame in pairs(state.layers) do
@@ -321,10 +318,12 @@ end, function(S, module)
     local function WidgetFont(state,text,owner)
         if H.Allowed(text) and text:GetObjectType() == 'FontString' then
             if not state.text[text] then
-                state.text[text] = {font={text:GetFont()},color={text:GetTextColor()},
-                    object=text.GetFontObject and text:GetFontObject()}
+                state.text[text] = {color={text:GetTextColor()}}
             end
-            Text(text,owner)
+            -- Profiles and pullouts are shared AceGUI widgets. Keep their
+            -- native fonts; only tint labels and restore their original colour.
+            if owner and owner.IsEnabled and not owner:IsEnabled()then text:SetTextColor(.5,.5,.52)
+            else text:SetTextColor(.89,.89,.91)end
         end
     end
     PaintWidget = function(widget)
@@ -338,7 +337,8 @@ end, function(S, module)
         if widgetHooks[widget] ~= widget.frame then
             widgetHooks[widget] = widget.frame
             local function StateChanged()
-                if pooled[widget] and Ready() then Text(widget.text,widget.frame) end
+                local current=pooled[widget]
+                if current and Ready()then WidgetFont(current,widget.text,widget.frame)end
             end
             for _, key in ipairs({'Enable','Disable','SetEnabled'}) do H.Hook(widget.frame,key,StateChanged) end
         end

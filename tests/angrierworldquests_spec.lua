@@ -43,6 +43,8 @@ local function region(kind)
  function r:SetText(v)self.text=v;return 'text-native'end
  function r:GetText()return self.text end
  function r:GetFont()return table.unpack(self.font)end
+ function r:GetFontObject()error('AWQ skin captured a pooled font object')end
+ function r:SetFontObject()error('AWQ skin reassigned a pooled font object')end
  function r:SetFont(...)self.font={...};writes=writes+1 end
  function r:SetTextColor(...)self.color={...}end
  function r:GetTextColor()return table.unpack(self.color)end
@@ -201,13 +203,13 @@ manager:OpenMenu(dd);assert(lists==1)
 manager:OpenMenu(foreign.frame);assert(lists==1)
 assert(select(3,dialog:FeedGroup('Other',{},other))==6 and foreign.text.font[1]=='native')
 assert(gui:Release(action)=='release-native'and nativeArt.alpha==1 and action.text.font[1]=='native')
-dialog:FeedGroup('AWQ-Profiles',{},profiles);assert(nativeArt.alpha==0 and action.text.font[1]=='eui')
+dialog:FeedGroup('AWQ-Profiles',{},profiles);assert(nativeArt.alpha==0 and action.text.font[1]=='native')
 action.frame:Disable();assert(action.text.color[1]==.5)
 action.frame:Enable();assert(action.text.color[1]>.8)
 local no,nw=objects,writes
 for _=1,100 do dialog:FeedGroup('AWQ-Profiles',{},profiles)end
 assert(objects==no and writes==nw,'profiles repeated layers/font writes')
-assert(dropdown.pullout:Open()=='pullout-native'and item.text.font[1]=='eui')
+assert(dropdown.pullout:Open()=='pullout-native'and item.text.font[1]=='native')
 enabled=false
 local h=hookCount;manager:OpenMenu(dd);canvas:OnRefresh();tab:SetChecked(true)
 assert(lists==1 and hookCount==h)
@@ -295,14 +297,16 @@ assert(eventFrame and #timers==0)
 for _=1,1000 do eventFrame.scripts.OnEvent(eventFrame,'ADDON_LOADED','ForeignAddon')end
 assert(#timers==1,'load burst queued duplicate full refreshes')
 flush();assert(#timers==0)
-local so,sh=objects,hookCount
+local so,sh,sw=objects,hookCount,writes
 for _=1,100 do
  gui:Release(action);gui:Release(dropdown);gui:Release(edit);gui:Release(item)
  dialog:FeedGroup('AWQ-Profiles',{},profiles)
 end
 assert(objects==so and hookCount==sh,'Profiles release/reuse grew objects or hooks')
+assert(writes==sw and action.text.font[1]=='native'and item.text.font[1]=='native','pooled Profiles fonts were mutated')
 assert(questReads==0 and #errors==0,table.concat(errors,'; '))
 print('PASS: 1000 load events coalesce once; 100 Profiles release/reuse cycles add no UI objects or hooks')
+print('PASS: Profiles labels retain native font inheritance across release/reuse, native enabled states and foreign-owner transitions')
 
 -- Blizzard's generated menus capture IsSelected data, then rebuild their
 -- compositor regions. Verify styling before display and synchronous selection.

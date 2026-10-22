@@ -1,5 +1,11 @@
 # Angrier World Quests alpha
 
+## Pooled profile font safety follow-up
+
+Shared AceGUI Profiles/pullout widgets now retain their native font faces and inheritance throughout release/reuse. Enabled/disabled readability tints and themed control artwork remain; release restores the original colours/art. Removed FontObject capture/reassignment and font-face restoration from pooled widgets, including the native enabled-state callback. AWQ-owned quest/options controls keep their themed fonts. This is preventive hardening following the CraftSim reports, not a confirmed AWQ crash diagnosis.
+
+Regression FontObject accessors throw if pooled-font capture or reassignment returns. One hundred profile release/reuse cycles require zero font writes or new UI objects/hooks; existing foreign ownership, pullout/state, native actions, themes/combat and performance tests pass. The full test suite and one-folder 40-file ZIP checks pass. Live native-crash prevention is unverified without WoW. The branch remains untagged with no CurseForge/Wago upload.
+
 Branch: `skin/angrier-world-quests-initial` (untagged; no platform upload).
 
 Alpha 2 uses smaller settings-checkbox artwork without changing hit areas, and recognises modern dropdowns reported as Buttons. It also styles AWQ quest-row checkboxes with compact dark squares and an accent-coloured checked indicator. The original alpha 1 ZIP remains available for comparison. Styles the Retail quest-log trophy tab, the addon settings canvas and its AceDB Profiles controls. Reward/status colours, data providers, map pins and quest processing are untouched. Native action scripts, hit areas, layout and settings remain owned by Angrier World Quests.

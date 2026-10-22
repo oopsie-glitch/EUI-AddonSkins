@@ -26,4 +26,6 @@ Remaining cost: first-time controls require styling, and the native gallery recr
 
 ## Publication status
 
-Untagged development branch and local test ZIP only. No CurseForge/Wago release, tag or merge into main. Public distribution/permission decisions remain with the project owner; this document does not establish licence compatibility or a fair-use determination. Retain this exclusion when assembling a release until the owner expressly selects this skin for publication.
+Selected by the project owner for inclusion in the next release on 2026-10-22. Keep this untagged development branch separate until release integration and combined validation. No CurseForge/Wago publication, tag or merge into main has occurred.
+
+The owner plans to provide an addon-author removal contact in the CurseForge description. That opt-out process is a project policy, not permission or a finding of licence compatibility. This adapter remains independently written and bundles none of Decor Vendor's source/assets/data; the upstream restrictive licence and publication decision have been discussed with the owner.

@@ -273,3 +273,24 @@ fontFace='NewTheme';accent=.7;for _,fn in ipairs(looks) do fn() end
 assert(f.Title.path=='NewTheme' and f.Title.color[1]==.7 and d.AutoApplyCheckbox.checkedArt.color[1]==.7)
 assert(#errors==0,table.concat(errors,'\n'))
 print('PASS: Talent Loadout Manager: late sidebars/imports, native actions/colours/opacity, Ace reuse/font safety, popup ownership, combat/theme and 1000 local row updates')
+
+check:SetDisabled(false);check:SetValue(true)
+local c,r,a,h,fw,cw=childReads,regionReads,allocated,hookCount,fontWrites,colourWrites
+for _=1,1000 do
+ dialog:FeedGroup('TalentLoadoutManager',{},w)
+ check:SetDisabled(false);check:SetValue(true)
+end
+assert(childReads==c and regionReads==r,'warm options FeedGroup/state callbacks rescanned UI artwork')
+assert(allocated==a and hookCount==h and fontWrites==fw and colourWrites==cw,'warm options state repainted stable cosmetics')
+-- A stable parent can receive newly constructed/reused children at the same
+-- child count. The early-out must not skip their first completed styling.
+local replacement={type='Button',frame=Button(canvas)};replacement.text=replacement.frame.Text
+replacement.frame.art=replacement.frame:CreateTexture(nil,'ARTWORK');replacement.frame.art:SetTexture('native-new-tab-button')
+w.children[1]=replacement
+dialog:FeedGroup('TalentLoadoutManager',{},w)
+assert(replacement.frame.art.alpha==0 and replacement.text.path=='Native')
+gui:Release(replacement);replacement.frame.art:SetAlpha(1)
+dialog:FeedGroup('TalentLoadoutManager',{},w)
+assert(replacement.frame.art.alpha==0,'reacquired widget did not restyle')
+assert(#errors==0,table.concat(errors,'; '))
+print('BENCH TLM 1000 warm options feed/state cycles: hierarchy/artwork reads=0 new_UI_objects=0 new_hooks=0 font_writes=0 texture_colour_writes=0 (mock)')

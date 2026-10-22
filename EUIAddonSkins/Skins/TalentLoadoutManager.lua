@@ -175,7 +175,10 @@ end, function(S, module)
     local function Tint(state,text,disabled)
         if not H.Allowed(text) or text:GetObjectType()~='FontString' then return end
         if not state.colors[text] then state.colors[text]={text:GetTextColor()} end
-        if disabled then text:SetTextColor(.5,.5,.52) else text:SetTextColor(.9,.9,.92) end
+        local r,g,b,a=text:GetTextColor()
+        local target=disabled and .5 or .9
+        local blue=disabled and .52 or .92
+        if r~=target or g~=target or b~=blue or a~=1 then text:SetTextColor(target,target,blue,1) end
     end
     local function Surface(state,f,quiet)
         if not H.Allowed(f) then return end
@@ -217,11 +220,35 @@ end, function(S, module)
         return layer
     end
     local widgetHooks={}
+    local function WidgetState(widget,state)
+        Tint(state,widget.text,widget.disabled);Tint(state,widget.label)
+        Tint(state,widget.titletext);Tint(state,widget.desc,widget.disabled)
+        local frame=widget.frame
+        if widget.type=='Button' then Tint(state,frame.GetFontString and frame:GetFontString(),widget.disabled) end
+        local layer=widget.checkbg and layers[widget.checkbg]
+        if layer and layer.mark and widget.check then
+            local shown=widget.check:IsShown()
+            if layer.mark:IsShown()~=shown then layer.mark:SetShown(shown) end
+            if layer.generation~=generation or layer.disabled~=widget.disabled then
+                if widget.disabled then layer.mark:SetColorTexture(.4,.4,.4,.8)
+                else layer.mark:SetColorTexture(S.GetAccentColor()) end
+                layer.generation,layer.disabled=generation,widget.disabled
+            end
+        end
+    end
     PaintWidget=function(widget)
         if not Ready() or type(widget)~='table' or not H.Allowed(widget.frame) then return end
         local state=Record(widget)
         local f=widget.frame
-        Tint(state,widget.text,widget.disabled);Tint(state,widget.label);Tint(state,widget.titletext);Tint(state,widget.desc,widget.disabled)
+        -- Completed FeedGroup can be followed by Open and OnShow for the same
+        -- widget tree. Reused widgets get a fresh record on acquisition; stable
+        -- ones only need their native enabled/check state and new descendants.
+        if state.generation==generation then
+            WidgetState(widget,state)
+            for _,child in ipairs(widget.children or {}) do PaintWidget(child) end
+            return
+        end
+        WidgetState(widget,state)
         if widget.type=='Button' then
             Surface(state,f,false);Tint(state,f.GetFontString and f:GetFontString(),widget.disabled)
         elseif widget.type=='CheckBox' and H.Texture(widget.checkbg) and H.Texture(widget.check) then
@@ -286,9 +313,13 @@ end, function(S, module)
         if not widgetHooks[widget] then
             widgetHooks[widget]=true
             for _,key in ipairs({'SetDisabled','SetValue','SetTriState','SetType'}) do
-                H.Hook(widget,key,function() if pooled[widget] and Ready() then PaintWidget(widget) end end)
+                H.Hook(widget,key,function()
+                    local active=pooled[widget]
+                    if active and Ready() then WidgetState(widget,active) end
+                end)
             end
         end
+        state.generation=generation
         for _,child in ipairs(widget.children or {}) do PaintWidget(child) end
     end
     Options=function()

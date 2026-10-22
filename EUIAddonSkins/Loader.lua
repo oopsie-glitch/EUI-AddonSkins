@@ -8,6 +8,7 @@ ns.skinCatalog = {
     {id = "Auctionator", label = "Auctionator", targets = {"Auctionator"}},
     {id = "BtWQuests", label = "BtWQuests", targets = {"BtWQuests"}},
     {id = "BugSack", label = "BugSack", targets = {"BugSack"}},
+    {id = "CraftSim", label = "CraftSim", targets = {"CraftSim"}},
     {id = "DBM", label = "Deadly Boss Mods", targets = {"DBM-Core", "DBM-GUI"}},
     {id = "Details", label = "Details!", targets = {"Details"}},
     {id = "ForeverCompanion", label = "Forever Companion", targets = {"ForeverCompanion"}},

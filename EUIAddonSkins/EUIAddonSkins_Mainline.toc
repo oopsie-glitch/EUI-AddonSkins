@@ -24,6 +24,7 @@ Skins\Attune.lua
 Skins\Auctionator.lua
 Skins\BtWQuests.lua
 Skins\BugSack.lua
+Skins\CraftSim.lua
 Skins\DBM.lua
 Skins\Details.lua
 Skins\ForeverCompanion.lua

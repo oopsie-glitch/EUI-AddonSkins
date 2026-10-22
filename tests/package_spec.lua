@@ -28,7 +28,7 @@ for _, manifest in ipairs({'EUIAddonSkins.toc', 'EUIAddonSkins_Camelot.toc', 'EU
                 assert(loadfile('EUIAddonSkins/' .. line:gsub('\\','/')))('EUIAddonSkins', ns)
             end
         end
-        assert(#ns.modules == 0 and #ns.skinCatalog == 22)
+        assert(#ns.modules == 0 and #ns.skinCatalog == 23)
         for _, entry in ipairs(ns.skinCatalog) do assert(entry.defined and not entry.loaded) end
         local count = 0; for _ in pairs(entries) do count = count + 1 end
         assert(count == (onlyTarget and 1 or 0), manifest .. ': unexpected toggles')

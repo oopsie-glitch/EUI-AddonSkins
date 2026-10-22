@@ -10,6 +10,7 @@ EllesmereUI skins for World of Warcraft addons.
 - Auctionator
 - Spy
 - What’s Training?
+- HandyNotes
 - ItemRack
 - KiwiFarm
 - Myslot

@@ -165,11 +165,15 @@ assert(action.text.color[1]>.8 and nativeArt.alpha==0 and foreign.text.font[1]==
 assert(Settings.RegisterCanvasLayoutCategory(canvas,'AngrierWorldQuests')=='registered-native')
 local check=frame('CheckButton',canvas);check.configKey='onlyCurrentZone';check.Text=label(check,'Only current zone')
 check.GetCheckedTexture=function()return check.mark end;check.mark=check:CreateTexture()
+check.GetChecked=function(self)return self.checked end
+check.SetChecked=function(self,v)self.checked=v end
 check.scripts.OnClick=function()clicks=clicks+1;return 'setting-native'end
-local dd=frame('DropdownButton',canvas);dd.configKey='sortMethod';dd.Text=label(dd,'Name');dd.Label=label(dd,'Sort order')
+local dd=frame('Button',canvas);dd.SetupMenu=function()end;dd.configKey='sortMethod';dd.Text=label(dd,'Name');dd.Label=label(dd,'Sort order')
 AngrierWorldQuestsConfigDropDown1=dd
 local r,n,num=canvas:OnRefresh();assert(r=='refresh-native'and n==nil and num==8)
-assert(check.checkbox and dd.dropdown and check.Text.color[1]>.8)
+assert(check.children[1].checkbox and check.children[1].w==22 and dd.dropdown and check.Text.color[1]>.8)
+check:SetChecked(true);assert(check.children[1].regions[1].shown)
+check:SetChecked(false);assert(not check.children[1].regions[1].shown)
 assert(check.scripts.OnClick()=='setting-native'and clicks==2)
 local objectsBefore,writesBefore,hooksBefore=objects,writes,hookCount
 for _=1,100 do canvas:OnRefresh();tab:SetChecked(false)end
@@ -196,5 +200,39 @@ combat=false;accent=.25;for _,fn in ipairs(looks)do fn()end
 tab:SetChecked(true);assert(tab.Icon.color[1]==.25)
 assert(#errors==0,table.concat(errors,'; '))
 assert(questReads==0 and questCheck.Text.font[1]=='native')
-print('PASS: AWQ tab/options/Profiles; untouched quest checkboxes; native actions/returns, pool restoration, menus, late controls, theme/combat/toggle guards')
+print('PASS: AWQ tab/options/Profiles; native actions/returns, pool restoration, menus, late controls, theme/combat/toggle guards')
 print('BENCH AWQ 100 warm canvas refreshes: objects=0 font_writes=0 new_hooks=0 quest_tree_reads=0 (mock)')
+
+-- The second alpha opts into AWQ-owned row checkbox cosmetics only.
+local poolRows={}
+AngrierWorldQuestsHeader={titleFramePool={EnumerateActive=function()return ipairs(poolRows)end}}
+-- FramePool EnumerateActive yields frames as iterator keys.
+AngrierWorldQuestsHeader.titleFramePool.EnumerateActive=function()
+ local i=0;return function()i=i+1;return poolRows[i]end
+end
+quest.QuestLog_Update=function()return 'quests-native',nil,12 end
+m.refresh() -- bind late method
+local function questRow(tracked)
+ local row=frame('Button');row.Checkbox=frame('Frame',row)
+ row.Checkbox.CheckMark=row.Checkbox:CreateTexture();row.Checkbox.CheckMark.shown=tracked
+ row.scripts.OnClick=function()return 'track-native'end
+ poolRows[#poolRows+1]=row;return row
+end
+local first=questRow(true);local second=questRow(false)
+local qr,qn,qv=quest:QuestLog_Update();assert(qr=='quests-native'and qn==nil and qv==12)
+local box=first.Checkbox;local host=box.children[1];local mark=host.regions[#host.regions]
+assert(host.checkbox and host.mouse==false and mark.shown and box.CheckMark.alpha==0)
+assert(second.Checkbox.children[1].regions[1].shown==false)
+assert(first.scripts.OnClick()=='track-native'and questCheck.Text.font[1]=='native')
+box.CheckMark:Hide();assert(not mark.shown)
+box.CheckMark:Show();assert(mark.shown)
+local o,w,h=objects,writes,hookCount
+for _=1,100 do quest:QuestLog_Update();box.CheckMark:Show()end
+assert(objects==o and writes==w and hookCount==h,'warm quest refresh allocated or duplicated hooks')
+local third=questRow(true);quest:QuestLog_Update();assert(third.Checkbox.children[1].checkbox)
+enabled=false;local skipped=questRow(true);quest:QuestLog_Update();assert(#skipped.Checkbox.children==0)
+enabled=true;combat=true;quest:QuestLog_Update();assert(#skipped.Checkbox.children==0)
+box.CheckMark:Hide();assert(mark.shown) -- combat postpones cosmetic updates
+combat=false;m.refresh();assert(skipped.Checkbox.children[1].checkbox and not mark.shown)
+assert(#errors==0,table.concat(errors,'; '))
+print('PASS: AWQ-only pooled quest checkboxes, native tracking visibility/actions, late rows, warm reuse, disabled/combat guards')

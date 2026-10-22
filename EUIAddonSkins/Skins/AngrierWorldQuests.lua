@@ -61,18 +61,22 @@ end, function(S, module)
             end
         end
     end
+    local checkHosts = setmetatable({}, {__mode='k'})
     local function Check(frame)
-        S.Checkbox(frame, {borderInset=4, hover=.05})
-        for i, getter in ipairs({'GetCheckedTexture','GetDisabledCheckedTexture'}) do
-            local mark = frame[getter] and H.Texture(frame[getter](frame))
-            if mark then
-                mark:SetVertexColor(1,1,1,1)
-                if i == 1 then mark:SetColorTexture(S.GetAccentColor())
-                else mark:SetColorTexture(.4,.4,.4,.8) end
-                mark:ClearAllPoints(); mark:SetPoint('TOPLEFT',frame,'TOPLEFT',6,-6)
-                mark:SetPoint('BOTTOMRIGHT',frame,'BOTTOMRIGHT',-6,6)
-            end
+        local state = checkHosts[frame]
+        if not state then
+            FadeArt(frame)
+            local host = CreateFrame('Frame',nil,frame)
+            host:SetSize(22,22); host:SetPoint('CENTER',frame,'CENTER')
+            host:EnableMouse(false)
+            S.Checkbox(host,{borderInset=4,hover=.05})
+            local mark = host:CreateTexture(nil,'OVERLAY')
+            mark:SetSize(8,8); mark:SetPoint('CENTER',host,'CENTER')
+            state = {host=host,mark=mark}; checkHosts[frame] = state
         end
+        if frame.IsEnabled and not frame:IsEnabled() then state.mark:SetColorTexture(.4,.4,.4,.8)
+        else state.mark:SetColorTexture(S.GetAccentColor()) end
+        state.mark:SetShown(frame.GetChecked and frame:GetChecked() or false)
         Text(frame.Text, frame)
     end
     local function NativeControl(frame)
@@ -82,7 +86,7 @@ end, function(S, module)
         local kind = frame:GetObjectType()
         if kind == 'CheckButton' and (frame.configKey or frame.filterMask) then
             Check(frame)
-        elseif kind == 'DropdownButton' and frame.configKey then
+        elseif frame.configKey and (kind == 'DropdownButton' or type(frame.SetupMenu) == 'function') then
             if not state.bound then S.Dropdown(frame) end
             Text(frame.Text, frame); Text(frame.Label)
             if not state.bound and ns.BindPopupOwner then ns.BindPopupOwner(S,module,frame) end
@@ -94,7 +98,8 @@ end, function(S, module)
                 if kind == 'CheckButton' then Check(frame)
                 else Text(frame.Text,frame) end
             end
-            for _, key in ipairs({'Enable','Disable','SetEnabled'}) do H.Hook(frame,key,Repaint) end
+            for _, key in ipairs({'Enable','Disable','SetEnabled','SetChecked'}) do H.Hook(frame,key,Repaint) end
+            H.Script(frame,'OnClick',Repaint)
         end
         state.generation = generation
     end
@@ -157,6 +162,44 @@ end, function(S, module)
         if not mode then return end
         for _, candidate in ipairs(QuestMapFrame and QuestMapFrame.TabButtons or {}) do
             if candidate.displayMode == mode then tab = candidate; PaintTab(); break end
+        end
+    end
+    local questChecks = setmetatable({}, {__mode='k'})
+    local function QuestChecks()
+        if not Ready() then return end
+        local header = _G.AngrierWorldQuestsHeader
+        local pool = header and header.titleFramePool
+        if not pool or not pool.EnumerateActive then return end
+        -- One pass over AWQ's active pool after a completed list rebuild.
+        -- Never scan the shared quest-log hierarchy or change tracking actions.
+        for row in pool:EnumerateActive() do
+            local box = H.Allowed(row) and row.Checkbox
+            local native = H.Allowed(box) and H.Texture(box.CheckMark)
+            if native then
+                local state = questChecks[box]
+                if not state then
+                    local host = CreateFrame('Frame', nil, box)
+                    host:SetSize(22,22); host:SetPoint('CENTER',box,'CENTER')
+                    host:EnableMouse(false)
+                    S.Checkbox(host, {borderInset=4,hover=.05})
+                    local mark = host:CreateTexture(nil,'OVERLAY')
+                    mark:SetSize(8,8); mark:SetPoint('CENTER',host,'CENTER')
+                    state = {mark=mark}; questChecks[box] = state
+                    H.Fade(native)
+                    local function Visible()
+                        if not Ready() then return end
+                        local shown = native:IsShown()
+                        if state.shown ~= shown then mark:SetShown(shown); state.shown=shown end
+                    end
+                    for _, method in ipairs({'Show','Hide','SetShown'}) do H.Hook(native,method,Visible) end
+                    state.visible = Visible
+                end
+                state.visible()
+                if state.generation ~= generation then
+                    state.mark:SetColorTexture(S.GetAccentColor())
+                    state.generation = generation
+                end
+            end
         end
     end
     -- Profiles are pooled AceGUI widgets. Snapshot only cosmetic properties;
@@ -251,11 +294,12 @@ end, function(S, module)
     Refresh = function()
         if not Ready() then return end
         generation = generation + 1
-        FindTab(); FindCanvas(); Profiles()
+        FindTab(); FindCanvas(); Profiles(); QuestChecks()
         local config, quest = TargetModule('ConfigModule'), TargetModule('QuestFrameModule')
         H.Hook(config,'OnEnable',function() FindCanvas(); Profiles() end)
         H.Hook(quest,'InitQuestLogTab',FindTab)
-        H.Hook(quest,'InitQuestLogFrames',FindTab)
+        H.Hook(quest,'InitQuestLogFrames',function() FindTab(); QuestChecks() end)
+        H.Hook(quest,'QuestLog_Update',QuestChecks)
     end
     module.refresh = Refresh
     H.Hook(Settings,'RegisterCanvasLayoutCategory',function(frame,name)

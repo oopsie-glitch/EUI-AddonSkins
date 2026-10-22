@@ -11,3 +11,9 @@ Owned scroll views use completed `OnInitializedFrame` callbacks; existing discov
 Validation: `python3 scripts/package.py` passes Lua syntax, all 23 regression suites, catalog/client-manifest checks and a 40-file one-folder ZIP with the original MIT license. The LiteMount fixture checks dynamic/recycled list and model rows, native action/return preservation, status colours, editor data/geometry, shared Settings restoration, popup/menu ownership, protected controls, themes, combat and disabled skins. 1,000 warm mock row/refresh callbacks with unchanged native data/fonts add no UI objects, font writes, hooks, provider reads or cast operations. This does not measure in-game CPU/FPS or prove visual/taint behavior.
 
 LiteMount's source was inspected for UI lifecycle/API contracts; no LiteMount code, data or assets are bundled. LiteMount and EllesmereUI must be installed separately. Actual appearance, 3D rendering and live behavior remain unverified without a WoW client.
+
+## Alpha.2
+
+Action buttons, dropdown launchers and their step arrows now have a restrained one-unit grey outline on the existing mouse-inert cosmetic layer, matching the Escape menu treatment. Rows and larger content surfaces remain borderless. Native sizes, hit areas, actions and dropdown ownership are unchanged; shared Settings row reset hides the outline with the rest of the skin.
+
+Focused mock performance checks include texture allocation counts: 1,000 warm row/refresh callbacks and 1,000 dropdown hover/button enable cycles allocate no additional frames or textures, register no hooks and write no fonts. Reusing a General Settings row 100 times adds no frames, textures or hooks. These are allocation/callback regressions in a simulated environment, not in-game CPU, memory or FPS measurements. Static review found no polling or new full-tree traversal introduced by these outlines.

@@ -10,7 +10,7 @@ InCombatLockdown=function()return combat end
 geterrorhandler=function()return function(err)errors[#errors+1]=err end end
 hooksecurefunc=function(obj,key,fn)local old=obj[key];obj[key]=function(...)local r=table.pack(old(...));fn(...);return table.unpack(r,1,r.n)end end
 local function flush()local n=0;while #timers>0 do local t=timers;timers={};for _,fn in ipairs(t)do fn()end;n=n+1;assert(n<20,'Myslot refresh loop')end end
-local writes,objects,pixelCalls=0,0,0
+local writes,objects,pixelCalls,textures=0,0,0,0
 local effectiveScale=.711111
 PixelUtil={GetNearestPixelSize=function(_,scale)pixelCalls=pixelCalls+1;return 1/scale end}
 local function region(kind)
@@ -59,7 +59,7 @@ local function frame(kind,parent)
  function f:GetNumChildren()return #self.children end
  function f:GetChildren()return table.unpack(self.children)end
  function f:GetRegions()return table.unpack(self.regions)end
- function f:CreateTexture(_,layer)local r=region();r.layer=layer;r.parent=self;self.regions[#self.regions+1]=r;return r end
+ function f:CreateTexture(_,layer)textures=textures+1;local r=region();r.layer=layer;r.parent=self;self.regions[#self.regions+1]=r;return r end
  function f:CreateFontString()local r=region('FontString');r.parent=self;self.regions[#self.regions+1]=r;return r end
  function f:GetFontString()return self.label end
  function f:HookScript(event,fn)local old=self.hooks[event];self.hooks[event]=function(...)if old then old(...)end;fn(...)end end
@@ -239,9 +239,9 @@ enabled=false;assert(initializer:Resetter(general)=='reset-native')
 assert(general.Text.font[1]=='native'and general.Checkbox.normal.alpha==original and not sharedHost.shown)
 general.Checkbox:SetChecked(true);assert(not sharedHost.shown,'disabled callback restyled released foreign row')
 enabled=true;initializer:InitFrame(general);assert(sharedHost.shown)
-local so,sh=objects,hookCount
+local so,sh,st=objects,hookCount,textures
 for _=1,100 do initializer:Resetter(general);initializer:InitFrame(general)end
-assert(objects==so and hookCount==sh,'shared settings reuse added frames or hooks')
+assert(objects==so and hookCount==sh and textures==st,'shared settings reuse added frames, textures or hooks')
 local late={InitFrame=initializer.InitFrame,Resetter=initializer.Resetter};assert(layout:AddInitializer(late)=='add-native')
 -- Dialog ownership must not strip another skin's popup.
 StaticPopup_Show();assert(#popupCalls==0)
@@ -264,11 +264,11 @@ assert(sharedHost.regions[#sharedHost.regions].color[1]==.3)
 mounts:SetTab(1);listView:Initialized(first) -- inactive pooled rows repaint when acquired
 assert(first.Bit1.children[1].regions[#first.Bit1.children[1].regions].color[1]==.3)
 assert(#errors==0,table.concat(errors,'; '))
-local o,w,h=objects,writes,hookCount
+local o,w,h,t=objects,writes,hookCount,textures
 for _=1,1000 do listView:Initialized(first);mounts:RefreshDisplay()end
-assert(objects==o and writes==w and hookCount==h and providers==0 and casts==0,'warm skin repeated expensive work')
+assert(objects==o and textures==t and writes==w and hookCount==h and providers==0 and casts==0,'warm skin repeated expensive work')
 print('PASS: LiteMount panels, pooled lists/models, rules/editors, General initializer isolation/restoration, native actions/data/colours, menus, popups, themes and combat/disabled guards')
-print('BENCH LiteMount 1000 warm row/refresh callbacks: UI objects=0 font_writes=0 new_hooks=0 mount-provider reads=0 cast operations=0 (mock)')
+print('BENCH LiteMount 1000 warm row/refresh callbacks: frames=0 textures=0 font_writes=0 new_hooks=0 mount-provider reads=0 cast operations=0 (mock)')
 
 menu:Hide();menu:Show();menu.owner=rules.Action.TypeDropDown
 local oldBindings=bindings
@@ -290,3 +290,30 @@ menu.owner=foreign;menuRow.leftTexture1:SetColorTexture(1,1,1);desc.init(menuRow
 assert(menuRow.leftTexture1.color[1]==1,'submenu initializer leaked through a foreign root')
 assert(#errors==0,table.concat(errors,'; '))
 print('PASS: ownerless native submenus inherit only the matching LiteMount root ownership')
+
+-- Button/dropdown outlines belong to the existing mouse-inert cosmetic layer.
+local function surface(f)
+ for _,child in ipairs(f.children)do if child.fill then return child end end
+end
+for _,control in ipairs({base.DefaultsButton,general.Control.Dropdown,general.Control.DecrementButton})do
+ local layer=assert(surface(control))
+ assert(layer.mouse==false and #layer.edges==4)
+ for _,edge in ipairs(layer.edges)do
+  assert(edge.color[1]==.25 and edge.color[4]==.8)
+  assert(edge.w==1 or edge.h==1,'outline is not thin')
+ end
+end
+assert(not surface(first).edges,'row received a button outline')
+local dropdownLayer=surface(general.Control.Dropdown)
+initializer:Resetter(general);assert(not dropdownLayer.shown,'released Settings row retained outline')
+initializer:InitFrame(general);assert(dropdownLayer.shown)
+local bf,bt,bh,bw=objects,textures,hookCount,writes
+for _=1,1000 do
+ general.Control.Dropdown.hooks.OnEnter(general.Control.Dropdown)
+ general.Control.Dropdown.hooks.OnLeave(general.Control.Dropdown)
+ base.DefaultsButton:Disable();base.DefaultsButton:Enable()
+end
+assert(objects==bf and textures==bt and hookCount==bh and writes==bw)
+assert(#errors==0,table.concat(errors,'; '))
+print('BENCH LiteMount 1000 warm dropdown hover/button enable cycles: frames=0 textures=0 new_hooks=0 font_writes=0 (mock)')
+print('PASS: thin button/dropdown borders, borderless rows, pooled outline restoration and native interaction preservation')

@@ -54,7 +54,7 @@ ns.RegisterModule('LiteMount','LiteMount',function() return _G.LiteMountBasePane
         local mountPanel=_G.LiteMountMountsPanel
         local opacity=f.ModelScene and .4 or mountPanel and f==mountPanel.MountsContainer and .45 or .97
         layer.fill:SetColorTexture(math.max(.035,math.min(.2,r+lift)),math.max(.035,math.min(.2,g+lift)),math.max(.035,math.min(.2,b+lift)),opacity)
-        if kind=='input' and not layer.edges then
+        if (kind=='input'or kind=='button')and not layer.edges then
             layer.edges={}
             for _,side in ipairs({'TOP','BOTTOM','LEFT','RIGHT'})do
                 local t=layer:CreateTexture(nil,'BORDER');t:SetColorTexture(.25,.25,.26,.8)

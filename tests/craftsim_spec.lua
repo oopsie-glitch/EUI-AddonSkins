@@ -716,3 +716,46 @@ print('PASS: SetupMenu Button variants, four dropdowns, native actions/geometry/
 assert(fontObjectReads==0 and fontObjectAssignments==0,'pooled font-object inheritance was touched')
 assert(customInput.path=='Native'and sharedRow.Text.path=='Native')
 print('PASS: pooled menu/Settings inputs perform zero GetFontObject/SetFontObject operations across menu reinitialization, reuse, theme changes and release')
+
+-- Statistics > Concentration uses a LibGraph CreateGraphLine frame below the
+-- tab's content. Exercise that exact ownership shape, including high-level
+-- plot children and late data/hover regions, rather than only a bare graph.
+local statistics=G.Frame{parent=UIParent,frameID='STATISTICS_GRAPH_GUARD'}
+local concentration=G.BlizzardTab{parent=statistics.content,initialTab=true}
+local plotParent=concentration.content or statistics.content
+local curve=Object('Frame',plotParent)
+curve.level=plotParent:GetFrameLevel()+8
+curve.backdrop={bgFile='native-plot-background',edgeFile='native-plot-edge'}
+curve.bg={.01,.01,.01,.65}
+curve.AddDataSeries=function(self,data) self.data=data; return 'native-series' end
+local grid=curve:CreateTexture(nil,'BACKGROUND');grid:SetTexture('native-grid')
+local line=curve:CreateTexture(nil,'ARTWORK');line:SetTexture('native-yellow-curve')
+local marker=curve:CreateTexture(nil,'OVERLAY');marker:SetTexture('native-green-marker')
+local axis=Text(curve);axis:SetText('399')
+local hover=Object('Frame',curve);hover.level=curve.level+10
+hover.backdrop={bgFile='native-hover'};hover.bg={.1,.2,.3,.4}
+hover.scripts.OnEnter=function() return 'native-graph-hover' end
+local hoverText=Text(hover);hoverText:SetText('Skill / Concentration')
+local samples={{0,199},{240,80},{241,370},{480,0}}
+assert(curve:AddDataSeries(samples)=='native-series')
+local backdrop,hoverBackdrop=curve.backdrop,hover.backdrop
+local children,regions=#curve.children,#curve.regions
+plotParent.concentrationCurveGraph=curve
+module.refresh()
+local late=Object('Frame',curve);local lateLine=late:CreateTexture(nil,'ARTWORK');lateLine:SetTexture('native-late-plot')
+local lateText=Text(late);lateText:SetText('359.1')
+children=#curve.children
+local dataBefore=dataCalls
+for _=1,25 do
+ module.refresh()
+ statistics.frame:Show()
+end
+assert(not curve.walks and not hover.walks and not late.walks,'skin traversed the concentration graph subtree')
+assert(#curve.children==children and #curve.regions==regions,'skin attached an overlay to the graph')
+assert(curve.backdrop==backdrop and hover.backdrop==hoverBackdrop and curve.bg[4]==.65 and hover.bg[4]==.4)
+for _,t in ipairs({grid,line,marker,lateLine}) do assert(t.alpha==1,'graph/grid/marker texture was faded') end
+assert(axis.path=='Native'and hoverText.path=='Native'and lateText.path=='Native','graph labels were restyled')
+assert(hover.scripts.OnEnter()=='native-graph-hover'and curve.data==samples and dataCalls==dataBefore)
+assert(not curve.panel and not curve.shell and not hover.panel and not late.panel,'opaque skin surface added over graph')
+assert(#errors==0,table.concat(errors,'; '))
+print('PASS: Statistics concentration graph: no skin overlays, hierarchy scans, label changes or input interference; native plot/grid/axes/markers and late children survive repeated refresh/show')

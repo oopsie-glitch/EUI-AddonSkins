@@ -1,4 +1,4 @@
--- Home Bound owned UI, native actions/artwork and refresh performance.
+-- Decor Vendor owned UI, native actions/artwork and refresh performance.
 local enabled, combat, allocated, hookCount = true, false, 0, 0
 local errors, timers, looks, events, handlers = {}, {}, {}, {}, {}
 local module, factory, fontFace, accent = nil, nil, 'EUI', 0.25
@@ -247,7 +247,9 @@ scale.Slider.scripts.OnValueChanged=function(_,v)scale.value=v;return 'native-sc
 scale.Back=Button(scale);scale.Forward=Button(scale)
 local subcategory={};app.optionsCategory={GetSubcategories=function()return {subcategory}end}
 local donations=Object('Frame',UIParent);donations.parent='Decor Vendor';local credit=Text(donations);credit:SetText('Author credit kept')
+local layoutReads=0
 SettingsPanel={GetLayout=function(_,category)
+ layoutReads=layoutReads+1
  return {GetFrame=function()return category==subcategory and donations or DV_ConfigFrame end}
 end,DisplayCategory=function()return 'native-category-display'end}
 module.install(S,module);Flush()
@@ -323,11 +325,57 @@ assert(allocated==a and hookCount==h and fontWrites==fw and geometryWrites==g)
 assert(childReads==c and regionReads==r,'stable refresh scanned widget hierarchy/artwork')
 assert(app.frame.walks==main and DV_ConfigFrame.walks==settings and app.modelBox.walks==preview)
 assert(dataCalls==before+1000)
+-- Unrelated Settings navigation must do no skin work or layout discovery.
+local lr,cr,rr=layoutReads,childReads,regionReads
+for _=1,1000 do SettingsPanel:DisplayCategory({})end
+assert(layoutReads==lr and childReads==cr and regionReads==rr)
+SettingsPanel:DisplayCategory(subcategory);assert(layoutReads>lr)
+-- Rebuilt filters can replace children without changing the child count.
+-- A completed builder needs exactly one discovery pass, including new controls.
+local filter=app.sidebarFilters
+local previousHost
+for iteration=1,100 do
+ for _,old in ipairs(filter.children)do old:Hide();old.parent=nil end
+ filter.children={}
+ local fresh=Object('CheckButton',filter);fresh.label=Text(fresh)
+ fresh.checkedArt=fresh:CreateTexture(nil,'ARTWORK');fresh.disabledArt=fresh:CreateTexture(nil,'ARTWORK')
+ local walks=filter.walks or 0
+ assert(app.BuildVendorFilters()=='native-filters')
+ assert(filter.walks==walks+1,'filter rebuild discovered the same root twice')
+ local freshHost;for _,f in ipairs(fresh.children)do if f.mark then freshHost=f end end
+ assert(freshHost and freshHost~=previousHost and fresh.label.path==fontFace)
+ previousHost=freshHost
+ local count,hooks=allocated,hookCount
+ for _=1,10 do fresh:SetChecked(true);fresh:Enable()end
+ assert(allocated==count and hookCount==hooks and freshHost.mark:IsShown())
+end
+-- Native gallery rebuilds really create fresh cards. Only current cards should
+-- be visited; initial cosmetic styling must not allocate more frames/textures.
+for _=1,100 do
+ for _,old in ipairs(gallery.cards)do old:Hide()end
+ local fresh=Object('Button',gallery.frame.scrollChild)
+ fresh.slotBg=fresh:CreateTexture(nil,'BACKGROUND');fresh.hoverBg=fresh:CreateTexture(nil,'BACKGROUND')
+ fresh.icon=fresh:CreateTexture(nil,'ARTWORK');fresh.collected=fresh:CreateTexture(nil,'OVERLAY')
+ gallery.cards={fresh}
+ local count,hooks=allocated,hookCount
+ local mainWalks,settingsWalks=app.frame.walks,DV_ConfigFrame.walks
+ gallery.RefreshGrid()
+ assert(allocated==count and hookCount==hooks)
+ assert(fresh.slotBg.color[1]>.06 and fresh.icon.alpha==1 and fresh.collected.alpha==1)
+ assert(app.frame.walks==mainWalks and DV_ConfigFrame.walks==settingsWalks)
+end
+-- New direct labels on an already styled canvas must acquire the concrete font.
+local lazyText=Text(donations);lazyText:SetText('Lazily created help')
+SettingsPanel:DisplayCategory(subcategory)
+assert(lazyText.path==fontFace and lazyText.text=='Lazily created help')
 fontFace='ThemeTwo';accent=.7;module.refresh();Flush()
 assert(app.bottomTabs[2].text.path=='ThemeTwo'and host.mark.color[1]==accent)
 combat=true;local locked=Object('CheckButton',app.sidebarFilters);app.BuildVendorFilters();assert(#locked.children==0)
 combat=false;for _,f in ipairs(events)do if f.scripts.OnEvent then f.scripts.OnEvent(f,'PLAYER_REGEN_ENABLED')end end
 Flush()
 enabled=false;local off=Object('CheckButton',app.sidebarFilters);app.BuildVendorFilters();module.refresh();assert(#off.children==0)
+local offRoot=Object('Frame',UIParent);local hOff=hookCount
+assert(gallery.BuildSidebarContent(offRoot)=='native-gallery-sidebar')
+assert(hookCount==hOff and not offRoot.walks,'disabled skin attached a discovery hook')
 assert(#errors==0,table.concat(errors,'; '))
-print('PASS: Decor Vendor independent window/gallery/Settings styling, current active rows, native actions/markers/previews/models/fonts, late construction, theme/combat/toggles and 1000 warm refreshes')
+print('PASS: Decor Vendor rebuilt filters/cards, late labels, scoped Settings and independent window/gallery/Settings styling, current active rows, native actions/markers/previews/models/fonts, late construction, theme/combat/toggles and 1000 warm refreshes')

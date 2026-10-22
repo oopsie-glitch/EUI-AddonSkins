@@ -228,6 +228,9 @@ end,function(S,module)
         local d=State(f)
         local n=f.GetNumChildren and f:GetNumChildren()or -1
         local nr=f.GetNumRegions and f:GetNumRegions()or -1
+        -- New direct text regions can appear on an existing canvas without a
+        -- theme change. Repaint just that owner, not the complete window.
+        if d.walkGeneration==generation and d.regions~=nr then d.generation=nil end
         Paint(f)
         if not force and d.walkGeneration==generation and d.children==n and d.regions==nr then return end
         for _,child in ipairs(H.Children(f))do
@@ -237,15 +240,15 @@ end,function(S,module)
         d.regions=f.GetNumRegions and f:GetNumRegions()or nr
         d.walkGeneration=generation
     end
-    local function Root(f,mode)
-        if not H.Allowed(f)then return end
+    local function Root(f,mode,force)
+        if not Ready()or not H.Allowed(f)then return end
         local d=State(f)
         if mode and panels[f]~=mode then panels[f]=mode;d.generation=nil end
         if not d.root then
             d.root=true
             H.Script(f,'OnShow',function()Walk(f,true)end)
         end
-        Walk(f,false)
+        Walk(f,force)
     end
     local function Preview()
         if not Ready()then return end
@@ -301,7 +304,7 @@ end,function(S,module)
         H.Hook(app,'RefreshTabVisuals',Tabs)
         H.Hook(app,'BuildVendorUI',ListReady)
         for _,key in ipairs({'BuildVendorFilters','BuildQuestFilters','BuildProfessionFilters','BuildAchievementFilters','BuildBossDropFilters','BuildShopFilters'})do
-            H.Hook(app,key,function()Root(app.sidebarFilters);Walk(app.sidebarFilters,true)end)
+            H.Hook(app,key,function()Root(app.sidebarFilters,nil,true)end)
         end
         H.Hook(app,'CreateOptionsPanel',Options)
         H.Hook(app,'CreateMainHomePanel',Discover)
@@ -313,13 +316,15 @@ end,function(S,module)
         if gallery then
             H.Hook(gallery,'CreateFrame',Discover)
             H.Hook(gallery,'RefreshGrid',GalleryReady)
-            H.Hook(gallery,'BuildSidebarContent',function(parent)Root(parent);Walk(parent,true)end)
+            H.Hook(gallery,'BuildSidebarContent',function(parent)Root(parent,nil,true)end)
             H.Hook(gallery,'ShowItem',Preview)
             H.Hook(gallery,'UpdateActionButton',Preview)
         end
         H.Hook(Settings,'RegisterCanvasLayoutCategory',function(frame,name)if name=='Decor Vendor'then Canvas(frame)end end)
         H.Hook(Settings,'RegisterCanvasLayoutSubcategory',function(parent,frame)if parent==app.optionsCategory or categories[parent]then Canvas(frame)end end)
-        H.Hook(SettingsPanel,'DisplayCategory',function()Options()end)
+        H.Hook(SettingsPanel,'DisplayCategory',function(_,category)
+            if category and (category==app.optionsCategory or categories[category])then Options()end
+        end)
     end
     Discover=function()
         if not Ready()then return end

@@ -5,6 +5,7 @@ for _, name in ipairs({'AuctionFrame', 'AuctionFrameTab1', 'AuctionFrameTab2', '
     'AuctionatorTabs_Shopping', 'AuctionatorConfigLazyFrame', 'AuctionatorConfigLoadedFrame', 'AuctionatorDialog1',
     'AuctionatorTabContainerMixin', 'AuctionatorExportTextFrameMixin'}) do _G[name] = nil end
 local timers, modules, events, created, looks, hookCount = {}, {}, {}, 0, {}, 0
+local hierarchyReads, geometryWrites, colorWrites = 0, 0, 0
 local enabled, combat, fontFace = true, false, 'eui-font'
 local ns = {IsEnabled = function() return enabled end, AttachAccent = function() end}
 function ns.RegisterModule(id, _, available, install) modules[id] = {available = available, install = install} end
@@ -29,8 +30,8 @@ local function flush()
     end
 end
 local function anchors(o)
-    function o:ClearAllPoints() self.points = {} end
-    function o:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end
+    function o:ClearAllPoints() geometryWrites=geometryWrites+1;self.points = {} end
+    function o:SetPoint(...) geometryWrites=geometryWrites+1;self.points = self.points or {}; self.points[#self.points + 1] = {...} end
     function o:GetNumPoints() return #(self.points or {}) end
     function o:GetPoint(i) return table.unpack(self.points[i]) end
     function o:SetAllPoints(rel) self.all = rel or true end
@@ -46,7 +47,7 @@ local function texture(layer, w, h)
     function t:SetTexture(p) self.path = p end
     function t:GetAtlas() return self.atlas end
     function t:SetAtlas(a) self.atlas = a end
-    function t:SetColorTexture(...) self.color = {...} end
+    function t:SetColorTexture(...) colorWrites=colorWrites+1;self.color = {...} end
     function t:SetVertexColor(...) self.vertex = {...} end
     function t:GetVertexColor() return table.unpack(self.vertex or {1, 1, 1, 1}) end
     function t:SetDesaturated(v) self.desaturated = v end
@@ -85,13 +86,15 @@ local function frame(kind, parent, name)
     function f:IsForbidden() return self.forbidden end
     function f:IsProtected() return self.protected end
     function f:GetParent() return self.parent end
-    function f:GetChildren() return table.unpack(self.children) end
-    function f:GetRegions() return table.unpack(self.regions) end
+    function f:GetChildren() hierarchyReads=hierarchyReads+1;return table.unpack(self.children) end
+    function f:GetRegions() hierarchyReads=hierarchyReads+1;return table.unpack(self.regions) end
     function f:GetNumChildren() return #self.children end
     function f:GetNumRegions() return #self.regions end
     function f:GetFrameLevel() return 4 end
     function f:SetFrameLevel(v) self.level = v end
     function f:GetEffectiveScale() return 1 end
+    function f:SetSize(w,h) geometryWrites=geometryWrites+1;self.w,self.h=w,h end
+    function f:EnableMouse(value) self.mouse=value end
     function f:GetHeight() return self.h end
     function f:SetHeight(h) self.h = h end
     function f:GetWidth() return self.w end
@@ -101,7 +104,7 @@ local function frame(kind, parent, name)
     function f:IsShown() return self.shown end
     function f:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
     function f:SetHitRectInsets(...) self.hit = {...} end
-    function f:HookScript(key, fn) local old = self.scripts[key]; self.scripts[key] = function(...) if old then old(...) end; fn(...) end end
+    function f:HookScript(key, fn) local old = self.scripts[key]; self.scripts[key] = function(...) local r=old and table.pack(old(...))or{n=0}; fn(...);return table.unpack(r,1,r.n) end end
     function f:SetScript(key, fn) self.scripts[key] = fn end
     function f:RegisterEvent(e) self.events = self.events or {}; self.events[e] = true end
     function f:CreateTexture(_, layer)
@@ -534,3 +537,59 @@ assert(not disabledProfession.SearchButton.button, 'disabled profession skin rep
 for _, name in ipairs({'AuctionatorCraftingInfo', 'AuctionatorCraftingInfoProfessionsFrame', 'AuctionatorEnchantInfoFrame',
     'AuctionatorTradeSkillSearch', 'AuctionatorCraftingInfoObjectiveTrackerFrame', 'AuctionatorCraftingInfoProfessionsOrderFrame'}) do _G[name] = nil end
 print('PASS: Auctionator modern tabs/zones/rows/icons/form alignment, owned profession additions and quantity popup, native actions/colors/placement, late initialization, warm reuse, theme/combat/toggle guards and visible-only rescans')
+
+-- Auctionator Options > AddOns: fixed visual sizes independent of the native
+-- CheckButton's large template rectangle. Native hit/label/click geometry stays.
+enabled=true
+local page=CreateFrame('Frame','AuctionatorConfigTooltipsFrame')
+local function Checkbox(parent)
+ local f=frame('CheckButton',parent);f:SetSize(32,32)
+ f.checked=true;f.enabled=true
+ f.GetChecked=function(self)return self.checked end
+ f.SetChecked=function(self,v)self.checked=v;return 'native-set'end
+ f.IsEnabled=function(self)return self.enabled end
+ f.Enable=function(self)self.enabled=true;return 'native-enable'end
+ f.Disable=function(self)self.enabled=false;return 'native-disable'end
+ f.normal=f:CreateTexture(nil,'BACKGROUND');f.normal:SetTexture('native-box')
+ f.tick=f:CreateTexture(nil,'ARTWORK');f.tick:SetTexture('native-yellow-tick')
+ f.label=fontString('Show auction house value of items in tooltips');anchors(f.label)
+ f.label:SetPoint('LEFT',f,'RIGHT',20,0);f.regions[#f.regions+1]=f.label
+ f.scripts.OnClick=function(self)self.checked=not self.checked;return 'native-click'end
+ return f
+end
+local option=Checkbox(page);local labelPoints=option.label.points
+local foreign=Checkbox(frame('Frame'))
+local secret=Checkbox(page);secret.protected=true
+for _,eventFrame in ipairs(events)do
+ if eventFrame.events and eventFrame.events.ADDON_LOADED then eventFrame.scripts.OnEvent(eventFrame,'ADDON_LOADED','Auctionator')end
+end
+flush()
+assert(#option.children==1 and #foreign.children==0 and #secret.children==0)
+local visual=option.children[1]
+assert(visual.w==22 and visual.h==22 and visual.mouse==false and option.w==32 and option.h==32)
+assert(option.normal.alpha==0 and option.tick.alpha==0 and option.label.points==labelPoints)
+local mark
+for _,art in ipairs(visual.regions)do if art.w==8 and art.h==8 then mark=art end end
+assert(mark and mark.shown and mark.color[1]==.1 and mark.color[2]==.8)
+assert(option.scripts.OnClick(option)=='native-click'and not mark.shown)
+assert(option:SetChecked(true)=='native-set'and mark.shown)
+assert(option:Disable()=='native-disable'and mark.color[1]==.4)
+assert(option:Enable()=='native-enable'and mark.color[1]==.1)
+local c,h,reads,geo,colors=created,hookCount,hierarchyReads,geometryWrites,colorWrites
+for _=1,1000 do option:SetChecked(true);option:Enable();option.scripts.OnShow(option)end
+assert(created==c and hookCount==h and hierarchyReads==reads and geometryWrites==geo and colorWrites==colors)
+assert(#timers==0,'checkbox state callbacks queued full integration refreshes')
+for _=1,50 do option.scripts.OnClick(option)end
+assert(mark.shown==option.checked and #timers==0)
+combat=true;option:SetChecked(false);assert(mark.shown)
+combat=false
+for _,eventFrame in ipairs(events)do
+ if eventFrame.events and eventFrame.events.PLAYER_REGEN_ENABLED then eventFrame.scripts.OnEvent(eventFrame,'PLAYER_REGEN_ENABLED')end
+end
+flush();assert(not mark.shown)
+S.GetAccentColor=function()return .7,.2,.9 end
+for _,fn in ipairs(looks)do fn()end;flush();assert(mark.color[1]==.7)
+enabled=false;option:SetChecked(true);assert(not mark.shown and #timers==0)
+enabled=true;option.scripts.OnShow(option);assert(mark.shown)
+print('PASS: Auctionator settings compact square indicators, unchanged native hit/label/action/state, protected/foreign exclusions, theme/combat/disabled guards')
+print('BENCH Auctionator settings mock: 1000 warm check/enable/show cycles: new UI objects/hooks, hierarchy reads, geometry/colour writes and queued full refreshes=0')

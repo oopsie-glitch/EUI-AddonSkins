@@ -307,7 +307,7 @@ for _,art in ipairs(treeRow.toggle.regions)do if art.rotation then expandedMark=
 assert(expandedMark and expandedMark.rotation==-math.pi/2,'collapsed sidebar indicator is wrong')
 assert(popup:Open()=='native-open')
 assert(popup.frame.backdrop==nil and popupItem.check.width==8 and popupItem.check.color[1]==accent)
-popup.frame:Hide();assert(popup.frame.backdrop.bgFile=='native-popup' and popupItem.check.texture=='native-menu-tick')
+popup.frame:Hide();assert(popup.frame.backdrop.bgFile=='native-popup' and popupItem.check.texture=='native-menu-tick'and popupItem.text.path=='Native')
 for _=1,20 do popup:Open();popup.frame:Hide()end
 local o,h,w=allocated,hookCount,fontWrites
 for _=1,1000 do
@@ -344,3 +344,42 @@ assert(gradient,'standalone options lack subtle centre lift')
 assert(#errors==0,table.concat(errors,'; '))
 print('PASS: HandyNotes canvas/standalone options, local tree updates, native editor actions/data/icons, pooled menus/restoration, dynamic controls, themes and combat/disabled guards')
 print('BENCH HandyNotes 1000 warm options feeds/editor shows: new_UI_objects=0 new_hooks=0 font_writes=0; unrelated_addon_loads=100 hierarchy_reads=0 (mock)')
+
+-- Stress realistic reuse paths, rather than only feeding unchanged widgets.
+local allocations,hooks=allocated,hookCount
+for _=1,500 do
+ assert(popup:Open()=='native-open')
+ assert(popupItem.check.width==8)
+ popup.frame:Hide()
+ assert(popupItem.check.texture=='native-menu-tick'and popupItem.text.path=='Native')
+end
+assert(allocated==allocations and hookCount==hooks,'pullout reuse grew UI objects or hooks')
+for _=1,250 do
+ gui:Release(check);gui:Release(action);gui:Release(dropdown)
+ dialog:FeedGroup('HandyNotes',{},root)
+ assert(check.checkbg.width==14 and action.text.color[1]==.92)
+end
+assert(allocated==allocations and hookCount==hooks,'page-control recycling grew UI objects or hooks')
+local beforeChildren,beforeRegions,beforeFonts=childReads,regionReads,fontWrites
+for i=1,1000 do
+ check:SetValue(i%2==0)
+ action:SetDisabled(i%2==0)
+end
+assert(childReads==beforeChildren and regionReads==beforeRegions and fontWrites==beforeFonts,
+ 'value/disabled callbacks scanned a page or rewrote fonts')
+local otherWalks=action.frame.walks
+for _=1,250 do tree:RefreshTree() end
+assert(action.frame.walks==otherWalks,'sidebar refresh scanned unrelated action controls')
+assert(allocated==allocations and hookCount==hooks,'sidebar refresh grew UI objects or hooks')
+for _=1,25 do module.refresh() end
+assert(allocated==allocations and hookCount==hooks,'theme refresh grew UI objects or hooks')
+enabled=false
+beforeChildren,beforeRegions,beforeFonts=childReads,regionReads,fontWrites
+for _=1,1000 do dialog:FeedGroup('HandyNotes',{},root);editor:Show()end
+assert(childReads==beforeChildren and regionReads==beforeRegions and fontWrites==beforeFonts,
+ 'disabled skin performed styling work')
+enabled=true
+assert(saved==1 and editor.titleinputbox.content=='Note title'and editor.descinputbox.content=='A saved note')
+assert(#errors==0,table.concat(errors,'; '))
+print('BENCH HandyNotes mock stress: 500 pullout reopen cycles + 250 pooled-control rebuilds + 250 tree refreshes + 25 theme refreshes: new_UI_objects=0 new_hooks=0')
+print('BENCH HandyNotes 1000 value/disabled cycles: hierarchy_reads=0 font_writes=0; 1000 disabled feeds/editor shows: hierarchy_reads=0 font_writes=0 (mock)')

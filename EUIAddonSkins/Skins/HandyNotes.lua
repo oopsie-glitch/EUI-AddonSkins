@@ -544,8 +544,9 @@ end, function(S, module)
                 record.menuItems = record.menuItems or {}
                 record.menuItems[item] = true
                 PaintWidget(item)
-            end
-            if H.Allowed(item.text) then
+            elseif H.Allowed(item.text) then
+                -- Widget-backed items snapshot/restore their own fonts. Taking
+                -- another snapshot after painting would save the skinned font.
                 record.menuFonts = record.menuFonts or {}
                 if not record.menuFonts[item.text] then record.menuFonts[item.text] = RegionState(item.text) end
                 Font(item.text)

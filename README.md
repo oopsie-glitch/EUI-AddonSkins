@@ -13,6 +13,7 @@ EllesmereUI skins for World of Warcraft addons.
 - ItemRack
 - KiwiFarm
 - Myslot
+- Nova Instance Tracker
 - BtWQuests (Retail journal, category/chain views, search and menus)
 - BugSack
 - Altoholic

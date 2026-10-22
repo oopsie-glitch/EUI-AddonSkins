@@ -33,6 +33,7 @@ Skins\Gargul.lua
 Skins\ItemRack.lua
 Skins\KiwiFarm.lua
 Skins\Myslot.lua
+Skins\NovaInstanceTracker.lua
 Skins\PallyPower.lua
 Skins\Questie.lua
 Skins\RXPGuides.lua

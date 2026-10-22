@@ -8,7 +8,7 @@ GitHub is the source of truth. Stable version tags publish to CurseForge through
 - **Wago:** project ID `aN0a2M6j` is recorded as `X-Wago-ID` in the TOC. Create an API key at https://addons.wago.io/account/apikeys and save it directly in GitHub **Settings > Secrets and variables > Actions > New repository secret**, named `WAGO_API_TOKEN`. Never commit or paste the key into chat.
 - Allow GitHub Actions to run the pinned checkout and BigWigs Packager actions. The workflow requires only read access to repository contents; it does not create GitHub Releases or upload to other addon platforms.
 
-The Wago secret and a successful real upload have not been verified by repository preparation alone. A webhook success also does not prove that CurseForge published a file. Check both platforms after the first intended release.
+The v1.6.0 Wago workflow completed an upload successfully. Repository preparation or webhook delivery alone does not prove public availability on either platform; check publication separately for each release.
 
 ## Versions and channels
 

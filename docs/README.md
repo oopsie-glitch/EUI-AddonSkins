@@ -1,11 +1,15 @@
 # Project documentation
 
-- [Development and shared-code rules](../CONTRIBUTING.md)
-- [Release procedure](RELEASING.md)
-- [Wago upload recovery](WAGO_RECOVERY.md)
-- [Retired branches and recovery commits](history/BRANCHES.md)
-- [Public release notes](releases/)
+## Current guides
 
-The *_ALPHA.md reports, ACEGUI_AUDIT.md, PERFORMANCE_AUDIT.md, ALPHA_CHANGELOG_1.2.0.md and RELEASE_1.3.0.md describe historical development snapshots. Their branch/version statements apply to those snapshots; they are not current pending-work lists. The related changes were combined in 1.3.0. Raw benchmark results remain available beside the reports and identify their simulated environment.
+- [Engineering and regression checklist](ENGINEERING.md): performance, ownership, fonts, menus, input safety and verification.
+- [Development and shared-code rules](../CONTRIBUTING.md): branches, scope and integration.
+- [Release procedure](RELEASING.md) and [Wago recovery](WAGO_RECOVERY.md).
+- [Benchmark workloads and commands](../benchmarks/README.md).
+- [Public release notes](releases/).
 
-Current unfinished work is tracked through open task branches and pull requests. These documents, tests and development tools remain in GitHub and are excluded from player packages.
+## Historical records
+
+[Development reports](history/development/) retain source versions, findings, regressions and previous benchmark results. Their alpha versions, file counts and publication statements describe their original snapshots, not current pending work. [Retired branch heads](history/BRANCHES.md) preserve recovery references.
+
+Current unfinished work belongs in task branches and pull requests. Tests, benchmarks, scripts and these documents stay in GitHub and are excluded from installation packages.

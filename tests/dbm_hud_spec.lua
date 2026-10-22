@@ -553,8 +553,7 @@ gradientMode = 'none'
 local fallback = DBT:CreateBar(20, 'fallback-gradient')
 for _, t in ipairs(_G[fallback.frame.name .. 'Bar'].regions) do assert(not t.gradient and not t.gradientAlpha) end
 gradientMode = 'modern'
--- Unlike the reference skins' CreateBar handlers, creating a timer must not
--- enumerate the entire active pool or repaint existing timer text.
+-- Timer creation must not enumerate the active pool or repaint existing text.
 local beforeIterator, beforeFonts = iteratorCalls, fontWrites
 for i = 1, 25 do DBT:CreateBar(20, 'burst-' .. i) end
 assert(iteratorCalls == beforeIterator, 'timer creation traversed existing bars')

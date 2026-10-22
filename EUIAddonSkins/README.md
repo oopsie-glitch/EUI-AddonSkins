@@ -87,6 +87,10 @@ PallyPower support targets the Forever beta layout. Its original lock button, se
 
 DBM timer and range/radar/info appearance can be adjusted through **Skin Options** beside its options window. DBM controls positioning, size and spacing; encounter warning colours and behaviour remain native.
 
+## Development
+
+See [the documentation index](../docs/README.md) for contribution rules, engineering checks, benchmarks and releases.
+
 ## License
 
 EUI AddonSkins is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

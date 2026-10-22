@@ -839,7 +839,7 @@ end, function(S, module)
             end
         end
         ModernTabs()
-        -- Panels whose icon-only buttons are refresh buttons (as Luckyone's Auctionator skin finds them).
+        -- Panels with icon-only refresh buttons.
         local selling = _G.AuctionatorSellingFrame
         for _, name in ipairs(REFRESH_HOSTS) do RefreshHost(_G[name]) end
         RefreshHost(selling and selling.SaleItemFrame)

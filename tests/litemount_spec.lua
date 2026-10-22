@@ -43,6 +43,8 @@ local function region(kind)
  function r:SetText(v)self.text=v;return 'text-native'end
  function r:GetText()return self.text end
  function r:GetFont()return table.unpack(self.font)end
+ function r:GetFontObject()error('LiteMount skin captured a shared font object')end
+ function r:SetFontObject()error('LiteMount skin reassigned a shared font object')end
  function r:SetFont(...)self.font={...};writes=writes+1 end
  function r:SetTextColor(...)self.color={...}end
  function r:GetTextColor()return table.unpack(self.color)end
@@ -233,15 +235,17 @@ general.Control.Dropdown=button(general.Control,'Priority');general.Control.Drop
 general.Control.DecrementButton=button(general.Control);general.Control.IncrementButton=button(general.Control)
 local original=general.Checkbox.normal.alpha
 assert(select(3,initializer:InitFrame(general))==7)
-assert(general.Text.font[1]=='eui'and general.Checkbox.normal.alpha==0 and general.Checkbox.children[1].checkbox)
+assert(general.Text.font[1]=='native'and general.Checkbox.normal.alpha==0 and general.Checkbox.children[1].checkbox)
 local sharedHost=general.Checkbox.children[1]
 enabled=false;assert(initializer:Resetter(general)=='reset-native')
 assert(general.Text.font[1]=='native'and general.Checkbox.normal.alpha==original and not sharedHost.shown)
 general.Checkbox:SetChecked(true);assert(not sharedHost.shown,'disabled callback restyled released foreign row')
 enabled=true;initializer:InitFrame(general);assert(sharedHost.shown)
-local so,sh,st=objects,hookCount,textures
+local so,sh,st,sw=objects,hookCount,textures,writes
 for _=1,100 do initializer:Resetter(general);initializer:InitFrame(general)end
 assert(objects==so and hookCount==sh and textures==st,'shared settings reuse added frames, textures or hooks')
+assert(writes==sw and general.Text.font[1]=='native','shared Settings reuse modified fonts')
+print('PASS: shared Settings fonts remain native without FontObject capture/reassignment; 100 reset/acquire cycles add no font writes')
 local late={InitFrame=initializer.InitFrame,Resetter=initializer.Resetter};assert(layout:AddInitializer(late)=='add-native')
 -- Dialog ownership must not strip another skin's popup.
 StaticPopup_Show();assert(#popupCalls==0)

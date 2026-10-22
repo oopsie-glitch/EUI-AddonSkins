@@ -24,12 +24,13 @@ ns.RegisterModule('LiteMount','LiteMount',function() return _G.LiteMountBasePane
     local function Tone(text,owner,record,keep)
         if not H.Allowed(text) or text:GetObjectType() ~= 'FontString' then return end
         if record and not record.fonts[text] then
-            record.fonts[text] = {font={text:GetFont()},color={text:GetTextColor()},object=text.GetFontObject and text:GetFontObject()}
+            record.fonts[text] = {color={text:GetTextColor()}}
         end
         local r,g,b,a = text:GetTextColor()
         local path,flags = S.GetFont()
         local old,_,oldFlags = text:GetFont()
-        if old ~= path or (oldFlags or '') ~= (flags or '') then H.Font(text) end
+        -- Shared Settings controls keep native font inheritance throughout.
+        if not record and(old ~= path or (oldFlags or '') ~= (flags or ''))then H.Font(text) end
         if owner and owner.IsEnabled and not owner:IsEnabled() then r,g,b=.5,.5,.52
         elseif not keep and(owner and owner.GetFontString and owner:GetFontString()==text or r and r>.9 and g>.65 and b<.25)then r,g,b=.9,.9,.92 end
         local cr,cg,cb,ca=text:GetTextColor()
@@ -315,8 +316,6 @@ ns.RegisterModule('LiteMount','LiteMount',function() return _G.LiteMountBasePane
         record.active=false
         for r,a in pairs(record.alpha)do r:SetAlpha(a)end
         for text,v in pairs(record.fonts)do
-            if v.object and text.SetFontObject then text:SetFontObject(v.object)end
-            if v.font[1]then text:SetFont(unpack(v.font))end
             text:SetTextColor(unpack(v.color))
         end
         for f,value in pairs(record.backdrops)do

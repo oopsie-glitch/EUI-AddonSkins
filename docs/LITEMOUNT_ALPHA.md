@@ -2,6 +2,12 @@
 
 Branch: `skin/litemount-initial`, based on stable 1.5.2. Untagged; no CurseForge/Wago upload.
 
+## Shared font safety follow-up
+
+Shared Blizzard Settings controls now retain native font faces and inheritance throughout acquisition/release. Readability tints are still applied and their original colours restored, alongside the existing texture/backdrop cleanup. FontObject capture/reassignment and font-face restoration were removed from this pooled path; LiteMount-owned windows/list entries retain their themed fonts. This is preventive hardening following the CraftSim reports, not a confirmed LiteMount crash diagnosis.
+
+Regression FontObject accessors throw if the skin tries to capture or reassign an inherited font. A 100-cycle Settings reset/acquisition check preserves native fonts with no font writes, UI objects, textures or hooks. Existing native actions, colour/state, foreign reuse, themes, combat and warm-performance tests pass. The full test suite and one-folder 40-file ZIP validation pass. Live native-crash prevention is unverified without WoW.
+
 Open **Options > AddOns > LiteMount**. The adapter covers General controls, mount list/model views, Rules, Groups, Macros, Falling, Advanced Options, Profiles, Report Bug and LiteMount's picker/import/export/rule popovers. Content surfaces use matte neutral shades with lighter rows, readable labels, visible hover states and restrained accent-coloured check marks/tab indicators. Editors keep their native text, monospaced fonts, insets and selection behavior.
 
 Class/group markup, warnings, priority backgrounds, modified-flag indicators and collection/desaturation state remain meaningful. Mount cast/drag icons, secure actions, models/cameras, key bindings and configuration setters stay native. Shared Blizzard confirmation dialogs receive texture-only styling only for `LM_OPTIONS_` dialogs. Other addons' popups are left alone.

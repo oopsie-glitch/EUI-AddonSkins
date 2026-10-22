@@ -10,7 +10,8 @@ end, function(S, module)
     local fontGeneration = setmetatable({}, {__mode='k'})
     local widgetHooks, widgetPullouts = setmetatable({}, {__mode='k'}), setmetatable({}, {__mode='k'})
     local empty = {}
-    local Refresh, Profiles, PaintWidget
+    local menuInitializers, menuBindings = setmetatable({}, {__mode='k'}), setmetatable({}, {__mode='k'})
+    local Refresh, Profiles, PaintWidget, PrepareMenu, MenuReady
     local function Ready()
         return ns.IsEnabled(module) and not (InCombatLockdown and InCombatLockdown())
     end
@@ -107,6 +108,51 @@ end, function(S, module)
         state.mark:SetShown(frame.GetChecked and frame:GetChecked() or false)
         Text(frame.Text, frame)
     end
+    local function Marker(row,description)
+        if not Ready() or not row or not description then return end
+        local selection = description.IsRadio and description:IsRadio()
+            or description.IsCheckbox and description:IsCheckbox()
+        if not selection then return end
+        -- These are compositor-owned textures. Recolour them in the supported
+        -- initializer; never create unmanaged rows or index restricted SetFont.
+        if row.leftTexture1 then
+            row.leftTexture1:SetColorTexture(.16,.16,.16,1)
+            row.leftTexture1:SetSize(12,12)
+        end
+        if row.leftTexture2 and row.leftTexture1 then
+            row.leftTexture2:SetColorTexture(S.GetAccentColor())
+            row.leftTexture2:SetSize(7,7); row.leftTexture2:ClearAllPoints()
+            row.leftTexture2:SetPoint('CENTER',row.leftTexture1,'CENTER')
+        end
+    end
+    PrepareMenu = function(owner,description)
+        if not Ready() or not description or not MenuUtil or not MenuUtil.TraverseMenu then return end
+        MenuUtil.TraverseMenu(description,function(element)
+            if not element.AddInitializer or menuInitializers[element] then return end
+            menuInitializers[element] = true
+            element:AddInitializer(function(row,desc,list)
+                if not Ready() or not list or not list.GetOwnerRegion or list:GetOwnerRegion() ~= owner then return end
+                Marker(row,desc)
+            end)
+        end)
+    end
+    MenuReady = function(owner,list)
+        if not Ready() or not list or not owner or not owner.configKey
+            or not owner.GetParent or owner:GetParent() ~= canvas then return end
+        local description = owner.GetMenuDescription and owner:GetMenuDescription()
+        local bound = menuBindings[list]
+        if bound and bound.owner == owner and bound.description == description and bound.generation == generation then return end
+        menuBindings[list] = {owner=owner,description=description,generation=generation}
+        H.Script(list,'OnHide',function() menuBindings[list]=nil end)
+        if ns.BindPopupList then ns.BindPopupList(S,module,owner,list) end
+        -- RegisterMenu can reinitialize an already open menu before its new
+        -- initializers are appended. Repair those completed rows in this call.
+        if list.GetChildren then
+            for _,row in ipairs(H.Children(list)) do
+                if row.GetElementDescription then Marker(row,row:GetElementDescription()) end
+            end
+        end
+    end
     local function NativeControl(frame)
         local state = controls[frame]
         if state and state.generation == generation then return end
@@ -115,8 +161,35 @@ end, function(S, module)
         if kind == 'CheckButton' and (frame.configKey or frame.filterMask) then
             Check(frame)
         elseif frame.configKey and (kind == 'DropdownButton' or type(frame.SetupMenu) == 'function') then
-            if not state.bound then S.Dropdown(frame) end
-            Text(frame.Text, frame); Text(frame.Label)
+            if not state.bound then
+                state.art = {}
+                for _,region in ipairs(H.Regions(frame)) do
+                    if H.Texture(region) then state.art[#state.art+1] = region end
+                end
+                S.Dropdown(frame)
+                local function Repair()
+                    if not Ready() then return end
+                    for _,region in ipairs(state.art) do
+                        if region:GetAlpha() ~= 0 then region:SetAlpha(0) end
+                    end
+                    Text(frame.Text,frame); Text(frame.Label)
+                end
+                -- AWQ's IsSelected predicate captures a value at generation
+                -- time. The native response must rebuild it after a choice.
+                if frame.EnableRegenerateOnResponse then frame:EnableRegenerateOnResponse() end
+                H.Hook(frame,'UpdateToMenuSelections',Repair)
+                H.Hook(frame,'RegisterMenu',function(_,description)
+                    PrepareMenu(frame,description); Repair()
+                    if frame.menu then MenuReady(frame,frame.menu) end
+                end)
+                H.Hook(frame,'OnMenuOpened',function(_,list) MenuReady(frame,list) end)
+                H.Script(frame,'OnShow',Repair)
+                local description = frame.GetMenuDescription and frame:GetMenuDescription()
+                PrepareMenu(frame,description)
+                state.repair = Repair
+            end
+            state.repair()
+            if frame.menu then MenuReady(frame,frame.menu) end
             if not state.bound and ns.BindPopupOwner then ns.BindPopupOwner(S,module,frame) end
         else return end
         if not state.bound then
@@ -324,9 +397,17 @@ end, function(S, module)
             end
         end
     end
-    Refresh = function()
+    local function CanvasRegistered(frame,name)
+        if name == 'AngrierWorldQuests' then BindCanvas(frame) end
+    end
+    local function BindSettings()
+        H.Hook(Settings,'RegisterCanvasLayoutCategory',CanvasRegistered)
+        H.Hook(SettingsPanel,'DisplayLayout',FindCanvas)
+        H.Hook(SettingsPanel,'DisplayCategory',FindCanvas)
+    end
+    local function Discover()
         if not Ready() then return end
-        generation = generation + 1
+        BindSettings()
         FindTab(); FindCanvas(); Profiles(); QuestChecks()
         local config, quest = TargetModule('ConfigModule'), TargetModule('QuestFrameModule')
         H.Hook(config,'OnEnable',function() FindCanvas(); Profiles() end)
@@ -334,12 +415,12 @@ end, function(S, module)
         H.Hook(quest,'InitQuestLogFrames',function() FindTab(); QuestChecks() end)
         H.Hook(quest,'QuestLog_Update',QuestChecks)
     end
+    Refresh = function()
+        if not Ready() then return end
+        generation = generation + 1
+        Discover()
+    end
     module.refresh = Refresh
-    H.Hook(Settings,'RegisterCanvasLayoutCategory',function(frame,name)
-        if name == 'AngrierWorldQuests' then BindCanvas(frame) end
-    end)
-    H.Hook(SettingsPanel,'DisplayLayout',FindCanvas)
-    H.Hook(SettingsPanel,'DisplayCategory',FindCanvas)
     local manager = Menu and Menu.GetManager and Menu.GetManager()
     H.Hook(manager,'OpenMenu',function()
         if not Ready() then return end
@@ -347,13 +428,21 @@ end, function(S, module)
         local owner = list and list.GetOwnerRegion and list:GetOwnerRegion()
         -- Modern compositor menus are bound as texture-only lists by the
         -- shared helper. Do not SetFont on their restricted virtual rows.
-        if owner and owner.configKey and owner.GetParent and owner:GetParent() == canvas
-            and ns.BindPopupList then ns.BindPopupList(S,module,owner,list) end
+        MenuReady(owner,list)
     end)
     if S.OnLooksChanged then S.OnLooksChanged(Refresh) end
     local events = CreateFrame('Frame')
     events:RegisterEvent('ADDON_LOADED'); events:RegisterEvent('PLAYER_REGEN_ENABLED'); events:RegisterEvent('UI_SCALE_CHANGED')
-    events:SetScript('OnEvent',function() if ns.IsEnabled(module) then H.Queue(module,Refresh) end end)
+    events:SetScript('OnEvent',function(_,event)
+        if not ns.IsEnabled(module) then return end
+        if event == 'ADDON_LOADED' then
+            -- A late Settings addon can display its first category immediately
+            -- after LoadAddOn returns. Bind completion hooks in this event,
+            -- before that display; discovery can still be coalesced.
+            if Ready() then BindSettings() end
+            H.Queue(module,Discover)
+        else H.Queue(module,Refresh) end
+    end)
     Refresh()
 end)
 end

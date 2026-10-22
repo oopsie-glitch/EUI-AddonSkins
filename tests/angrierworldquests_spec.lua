@@ -171,7 +171,22 @@ check.GetCheckedTexture=function()return check.mark end;check.mark=check:CreateT
 check.GetChecked=function(self)return self.checked end
 check.SetChecked=function(self,v)self.checked=v end
 check.scripts.OnClick=function()clicks=clicks+1;return 'setting-native'end
-local dd=frame('Button',canvas);dd.SetupMenu=function()end;dd.configKey='sortMethod';dd.Text=label(dd,'Name');dd.Label=label(dd,'Sort order')
+local dd=frame('Button',canvas);dd.SetupMenu=function()end
+dd.EnableRegenerateOnResponse=function(self)self.shouldRegenerateOnResponse=true end
+dd.GetMenuDescription=function(self)return self.description end
+dd.UpdateToMenuSelections=function(self)
+ self.Text.font={'native',12,''};self.Text:SetText(self.description and self.description.value or 'Name')
+ if self.nativeArt then self.nativeArt:SetAlpha(1)end
+ return 'selection-native',nil,17
+end
+dd.RegisterMenu=function(self,description)
+ self.description=description
+ if self.menu then self.menu:SetMenuDescription(description)end
+ self:UpdateToMenuSelections();return 'register-native',nil,19
+end
+dd.OnMenuOpened=function()return 'opened-native'end
+dd.configKey='sortMethod';dd.Text=label(dd,'Name');dd.Label=label(dd,'Sort order')
+dd.nativeArt=dd:CreateTexture()
 AngrierWorldQuestsConfigDropDown1=dd
 local r,n,num=canvas:OnRefresh();assert(r=='refresh-native'and n==nil and num==8)
 assert(check.children[1].checkbox and check.children[1].w==22 and dd.dropdown and check.Text.color[1]>.8)
@@ -288,3 +303,93 @@ end
 assert(objects==so and hookCount==sh,'Profiles release/reuse grew objects or hooks')
 assert(questReads==0 and #errors==0,table.concat(errors,'; '))
 print('PASS: 1000 load events coalesce once; 100 Profiles release/reuse cycles add no UI objects or hooks')
+
+-- Blizzard's generated menus capture IsSelected data, then rebuild their
+-- compositor regions. Verify styling before display and synchronous selection.
+local callbacks,descriptionCount=0,0
+MenuUtil={TraverseMenu=function(root,fn)for _,desc in ipairs(root.elements)do fn(desc)end end}
+local function description(value,id)
+ local desc={initializers={},IsRadio=function()return true end,IsSelected=function()return value==id end}
+ function desc:AddInitializer(fn)self.initializers[#self.initializers+1]=fn end
+ return desc
+end
+dd.GenerateMenu=function(self)
+ descriptionCount=descriptionCount+1
+ local root={value=self.value or 'Tab',elements={description(self.value or 'Tab','Tab'),description(self.value or 'Tab','Window')}}
+ return self:RegisterMenu(root)
+end
+dd.Choose=function(self,value)
+ callbacks=callbacks+1;self.value=value
+ if self.shouldRegenerateOnResponse then self:GenerateMenu()else self:UpdateToMenuSelections()end
+ return 'choice-native',nil,23
+end
+local list=frame();list.owner=dd;list.GetOwnerRegion=function(self)return self.owner end
+local rows={frame('Button',list),frame('Button',list)}
+for _,row in ipairs(rows)do
+ row.leftTexture1=row:CreateTexture();row.leftTexture2=row:CreateTexture()
+ row.label=label(row,'Menu entry');row.label.SetFont=nil
+ setmetatable(row.label,{__index=function(_,key)if key=='SetFont'then error('restricted compositor SetFont access')end end})
+ row.GetElementDescription=function(self)return self.description end
+end
+local initializedBeforeOpen=false
+list.SetMenuDescription=function(self,root)
+ for i,row in ipairs(rows)do
+  local desc=root.elements[i];row.description=desc
+  row.leftTexture1:SetAtlas('native-ring');row.leftTexture1:SetColorTexture(1,1,1)
+  if desc:IsSelected()then row.leftTexture2=row.selected or row.leftTexture2 or row:CreateTexture();row.selected=row.leftTexture2;row.leftTexture2:SetAtlas('native-dot')
+  else row.selected=row.leftTexture2 or row.selected;row.leftTexture2=nil end
+  for _,fn in ipairs(desc.initializers)do fn(row,desc,self)end
+ end
+ initializedBeforeOpen=rows[1].leftTexture1.color[1]==.16
+end
+assert(dd.shouldRegenerateOnResponse,'native response regeneration was not enabled')
+assert(select(3,dd:GenerateMenu())==19)
+list:SetMenuDescription(dd:GetMenuDescription());assert(initializedBeforeOpen,'native radio flashed before initializers ran')
+dd.menu=list;local priorLists=lists
+assert(dd:OnMenuOpened(list)=='opened-native'and lists==priorLists+1)
+assert(rows[1].leftTexture2.color[1]==accent and rows[1].leftTexture2.w==7)
+assert(dd.Text.font[1]=='eui'and dd.nativeArt.alpha==0)
+local queued=#timers
+assert(select(3,dd:Choose('Window'))==23 and callbacks==1)
+assert(dd.Text.text=='Window'and dd.Text.font[1]=='eui'and dd.nativeArt.alpha==0,'selection left stale text/art')
+assert(not rows[1].leftTexture2 and rows[2].leftTexture2.color[1]==accent,'selected marker was not styled on native rebuild')
+assert(#timers==queued,'selection styling deferred to a later frame')
+local initializers=#dd.description.elements[1].initializers
+for _=1,100 do dd:OnMenuOpened(list)end
+assert(#dd.description.elements[1].initializers==initializers,'duplicate row initializers')
+-- Compositor reuse by another owner must retain native textures.
+list.owner=foreign.frame;list:SetMenuDescription(dd.description)
+assert(rows[1].leftTexture1.color[1]==1,'AWQ initializer leaked into a foreign menu')
+list.owner=dd;dd.menu=nil;list:Hide();list:Show();list:SetMenuDescription(dd.description);dd.menu=list
+local reopen=lists;dd:OnMenuOpened(list);assert(lists==reopen+1,'reopened menu did not restore its styling')
+assert(#errors==0,table.concat(errors,'; '))
+print('PASS: pre-display radio initializers, immediate selection/art repair, native response regeneration, restricted fonts, no queued updates, reuse and foreign-owner isolation')
+local menuObjects,menuHooks=objects,hookCount
+collectgarbage('collect');local menuHeap=collectgarbage('count')
+for i=1,1000 do dd:Choose(i%2==0 and 'Tab'or 'Window')end
+collectgarbage('collect')
+assert(objects==menuObjects and hookCount==menuHooks,'menu response burst created objects or duplicate hooks')
+assert(collectgarbage('count')-menuHeap<64,'old generated descriptions were retained')
+assert(callbacks==1001 and #timers==queued,'menu repair duplicated setting actions or queued repaint')
+enabled=false;dd:Choose('Window');assert(dd.Text.font[1]=='native'and dd.nativeArt.alpha==1)
+enabled=true;combat=true;dd:Choose('Tab');assert(dd.Text.font[1]=='native')
+combat=false;m.refresh();assert(dd.Text.font[1]=='eui'and dd.nativeArt.alpha==0)
+assert(#errors==0,table.concat(errors,'; '))
+print('PASS: 1000 native selection responses retain no old descriptions, duplicate no actions/hooks/objects, and respect disabled/combat guards')
+
+-- Late Settings construction installs completion hooks before first display,
+-- without waiting for the queued discovery or repainting every known font.
+local lateDropdown
+SettingsPanel={DisplayLayout=function()
+ lateDropdown=frame('Button',canvas);lateDropdown.configKey='timeFilterDuration'
+ lateDropdown.SetupMenu=function()end;lateDropdown.Text=label(lateDropdown,'6 Hours')
+ return 'late-layout-native',nil,29
+end,DisplayCategory=function()end,GetLayout=function()error('private layout')end}
+local beforeFonts=writes
+eventFrame.scripts.OnEvent(eventFrame,'ADDON_LOADED','Blizzard_Settings')
+assert(#timers==1)
+assert(select(3,SettingsPanel:DisplayLayout())==29)
+assert(lateDropdown.dropdown and lateDropdown.Text.font[1]=='eui','late Settings painted a native frame first')
+local preparedFonts=writes
+flush();assert(writes==preparedFonts,'queued discovery redundantly reapplied prepared fonts')
+print('PASS: late Settings category styled synchronously before display; load discovery does not reapply prepared fonts')

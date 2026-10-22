@@ -23,3 +23,13 @@ Profiles feeds were rebuilding callback closures and temporary region lists. The
 Final mock sample (1,000 callbacks each): settings refreshes 0.760 ms / 125.06 KiB temporary heap; quest rebuild completions 3.981 ms / 211.31 KiB; Profiles feeds 13.249 ms / 789.75 KiB. All three create zero UI objects, write zero fonts and add zero hooks after warm-up. Timings vary by host. Another test confirms 1,000 load events coalesce once, and 100 Profiles release/reuse cycles add no objects or hooks. No claim of in-game FPS, CPU usage or visual verification is made.
 
 `python3 scripts/package.py` passes the complete regression suite and installation archive checks. No shared runtime helpers or unrelated skins changed.
+
+## Alpha 4: dropdown refresh and selection markers
+
+AWQ's dropdown generators capture a configuration value in each radio selection predicate. The adapter now enables Blizzard's supported regenerate-on-response behavior for these four controls, so the chosen label and selected marker use current configuration immediately. It does not call configuration setters, regenerate menus from a skin callback or duplicate the native selection action.
+
+Completed native label/selection updates repair only the dropdown's original texture regions and labels. Radio textures receive the compact square/accent treatment through per-description initializers before display; open-menu reconstruction is repaired synchronously too. The adapter does not access compositor SetFont or replace menu responders. Bindings are reused and invalidated on hide; initializer ownership guards leave another addon's menu native.
+
+Late Settings construction now binds display hooks synchronously during ADDON_LOADED, before callers can open the first category. Queued load discovery no longer advances the theme generation and needlessly reapplies every prepared font. Theme, scale and combat recovery still refresh their relevant styling.
+
+New source-shaped tests reproduce native menu reconstruction, captured selection predicates, response regeneration, label/art resets, restricted font access and reuse by a foreign owner. A 1,000-selection stress test adds no skin UI objects, hooks, duplicate setting actions or queued repaints; generated descriptions are collectable. Another test verifies a late Settings category is styled before its display method returns, and queued discovery causes no additional font writes. Existing performance, pool-reuse, combat and disabled-skin checks still pass. Actual visual smoothness and native AWQ world-quest data processing delays remain unmeasured outside WoW.

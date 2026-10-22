@@ -4,6 +4,8 @@ EllesmereUI skins for World of Warcraft addons.
 
 ## Supported addons
 
+- Decor Vendor (main browser, gallery and options)
+
 - Forever Companion
 - Forever Dungeon Journal
 - RestedXP Guides (legacy and V2 windows)

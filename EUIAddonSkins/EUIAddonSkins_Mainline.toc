@@ -25,6 +25,7 @@ Skins\Auctionator.lua
 Skins\BtWQuests.lua
 Skins\BugSack.lua
 Skins\DBM.lua
+Skins\DecorVendor.lua
 Skins\Details.lua
 Skins\ForeverCompanion.lua
 Skins\ForeverDungeonJournal.lua

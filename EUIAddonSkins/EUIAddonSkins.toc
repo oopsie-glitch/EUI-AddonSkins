@@ -37,6 +37,7 @@ Skins\PallyPower.lua
 Skins\Questie.lua
 Skins\RXPGuides.lua
 Skins\Spy.lua
+Skins\TalentLoadoutManager.lua
 Skins\ThreatClassic2.lua
 Skins\TwitchEmotes.lua
 Skins\WhatsTraining.lua

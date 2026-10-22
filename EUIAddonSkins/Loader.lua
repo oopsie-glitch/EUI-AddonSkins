@@ -21,6 +21,7 @@ ns.skinCatalog = {
     {id = "Questie", label = "Questie", targets = {"Questie"}},
     {id = "RXPGuides", label = "RestedXP Guides", targets = {"RXPGuides"}},
     {id = "Spy", label = "Spy", targets = {"Spy"}},
+    {id = "TalentLoadoutManager", label = "Talent Loadout Manager", targets = {"TalentLoadoutManager"}},
     {id = "ThreatClassic2", label = "ThreatClassic2", targets = {"ThreatClassic2"}},
     {id = "TwitchEmotes", label = "TwitchEmotes", targets = {"TwitchEmotes"}},
     {id = "WhatsTraining", label = "What's Training?", targets = {"WhatsTraining"}},

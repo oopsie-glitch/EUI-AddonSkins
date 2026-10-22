@@ -37,7 +37,13 @@ end, function(S, module)
         return d
     end
     local function Font(text, action)
-        if not H.Allowed(text) or not text.GetFont then return end
+        if not H.Allowed(text)then return end
+        -- Shared menu/Settings/export widgets keep their native font objects.
+        -- Reassigning a captured FontObject during pooled menu reinitialization
+        -- can overflow the client's native font-inheritance traversal.
+        if shared[text]or action and shared[action]
+            or text.GetParent and shared[text:GetParent()]then return end
+        if not text.GetFont then return end
         local path, _, flags = text:GetFont()
         if not path then return end
         local r, g, b, a = text:GetTextColor()
@@ -443,17 +449,14 @@ end, function(S, module)
         if f.GetBackdrop then d.backdrop=f:GetBackdrop()end
         if f.GetBackdropColor then d.bg={f:GetBackdropColor()}end
         if f.GetBackdropBorderColor then d.edge={f:GetBackdropBorderColor()}end
-        local function Text(t)
-            if t.GetFont and t:GetFont()then return {font={t:GetFont()},color={t:GetTextColor()},object=t.GetFontObject and t:GetFontObject()}end
-        end
-        d.font=Text(f)
         for _,t in ipairs(H.Regions(f))do
             if not art[t] then
-                local v={alpha=t:GetAlpha(),font=Text(t)}
+                shared[t]=record
                 if H.Texture(t)then
+                    local v={alpha=t:GetAlpha()}
                     v.path=t:GetTexture();v.atlas=t.GetAtlas and t:GetAtlas();v.color=t.GetVertexColor and {t:GetVertexColor()}
+                    d.regions[t]=v
                 end
-                d.regions[t]=v
             end
         end
         for _,child in ipairs(H.Children(f))do Save(child,record)end
@@ -462,18 +465,12 @@ end, function(S, module)
         if not record or not record.active then return end
         record.active=false
         local unpack=unpack or table.unpack
-        local function Text(t,d)
-            if not d then return end
-            if d.object and t.SetFontObject then t:SetFontObject(d.object)end
-            t:SetFont(unpack(d.font));t:SetTextColor(unpack(d.color))
-        end
         for f,d in pairs(record.saved)do
             if f.SetBackdrop then f:SetBackdrop(d.backdrop)end
             if d.bg then f:SetBackdropColor(unpack(d.bg))end
             if d.edge then f:SetBackdropBorderColor(unpack(d.edge))end
-            Text(f,d.font)
             for t,v in pairs(d.regions)do
-                t:SetAlpha(v.alpha);Text(t,v.font)
+                t:SetAlpha(v.alpha)
                 if H.Texture(t)then
                     if v.atlas and t.SetAtlas then t:SetAtlas(v.atlas)else t:SetTexture(v.path)end
                     if v.color then t:SetVertexColor(unpack(v.color))end

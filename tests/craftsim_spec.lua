@@ -148,6 +148,15 @@ local function ModernDropdown(parent,label)
  f.NineSlice.edge:SetTexture('native-dropdown-outline')
  return f
 end
+local fontObjectReads,fontObjectAssignments=0,0
+local nativeFontObject={name='Native pooled FontObject'}
+local function GuardSharedFont(f)
+ function f:GetFontObject()fontObjectReads=fontObjectReads+1;return nativeFontObject end
+ function f:SetFontObject()
+  fontObjectAssignments=fontObjectAssignments+1
+  error('unsafe native FontObject reassignment on a pooled control')
+ end
+end
 local S = {GetFont=function() return fontFace,'' end, GetAccentColor=function() return accent,0.6,0.8 end,
     GetPanelColor=function() return 0.06,0.06,0.07,0.95 end, OnLooksChanged=function(fn) looks[#looks+1]=fn end}
 S.SquareIcon=function(t) t:SetTexCoord(0.08,0.92,0.08,0.92) end
@@ -339,6 +348,7 @@ local radio,radioDescription=menu:AddCheck(true)
 radioDescription.checkbox=false
 function radioDescription:IsRadio()return true end
 local customInput=Object('EditBox',unchecked);customInput:SetText('native queue expression')
+GuardSharedFont(customInput)
 local manager={GetOpenMenu=function(self)return self.list or menu end}
 function manager:OpenMenu(owner,list)self.list=list or menu;self.list.owner=owner;self.list:Show();return 'native-open'end
 function manager:OpenContextMenu(owner,list)return self:OpenMenu(owner,list)end
@@ -377,11 +387,12 @@ local sharedRow=Object('Frame',UIParent)
 local sharedScroll=G.ScrollFrame{parent=sharedRow,accessor='GetThumb'}
 sharedRow.Checkbox=Object('CheckButton',sharedRow);sharedRow.Checkbox.checkedArt=sharedRow.Checkbox:CreateTexture(nil,'ARTWORK');sharedRow.Checkbox.checkedArt:SetTexture('native-tick');sharedRow.Checkbox.checked=true
 sharedRow.Text=Text(sharedRow);sharedRow.Text:SetText('Show profit')
+GuardSharedFont(sharedRow.Text)
 sharedRow.Dropdown=Object('DropdownButton',sharedRow);sharedRow.Dropdown.Text=Text(sharedRow.Dropdown)
 sharedRow.Dropdown.scripts.OnMouseDown=function()menu.owner=sharedRow.Dropdown;menu:Show();return 'native-settings-dropdown'end
 function menu:GetOwnerRegion()return self.owner end
 assert(initializer:InitFrame(sharedRow)=='native-init')
-assert(sharedRow.Checkbox.checkedArt.alpha==0 and sharedRow.Text.path=='EUI')
+assert(sharedRow.Checkbox.checkedArt.alpha==0 and sharedRow.Text.path=='Native','shared Settings font must remain native')
 assert(sharedScroll.scrollBar.nativeThumb.native.alpha==0 and sharedScroll.scrollBar.Track.native.alpha==0)
 assert(sharedRow.Dropdown.scripts.OnMouseDown()=='native-settings-dropdown'and nativeMenu.alpha==0)
 menu:Hide();assert(nativeMenu.alpha==1)
@@ -471,7 +482,8 @@ assert(checked.leftTexture1.width==12 and checked.leftTexture2.width==7)
 assert(checked.leftTexture2.shown and not unchecked.leftTexture2.shown,'skin changed native checked visibility')
 assert(checked.leftTexture2.color[1]==accent and checked.leftTexture1.texture=='solid')
 assert(radio.leftTexture1.width==12 and radio.leftTexture2.width==7 and radio.leftTexture2.shown)
-assert(customInput.path==fontFace and customInput.text=='native queue expression','embedded menu input missed')
+assert(customInput.path=='Native'and customInput.text=='native queue expression','embedded menu input font/value changed')
+assert(#customInput.regions>=5,'embedded menu input lacks texture styling')
 checked:Reinitialize();assert(checked.leftTexture1.texture=='solid'and checked.leftTexture2.texture=='solid')
 local na,nh=allocated,hookCount
 for _=1,100 do manager:OpenMenu(dynamic.frame,menu);checked:Reinitialize()end
@@ -544,6 +556,7 @@ CS.UTIL={ShowTextCopyBox=function(_,text)
   KethoEditBoxEditBox=Object('EditBox',KethoEditBox)
   function KethoEditBoxEditBox:IsMultiLine()return true end
   KethoEditBoxEditBox.path='NativeExportFont'
+  GuardSharedFont(KethoEditBoxEditBox)
   KethoEditBox.scroll=Object('Slider',KethoEditBox);KethoEditBox.scroll.thumb=KethoEditBox.scroll:CreateTexture()
  end
  KethoEditBoxEditBox:SetText(text);KethoEditBoxEditBox:HighlightText();KethoEditBox:Show()
@@ -693,9 +706,13 @@ assert(allocated==ma and hookCount==mh and ButtonFontWrites()==buttonWrites,'mod
 assert(pre.frame.walks==pw and list.frame.walks==lw and newWindow.frame.walks==nw,'dropdown callback scanned addon windows')
 assert(dataCalls==priorData and dbReads==priorDB and crafts==priorCrafts,'skin performed data/crafting operations')
 local pooledFontWrites=fontWrites-mw
+assert(pooledFontWrites==0,'pooled menu input fonts were modified')
 enabled=false;local off=ModernDropdown(pre.content,'Disabled skin');module.refresh();assert(off.Background.alpha==1)
 enabled=true;combat=true;local locked=ModernDropdown(pre.content,'Combat');module.refresh();assert(locked.Background.alpha==1)
 combat=false;module.refresh();assert(off.Background.alpha==0 and locked.Background.alpha==0)
 assert(#errors==0,table.concat(errors,'; '))
-print('BENCH CraftSim 1000 modern dropdown state/hover/menu cycles: owned_window_scans=0 button_font_writes=0 new_UI_objects=0 new_hooks=0; pooled_menu_font_writes='..pooledFontWrites..' (mock; native font restored between menu acquisitions)')
+print('BENCH CraftSim 1000 modern dropdown state/hover/menu cycles: owned_window_scans=0 button_font_writes=0 new_UI_objects=0 new_hooks=0; pooled_menu_font_writes='..pooledFontWrites..' (mock; shared fonts remain native)')
 print('PASS: SetupMenu Button variants, four dropdowns, native actions/geometry/disabled state, synchronous UIParent context ownership, foreign isolation and combat deferral')
+assert(fontObjectReads==0 and fontObjectAssignments==0,'pooled font-object inheritance was touched')
+assert(customInput.path=='Native'and sharedRow.Text.path=='Native')
+print('PASS: pooled menu/Settings inputs perform zero GetFontObject/SetFontObject operations across menu reinitialization, reuse, theme changes and release')

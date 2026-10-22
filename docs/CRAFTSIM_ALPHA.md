@@ -2,6 +2,16 @@
 
 Branch: `skin/craftsim-initial`, based on stable 1.5.2. Untagged; no CurseForge/Wago upload.
 
+## Alpha.6 native crash mitigation
+
+Two supplied Retail 12.1.5.70448 crash reports with CraftSim 27.0.7 contain the same native `STACK_OVERFLOW` at `EditBox:SetFontObject`, directly called by this adapter's shared-control restoration. One occurred during Blizzard menu reinitialization after a selection; the other while opening the main CraftSim menu. The reports identify the adapter's triggering call, but do not expose the client's internal FontObject inheritance graph. Raw crash reports and personal/system data are not committed.
+
+Removed font-object snapshot/reassignment from shared control acquisition/release. Shared menu inputs, Settings controls/labels and export widgets now retain native fonts throughout; only their textures/backdrops are decorated and restored. Shared-region/parent ownership also prevents generic font passes from changing these fonts. Owned CraftSim windows/buttons keep their existing font styling. The four dropdown-button fixes and the content-layer safeguards remain intact.
+
+A before/after mock reproduces the unsafe native SetFontObject call with alpha.5 during menu acquisition/reinitialization/release; the fixed adapter makes no font-object reads or assignments in that sequence. Regression guards now cover pooled menu inputs, Settings labels and the export EditBox. Repeated theme/menu lifecycle tests and 1,000 dropdown cycles require zero pooled-input font writes as well as zero new UI objects/hooks or owned-window scans. Earlier fixtures had no native font-object accessor and therefore failed to exercise the unsafe restore operation; the tests now explicitly model it. The alpha.5 font-restoration behavior described below is superseded by this fix.
+
+Validation: all 23 suites, Lua syntax and the one-folder 40-file package checks pass. Native client stack overflow itself is not reproduced in the test runtime, and live crash prevention is not claimed as verified. No DMP is needed to identify/remove the call shown by both supplied text reports. Earlier CraftSim alphas retain this unsafe font-restoration path; use alpha.6 onward.
+
 ## Alpha.5 dropdown controls and performance
 
 Expansion Filter, Simulate Buffs, Sort By and the profession-header CraftSim menu share the modern dropdown API. Detection now accepts the `SetupMenu` contract even when the client reports the frame as a Button. Local cosmetics strip the template's native background, arrow and NineSlice art, then apply a reusable flat fill, thin outline, down arrow and hover highlight. Label/arrow dimming follows native enabled state. Native size, anchors, click target, SetupMenu callback and return values remain intact. CraftSim can legitimately disable Simulate Buffs until simulation is enabled.

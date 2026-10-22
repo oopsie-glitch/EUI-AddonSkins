@@ -15,6 +15,7 @@ EllesmereUI skins for World of Warcraft addons.
 - Myslot
 - BtWQuests (Retail journal, category/chain views, search and menus)
 - BugSack
+- Angrier World Quests (Retail; side tab and options only)
 - Altoholic
 - Attune
 - TwitchEmotes (popup menu)

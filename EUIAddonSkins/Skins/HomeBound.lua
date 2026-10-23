@@ -355,14 +355,10 @@ ns.RegisterModule('HomeBound','Home Bound',function() return _G.HB_MainFrame ~= 
         if not Ready() then return end
         generation=generation+1;Discover()
     end
-    -- BuildUI is HomeBound's only exported completed list builder. Its hook
-    -- does not calculate collection state, query item APIs or change results.
-    H.Hook(_G,'BuildUI',function()
-        if not Ready() then return end
-        local main=_G.HB_MainFrame
-        if H.Allowed(main) then Walk(main,false) end
-        Flush()
-    end)
+    -- Leave BuildUI untouched: HomeBound passes it directly to C_Timer.After,
+    -- which rejects securely hooked callbacks. Owned scroll-child SetHeight
+    -- hooks above already observe completed list/gallery construction, including
+    -- timer-driven rebuilds; window and control callbacks cover first show.
     local manager=Menu and Menu.GetManager and Menu.GetManager()
     H.Hook(manager,'OpenMenu',function()MenuReady()end)
     H.Hook(Settings,'RegisterCanvasLayoutCategory',function(frame,name)

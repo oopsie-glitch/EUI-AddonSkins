@@ -1,6 +1,7 @@
 -- Home Bound owned UI, native actions/artwork and refresh performance.
 local enabled, combat, allocated, hookCount = true, false, 0, 0
 local errors, timers, looks, events, handlers = {}, {}, {}, {}, {}
+local secureCallbacks = {}
 local module, factory, fontFace, accent = nil, nil, 'EUI', 0.25
 local fontWrites, checkboxPaints, colourWrites = 0, 0, 0
 local childReads, regionReads, parentReads = 0, 0, 0
@@ -10,13 +11,17 @@ ns.RegisterSkinDefinition = function(id, fn) assert(id == 'HomeBound'); factory 
 ns.RegisterModule = function(id, _, available, install) module = {id=id, available=available, install=install} end
 geterrorhandler = function() return function(e) errors[#errors+1] = e end end
 InCombatLockdown = function() return combat end
-C_Timer = {After = function(_, fn) timers[#timers+1] = fn end}
+C_Timer = {After = function(_, fn)
+    assert(type(fn)=='function' and not secureCallbacks[fn], 'C_Timer.After rejects securely hooked callbacks')
+    timers[#timers+1] = fn
+end}
 hooksecurefunc = function(owner, key, callback)
     hookCount = hookCount + 1
     local original = owner[key]
     owner[key] = function(...)
         local values = table.pack(original(...)); callback(...); return table.unpack(values,1,values.n)
     end
+    secureCallbacks[owner[key]] = true
 end
 local function Flush()
     local rounds = 0
@@ -196,6 +201,7 @@ scroll.ScrollBar.Back=Object('Button',scroll.ScrollBar);scroll.ScrollBar.Forward
 local list=Object('Frame',scroll);scroll.scrollChild=list
 local dataCalls=0
 BuildUI=function() dataCalls=dataCalls+1;list:SetHeight(100);return 'native-build' end
+local nativeBuildUI=BuildUI
 local function Tab(name,selected)
  local f=CreateFrame('Button','HB_Tab_'..name,HB_MainFrame);f.id=name:lower()
  f.backdrop={bgFile='native-tab',edgeFile='native-edge'}
@@ -228,6 +234,18 @@ scale.Slider.thumb=scale.Slider:CreateTexture(nil,'ARTWORK');scale.Slider.thumb:
 scale.Slider.scripts.OnValueChanged=function(_,v)scale.value=v;return 'native-scale'end
 scale.Back=Object('Button',scale);scale.Forward=Object('Button',scale)
 assert(module.available());module.install(S,module);Flush()
+-- HomeBound 1.60 main.lua:2721 schedules this callback directly after either
+-- ACHIEVEMENT_EARNED or QUEST_TURNED_IN. The completed list hook must also style
+-- rows added by that delayed native builder.
+local previousData=dataCalls
+for _,event in ipairs({'ACHIEVEMENT_EARNED','QUEST_TURNED_IN'}) do
+    local replacement=Object('Button',list);replacement.isLine=true
+    replacement.text=Text(replacement);replacement.text:SetText(event)
+    C_Timer.After(.5,BuildUI);Flush()
+    assert(replacement.text.path=='EUI', 'timer-driven new row stayed native')
+end
+assert(dataCalls==previousData+2, 'native timer must run the builder exactly once per event')
+assert(BuildUI==nativeBuildUI, 'skin must not replace or securely hook a native timer callback')
 local checkHost
 for _,child in ipairs(check.children)do if child.mark then checkHost=child end end
 local grip

@@ -11,6 +11,7 @@ end, function(S, module)
     local styled, menus, panels, scrolls = {}, {}, {}, {}
     local painting, waiting = false, false
     local surfaces = {}
+    local readable, tooltipBindings = nil, {}
     local Paint, Walk, Menu, BindMenu
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -32,6 +33,76 @@ end, function(S, module)
         if S.Inset then S.Inset(f) end
         if f.SetBackdrop then f:SetBackdrop(nil) end
         if f.NineSlice then S.FadeNineSlice(f.NineSlice) end
+    end
+    local function Gradient(texture, direction, r, g, b, first, last)
+        texture:SetColorTexture(1, 1, 1, 1)
+        if texture.SetGradient and CreateColor then
+            texture:SetGradient(direction, CreateColor(r, g, b, first), CreateColor(r, g, b, last))
+        elseif texture.SetGradientAlpha then
+            texture:SetGradientAlpha(direction, r, g, b, first, r, g, b, last)
+        else texture:SetColorTexture(r, g, b, math.max(first, last) * 0.5) end
+    end
+    local function ReadableBackground()
+        if not readable then
+            readable = {}
+            -- Same-frame background art cannot cover the graph, labels or
+            -- native click regions. Leave the shell's title strip visible.
+            for _, key in ipairs({"base", "left", "right", "top", "bottom"}) do
+                readable[key] = root:CreateTexture(nil, "BACKGROUND", nil, key == "base" and -4 or -3)
+            end
+            readable.base:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -25)
+            readable.base:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT")
+            readable.left:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -25)
+            readable.left:SetPoint("BOTTOMRIGHT", root, "BOTTOM")
+            readable.right:SetPoint("TOPLEFT", root, "TOP", 0, -25)
+            readable.right:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT")
+            readable.top:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -25)
+            readable.top:SetPoint("BOTTOMRIGHT", root, "RIGHT")
+            readable.bottom:SetPoint("TOPLEFT", root, "LEFT")
+            readable.bottom:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT")
+        end
+        local r, g, b = S.GetPanelColor()
+        if readable.r == r and readable.g == g and readable.b == b then return end
+        readable.r, readable.g, readable.b = r, g, b
+        readable.base:SetColorTexture(r, g, b, 1)
+        local lr, lg, lb = math.min(1, r + 0.10), math.min(1, g + 0.09), math.min(1, b + 0.07)
+        Gradient(readable.left, "HORIZONTAL", lr, lg, lb, 0, 0.5)
+        Gradient(readable.right, "HORIZONTAL", lr, lg, lb, 0.5, 0)
+        Gradient(readable.top, "VERTICAL", 0, 0, 0, 0, 0.12)
+        Gradient(readable.bottom, "VERTICAL", 0, 0, 0, 0.12, 0)
+    end
+    local function Tooltip(f)
+        if not H.Allowed(f) then return end
+        local state = tooltipBindings[f]
+        if not state then
+            state = {}; tooltipBindings[f] = state
+            -- Bind only BtWQuests' private tooltip instances. These completed
+            -- builders call Show themselves, so first display is styled in the
+            -- same UI turn, including native backdrop resets after OnShow.
+            for _, method in ipairs({"SetChain", "SetQuest", "SetActiveQuest", "SetHyperlink"}) do
+                H.Hook(f, method, function() Run(Tooltip, f) end)
+            end
+            H.Script(f, "OnShow", function() Run(Tooltip, f) end)
+            state.fill = f:CreateTexture(nil, "BACKGROUND", nil, -4)
+            state.fill:SetAllPoints(f)
+        end
+        if f.SetBackdrop then f:SetBackdrop(nil) end
+        if f.NineSlice then S.FadeNineSlice(f.NineSlice) end
+        for _, region in ipairs(H.Regions(f)) do
+            if region ~= state.fill and H.Texture(region) then
+                local layer = region.GetDrawLayer and region:GetDrawLayer()
+                if layer == "BACKGROUND" or layer == "BORDER" then H.Fade(region) end
+            end
+        end
+        local r, g, b, a = S.GetPanelColor()
+        state.fill:SetColorTexture(r, g, b, a or 0.95)
+        -- Native tooltip fonts, semantic colours, content and placement remain
+        -- untouched; this frame never enters the generic recursive walker.
+    end
+    local function Tooltips()
+        Tooltip(root.Tooltip)
+        Tooltip(root.Chain and root.Chain.Tooltip)
+        Tooltip(_G.BtWQuestsTooltip)
     end
     local function Scroll(f)
         if not H.Allowed(f) then return end
@@ -128,6 +199,16 @@ end, function(S, module)
         if f.Cover and f.Name then
             FlatButton(f, NODE_KEEP, 1, 0.80)
             H.Fade(f.Icon); H.Fade(f.Cover)
+            for _, key in ipairs({"ActiveTexture", "IsNext"}) do
+                local glow = H.Texture(f[key])
+                if glow then
+                    -- Desaturating the native gold artwork lets the selected
+                    -- accent tint it accurately. Do not change texture, alpha,
+                    -- anchors, visibility or native pulse animation groups.
+                    glow:SetDesaturated(true)
+                    glow:SetVertexColor(S.GetAccentColor())
+                end
+            end
             Fonts(f) -- Preserve status colours, spoiler visibility and fade animations.
         elseif f.Name and f.Tick then
             FlatButton(f, CARD_KEEP, 3, 0.72)
@@ -331,7 +412,7 @@ end, function(S, module)
         for _, method in ipairs({"DisplayExpansionList", "DisplayItemList", "DisplayCurrentChain"}) do
             H.Hook(root, method, function() Run(Paint) end)
         end
-        H.Hook(root, "UpdateCurrentChain", function() Run(Graph) end)
+        H.Hook(root, "UpdateCurrentChain", function() Run(Graph); Run(Tooltips) end)
         local chain = root.Chain and root.Chain.Scroll
         if chain then
             H.Hook(chain, "SetChain", function() Run(Graph) end)
@@ -350,6 +431,8 @@ end, function(S, module)
     Paint = function()
         waiting = false
         Setup()
+        ReadableBackground()
+        Tooltips()
         Walk(root, 0)
         for _, key in ipairs({"SearchPreview", "SearchResults"}) do Surface(root[key]) end
         BindMenu(_G.BtWQuestsOptionsMenu)

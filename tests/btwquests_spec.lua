@@ -44,6 +44,7 @@ local function texture(kind)
     function t:SetFont(path, size, flags) self.fontPath, self.fontSize, self.fontFlags = path, size, flags end
     function t:SetColorTexture(...) self.color = {...} end
     function t:SetVertexColor(...) self.color = {...} end
+    function t:SetGradientAlpha(...) self.gradient = {...} end
     function t:SetWidth(v) self.width = v end
     function t:GetWidth() return self.width or 18 end
     function t:GetHeight() return 18 end
@@ -146,6 +147,28 @@ local bar = root.Category.Scroll.ScrollBar
 bar.thumb = region(bar, 'thumb'); bar.thumb.height = 80; region(bar, 'trackBG')
 root.Chain = frame('Frame', root); root.Chain.Scroll = frame('ScrollFrame', root.Chain)
 root.Chain.Scroll.Child = frame('Frame', root.Chain.Scroll)
+local function privateTooltip(parent)
+    local tip=frame('GameTooltip',parent)
+    tip.shown=false;tip.NineSlice=frame('Frame',tip)
+    local bg=tip:CreateTexture(nil,'BACKGROUND');bg.path='native-tooltip-bg'
+    local text=region(tip,'Text','FontString');text.color={.1,1,.2}
+    text.SetFont=function() error('private tooltip font was replaced') end
+    function tip:SetChain(id)
+        self.chainID=id;self.lines={'Against the Current','Prerequisites'}
+        self.backdrop={bgFile='native-blue'};self.NineSlice.faded=false;bg:SetAlpha(1)
+        self.shown=true;if self.hooks.OnShow then self.hooks.OnShow(self) end
+        -- Native/compositor construction may reset art after first Show.
+        self.backdrop={bgFile='native-blue'};self.NineSlice.faded=false;bg:SetAlpha(1)
+        return 'native-tooltip',nil,id
+    end
+    tip.SetQuest=tip.SetChain;tip.SetActiveQuest=tip.SetChain;tip.SetHyperlink=tip.SetChain
+    tip.nativeBackground=bg
+    return tip
+end
+root.Chain.Tooltip=privateTooltip(root.Chain)
+root.Tooltip=privateTooltip(root)
+BtWQuestsTooltip=privateTooltip(nil)
+local foreignTooltip=privateTooltip(nil)
 local canvas = root.Chain.Scroll.Child
 local line = frame('Frame', canvas); local connector = region(line, 'line')
 for _, key in ipairs({'Background', 'Active', 'Complete'}) do region(line, key, 'Line') end
@@ -156,7 +179,12 @@ local function node()
     for _, key in ipairs({'Icon', 'Cover', 'Tick', 'TagTexture', 'HeroicTexture', 'MythicTexture', 'ActiveTexture', 'IsNext'}) do region(f, key) end
     region(f, 'Name', 'FontString'); f.Name:SetAlpha(0.5)
     f.geometry = 'native-chain-position'; f.action = function() return 'quest-native' end
-    f.Set = function(self) self.Icon:SetAlpha(1); return 'set-result', nil, 3 end
+    f.ActiveAnim={playing=true};f.IsNextAnim={playing=true}
+    f.ActiveTexture:SetAlpha(.37);f.IsNext:SetAlpha(.61)
+    f.Set = function(self)
+        self.Icon:SetAlpha(1);self.ActiveTexture:SetVertexColor(1,.8,0)
+        return 'set-result', nil, 3
+    end
     f.Update = function(self) self.Name:SetAlpha(0.5); return 'update-result' end
     return f
 end
@@ -180,7 +208,7 @@ end
 local card = category()
 root.DisplayItemList = function() category(); return 'display-result' end
 root.DisplayExpansionList = function() return 'expansion-result' end
-root.DisplayCurrentChain = function() return 'current-chain' end
+root.DisplayCurrentChain = function() root.Chain.Tooltip:SetChain(123);return 'current-chain' end
 root.SearchPreview = frame('Frame', root); region(root.SearchPreview, 'bottomBorder')
 root.SearchResults = frame('Frame', root); root.SearchResults.CloseButton = frame('Button', root.SearchResults)
 local function result()
@@ -217,6 +245,23 @@ BtWQuestsOptionsMenu = dropdown(); BtWQuestsOptionsMenu.displayMode = 'MENU'
 local denied = frame('Button', root); denied.protected = true; region(denied, 'Name', 'FontString')
 modules.BtWQuests.install(S, modules.BtWQuests); flush()
 assert(root.shell.noBorder and root.Inset.inset and root.Inset.Bg.alpha == 0)
+local gradients={}
+for _,t in ipairs(root.regions) do if t.gradient then gradients[#gradients+1]=t end end
+assert(#gradients==4,'journal did not get a centre lift and darker ends')
+assert(gradients[1].gradient[1]=='HORIZONTAL' and gradients[1].gradient[5]==0 and gradients[1].gradient[9]==.5)
+assert(gradients[2].gradient[5]==.5 and gradients[2].gradient[9]==0)
+assert(not root.Chain.Tooltip.shown and not BtWQuestsTooltip.shown,'skinning opened a tooltip')
+assert(root:DisplayCurrentChain()=='current-chain')
+local tip=root.Chain.Tooltip
+assert(tip.shown and tip.backdrop==nil and tip.NineSlice.faded and tip.nativeBackground.alpha==0,
+    'popout was not styled on its first completed display')
+assert(tip.lines[1]=='Against the Current' and tip.Text.color[2]==1 and not tip.Text.font,'tooltip content or semantic text changed')
+local tr,tn,tid=tip:SetChain(456)
+assert(tr=='native-tooltip' and tn==nil and tid==456 and tip.backdrop==nil and tip.nativeBackground.alpha==0,
+    'visible tooltip reset lost styling or native returns')
+local foreignResult=foreignTooltip:SetChain(1)
+assert(foreignResult=='native-tooltip' and foreignTooltip.backdrop.bgFile=='native-blue' and not foreignTooltip.NineSlice.faded,
+    'unrelated tooltip was styled')
 assert(root.NavBack.glyph == '<' and root.NavHere.euiJournalIcon.atlas == 'Waypoint-MapPin-ChatIcon' and root.NavBack.width == 22)
 assert(root.OptionsButton.nativeIcon.alpha == 0 and root.OptionsButton.euiJournalIcon.path:find('EllesmereUI', 1, true))
 root.NavHere.enabled = false; root.NavHere.hooks.OnDisable()
@@ -234,7 +279,9 @@ assert(expansionButton.Active.alpha == 1 and expansionButton.Active.color[4] == 
 assert(expansionButton.apiFill.points[1][4] == 2 and expansionButton.apiFill.color[4] == 0.72)
 assert(root.ExpansionList.Left.height == 22, 'full-height page button became an opaque bar')
 assert(bar.thumb.width == 4 and bar.thumb.height == 80 and bar.trackBG.alpha == 0)
-assert(first.Icon.alpha == 0 and first.Cover.alpha == 0 and first.Tick.alpha == 1 and first.ActiveTexture.alpha == 1)
+assert(first.Icon.alpha == 0 and first.Cover.alpha == 0 and first.Tick.alpha == 1 and first.ActiveTexture.alpha == .37)
+assert(first.ActiveTexture.color[1]==accent and first.ActiveTexture.desaturated and first.IsNext.color[1]==accent)
+assert(first.ActiveTexture.alpha==.37 and first.IsNext.alpha==.61 and first.ActiveAnim.playing and first.IsNextAnim.playing,'quest pulse state changed')
 assert(first.Name.alpha == 0.5 and first.geometry == 'native-chain-position' and connector.alpha == 1)
 assert(line.Background.thickness == 2 and line.Active.thickness == 2 and line.Complete.thickness == 2)
 assert(line.Active.alpha == 0 and line.Complete.color[2] == 1, 'connector state/colour changed')
@@ -249,6 +296,7 @@ assert(card:Set() == 'category-set' and card.Name.fontSize == 14 and card.Acive.
     and card.Acive.color[4] == 0.10, 'pooled card lost styling or native active visibility')
 assert(not denied.button and not denied.Name.font, 'protected control was changed')
 local a, b, c = first:Set(); assert(a == 'set-result' and b == nil and c == 3 and first.Icon.alpha == 0)
+assert(first.ActiveTexture.color[1]==accent, 'native node reuse reset the pulse tint')
 assert(first:Update() == 'update-result' and first.Name.alpha == 0.5 and first.action() == 'quest-native')
 assert(root:DisplayItemList() == 'display-result' and root.Category.Scroll.Child.children[2].button)
 assert(root.Chain.Scroll:SetChain() == 'chain-result' and canvas.children[#canvas.children].button)
@@ -264,16 +312,21 @@ for _ = 1, 20 do modules.BtWQuests.refresh(); flush() end
 assert(created == before and hookCount == hooksBefore, 'warm refresh allocated objects/hooks')
 accent = 0.7; panel = 0.12; for _, fn in ipairs(looks) do fn() end; flush()
 assert(row.Check.color[1] == accent, 'popup check did not track the accent')
+assert(first.ActiveTexture.color[1]==accent and first.IsNext.color[1]==accent and first.ActiveTexture.alpha==.37,'quest pulse did not follow live accent')
+assert(math.abs(gradients[1].gradient[2]-(panel+.10))<.00001,'journal background did not follow live theme')
 assert(card.Acive.color[1] == accent and math.abs(card.apiFill.color[1] - (panel + 0.085)) < 0.00001,
     'custom surfaces did not track theme/accent')
 panel = 0.95; for _, fn in ipairs(looks) do fn() end; flush()
 assert(card.apiFill.color[1] == 1, 'light panel colours exceeded the colour range')
+combat = true; tip:SetChain(789);assert(tip.backdrop.bgFile=='native-blue' and not tip.NineSlice.faded,'combat popout was modified')
 combat = true; root:DisplayItemList()
 local pending = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
 assert(not pending.button, 'new combat control was modified')
 combat = false; for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent() end end; flush()
 assert(pending.button, 'combat-deferred skin was lost')
+assert(tip.backdrop==nil and tip.NineSlice.faded,'combat-deferred popout skin was lost')
 enabled = false; root:DisplayItemList(); local off = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
+tip:SetChain(999);assert(tip.backdrop.bgFile=='native-blue' and not tip.NineSlice.faded,'disabled popout was skinned')
 modules.BtWQuests.refresh(); flush(); assert(not off.button, 'disabled skin processed new content')
 assert(#errors == 0, table.concat(errors, '\n'))
 -- Retail activation through the actual Core + Loader, not a direct installer.
@@ -300,7 +353,7 @@ for _, scenario in ipairs({'early', 'late', 'undispatched'}) do
         LoadAddOn = function() error('skin forced target to load') end,
     }
     EllesmereUI = {RegisterSkin = function(name, fn) assert(not callbacks[name]); callbacks[name] = fn end}
-    BtWQuestsOptionsMenu = nil
+    BtWQuestsOptionsMenu = nil;BtWQuestsTooltip=nil
     BtWQuestsFrame = targetLoaded and frame() or nil
     assert(loadfile('EUIAddonSkins/Core.lua'))('EUIAddonSkins', live)
     assert(loadfile('EUIAddonSkins/Loader.lua'))('EUIAddonSkins', live)

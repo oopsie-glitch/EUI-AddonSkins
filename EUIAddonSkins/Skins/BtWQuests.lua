@@ -12,6 +12,7 @@ end, function(S, module)
     local painting, waiting = false, false
     local surfaces = {}
     local readable, tooltipBindings = nil, {}
+    local checks, menuChecks = {}, {}
     local Paint, Walk, Menu, BindMenu
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -258,6 +259,70 @@ end, function(S, module)
             end
         end
     end
+    local function Check(f)
+        if not H.Allowed(f) then return end
+        if not checks[f] then
+            local before, art = {}, {}
+            for _, part in ipairs(H.Regions(f)) do before[part] = true end
+            for _, part in ipairs(H.Children(f)) do before[part] = true end
+            soft.Checkbox(f, {borderInset = 4, hover = 0.06})
+            for _, part in ipairs(H.Regions(f)) do if not before[part] then art[#art + 1] = part end end
+            for _, part in ipairs(H.Children(f)) do if not before[part] then art[#art + 1] = part end end
+            checks[f] = art
+            -- Auto Load has a 15px frame with a wider native label hit area.
+            -- Fit the artwork to that slot without resizing the input frame.
+            for _, part in ipairs(art) do
+                part:ClearAllPoints(); part:SetPoint("CENTER", f, "CENTER"); part:SetSize(14, 14)
+            end
+            for _, method in ipairs({"SetCheckedTexture", "SetDisabledCheckedTexture", "SetChecked", "Enable", "Disable", "SetEnabled"}) do
+                H.Hook(f, method, function() Run(Check, f) end)
+            end
+            H.Script(f, "OnShow", function() Run(Check, f) end)
+        end
+        for i, getter in ipairs({"GetCheckedTexture", "GetDisabledCheckedTexture"}) do
+            local mark = f[getter] and H.Texture(f[getter](f))
+            if mark then
+                mark:SetVertexColor(1, 1, 1, 1)
+                if i == 1 then local r, g, b = S.GetAccentColor(); mark:SetColorTexture(r, g, b, 1)
+                else mark:SetColorTexture(0.4, 0.4, 0.4, 0.8) end
+                mark:ClearAllPoints(); mark:SetPoint("CENTER", f, "CENTER"); mark:SetSize(10, 10)
+            end
+        end
+    end
+    local function MenuCheck(row)
+        if not H.Allowed(row) then return end
+        local check, uncheck = H.Texture(row.Check), H.Texture(row.UnCheck)
+        if not check or not uncheck then return end
+        local art = menuChecks[row]
+        if not art then
+            art = {}; menuChecks[row] = art
+            art.border = row:CreateTexture(nil, "BORDER", nil, 0)
+            art.fill = row:CreateTexture(nil, "BORDER", nil, 1)
+            art.border:SetPoint("CENTER", row, "LEFT", 8, 0); art.border:SetSize(14, 14)
+            art.fill:SetPoint("CENTER", row, "LEFT", 8, 0); art.fill:SetSize(12, 12)
+            art.border:SetColorTexture(0.25, 0.25, 0.25, 1)
+            art.fill:SetColorTexture(0.02, 0.02, 0.02, 1)
+            -- AddButton resets pooled art before Show, including while the
+            -- menu is already open. Repaint only this completed native row.
+            H.Script(row, "OnShow", function() Run(MenuCheck, row) end)
+            for _, method in ipairs({"Enable", "Disable", "SetEnabled"}) do
+                H.Hook(row, method, function() Run(MenuCheck, row) end)
+            end
+        end
+        art.border:SetShown(not row.notCheckable)
+        art.fill:SetShown(not row.notCheckable)
+        if row.notCheckable then return end
+        local r, g, b = S.GetAccentColor()
+        if row.IsEnabled and not row:IsEnabled() then r, g, b = 0.4, 0.4, 0.4 end
+        for _, mark in ipairs({check, uncheck}) do
+            mark:SetVertexColor(1, 1, 1, 1)
+            mark:ClearAllPoints(); mark:SetPoint("CENTER", row, "LEFT", 8, 0); mark:SetSize(10, 10)
+        end
+        check:SetColorTexture(r, g, b, 1)
+        uncheck:SetColorTexture(0.02, 0.02, 0.02, 1)
+        -- Keep native checked/unchecked visibility, disabled alpha, labels,
+        -- callbacks and the full row hit target. No replacement CheckButton.
+    end
     Menu = function(list)
         if not H.Allowed(list) then return end
         if not panels[list] then
@@ -271,11 +336,7 @@ end, function(S, module)
                 -- swatch controls. Native hover scripts still own Highlight.
                 H.Font(row.NormalText)
                 if H.Texture(row.Highlight) then row.Highlight:SetColorTexture(1, 1, 1, 0.08) end
-                if H.Texture(row.Check) then
-                    local r, g, b = S.GetAccentColor()
-                    row.Check:SetVertexColor(r, g, b)
-                end
-                if H.Texture(row.UnCheck) then row.UnCheck:SetVertexColor(0.4, 0.4, 0.4) end
+                MenuCheck(row)
             end
         end
     end
@@ -313,7 +374,7 @@ end, function(S, module)
             else Row(f) end
         elseif type(f.GetListFrame) == "function" then BindMenu(f)
         elseif kind == "EditBox" then S.EditBox(f); if S.Font then S.Font(f) end
-        elseif kind == "CheckButton" then S.Checkbox(f)
+        elseif kind == "CheckButton" then Check(f)
         elseif kind == "StatusBar" and S.ApplyBarFill then S.ApplyBarFill(f)
         elseif kind == "Slider" then Scroll(f)
         elseif kind == "Button" and f.MenuArrowButton then

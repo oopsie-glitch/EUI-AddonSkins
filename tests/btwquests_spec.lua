@@ -1,7 +1,7 @@
 -- BtWQuests 2.65.0: source-shaped owned UI, pooled nodes and private menus.
 local enabled, combat, accent, created = true, false, 0.2, 0
 local timers, events, errors, looks, modules = {}, {}, {}, {}, {}
-local factory, hookCount = nil, 0
+local factory, hookCount, hierarchyReads = nil, 0, 0
 local ns = {IsEnabled = function() return enabled end}
 ns.RegisterSkinDefinition = function(id, fn) assert(id == 'BtWQuests'); factory = fn end
 ns.RegisterModule = function(id, _, available, install) modules[id] = {available = available, install = install} end
@@ -32,7 +32,7 @@ local function texture(kind)
     function t:GetAlpha() return self.alpha end
     function t:SetAlpha(v) self.alpha = v end
     function t:GetTexture() return self.path end
-    function t:SetTexture(v) self.path = v end
+    function t:SetTexture(v) self.path = v; self.solid=false end
     function t:GetDrawLayer() return self.layer or 'ARTWORK' end
     function t:ClearAllPoints() self.points = {} end
     function t:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end
@@ -42,7 +42,10 @@ local function texture(kind)
     function t:SetThickness(v) self.thickness = v end
     function t:GetFont() return self.fontPath or 'native', self.fontSize or 18, '' end
     function t:SetFont(path, size, flags) self.fontPath, self.fontSize, self.fontFlags = path, size, flags end
-    function t:SetColorTexture(...) self.color = {...} end
+    function t:SetColorTexture(...) self.color = {...}; self.solid = true end
+    function t:SetShown(v) self.shown = v end
+    function t:Show() self.shown = true end
+    function t:Hide() self.shown = false end
     function t:SetVertexColor(...) self.color = {...} end
     function t:SetGradientAlpha(...) self.gradient = {...} end
     function t:SetWidth(v) self.width = v end
@@ -57,8 +60,8 @@ local function frame(kind, parent)
     function f:GetObjectType() return self.kind end
     function f:IsForbidden() return self.forbidden end
     function f:IsProtected() return self.protected end
-    function f:GetChildren() return table.unpack(self.children) end
-    function f:GetRegions() return table.unpack(self.regions) end
+    function f:GetChildren() hierarchyReads=hierarchyReads+1;return table.unpack(self.children) end
+    function f:GetRegions() hierarchyReads=hierarchyReads+1;return table.unpack(self.regions) end
     function f:GetParent() return self.parent end
     function f:HookScript(key, fn) local old = self.hooks[key]; self.hooks[key] = function(...) if old then old(...) end; fn(...) end end
     function f:SetScript(key, fn) self.hooks[key] = fn end
@@ -73,6 +76,18 @@ local function frame(kind, parent)
     function f:GetNormalTexture() return self.normal end
     function f:GetFontString() return self.text end
     function f:IsShown() return self.shown end
+    function f:Show() self.shown=true; if self.hooks.OnShow then self.hooks.OnShow(self) end end
+    function f:Enable() self.enabled=true end
+    function f:Disable() self.enabled=false end
+    function f:GetCheckedTexture() return self.checkedTexture end
+    function f:GetDisabledCheckedTexture() return self.disabledCheckedTexture end
+    function f:SetCheckedTexture(path) self.checkedTexture:SetTexture(path) end
+    function f:SetDisabledCheckedTexture(path) self.disabledCheckedTexture:SetTexture(path) end
+    function f:SetChecked(value)
+        self.checked=value;self.checkedTexture:SetShown(value and self:IsEnabled())
+        self.disabledCheckedTexture:SetShown(value and not self:IsEnabled())
+        return 'checked-native', nil, value
+    end
     function f:IsEnabled() return self.enabled ~= false end
     function f:CreateTexture(_, layer) local t = texture(); t.layer = layer; self.regions[#self.regions + 1] = t; return t end
     function f:GetThumbTexture() return self.thumb end
@@ -108,7 +123,12 @@ function S.Button(f, keep)
 end
 function S.Font(f, r, g, b) f.font = 'eui'; if r then f.color = {r, g, b} end end
 function S.StateButtonLabel(f) f.stateLabel = true end
-function S.Checkbox(f) f.checkbox = true end
+function S.Checkbox(f)
+    if f.checkbox then return end
+    f.checkbox=true
+    f.checkFill=f:CreateTexture(nil,'BACKGROUND')
+    f.checkHover=f:CreateTexture(nil,'HIGHLIGHT')
+end
 function S.EditBox(f) f.edit = true end
 function S.Dropdown(f) f.dropdown = true; fade(f) end
 function S.ScrollBar(f) f.scroll = true end
@@ -136,7 +156,15 @@ root.ExpansionList = frame('Frame', root)
 root.ExpansionList.Left = frame('Button', root.ExpansionList); root.ExpansionList.Right = frame('Button', root.ExpansionList)
 local expansion = frame('Frame', root.ExpansionList)
 region(expansion, 'Background'); region(expansion, 'Base'); region(expansion, 'Name', 'FontString')
-expansion.AutoLoad = frame('CheckButton', expansion)
+local function autoLoad(parent)
+    local f=frame('CheckButton',parent);f.width=15;f.height=15
+    f.hitInsets={0,-100,0,0};f.labelAnchor='native-right'
+    region(f,'checkedTexture');region(f,'disabledCheckedTexture')
+    f.action=function(self) self:SetChecked(not self.checked);return 'autoload-native' end
+    f:SetChecked(true)
+    return f
+end
+expansion.AutoLoad = autoLoad(expansion)
 local expansionButton = frame('Button', expansion)
 region(expansionButton, 'Active'); region(expansionButton, 'Subtext', 'FontString')
 region(expansionButton, 'text', 'FontString')
@@ -235,7 +263,19 @@ local function dropdown(parent)
         local list = self:GetListFrame(); local row = frame('Button', list)
         for _, key in ipairs({'Check', 'UnCheck', 'Icon', 'Highlight'}) do region(row, key) end
         region(row, 'NormalText', 'FontString'); row.NormalText.color = {0.2, 0.6, 1}
-        row.action = function() return 'menu-native' end
+        function row:Rebuild(checked,disabled,notCheckable)
+            self.notCheckable=notCheckable;self.enabled=not disabled;self.checked=checked
+            for _,mark in ipairs({self.Check,self.UnCheck}) do
+                mark:SetTexture('Interface/Common/UI-DropDownRadioChecks');mark.solid=false
+                mark:SetSize(16,16);mark:SetAlpha(disabled and .5 or 1)
+            end
+            self.Check:SetShown(checked and not notCheckable)
+            self.UnCheck:SetShown(not checked and not notCheckable)
+            self:Show()
+            return 'rebuilt-native',nil,checked
+        end
+        row.action = function(self) self:Rebuild(not self.checked);return 'menu-native' end
+        row:Rebuild(true)
         return 'open-native'
     end
     return f
@@ -306,12 +346,44 @@ assert(searchRow.button and searchRow.Name.color[1] == 0.92 and searchRow.action
 assert(BtWQuestsOptionsMenu:Open() == 'open-native')
 local list = BtWQuestsOptionsMenu.list; local row = list.children[#list.children]
 assert(list.panel.noBorder and list.Backdrop.backdrop == nil and row.Highlight.color[4] == 0.08)
-assert(row.Check.color[1] == accent and row.NormalText.color[3] == 1 and row.action() == 'menu-native')
+assert(row.Check.color[1] == accent and row.NormalText.color[3] == 1 and row:action() == 'menu-native')
+assert(expansion.AutoLoad.checkedTexture.solid and expansion.AutoLoad.checkedTexture.width==10
+    and expansion.AutoLoad.checkFill.width==14 and expansion.AutoLoad.checkHover.width==14,
+    'Auto Load retained native tick or clipped the square artwork')
+assert(expansion.AutoLoad.width==15 and expansion.AutoLoad.height==15 and expansion.AutoLoad.hitInsets[2]==-100
+    and expansion.AutoLoad.labelAnchor=='native-right','Auto Load input/label geometry changed')
+assert(expansion.AutoLoad:action()=='autoload-native' and not expansion.AutoLoad.checkedTexture.shown)
+expansion.AutoLoad:Disable();expansion.AutoLoad:SetChecked(true)
+assert(expansion.AutoLoad.disabledCheckedTexture.shown and expansion.AutoLoad.disabledCheckedTexture.solid
+    and expansion.AutoLoad.disabledCheckedTexture.color[1]==.4,'disabled native check lost its state')
+expansion.AutoLoad:Enable();expansion.AutoLoad:SetChecked(true)
+expansion.AutoLoad:SetCheckedTexture('native-reset')
+assert(expansion.AutoLoad.checkedTexture.solid and expansion.AutoLoad.checkedTexture.color[1]==accent)
+assert(row.Check.solid and row.Check.width==10 and row.UnCheck.solid and not row.Check.shown
+    and row.UnCheck.shown,'custom options row retained native ticks or changed checked visibility')
+local rr,rn,rc=row:Rebuild(true,true)
+assert(rr=='rebuilt-native' and rn==nil and rc==true and row.Check.solid and row.Check.shown
+    and row.Check.color[1]==.4 and row.Check.alpha==.5,'pooled disabled menu row lost cosmetics/state/returns')
+local menuArt={}
+for _,t in ipairs(row.regions) do if t.layer=='BORDER' then menuArt[#menuArt+1]=t end end
+assert(#menuArt==2 and menuArt[1].width==14 and menuArt[2].width==12,'custom menu square border/fill missing')
+row:Rebuild(false,false,true)
+assert(not menuArt[1].shown and not menuArt[2].shown and not row.Check.shown and not row.UnCheck.shown,
+    'non-checkable pooled row retained checkbox artwork')
+row:Rebuild(true,false,false)
+assert(menuArt[1].shown and menuArt[2].shown and row.Check.solid and row.Check.shown and not row.UnCheck.shown)
+-- Same-count replacement and late Auto Load controls are discovered by completed pages.
+local later=autoLoad(expansion);root:DisplayItemList()
+assert(later.checkedTexture.solid and later.checkedTexture.width==10)
+local countBefore,hooksAtStart,readsAtStart=created,hookCount,hierarchyReads
+for i=1,1000 do row:Rebuild(i%2==0);expansion.AutoLoad:SetChecked(i%2==0) end
+assert(created==countBefore and hookCount==hooksAtStart and hierarchyReads==readsAtStart,
+    'warm checkbox state changes scanned the hierarchy or allocated objects/hooks')
 local before, hooksBefore = created, hookCount
 for _ = 1, 20 do modules.BtWQuests.refresh(); flush() end
 assert(created == before and hookCount == hooksBefore, 'warm refresh allocated objects/hooks')
 accent = 0.7; panel = 0.12; for _, fn in ipairs(looks) do fn() end; flush()
-assert(row.Check.color[1] == accent, 'popup check did not track the accent')
+assert(row.Check.color[1] == accent and expansion.AutoLoad.checkedTexture.color[1]==accent and later.checkedTexture.color[1]==accent, 'checkboxes did not track the accent')
 assert(first.ActiveTexture.color[1]==accent and first.IsNext.color[1]==accent and first.ActiveTexture.alpha==.37,'quest pulse did not follow live accent')
 assert(math.abs(gradients[1].gradient[2]-(panel+.10))<.00001,'journal background did not follow live theme')
 assert(card.Acive.color[1] == accent and math.abs(card.apiFill.color[1] - (panel + 0.085)) < 0.00001,
@@ -319,13 +391,14 @@ assert(card.Acive.color[1] == accent and math.abs(card.apiFill.color[1] - (panel
 panel = 0.95; for _, fn in ipairs(looks) do fn() end; flush()
 assert(card.apiFill.color[1] == 1, 'light panel colours exceeded the colour range')
 combat = true; tip:SetChain(789);assert(tip.backdrop.bgFile=='native-blue' and not tip.NineSlice.faded,'combat popout was modified')
+combat = true; row:Rebuild(true);assert(not row.Check.solid,'combat menu row was restyled')
 combat = true; root:DisplayItemList()
 local pending = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
 assert(not pending.button, 'new combat control was modified')
 combat = false; for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent() end end; flush()
-assert(pending.button, 'combat-deferred skin was lost')
+assert(pending.button and row.Check.solid, 'combat-deferred skin was lost')
 assert(tip.backdrop==nil and tip.NineSlice.faded,'combat-deferred popout skin was lost')
-enabled = false; root:DisplayItemList(); local off = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
+enabled = false; row:Rebuild(false);assert(not row.Check.solid,'disabled skin restyled a menu row');root:DisplayItemList(); local off = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
 tip:SetChain(999);assert(tip.backdrop.bgFile=='native-blue' and not tip.NineSlice.faded,'disabled popout was skinned')
 modules.BtWQuests.refresh(); flush(); assert(not off.button, 'disabled skin processed new content')
 assert(#errors == 0, table.concat(errors, '\n'))

@@ -1,7 +1,7 @@
 -- BtWQuests 2.65.0: source-shaped owned UI, pooled nodes and private menus.
 local enabled, combat, accent, created = true, false, 0.2, 0
 local timers, events, errors, looks, modules = {}, {}, {}, {}, {}
-local factory, hookCount = nil, 0
+local factory, hookCount, hierarchyReads = nil, 0, 0
 local ns = {IsEnabled = function() return enabled end}
 ns.RegisterSkinDefinition = function(id, fn) assert(id == 'BtWQuests'); factory = fn end
 ns.RegisterModule = function(id, _, available, install) modules[id] = {available = available, install = install} end
@@ -32,18 +32,24 @@ local function texture(kind)
     function t:GetAlpha() return self.alpha end
     function t:SetAlpha(v) self.alpha = v end
     function t:GetTexture() return self.path end
-    function t:SetTexture(v) self.path = v end
+    function t:SetTexture(v) self.path = v; self.solid=false end
     function t:GetDrawLayer() return self.layer or 'ARTWORK' end
     function t:ClearAllPoints() self.points = {} end
     function t:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end
     function t:SetSize(w, h) self.width, self.height = w, h end
     function t:SetDesaturated(v) self.desaturated = v end
+    function t:SetSnapToPixelGrid(v) self.pixelSnap=v end
+    function t:SetTexelSnappingBias(v) self.snapBias=v end
     function t:SetAtlas(v) self.atlas = v end
     function t:SetThickness(v) self.thickness = v end
     function t:GetFont() return self.fontPath or 'native', self.fontSize or 18, '' end
     function t:SetFont(path, size, flags) self.fontPath, self.fontSize, self.fontFlags = path, size, flags end
-    function t:SetColorTexture(...) self.color = {...} end
+    function t:SetColorTexture(...) self.color = {...}; self.solid = true end
+    function t:SetShown(v) self.shown = v end
+    function t:Show() self.shown = true end
+    function t:Hide() self.shown = false end
     function t:SetVertexColor(...) self.color = {...} end
+    function t:SetGradientAlpha(...) self.gradient = {...} end
     function t:SetWidth(v) self.width = v end
     function t:GetWidth() return self.width or 18 end
     function t:GetHeight() return 18 end
@@ -56,8 +62,8 @@ local function frame(kind, parent)
     function f:GetObjectType() return self.kind end
     function f:IsForbidden() return self.forbidden end
     function f:IsProtected() return self.protected end
-    function f:GetChildren() return table.unpack(self.children) end
-    function f:GetRegions() return table.unpack(self.regions) end
+    function f:GetChildren() hierarchyReads=hierarchyReads+1;return table.unpack(self.children) end
+    function f:GetRegions() hierarchyReads=hierarchyReads+1;return table.unpack(self.regions) end
     function f:GetParent() return self.parent end
     function f:HookScript(key, fn) local old = self.hooks[key]; self.hooks[key] = function(...) if old then old(...) end; fn(...) end end
     function f:SetScript(key, fn) self.hooks[key] = fn end
@@ -65,13 +71,44 @@ local function frame(kind, parent)
     function f:SetBackdrop(v) assert(not combat); self.backdrop = v end
     function f:SetSize(w, h) self.width, self.height = w, h end
     function f:SetHeight(h) self.height = h end
-    function f:GetWidth() return self.width end
-    function f:GetHeight() return self.height end
+    function f:GetWidth()
+        local a,b=self.points and self.points[1],self.points and self.points[2]
+        if a and b and a[1]=='TOPLEFT' and b[1]=='BOTTOMRIGHT' and a[2]==b[2] then
+            return a[2]:GetWidth()+(b[4] or 0)-(a[4] or 0)
+        end
+        return self.width
+    end
+    function f:SetWidth(v) self.width=v end
+    function f:SetHitRectInsets(...) self.hitInsets={...} end
+    function f:GetHeight()
+        local a,b=self.points and self.points[1],self.points and self.points[2]
+        if a and b and (a[1]=='TOPLEFT' or a[1]=='TOPRIGHT') and b[1]=='BOTTOMRIGHT' and a[2]==b[2] then
+            return a[2]:GetHeight()+(a[5] or 0)-(b[5] or 0)
+        end
+        return self.height
+    end
+    function f:GetEffectiveScale() return self.scale or 1 end
     function f:ClearAllPoints() self.points = {} end
-    function f:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end
+    function f:SetPoint(...)
+        self.points=self.points or {};local point={...}
+        for i,old in ipairs(self.points) do if old[1]==point[1] then self.points[i]=point;return end end
+        self.points[#self.points+1]=point
+    end
     function f:GetNormalTexture() return self.normal end
     function f:GetFontString() return self.text end
     function f:IsShown() return self.shown end
+    function f:Show() self.shown=true; if self.hooks.OnShow then self.hooks.OnShow(self) end end
+    function f:Enable() self.enabled=true end
+    function f:Disable() self.enabled=false end
+    function f:GetCheckedTexture() return self.checkedTexture end
+    function f:GetDisabledCheckedTexture() return self.disabledCheckedTexture end
+    function f:SetCheckedTexture(path) self.checkedTexture:SetTexture(path) end
+    function f:SetDisabledCheckedTexture(path) self.disabledCheckedTexture:SetTexture(path) end
+    function f:SetChecked(value)
+        self.checked=value;self.checkedTexture:SetShown(value and self:IsEnabled())
+        self.disabledCheckedTexture:SetShown(value and not self:IsEnabled())
+        return 'checked-native', nil, value
+    end
     function f:IsEnabled() return self.enabled ~= false end
     function f:CreateTexture(_, layer) local t = texture(); t.layer = layer; self.regions[#self.regions + 1] = t; return t end
     function f:GetThumbTexture() return self.thumb end
@@ -107,7 +144,12 @@ function S.Button(f, keep)
 end
 function S.Font(f, r, g, b) f.font = 'eui'; if r then f.color = {r, g, b} end end
 function S.StateButtonLabel(f) f.stateLabel = true end
-function S.Checkbox(f) f.checkbox = true end
+function S.Checkbox(f)
+    if f.checkbox then return end
+    f.checkbox=true
+    f.checkFill=f:CreateTexture(nil,'BACKGROUND')
+    f.checkHover=f:CreateTexture(nil,'HIGHLIGHT')
+end
 function S.EditBox(f) f.edit = true end
 function S.Dropdown(f) f.dropdown = true; fade(f) end
 function S.ScrollBar(f) f.scroll = true end
@@ -128,14 +170,81 @@ for _, key in ipairs({'NavBack', 'NavForward', 'NavHere', 'OptionsButton'}) do r
 root.OptionsButton.normal = region(root.OptionsButton, 'nativeIcon')
 root.navBar = frame('Frame', root)
 region(root.navBar, 'InsetBorderBottom'); region(root.navBar, 'InsetBorderLeft')
-root.navBar.AddButtons = function() root.navBar.InsetBorderBottom:SetAlpha(1); return 'nav-native' end
+local nav=root.navBar;nav.width=500;nav.widthBuffer=20
+nav.overlay=frame('Frame',nav);nav.overlay.frameLevel=50;region(nav.overlay,'tile')
+nav.home=frame('Button',nav);region(nav.home,'text','FontString');region(nav.home,'normal')
+nav.home.xoffset=-15;nav.home.height=30;nav.home.width=86;nav.home.labelAnchor='native-home';nav.home.action=function()return 'home-native' end
+nav.overflow=frame('Button',nav);region(nav.overflow,'normal');nav.overflow.width=44;nav.overflow.shown=false
+nav.overflow.xoffset=-18;nav.overflow.action=function()return 'overflow-native' end
+nav.homeButton=nav.home;nav.overflowButton=nav.overflow
+nav.navList={nav.home};nav.freeButtons={}
+-- Source-shaped native length/collapse pass: previous button xoffset places
+-- its successor, and widthBuffer reserves the new spacing budget.
+NavBar_CheckLength=function(self)
+    local width,maxWidth,lastShown,collapsed=0,self:GetWidth()-self.widthBuffer,nil,false
+    for i=#self.navList,1,-1 do
+        local f=self.navList[i];width=width+f:GetWidth()
+        f.shown=width<=maxWidth
+        if f.shown then
+            if lastShown then self.navList[lastShown]:SetPoint('LEFT',f,'RIGHT',f.xoffset or 0,0) end
+            lastShown=i
+        else collapsed=true end
+        if i==#self.navList then f:Disable() else f:Enable() end
+    end
+    self.overflowButton.shown=collapsed
+    if collapsed and lastShown then self.navList[lastShown]:SetPoint('LEFT',self.overflowButton,'RIGHT',self.overflowButton.xoffset or 0,0) end
+end
+local function navRow(name)
+    local f=frame('Button',nav);f.width=160;f.height=30;f.labelAnchor='native-left-20'
+    for _,key in ipairs({'arrowUp','arrowDown','selected','normal'}) do region(f,key) end
+    region(f,'text','FontString');f.text.caption=name
+    f.MenuArrowButton=frame('Button',f);f.MenuArrowButton.width=27;f.MenuArrowButton.height=31
+    for _,key in ipairs({'Art','NormalTexture','PushedTexture'}) do region(f.MenuArrowButton,key) end
+    f.action=function()return 'breadcrumb-native' end
+    f.MenuArrowButton.action=function()return 'siblings-native' end
+    return f
+end
+function nav:AddButton(name)
+    local f=table.remove(self.freeButtons) or navRow(name)
+    f.text.caption=name;f:Show();self.navList[#self.navList+1]=f
+    for i,button in ipairs(self.navList) do
+        if button.selected then button.selected:SetShown(i==#self.navList) end
+        if i==#self.navList then button:Disable();button.text.color={.5,.5,.5}
+        else button:Enable() end
+    end
+    -- Native may finish state/text after Show; the completed AddButton hook
+    -- must repair the last label and selection in the same UI turn.
+    NavBar_CheckLength(self)
+    return 'added-native',nil,f
+end
+function nav:AddButtons()
+    self.InsetBorderBottom:SetAlpha(1);self.overlay.tile:SetAlpha(1)
+    self:AddButton('The War Within');self:AddButton('Against the Current')
+    return 'nav-native'
+end
+function nav:Reset()
+    while #self.navList>1 do
+        local f=table.remove(self.navList);f.shown=false;self.freeButtons[#self.freeButtons+1]=f
+    end
+    self.home:Disable();NavBar_CheckLength(self);return 'reset-native'
+end
+nav.home:Disable()
+
 root.Inset = frame('Frame', root); region(root.Inset, 'Bg')
 root.SearchBox = frame('EditBox', root)
 root.ExpansionList = frame('Frame', root)
 root.ExpansionList.Left = frame('Button', root.ExpansionList); root.ExpansionList.Right = frame('Button', root.ExpansionList)
 local expansion = frame('Frame', root.ExpansionList)
 region(expansion, 'Background'); region(expansion, 'Base'); region(expansion, 'Name', 'FontString')
-expansion.AutoLoad = frame('CheckButton', expansion)
+local function autoLoad(parent)
+    local f=frame('CheckButton',parent);f.width=15;f.height=15
+    f.hitInsets={0,-100,0,0};f.labelAnchor='native-right'
+    region(f,'checkedTexture');region(f,'disabledCheckedTexture')
+    f.action=function(self) self:SetChecked(not self.checked);return 'autoload-native' end
+    f:SetChecked(true)
+    return f
+end
+expansion.AutoLoad = autoLoad(expansion)
 local expansionButton = frame('Button', expansion)
 region(expansionButton, 'Active'); region(expansionButton, 'Subtext', 'FontString')
 region(expansionButton, 'text', 'FontString')
@@ -146,6 +255,28 @@ local bar = root.Category.Scroll.ScrollBar
 bar.thumb = region(bar, 'thumb'); bar.thumb.height = 80; region(bar, 'trackBG')
 root.Chain = frame('Frame', root); root.Chain.Scroll = frame('ScrollFrame', root.Chain)
 root.Chain.Scroll.Child = frame('Frame', root.Chain.Scroll)
+local function privateTooltip(parent)
+    local tip=frame('GameTooltip',parent)
+    tip.shown=false;tip.NineSlice=frame('Frame',tip)
+    local bg=tip:CreateTexture(nil,'BACKGROUND');bg.path='native-tooltip-bg'
+    local text=region(tip,'Text','FontString');text.color={.1,1,.2}
+    text.SetFont=function() error('private tooltip font was replaced') end
+    function tip:SetChain(id)
+        self.chainID=id;self.lines={'Against the Current','Prerequisites'}
+        self.backdrop={bgFile='native-blue'};self.NineSlice.faded=false;bg:SetAlpha(1)
+        self.shown=true;if self.hooks.OnShow then self.hooks.OnShow(self) end
+        -- Native/compositor construction may reset art after first Show.
+        self.backdrop={bgFile='native-blue'};self.NineSlice.faded=false;bg:SetAlpha(1)
+        return 'native-tooltip',nil,id
+    end
+    tip.SetQuest=tip.SetChain;tip.SetActiveQuest=tip.SetChain;tip.SetHyperlink=tip.SetChain
+    tip.nativeBackground=bg
+    return tip
+end
+root.Chain.Tooltip=privateTooltip(root.Chain)
+root.Tooltip=privateTooltip(root)
+BtWQuestsTooltip=privateTooltip(nil)
+local foreignTooltip=privateTooltip(nil)
 local canvas = root.Chain.Scroll.Child
 local line = frame('Frame', canvas); local connector = region(line, 'line')
 for _, key in ipairs({'Background', 'Active', 'Complete'}) do region(line, key, 'Line') end
@@ -156,7 +287,12 @@ local function node()
     for _, key in ipairs({'Icon', 'Cover', 'Tick', 'TagTexture', 'HeroicTexture', 'MythicTexture', 'ActiveTexture', 'IsNext'}) do region(f, key) end
     region(f, 'Name', 'FontString'); f.Name:SetAlpha(0.5)
     f.geometry = 'native-chain-position'; f.action = function() return 'quest-native' end
-    f.Set = function(self) self.Icon:SetAlpha(1); return 'set-result', nil, 3 end
+    f.ActiveAnim={playing=true};f.IsNextAnim={playing=true}
+    f.ActiveTexture:SetAlpha(.37);f.IsNext:SetAlpha(.61)
+    f.Set = function(self)
+        self.Icon:SetAlpha(1);self.ActiveTexture:SetVertexColor(1,.8,0)
+        return 'set-result', nil, 3
+    end
     f.Update = function(self) self.Name:SetAlpha(0.5); return 'update-result' end
     return f
 end
@@ -180,7 +316,7 @@ end
 local card = category()
 root.DisplayItemList = function() category(); return 'display-result' end
 root.DisplayExpansionList = function() return 'expansion-result' end
-root.DisplayCurrentChain = function() return 'current-chain' end
+root.DisplayCurrentChain = function() root.Chain.Tooltip:SetChain(123);return 'current-chain' end
 root.SearchPreview = frame('Frame', root); region(root.SearchPreview, 'bottomBorder')
 root.SearchResults = frame('Frame', root); root.SearchResults.CloseButton = frame('Button', root.SearchResults)
 local function result()
@@ -190,10 +326,25 @@ local function result()
 end
 root.SearchPreview.UpdateResults = function() result(); return 'results-native' end
 root.SearchResults.UpdateSearch = function() return 'scroll-native' end
-local menuCalls = 0
+local menuCalls,characterClicks = 0,0
 local function dropdown(parent)
     local f = frame('Frame', parent); region(f, 'Text', 'FontString'); region(f, 'Icon')
     f.Button = frame('Button', f); region(f.Button, 'normal')
+    f.Button.width=24;f.Button.height=24
+    f.Button:SetPoint('TOPRIGHT',f,'TOPRIGHT',16,-18)
+    f.Button:SetScript('OnClick',function(button)
+        characterClicks=characterClicks+1
+        return button:GetParent():Toggle()
+    end)
+    f.Toggle=function(self)
+        self.open=not self.open
+        if self.open then self:Open() end
+        return 'toggle-native',nil,self.open
+    end
+    f.Button.ClickAt=function(button,x,y)
+        if x<0 or y<0 or x>button:GetWidth() or y>button:GetHeight() then return false end
+        return button.hooks.OnClick(button)
+    end
     f.GetListFrame = function(self)
         menuCalls = menuCalls + 1
         if not self.list then
@@ -207,16 +358,47 @@ local function dropdown(parent)
         local list = self:GetListFrame(); local row = frame('Button', list)
         for _, key in ipairs({'Check', 'UnCheck', 'Icon', 'Highlight'}) do region(row, key) end
         region(row, 'NormalText', 'FontString'); row.NormalText.color = {0.2, 0.6, 1}
-        row.action = function() return 'menu-native' end
+        function row:Rebuild(checked,disabled,notCheckable)
+            self.notCheckable=notCheckable;self.enabled=not disabled;self.checked=checked
+            for _,mark in ipairs({self.Check,self.UnCheck}) do
+                mark:SetTexture('Interface/Common/UI-DropDownRadioChecks');mark.solid=false
+                mark:SetSize(16,16);mark:SetAlpha(disabled and .5 or 1)
+            end
+            self.Check:SetShown(checked and not notCheckable)
+            self.UnCheck:SetShown(not checked and not notCheckable)
+            self:Show()
+            return 'rebuilt-native',nil,checked
+        end
+        row.action = function(self) self:Rebuild(not self.checked);return 'menu-native' end
+        row:Rebuild(true)
         return 'open-native'
     end
     return f
 end
 root.CharacterDropDown = dropdown(root)
+local characterClickHandler=root.CharacterDropDown.Button.hooks.OnClick
 BtWQuestsOptionsMenu = dropdown(); BtWQuestsOptionsMenu.displayMode = 'MENU'
+nav.dropDown=dropdown(nav);nav.dropDown.displayMode='MENU'
 local denied = frame('Button', root); denied.protected = true; region(denied, 'Name', 'FontString')
 modules.BtWQuests.install(S, modules.BtWQuests); flush()
 assert(root.shell.noBorder and root.Inset.inset and root.Inset.Bg.alpha == 0)
+local gradients={}
+for _,t in ipairs(root.regions) do if t.gradient then gradients[#gradients+1]=t end end
+assert(#gradients==4,'journal did not get a centre lift and darker ends')
+assert(gradients[1].gradient[1]=='HORIZONTAL' and gradients[1].gradient[5]==0 and gradients[1].gradient[9]==.5)
+assert(gradients[2].gradient[5]==.5 and gradients[2].gradient[9]==0)
+assert(not root.Chain.Tooltip.shown and not BtWQuestsTooltip.shown,'skinning opened a tooltip')
+assert(root:DisplayCurrentChain()=='current-chain')
+local tip=root.Chain.Tooltip
+assert(tip.shown and tip.backdrop==nil and tip.NineSlice.faded and tip.nativeBackground.alpha==0,
+    'popout was not styled on its first completed display')
+assert(tip.lines[1]=='Against the Current' and tip.Text.color[2]==1 and not tip.Text.font,'tooltip content or semantic text changed')
+local tr,tn,tid=tip:SetChain(456)
+assert(tr=='native-tooltip' and tn==nil and tid==456 and tip.backdrop==nil and tip.nativeBackground.alpha==0,
+    'visible tooltip reset lost styling or native returns')
+local foreignResult=foreignTooltip:SetChain(1)
+assert(foreignResult=='native-tooltip' and foreignTooltip.backdrop.bgFile=='native-blue' and not foreignTooltip.NineSlice.faded,
+    'unrelated tooltip was styled')
 assert(root.NavBack.glyph == '<' and root.NavHere.euiJournalIcon.atlas == 'Waypoint-MapPin-ChatIcon' and root.NavBack.width == 22)
 assert(root.OptionsButton.nativeIcon.alpha == 0 and root.OptionsButton.euiJournalIcon.path:find('EllesmereUI', 1, true))
 root.NavHere.enabled = false; root.NavHere.hooks.OnDisable()
@@ -225,8 +407,53 @@ root.NavHere.enabled = true; root.NavHere.hooks.OnEnable()
 assert(root.NavHere.euiJournalIcon.alpha == 1)
 assert(root.navBar.InsetBorderBottom.alpha == 0 and root.navBar.InsetBorderLeft.alpha == 0)
 assert(root.navBar:AddButtons() == 'nav-native' and root.navBar.InsetBorderBottom.alpha == 0)
+assert(nav.overlay.tile.alpha==0 and nav.overlay.frameLevel==50,'raised navigation overlay retained native tiles or changed level')
+local ancestor,current=nav.navList[2],nav.navList[3]
+assert(nav.home.apiFill and ancestor.apiFill and current.apiFill,'Home or breadcrumb buttons lack EUI surfaces')
+assert(ancestor.arrowUp.alpha==0 and ancestor.arrowDown.alpha==0 and current.selected.alpha==0,
+    'native breadcrumb wedges/selection survived')
+assert(current.euiJournalSelected.shown and not ancestor.euiJournalSelected.shown and not nav.home.euiJournalSelected.shown,
+    'breadcrumb current-page selection is wrong')
+assert(current.text.color[1]==.92 and not current:IsEnabled() and ancestor:IsEnabled(),
+    'native current-page state changed or selected text remained grey')
+assert(current.width==160 and current.height==30 and current.labelAnchor=='native-left-20'
+    and nav.home.width==86 and nav.home.labelAnchor=='native-home','breadcrumb geometry changed')
+assert(current.MenuArrowButton.Art.alpha==0 and current.MenuArrowButton.glyph=='v'
+    and current.MenuArrowButton:GetWidth()==24 and current.MenuArrowButton:GetHeight()==current:GetHeight()-2
+    and current.MenuArrowButton.points[1][5]==-1 and current.MenuArrowButton.points[2][5]==1,
+    'sibling menu arrow protrudes beyond tab surface')
+assert(nav.overflow.glyph=='v' and not nav.overflow.shown and nav.overflow.width==44,'overflow visibility/geometry changed')
+assert(nav.home.xoffset==3 and ancestor.xoffset==3 and current.xoffset==3 and nav.overflow.xoffset==3,
+    'native negative breadcrumb overlap remains')
+assert(ancestor.points[1][2]==nav.home and ancestor.points[1][4]==3
+    and current.points[1][2]==ancestor and current.points[1][4]==3,'breadcrumb layout still overlaps')
+local wide=nav.width;nav.width=260;NavBar_CheckLength(nav)
+assert(nav.overflow.shown and not nav.home.shown,'native collapse/overflow no longer responds to width')
+nav.width=wide;NavBar_CheckLength(nav)
+assert(not nav.overflow.shown and nav.home.shown,'wide navigation did not restore Home')
+
+assert(nav.home.action()=='home-native' and current.action()=='breadcrumb-native'
+    and current.MenuArrowButton.action()=='siblings-native' and nav.overflow.action()=='overflow-native')
+assert(nav:Reset()=='reset-native' and nav.home.euiJournalSelected.shown,'Home-only page did not update selection')
+local nr,nn,reused=nav:AddButton('Reused chain')
+assert(nr=='added-native' and nn==nil and reused==ancestor and reused.text.caption=='Reused chain'
+    and reused.euiJournalSelected.shown and not nav.home.euiJournalSelected.shown,'pooled breadcrumb state/return lost')
+
 assert(root.CharacterDropDown.dropdown and root.CharacterDropDown.height == 22 and root.CharacterDropDown.Icon.alpha == 1)
 assert(menuCalls == 0 and not BtWQuestsOptionsMenu.list, 'skin forced lazy menus to load')
+local character=root.CharacterDropDown;local hit=character.Button
+assert(hit.hooks.OnClick==characterClickHandler,'character click handler was replaced')
+assert(hit:GetWidth()==character:GetWidth() and hit:GetHeight()==character:GetHeight()
+    and hit.hitInsets[1]==0 and hit.hitInsets[4]==0,'character selector hit area does not fill box')
+for _,point in ipairs({{1,1},{50,11},{99,21},{99,1},{1,21}}) do
+    local beforeClicks=characterClicks
+    local clickResult=hit:ClickAt(point[1],point[2])
+    assert(clickResult=='toggle-native' and characterClicks==beforeClicks+1,'character box click did not reach exactly one native Toggle')
+end
+character.width=250
+assert(hit:GetWidth()==250 and hit:ClickAt(249,11)=='toggle-native','character selector hit area did not follow resize')
+assert(hit:ClickAt(251,11)==false,'character selector hit area extends beyond box')
+
 assert(root.SearchBox.edit and root.SearchPreview.panel.noBorder and root.SearchResults.CloseButton.close)
 assert(expansion.Base.alpha == 0 and expansion.Background.alpha == 1 and expansion.AutoLoad.checkbox)
 assert(expansionButton.Active.alpha == 1 and expansionButton.Active.color[4] == 0.12
@@ -234,7 +461,9 @@ assert(expansionButton.Active.alpha == 1 and expansionButton.Active.color[4] == 
 assert(expansionButton.apiFill.points[1][4] == 2 and expansionButton.apiFill.color[4] == 0.72)
 assert(root.ExpansionList.Left.height == 22, 'full-height page button became an opaque bar')
 assert(bar.thumb.width == 4 and bar.thumb.height == 80 and bar.trackBG.alpha == 0)
-assert(first.Icon.alpha == 0 and first.Cover.alpha == 0 and first.Tick.alpha == 1 and first.ActiveTexture.alpha == 1)
+assert(first.Icon.alpha == 0 and first.Cover.alpha == 0 and first.Tick.alpha == 1 and first.ActiveTexture.alpha == .37)
+assert(first.ActiveTexture.color[1]==accent and first.ActiveTexture.desaturated and first.IsNext.color[1]==accent)
+assert(first.ActiveTexture.alpha==.37 and first.IsNext.alpha==.61 and first.ActiveAnim.playing and first.IsNextAnim.playing,'quest pulse state changed')
 assert(first.Name.alpha == 0.5 and first.geometry == 'native-chain-position' and connector.alpha == 1)
 assert(line.Background.thickness == 2 and line.Active.thickness == 2 and line.Complete.thickness == 2)
 assert(line.Active.alpha == 0 and line.Complete.color[2] == 1, 'connector state/colour changed')
@@ -249,6 +478,7 @@ assert(card:Set() == 'category-set' and card.Name.fontSize == 14 and card.Acive.
     and card.Acive.color[4] == 0.10, 'pooled card lost styling or native active visibility')
 assert(not denied.button and not denied.Name.font, 'protected control was changed')
 local a, b, c = first:Set(); assert(a == 'set-result' and b == nil and c == 3 and first.Icon.alpha == 0)
+assert(first.ActiveTexture.color[1]==accent, 'native node reuse reset the pulse tint')
 assert(first:Update() == 'update-result' and first.Name.alpha == 0.5 and first.action() == 'quest-native')
 assert(root:DisplayItemList() == 'display-result' and root.Category.Scroll.Child.children[2].button)
 assert(root.Chain.Scroll:SetChain() == 'chain-result' and canvas.children[#canvas.children].button)
@@ -258,22 +488,86 @@ assert(searchRow.button and searchRow.Name.color[1] == 0.92 and searchRow.action
 assert(BtWQuestsOptionsMenu:Open() == 'open-native')
 local list = BtWQuestsOptionsMenu.list; local row = list.children[#list.children]
 assert(list.panel.noBorder and list.Backdrop.backdrop == nil and row.Highlight.color[4] == 0.08)
-assert(row.Check.color[1] == accent and row.NormalText.color[3] == 1 and row.action() == 'menu-native')
+assert(row.Check.color[1] == accent and row.NormalText.color[3] == 1 and row:action() == 'menu-native')
+assert(expansion.AutoLoad.checkedTexture.solid and expansion.AutoLoad.checkedTexture.width==10
+    and expansion.AutoLoad.checkFill.width==14 and expansion.AutoLoad.checkHover.width==14,
+    'Auto Load retained native tick or clipped the square artwork')
+assert(expansion.AutoLoad.width==15 and expansion.AutoLoad.height==15 and expansion.AutoLoad.hitInsets[2]==-100
+    and expansion.AutoLoad.labelAnchor=='native-right','Auto Load input/label geometry changed')
+assert(expansion.AutoLoad:action()=='autoload-native' and not expansion.AutoLoad.checkedTexture.shown)
+expansion.AutoLoad:Disable();expansion.AutoLoad:SetChecked(true)
+assert(expansion.AutoLoad.disabledCheckedTexture.shown and expansion.AutoLoad.disabledCheckedTexture.solid
+    and expansion.AutoLoad.disabledCheckedTexture.color[1]==.4,'disabled native check lost its state')
+expansion.AutoLoad:Enable();expansion.AutoLoad:SetChecked(true)
+expansion.AutoLoad:SetCheckedTexture('native-reset')
+assert(expansion.AutoLoad.checkedTexture.solid and expansion.AutoLoad.checkedTexture.color[1]==accent)
+assert(row.Check.solid and row.Check.width==10 and row.UnCheck.solid and not row.Check.shown
+    and row.UnCheck.shown,'custom options row retained native ticks or changed checked visibility')
+local rr,rn,rc=row:Rebuild(true,true)
+assert(rr=='rebuilt-native' and rn==nil and rc==true and row.Check.solid and row.Check.shown
+    and row.Check.color[1]==.4 and row.Check.alpha==.5,'pooled disabled menu row lost cosmetics/state/returns')
+local menuArt={}
+for _,t in ipairs(row.regions) do if t.layer=='BORDER' then menuArt[#menuArt+1]=t end end
+assert(#menuArt==2 and menuArt[1].width==14 and menuArt[2].width==12,'custom menu square border/fill missing')
+row:Rebuild(false,false,true)
+assert(not menuArt[1].shown and not menuArt[2].shown and not row.Check.shown and not row.UnCheck.shown,
+    'non-checkable pooled row retained checkbox artwork')
+row:Rebuild(true,false,false)
+assert(menuArt[1].shown and menuArt[2].shown and row.Check.solid and row.Check.shown and not row.UnCheck.shown)
+-- Same-count replacement and late Auto Load controls are discovered by completed pages.
+local later=autoLoad(expansion);root:DisplayItemList()
+assert(later.checkedTexture.solid and later.checkedTexture.width==10)
+-- Screenshot regression: fractional scale previously produced a 24px box
+-- with a 17px mark, forcing asymmetric 3px/2px interior padding.
+PixelUtil={GetPixelToUIUnitFactor=function()return 1 end}
+for _,scale in ipairs({.64,.8,1,1.25,1.68,2}) do
+    row.scale=scale;expansion.AutoLoad.scale=scale
+    for _,event in ipairs(events) do
+        if event.events and event.events.UI_SCALE_CHANGED then event.hooks.OnEvent(event,'UI_SCALE_CHANGED') end
+    end
+    for _,pair in ipairs({{expansion.AutoLoad.checkFill,expansion.AutoLoad.checkedTexture},
+        {expansion.AutoLoad.checkFill,expansion.AutoLoad.disabledCheckedTexture},{menuArt[1],row.Check},
+        {menuArt[1],row.UnCheck}}) do
+        local box,mark=pair[1],pair[2]
+        local padding=(box.width-mark.width)*scale/2
+        assert(math.abs(padding-math.floor(padding+.5))<.00001,'checkbox has asymmetric fractional-pixel padding')
+        assert(box.points[1][1]==mark.points[1][1] and box.points[1][2]==mark.points[1][2]
+            and box.points[1][3]==mark.points[1][3] and box.points[1][4]==mark.points[1][4],
+            'checkbox fill and border do not share their centre')
+        assert(mark.pixelSnap==false and mark.snapBias==0,'native texture snapping can displace indicator')
+    end
+end
+row.scale=1;expansion.AutoLoad.scale=1
+modules.BtWQuests.refresh();flush();PixelUtil=nil
+local countBefore,hooksAtStart,readsAtStart=created,hookCount,hierarchyReads
+for i=1,1000 do
+    row:Rebuild(i%2==0);expansion.AutoLoad:SetChecked(i%2==0)
+    reused:Enable();reused:Disable()
+end
+assert(created==countBefore and hookCount==hooksAtStart and hierarchyReads==readsAtStart,
+    'warm checkbox state changes scanned the hierarchy or allocated objects/hooks')
 local before, hooksBefore = created, hookCount
 for _ = 1, 20 do modules.BtWQuests.refresh(); flush() end
 assert(created == before and hookCount == hooksBefore, 'warm refresh allocated objects/hooks')
 accent = 0.7; panel = 0.12; for _, fn in ipairs(looks) do fn() end; flush()
-assert(row.Check.color[1] == accent, 'popup check did not track the accent')
+assert(row.Check.color[1] == accent and expansion.AutoLoad.checkedTexture.color[1]==accent and later.checkedTexture.color[1]==accent, 'checkboxes did not track the accent')
+assert(reused.euiJournalSelected.color[1]==accent,'breadcrumb selection did not follow accent')
+assert(first.ActiveTexture.color[1]==accent and first.IsNext.color[1]==accent and first.ActiveTexture.alpha==.37,'quest pulse did not follow live accent')
+assert(math.abs(gradients[1].gradient[2]-(panel+.10))<.00001,'journal background did not follow live theme')
 assert(card.Acive.color[1] == accent and math.abs(card.apiFill.color[1] - (panel + 0.085)) < 0.00001,
     'custom surfaces did not track theme/accent')
 panel = 0.95; for _, fn in ipairs(looks) do fn() end; flush()
 assert(card.apiFill.color[1] == 1, 'light panel colours exceeded the colour range')
-combat = true; root:DisplayItemList()
+combat = true; tip:SetChain(789);assert(tip.backdrop.bgFile=='native-blue' and not tip.NineSlice.faded,'combat popout was modified')
+combat = true; row:Rebuild(true);assert(not row.Check.solid,'combat menu row was restyled')
+combat = true; nav.freeButtons={};local _,_,combatNav=nav:AddButton('Combat chain');assert(not combatNav.euiJournalSelected,'new combat breadcrumb was styled');root:DisplayItemList()
 local pending = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
 assert(not pending.button, 'new combat control was modified')
 combat = false; for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent() end end; flush()
-assert(pending.button, 'combat-deferred skin was lost')
-enabled = false; root:DisplayItemList(); local off = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
+assert(pending.button and row.Check.solid and combatNav.euiJournalSelected.shown, 'combat-deferred skin was lost')
+assert(tip.backdrop==nil and tip.NineSlice.faded,'combat-deferred popout skin was lost')
+enabled = false; local _,_,offNav=nav:AddButton('Disabled skin');assert(not offNav.euiJournalSelected,'disabled skin styled a breadcrumb');row:Rebuild(false);assert(not row.Check.solid,'disabled skin restyled a menu row');root:DisplayItemList(); local off = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
+tip:SetChain(999);assert(tip.backdrop.bgFile=='native-blue' and not tip.NineSlice.faded,'disabled popout was skinned')
 modules.BtWQuests.refresh(); flush(); assert(not off.button, 'disabled skin processed new content')
 assert(#errors == 0, table.concat(errors, '\n'))
 -- Retail activation through the actual Core + Loader, not a direct installer.
@@ -300,7 +594,7 @@ for _, scenario in ipairs({'early', 'late', 'undispatched'}) do
         LoadAddOn = function() error('skin forced target to load') end,
     }
     EllesmereUI = {RegisterSkin = function(name, fn) assert(not callbacks[name]); callbacks[name] = fn end}
-    BtWQuestsOptionsMenu = nil
+    BtWQuestsOptionsMenu = nil;BtWQuestsTooltip=nil
     BtWQuestsFrame = targetLoaded and frame() or nil
     assert(loadfile('EUIAddonSkins/Core.lua'))('EUIAddonSkins', live)
     assert(loadfile('EUIAddonSkins/Loader.lua'))('EUIAddonSkins', live)

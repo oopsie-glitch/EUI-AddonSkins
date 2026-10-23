@@ -11,9 +11,12 @@ end, function(S, module)
     local styled, menus, panels, scrolls = {}, {}, {}, {}
     local painting, waiting = false, false
     local surfaces = {}
-    local Paint, Walk, Menu, BindMenu
+    local readable, tooltipBindings = nil, {}
+    local checks, menuChecks, navButtons, navBindings, dropdownHits = {}, {}, {}, {}, {}
+    local Paint, Walk, Menu, BindMenu, Navigation
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
+    events:RegisterEvent("UI_SCALE_CHANGED")
 
     local function Run(fn, ...)
         if painting or not ns.IsEnabled(module) then return end
@@ -32,6 +35,76 @@ end, function(S, module)
         if S.Inset then S.Inset(f) end
         if f.SetBackdrop then f:SetBackdrop(nil) end
         if f.NineSlice then S.FadeNineSlice(f.NineSlice) end
+    end
+    local function Gradient(texture, direction, r, g, b, first, last)
+        texture:SetColorTexture(1, 1, 1, 1)
+        if texture.SetGradient and CreateColor then
+            texture:SetGradient(direction, CreateColor(r, g, b, first), CreateColor(r, g, b, last))
+        elseif texture.SetGradientAlpha then
+            texture:SetGradientAlpha(direction, r, g, b, first, r, g, b, last)
+        else texture:SetColorTexture(r, g, b, math.max(first, last) * 0.5) end
+    end
+    local function ReadableBackground()
+        if not readable then
+            readable = {}
+            -- Same-frame background art cannot cover the graph, labels or
+            -- native click regions. Leave the shell's title strip visible.
+            for _, key in ipairs({"base", "left", "right", "top", "bottom"}) do
+                readable[key] = root:CreateTexture(nil, "BACKGROUND", nil, key == "base" and -4 or -3)
+            end
+            readable.base:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -25)
+            readable.base:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT")
+            readable.left:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -25)
+            readable.left:SetPoint("BOTTOMRIGHT", root, "BOTTOM")
+            readable.right:SetPoint("TOPLEFT", root, "TOP", 0, -25)
+            readable.right:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT")
+            readable.top:SetPoint("TOPLEFT", root, "TOPLEFT", 0, -25)
+            readable.top:SetPoint("BOTTOMRIGHT", root, "RIGHT")
+            readable.bottom:SetPoint("TOPLEFT", root, "LEFT")
+            readable.bottom:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT")
+        end
+        local r, g, b = S.GetPanelColor()
+        if readable.r == r and readable.g == g and readable.b == b then return end
+        readable.r, readable.g, readable.b = r, g, b
+        readable.base:SetColorTexture(r, g, b, 1)
+        local lr, lg, lb = math.min(1, r + 0.10), math.min(1, g + 0.09), math.min(1, b + 0.07)
+        Gradient(readable.left, "HORIZONTAL", lr, lg, lb, 0, 0.5)
+        Gradient(readable.right, "HORIZONTAL", lr, lg, lb, 0.5, 0)
+        Gradient(readable.top, "VERTICAL", 0, 0, 0, 0, 0.12)
+        Gradient(readable.bottom, "VERTICAL", 0, 0, 0, 0.12, 0)
+    end
+    local function Tooltip(f)
+        if not H.Allowed(f) then return end
+        local state = tooltipBindings[f]
+        if not state then
+            state = {}; tooltipBindings[f] = state
+            -- Bind only BtWQuests' private tooltip instances. These completed
+            -- builders call Show themselves, so first display is styled in the
+            -- same UI turn, including native backdrop resets after OnShow.
+            for _, method in ipairs({"SetChain", "SetQuest", "SetActiveQuest", "SetHyperlink"}) do
+                H.Hook(f, method, function() Run(Tooltip, f) end)
+            end
+            H.Script(f, "OnShow", function() Run(Tooltip, f) end)
+            state.fill = f:CreateTexture(nil, "BACKGROUND", nil, -4)
+            state.fill:SetAllPoints(f)
+        end
+        if f.SetBackdrop then f:SetBackdrop(nil) end
+        if f.NineSlice then S.FadeNineSlice(f.NineSlice) end
+        for _, region in ipairs(H.Regions(f)) do
+            if region ~= state.fill and H.Texture(region) then
+                local layer = region.GetDrawLayer and region:GetDrawLayer()
+                if layer == "BACKGROUND" or layer == "BORDER" then H.Fade(region) end
+            end
+        end
+        local r, g, b, a = S.GetPanelColor()
+        state.fill:SetColorTexture(r, g, b, a or 0.95)
+        -- Native tooltip fonts, semantic colours, content and placement remain
+        -- untouched; this frame never enters the generic recursive walker.
+    end
+    local function Tooltips()
+        Tooltip(root.Tooltip)
+        Tooltip(root.Chain and root.Chain.Tooltip)
+        Tooltip(_G.BtWQuestsTooltip)
     end
     local function Scroll(f)
         if not H.Allowed(f) then return end
@@ -128,6 +201,16 @@ end, function(S, module)
         if f.Cover and f.Name then
             FlatButton(f, NODE_KEEP, 1, 0.80)
             H.Fade(f.Icon); H.Fade(f.Cover)
+            for _, key in ipairs({"ActiveTexture", "IsNext"}) do
+                local glow = H.Texture(f[key])
+                if glow then
+                    -- Desaturating the native gold artwork lets the selected
+                    -- accent tint it accurately. Do not change texture, alpha,
+                    -- anchors, visibility or native pulse animation groups.
+                    glow:SetDesaturated(true)
+                    glow:SetVertexColor(S.GetAccentColor())
+                end
+            end
             Fonts(f) -- Preserve status colours, spoiler visibility and fade animations.
         elseif f.Name and f.Tick then
             FlatButton(f, CARD_KEEP, 3, 0.72)
@@ -177,6 +260,99 @@ end, function(S, module)
             end
         end
     end
+    local function CheckSizes(f)
+        local scale = f.GetEffectiveScale and f:GetEffectiveScale() or 1
+        local factor = PixelUtil and PixelUtil.GetPixelToUIUnitFactor and PixelUtil.GetPixelToUIUnitFactor()
+        if not factor and GetPhysicalScreenSize then
+            local _, height = GetPhysicalScreenSize()
+            if height and height > 0 then factor = 768 / height end
+        end
+        local pixel = (factor or 1) / math.max(scale, 0.01)
+        local outerPixels = math.max(5, math.floor(14 / pixel + 0.5))
+        local borderPixels = math.max(1, math.floor(1 / pixel + 0.5))
+        local gapPixels = math.max(borderPixels + 1, math.floor(2 / pixel + 0.5))
+        -- Derive both inner sizes from the same outer pixel count. Independent
+        -- rounding of 14px and 10px can leave an odd difference at UI scales,
+        -- putting one extra pixel of padding on one side of the indicator.
+        return outerPixels * pixel, math.max(1, outerPixels - 2 * borderPixels) * pixel,
+            math.max(1, outerPixels - 2 * gapPixels) * pixel
+    end
+    local function CheckSquare(part, host, size, point, x)
+        if part.SetSnapToPixelGrid then part:SetSnapToPixelGrid(false) end
+        if part.SetTexelSnappingBias then part:SetTexelSnappingBias(0) end
+        part:ClearAllPoints(); part:SetPoint("CENTER", host, point or "CENTER", x or 0, 0)
+        part:SetSize(size, size)
+    end
+    local function Check(f)
+        if not H.Allowed(f) then return end
+        if not checks[f] then
+            local before, art = {}, {}
+            for _, part in ipairs(H.Regions(f)) do before[part] = true end
+            for _, part in ipairs(H.Children(f)) do before[part] = true end
+            soft.Checkbox(f, {borderInset = 4, hover = 0.06})
+            for _, part in ipairs(H.Regions(f)) do if not before[part] then art[#art + 1] = part end end
+            for _, part in ipairs(H.Children(f)) do if not before[part] then art[#art + 1] = part end end
+            checks[f] = art
+            -- Auto Load has a 15px frame with a wider native label hit area.
+            -- Fit the artwork to that slot without resizing the input frame.
+            for _, method in ipairs({"SetCheckedTexture", "SetDisabledCheckedTexture", "SetChecked", "Enable", "Disable", "SetEnabled"}) do
+                H.Hook(f, method, function() Run(Check, f) end)
+            end
+            H.Script(f, "OnShow", function() Run(Check, f) end)
+        end
+        local outer, _, indicator = CheckSizes(f)
+        if checks[f].size ~= outer then
+            checks[f].size = outer
+            for _, part in ipairs(checks[f]) do CheckSquare(part, f, outer) end
+        end
+        for i, getter in ipairs({"GetCheckedTexture", "GetDisabledCheckedTexture"}) do
+            local mark = f[getter] and H.Texture(f[getter](f))
+            if mark then
+                mark:SetVertexColor(1, 1, 1, 1)
+                if i == 1 then local r, g, b = S.GetAccentColor(); mark:SetColorTexture(r, g, b, 1)
+                else mark:SetColorTexture(0.4, 0.4, 0.4, 0.8) end
+                CheckSquare(mark, f, indicator)
+            end
+        end
+    end
+    local function MenuCheck(row)
+        if not H.Allowed(row) then return end
+        local check, uncheck = H.Texture(row.Check), H.Texture(row.UnCheck)
+        if not check or not uncheck then return end
+        local art = menuChecks[row]
+        if not art then
+            art = {}; menuChecks[row] = art
+            art.border = row:CreateTexture(nil, "BORDER", nil, 0)
+            art.fill = row:CreateTexture(nil, "BORDER", nil, 1)
+            art.border:SetColorTexture(0.25, 0.25, 0.25, 1)
+            art.fill:SetColorTexture(0.02, 0.02, 0.02, 1)
+            -- AddButton resets pooled art before Show, including while the
+            -- menu is already open. Repaint only this completed native row.
+            H.Script(row, "OnShow", function() Run(MenuCheck, row) end)
+            for _, method in ipairs({"Enable", "Disable", "SetEnabled"}) do
+                H.Hook(row, method, function() Run(MenuCheck, row) end)
+            end
+        end
+        local outer, inner, indicator = CheckSizes(row)
+        if art.size ~= outer or art.inner ~= inner then
+            art.size, art.inner = outer, inner
+            CheckSquare(art.border, row, outer, "LEFT", 8)
+            CheckSquare(art.fill, row, inner, "LEFT", 8)
+        end
+        art.border:SetShown(not row.notCheckable)
+        art.fill:SetShown(not row.notCheckable)
+        if row.notCheckable then return end
+        local r, g, b = S.GetAccentColor()
+        if row.IsEnabled and not row:IsEnabled() then r, g, b = 0.4, 0.4, 0.4 end
+        for _, mark in ipairs({check, uncheck}) do
+            mark:SetVertexColor(1, 1, 1, 1)
+            CheckSquare(mark, row, indicator, "LEFT", 8)
+        end
+        check:SetColorTexture(r, g, b, 1)
+        uncheck:SetColorTexture(0.02, 0.02, 0.02, 1)
+        -- Keep native checked/unchecked visibility, disabled alpha, labels,
+        -- callbacks and the full row hit target. No replacement CheckButton.
+    end
     Menu = function(list)
         if not H.Allowed(list) then return end
         if not panels[list] then
@@ -190,11 +366,7 @@ end, function(S, module)
                 -- swatch controls. Native hover scripts still own Highlight.
                 H.Font(row.NormalText)
                 if H.Texture(row.Highlight) then row.Highlight:SetColorTexture(1, 1, 1, 0.08) end
-                if H.Texture(row.Check) then
-                    local r, g, b = S.GetAccentColor()
-                    row.Check:SetVertexColor(r, g, b)
-                end
-                if H.Texture(row.UnCheck) then row.UnCheck:SetVertexColor(0.4, 0.4, 0.4) end
+                MenuCheck(row)
             end
         end
     end
@@ -216,12 +388,98 @@ end, function(S, module)
             -- The custom arrow button is separate from the dropdown's regions.
             if H.Allowed(f.Button) then
                 for _, region in ipairs(H.Regions(f.Button)) do if H.Texture(region) then H.Fade(region) end end
+                if f == root.CharacterDropDown and not dropdownHits[f.Button] then
+                    dropdownHits[f.Button] = true
+                    -- Reuse the original click handler/sound/Toggle path. Its
+                    -- old arrow-only anchor rides hidden native label artwork.
+                    f.Button:ClearAllPoints()
+                    f.Button:SetPoint("TOPLEFT", f, "TOPLEFT")
+                    f.Button:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT")
+                    if f.Button.SetHitRectInsets then f.Button:SetHitRectInsets(0, 0, 0, 0) end
+                end
             end
         end
+    end
+    local function NavButton(f)
+        if not H.Allowed(f) then return end
+        FlatButton(f, {"euiJournalSelected"}, 1, 0.72)
+        H.Fade(f.arrowUp); H.Fade(f.arrowDown); H.Fade(f.selected)
+        if not navButtons[f] then
+            navButtons[f] = true
+            f.euiJournalSelected = f:CreateTexture(nil, "BORDER")
+            f.euiJournalSelected:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+            f.euiJournalSelected:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+            for _, method in ipairs({"Enable", "Disable", "SetEnabled"}) do
+                H.Hook(f, method, function() Run(NavButton, f) end)
+            end
+            H.Script(f, "OnShow", function() Run(NavButton, f) end)
+        end
+        local nav = root.navBar
+        local current = nav.navList and nav.navList[#nav.navList] == f
+        local r, g, b = S.GetAccentColor()
+        f.euiJournalSelected:SetColorTexture(r, g, b, 0.12)
+        f.euiJournalSelected:SetShown(current == true)
+        -- Native disables the current breadcrumb to prevent navigating to the
+        -- same page. Keep that page label readable rather than greyed out.
+        H.Font(f.text, 0.92, 0.92, 0.94)
+        if H.Allowed(f.MenuArrowButton) then
+            local arrow = f.MenuArrowButton
+            H.Fade(arrow.Art); H.Fade(arrow.NormalTexture); H.Fade(arrow.PushedTexture)
+            soft.SoftPageButton(arrow, "v", 12)
+            if not navButtons[arrow] then
+                navButtons[arrow] = true
+                arrow:ClearAllPoints()
+                arrow:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -1)
+                arrow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+                arrow:SetWidth(24)
+            end
+        end
+    end
+    Navigation = function()
+        local nav = root.navBar
+        if not H.Allowed(nav) then return end
+        if not navBindings[nav] then
+            navBindings[nav] = {widthBuffer = nav.widthBuffer or 20}
+            for _, method in ipairs({"AddButtons", "AddButton", "Reset", "OnShow"}) do
+                H.Hook(nav, method, function() Run(Navigation) end)
+            end
+            H.Script(nav, "OnShow", function() Run(Navigation) end)
+        end
+        -- NavBarTemplate's raised overlay owns another copy of the tiled art;
+        -- stripping only the parent cannot remove it. Keep its level/layout.
+        for _, owner in ipairs({nav, nav.overlay}) do
+            if H.Allowed(owner) then
+                for _, region in ipairs(H.Regions(owner)) do if H.Texture(region) then H.Fade(region) end end
+            end
+        end
+        local home, overflow = nav.homeButton or nav.home, nav.overflowButton or nav.overflow
+        local layoutChanged = false
+        local function Gap(button)
+            if H.Allowed(button) and button.xoffset ~= 3 then
+                button.xoffset = 3; layoutChanged = true
+            end
+        end
+        Gap(home); Gap(overflow)
+        for _, button in ipairs(nav.navList or {}) do Gap(button) end
+        -- Blizzard's breadcrumb geometry deliberately overlaps its decorative
+        -- wedges. Flat tabs need a real gap; let its own overflow/collapse
+        -- routine lay them out with that gap and account for the added space.
+        local buffer = navBindings[nav].widthBuffer + math.max(0, #(nav.navList or {}) - 1) * 3
+        if nav.widthBuffer ~= buffer then nav.widthBuffer = buffer; layoutChanged = true end
+        if layoutChanged and type(NavBar_CheckLength) == "function" and nav.navList and nav.homeButton and nav.overflowButton then
+            NavBar_CheckLength(nav)
+        end
+        NavButton(home)
+        for _, button in ipairs(nav.navList or {}) do
+            if button ~= (nav.homeButton or nav.home) then NavButton(button) end
+        end
+        if H.Allowed(overflow) then soft.SoftPageButton(overflow, "v", 12) end
+        BindMenu(nav.dropDown)
     end
     Walk = function(f, depth)
         if depth > 12 or not H.Allowed(f) then return end
         local kind = f:GetObjectType()
+        if f == root.navBar then Navigation(); return end
         if kind == "GameTooltip" or kind == "PlayerModel" or kind == "ModelScene" then return end
         local canvas = root.Chain and root.Chain.Scroll and root.Chain.Scroll.Child
         if f == canvas then Graph(); return end
@@ -232,16 +490,9 @@ end, function(S, module)
             else Row(f) end
         elseif type(f.GetListFrame) == "function" then BindMenu(f)
         elseif kind == "EditBox" then S.EditBox(f); if S.Font then S.Font(f) end
-        elseif kind == "CheckButton" then S.Checkbox(f)
+        elseif kind == "CheckButton" then Check(f)
         elseif kind == "StatusBar" and S.ApplyBarFill then S.ApplyBarFill(f)
         elseif kind == "Slider" then Scroll(f)
-        elseif kind == "Button" and f.MenuArrowButton then
-            Button(f, {"selected"})
-            if H.Texture(f.selected) then
-                local r, g, b = S.GetAccentColor()
-                f.selected:SetColorTexture(r, g, b, 0.12)
-            end
-            if H.Allowed(f.MenuArrowButton) then S.PageButton(f.MenuArrowButton, "v") end
         elseif kind == "Button" and f.Active and f.Subtext then
             FlatButton(f, {"Active"}, 2, 0.72)
             Fonts(f)
@@ -320,7 +571,6 @@ end, function(S, module)
             for _, region in ipairs(H.Regions(root.navBar)) do
                 if H.Texture(region) then H.Fade(region) end
             end
-            H.Hook(root.navBar, "AddButtons", function() Run(Walk, root.navBar, 0) end)
         end
         if root.ExpansionList then
             for _, entry in ipairs({{"Left", "<"}, {"Right", ">"}}) do
@@ -331,7 +581,7 @@ end, function(S, module)
         for _, method in ipairs({"DisplayExpansionList", "DisplayItemList", "DisplayCurrentChain"}) do
             H.Hook(root, method, function() Run(Paint) end)
         end
-        H.Hook(root, "UpdateCurrentChain", function() Run(Graph) end)
+        H.Hook(root, "UpdateCurrentChain", function() Run(Graph); Run(Tooltips) end)
         local chain = root.Chain and root.Chain.Scroll
         if chain then
             H.Hook(chain, "SetChain", function() Run(Graph) end)
@@ -350,13 +600,15 @@ end, function(S, module)
     Paint = function()
         waiting = false
         Setup()
+        ReadableBackground()
+        Tooltips()
         Walk(root, 0)
         for _, key in ipairs({"SearchPreview", "SearchResults"}) do Surface(root[key]) end
         BindMenu(_G.BtWQuestsOptionsMenu)
         soft.RefreshSoftBorders()
     end
     module.refresh = function() H.Queue(module, function() Run(Paint) end) end
-    events:SetScript("OnEvent", function() if waiting then Run(Paint) end end)
+    events:SetScript("OnEvent", function(_, event) if waiting or event == "UI_SCALE_CHANGED" then Run(Paint) end end)
     if S.OnLooksChanged then S.OnLooksChanged(module.refresh) end
     Run(Paint)
 end)

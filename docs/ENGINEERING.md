@@ -55,6 +55,7 @@ AceGUI is not inherently the performance problem. Recursive skin work inside eac
 | FontString:SetText(): Font not set | Establish a valid font before populating an owned new FontString; preserve native initialization order |
 | `.icon` is a number, or a field is a function | Validate object type/method availability before indexing; asset IDs, callbacks and regions are different values |
 | Attempt to yield across a C-call/metamethod boundary | Preserve coroutine-capable constructors and direct return paths; do not wrap a yielding target call in pcall/xpcall or an incompatible hook boundary |
+| C_Timer.After rejects a callback after skin activation | Never securely hook a function the target passes directly to native timer/function-container APIs. HomeBound passes BuildUI directly; observe owned list completion instead and test delayed rebuilds without replacing the callback |
 | Recursive font hooks / native stack overflow | Use re-entry guards, compare actual fonts, avoid borrowed FontObject restoration and model reset/release paths |
 | ItemRack set editing/save stops working | Font/layout writes can trigger OnTextChanged and native validation. Do not rewrite unchanged inputs or their internal text regions; test the editing flow, not just appearance |
 | Details anchor dependency cycle | Clear the managed anchor graph before native restoration; anchor sibling controls independently to an owned host |

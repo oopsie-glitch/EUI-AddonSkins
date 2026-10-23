@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.1 — Skin Fixes and Polish
+
+- RareScanner: fixed an error when Explorer lists initialize late; styled dropdowns, filters, checkboxes, Rescan and confirmation controls.
+- RareScanner: alert backgrounds now default to 80% opacity with a saved slider under Display; refined side-navigation artwork.
+- BtWQuests: improved background contrast, styled information popouts on first display and matched the quest pulse to the selected accent.
+- BtWQuests: refined square checkboxes, top navigation spacing and arrow alignment; made the full character selector clickable.
+- Home Bound: fixed timer callback errors after achievements and quest turn-ins caused by the skin's UI refresh hook.
+
 ## 1.6.0 — Expanded Addon Support
 
 ### New skins

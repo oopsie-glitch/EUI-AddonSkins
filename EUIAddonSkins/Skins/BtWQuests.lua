@@ -12,8 +12,8 @@ end, function(S, module)
     local painting, waiting = false, false
     local surfaces = {}
     local readable, tooltipBindings = nil, {}
-    local checks, menuChecks = {}, {}
-    local Paint, Walk, Menu, BindMenu
+    local checks, menuChecks, navButtons, navBindings = {}, {}, {}, {}
+    local Paint, Walk, Menu, BindMenu, Navigation
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
     events:RegisterEvent("UI_SCALE_CHANGED")
@@ -391,9 +391,63 @@ end, function(S, module)
             end
         end
     end
+    local function NavButton(f)
+        if not H.Allowed(f) then return end
+        FlatButton(f, {"euiJournalSelected"}, 1, 0.72)
+        H.Fade(f.arrowUp); H.Fade(f.arrowDown); H.Fade(f.selected)
+        if not navButtons[f] then
+            navButtons[f] = true
+            f.euiJournalSelected = f:CreateTexture(nil, "BORDER")
+            f.euiJournalSelected:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
+            f.euiJournalSelected:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+            for _, method in ipairs({"Enable", "Disable", "SetEnabled"}) do
+                H.Hook(f, method, function() Run(NavButton, f) end)
+            end
+            H.Script(f, "OnShow", function() Run(NavButton, f) end)
+        end
+        local nav = root.navBar
+        local current = nav.navList and nav.navList[#nav.navList] == f
+        local r, g, b = S.GetAccentColor()
+        f.euiJournalSelected:SetColorTexture(r, g, b, 0.12)
+        f.euiJournalSelected:SetShown(current == true)
+        -- Native disables the current breadcrumb to prevent navigating to the
+        -- same page. Keep that page label readable rather than greyed out.
+        H.Font(f.text, 0.92, 0.92, 0.94)
+        if H.Allowed(f.MenuArrowButton) then
+            local arrow = f.MenuArrowButton
+            H.Fade(arrow.Art); H.Fade(arrow.NormalTexture); H.Fade(arrow.PushedTexture)
+            soft.SoftPageButton(arrow, "v", 12)
+        end
+    end
+    Navigation = function()
+        local nav = root.navBar
+        if not H.Allowed(nav) then return end
+        if not navBindings[nav] then
+            navBindings[nav] = true
+            for _, method in ipairs({"AddButtons", "AddButton", "Reset", "OnShow"}) do
+                H.Hook(nav, method, function() Run(Navigation) end)
+            end
+            H.Script(nav, "OnShow", function() Run(Navigation) end)
+        end
+        -- NavBarTemplate's raised overlay owns another copy of the tiled art;
+        -- stripping only the parent cannot remove it. Keep its level/layout.
+        for _, owner in ipairs({nav, nav.overlay}) do
+            if H.Allowed(owner) then
+                for _, region in ipairs(H.Regions(owner)) do if H.Texture(region) then H.Fade(region) end end
+            end
+        end
+        NavButton(nav.homeButton or nav.home)
+        for _, button in ipairs(nav.navList or {}) do
+            if button ~= (nav.homeButton or nav.home) then NavButton(button) end
+        end
+        local overflow = nav.overflowButton or nav.overflow
+        if H.Allowed(overflow) then soft.SoftPageButton(overflow, "v", 12) end
+        BindMenu(nav.dropDown)
+    end
     Walk = function(f, depth)
         if depth > 12 or not H.Allowed(f) then return end
         local kind = f:GetObjectType()
+        if f == root.navBar then Navigation(); return end
         if kind == "GameTooltip" or kind == "PlayerModel" or kind == "ModelScene" then return end
         local canvas = root.Chain and root.Chain.Scroll and root.Chain.Scroll.Child
         if f == canvas then Graph(); return end
@@ -407,13 +461,6 @@ end, function(S, module)
         elseif kind == "CheckButton" then Check(f)
         elseif kind == "StatusBar" and S.ApplyBarFill then S.ApplyBarFill(f)
         elseif kind == "Slider" then Scroll(f)
-        elseif kind == "Button" and f.MenuArrowButton then
-            Button(f, {"selected"})
-            if H.Texture(f.selected) then
-                local r, g, b = S.GetAccentColor()
-                f.selected:SetColorTexture(r, g, b, 0.12)
-            end
-            if H.Allowed(f.MenuArrowButton) then S.PageButton(f.MenuArrowButton, "v") end
         elseif kind == "Button" and f.Active and f.Subtext then
             FlatButton(f, {"Active"}, 2, 0.72)
             Fonts(f)
@@ -492,7 +539,6 @@ end, function(S, module)
             for _, region in ipairs(H.Regions(root.navBar)) do
                 if H.Texture(region) then H.Fade(region) end
             end
-            H.Hook(root.navBar, "AddButtons", function() Run(Walk, root.navBar, 0) end)
         end
         if root.ExpansionList then
             for _, entry in ipairs({{"Left", "<"}, {"Right", ">"}}) do

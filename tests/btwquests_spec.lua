@@ -152,7 +152,49 @@ for _, key in ipairs({'NavBack', 'NavForward', 'NavHere', 'OptionsButton'}) do r
 root.OptionsButton.normal = region(root.OptionsButton, 'nativeIcon')
 root.navBar = frame('Frame', root)
 region(root.navBar, 'InsetBorderBottom'); region(root.navBar, 'InsetBorderLeft')
-root.navBar.AddButtons = function() root.navBar.InsetBorderBottom:SetAlpha(1); return 'nav-native' end
+local nav=root.navBar
+nav.overlay=frame('Frame',nav);nav.overlay.frameLevel=50;region(nav.overlay,'tile')
+nav.home=frame('Button',nav);region(nav.home,'text','FontString');region(nav.home,'normal')
+nav.home.width=86;nav.home.labelAnchor='native-home';nav.home.action=function()return 'home-native' end
+nav.overflow=frame('Button',nav);region(nav.overflow,'normal');nav.overflow.width=44;nav.overflow.shown=false
+nav.overflow.action=function()return 'overflow-native' end
+nav.homeButton=nav.home;nav.overflowButton=nav.overflow
+nav.navList={nav.home};nav.freeButtons={}
+local function navRow(name)
+    local f=frame('Button',nav);f.width=160;f.height=30;f.labelAnchor='native-left-20'
+    for _,key in ipairs({'arrowUp','arrowDown','selected','normal'}) do region(f,key) end
+    region(f,'text','FontString');f.text.caption=name
+    f.MenuArrowButton=frame('Button',f);f.MenuArrowButton.width=27;f.MenuArrowButton.height=31
+    for _,key in ipairs({'Art','NormalTexture','PushedTexture'}) do region(f.MenuArrowButton,key) end
+    f.action=function()return 'breadcrumb-native' end
+    f.MenuArrowButton.action=function()return 'siblings-native' end
+    return f
+end
+function nav:AddButton(name)
+    local f=table.remove(self.freeButtons) or navRow(name)
+    f.text.caption=name;f:Show();self.navList[#self.navList+1]=f
+    for i,button in ipairs(self.navList) do
+        if button.selected then button.selected:SetShown(i==#self.navList) end
+        if i==#self.navList then button:Disable();button.text.color={.5,.5,.5}
+        else button:Enable() end
+    end
+    -- Native may finish state/text after Show; the completed AddButton hook
+    -- must repair the last label and selection in the same UI turn.
+    return 'added-native',nil,f
+end
+function nav:AddButtons()
+    self.InsetBorderBottom:SetAlpha(1);self.overlay.tile:SetAlpha(1)
+    self:AddButton('The War Within');self:AddButton('Against the Current')
+    return 'nav-native'
+end
+function nav:Reset()
+    while #self.navList>1 do
+        local f=table.remove(self.navList);f.shown=false;self.freeButtons[#self.freeButtons+1]=f
+    end
+    self.home:Disable();return 'reset-native'
+end
+nav.home:Disable()
+
 root.Inset = frame('Frame', root); region(root.Inset, 'Bg')
 root.SearchBox = frame('EditBox', root)
 root.ExpansionList = frame('Frame', root)
@@ -285,6 +327,7 @@ local function dropdown(parent)
 end
 root.CharacterDropDown = dropdown(root)
 BtWQuestsOptionsMenu = dropdown(); BtWQuestsOptionsMenu.displayMode = 'MENU'
+nav.dropDown=dropdown(nav);nav.dropDown.displayMode='MENU'
 local denied = frame('Button', root); denied.protected = true; region(denied, 'Name', 'FontString')
 modules.BtWQuests.install(S, modules.BtWQuests); flush()
 assert(root.shell.noBorder and root.Inset.inset and root.Inset.Bg.alpha == 0)
@@ -313,6 +356,28 @@ root.NavHere.enabled = true; root.NavHere.hooks.OnEnable()
 assert(root.NavHere.euiJournalIcon.alpha == 1)
 assert(root.navBar.InsetBorderBottom.alpha == 0 and root.navBar.InsetBorderLeft.alpha == 0)
 assert(root.navBar:AddButtons() == 'nav-native' and root.navBar.InsetBorderBottom.alpha == 0)
+assert(nav.overlay.tile.alpha==0 and nav.overlay.frameLevel==50,'raised navigation overlay retained native tiles or changed level')
+local ancestor,current=nav.navList[2],nav.navList[3]
+assert(nav.home.apiFill and ancestor.apiFill and current.apiFill,'Home or breadcrumb buttons lack EUI surfaces')
+assert(ancestor.arrowUp.alpha==0 and ancestor.arrowDown.alpha==0 and current.selected.alpha==0,
+    'native breadcrumb wedges/selection survived')
+assert(current.euiJournalSelected.shown and not ancestor.euiJournalSelected.shown and not nav.home.euiJournalSelected.shown,
+    'breadcrumb current-page selection is wrong')
+assert(current.text.color[1]==.92 and not current:IsEnabled() and ancestor:IsEnabled(),
+    'native current-page state changed or selected text remained grey')
+assert(current.width==160 and current.height==30 and current.labelAnchor=='native-left-20'
+    and nav.home.width==86 and nav.home.labelAnchor=='native-home','breadcrumb geometry changed')
+assert(current.MenuArrowButton.Art.alpha==0 and current.MenuArrowButton.glyph=='v'
+    and current.MenuArrowButton.width==27 and current.MenuArrowButton.height==31,
+    'sibling menu arrow art or native hit size changed')
+assert(nav.overflow.glyph=='v' and not nav.overflow.shown and nav.overflow.width==44,'overflow visibility/geometry changed')
+assert(nav.home.action()=='home-native' and current.action()=='breadcrumb-native'
+    and current.MenuArrowButton.action()=='siblings-native' and nav.overflow.action()=='overflow-native')
+assert(nav:Reset()=='reset-native' and nav.home.euiJournalSelected.shown,'Home-only page did not update selection')
+local nr,nn,reused=nav:AddButton('Reused chain')
+assert(nr=='added-native' and nn==nil and reused==ancestor and reused.text.caption=='Reused chain'
+    and reused.euiJournalSelected.shown and not nav.home.euiJournalSelected.shown,'pooled breadcrumb state/return lost')
+
 assert(root.CharacterDropDown.dropdown and root.CharacterDropDown.height == 22 and root.CharacterDropDown.Icon.alpha == 1)
 assert(menuCalls == 0 and not BtWQuestsOptionsMenu.list, 'skin forced lazy menus to load')
 assert(root.SearchBox.edit and root.SearchPreview.panel.noBorder and root.SearchResults.CloseButton.close)
@@ -401,7 +466,10 @@ end
 row.scale=1;expansion.AutoLoad.scale=1
 modules.BtWQuests.refresh();flush();PixelUtil=nil
 local countBefore,hooksAtStart,readsAtStart=created,hookCount,hierarchyReads
-for i=1,1000 do row:Rebuild(i%2==0);expansion.AutoLoad:SetChecked(i%2==0) end
+for i=1,1000 do
+    row:Rebuild(i%2==0);expansion.AutoLoad:SetChecked(i%2==0)
+    reused:Enable();reused:Disable()
+end
 assert(created==countBefore and hookCount==hooksAtStart and hierarchyReads==readsAtStart,
     'warm checkbox state changes scanned the hierarchy or allocated objects/hooks')
 local before, hooksBefore = created, hookCount
@@ -409,6 +477,7 @@ for _ = 1, 20 do modules.BtWQuests.refresh(); flush() end
 assert(created == before and hookCount == hooksBefore, 'warm refresh allocated objects/hooks')
 accent = 0.7; panel = 0.12; for _, fn in ipairs(looks) do fn() end; flush()
 assert(row.Check.color[1] == accent and expansion.AutoLoad.checkedTexture.color[1]==accent and later.checkedTexture.color[1]==accent, 'checkboxes did not track the accent')
+assert(reused.euiJournalSelected.color[1]==accent,'breadcrumb selection did not follow accent')
 assert(first.ActiveTexture.color[1]==accent and first.IsNext.color[1]==accent and first.ActiveTexture.alpha==.37,'quest pulse did not follow live accent')
 assert(math.abs(gradients[1].gradient[2]-(panel+.10))<.00001,'journal background did not follow live theme')
 assert(card.Acive.color[1] == accent and math.abs(card.apiFill.color[1] - (panel + 0.085)) < 0.00001,
@@ -417,13 +486,13 @@ panel = 0.95; for _, fn in ipairs(looks) do fn() end; flush()
 assert(card.apiFill.color[1] == 1, 'light panel colours exceeded the colour range')
 combat = true; tip:SetChain(789);assert(tip.backdrop.bgFile=='native-blue' and not tip.NineSlice.faded,'combat popout was modified')
 combat = true; row:Rebuild(true);assert(not row.Check.solid,'combat menu row was restyled')
-combat = true; root:DisplayItemList()
+combat = true; nav.freeButtons={};local _,_,combatNav=nav:AddButton('Combat chain');assert(not combatNav.euiJournalSelected,'new combat breadcrumb was styled');root:DisplayItemList()
 local pending = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
 assert(not pending.button, 'new combat control was modified')
 combat = false; for _, event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.hooks.OnEvent() end end; flush()
-assert(pending.button and row.Check.solid, 'combat-deferred skin was lost')
+assert(pending.button and row.Check.solid and combatNav.euiJournalSelected.shown, 'combat-deferred skin was lost')
 assert(tip.backdrop==nil and tip.NineSlice.faded,'combat-deferred popout skin was lost')
-enabled = false; row:Rebuild(false);assert(not row.Check.solid,'disabled skin restyled a menu row');root:DisplayItemList(); local off = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
+enabled = false; local _,_,offNav=nav:AddButton('Disabled skin');assert(not offNav.euiJournalSelected,'disabled skin styled a breadcrumb');row:Rebuild(false);assert(not row.Check.solid,'disabled skin restyled a menu row');root:DisplayItemList(); local off = root.Category.Scroll.Child.children[#root.Category.Scroll.Child.children]
 tip:SetChain(999);assert(tip.backdrop.bgFile=='native-blue' and not tip.NineSlice.faded,'disabled popout was skinned')
 modules.BtWQuests.refresh(); flush(); assert(not off.button, 'disabled skin processed new content')
 assert(#errors == 0, table.concat(errors, '\n'))

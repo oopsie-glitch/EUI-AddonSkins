@@ -1,5 +1,7 @@
 # Project documentation
 
+Start with [the Design & Development Standard](DESIGN_AND_DEVELOPMENT.md). It defines the accepted visual treatment, maps shared helpers and reference skins, and links the detailed rules below.
+
 ## Current guides
 
 - [Engineering and regression checklist](ENGINEERING.md): performance, ownership, fonts, menus, input safety and verification.

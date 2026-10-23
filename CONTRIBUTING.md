@@ -1,5 +1,7 @@
 # Development
 
+Start with [the Design & Development Standard](docs/DESIGN_AND_DEVELOPMENT.md) for visual identity, implementation references and the authoritative reading path.
+
 ## Branches
 
 | Branch | Purpose |

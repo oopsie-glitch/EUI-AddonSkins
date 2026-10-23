@@ -71,11 +71,29 @@ local function frame(kind, parent)
     function f:SetBackdrop(v) assert(not combat); self.backdrop = v end
     function f:SetSize(w, h) self.width, self.height = w, h end
     function f:SetHeight(h) self.height = h end
-    function f:GetWidth() return self.width end
-    function f:GetHeight() return self.height end
+    function f:GetWidth()
+        local a,b=self.points and self.points[1],self.points and self.points[2]
+        if a and b and a[1]=='TOPLEFT' and b[1]=='BOTTOMRIGHT' and a[2]==b[2] then
+            return a[2]:GetWidth()+(b[4] or 0)-(a[4] or 0)
+        end
+        return self.width
+    end
+    function f:SetWidth(v) self.width=v end
+    function f:SetHitRectInsets(...) self.hitInsets={...} end
+    function f:GetHeight()
+        local a,b=self.points and self.points[1],self.points and self.points[2]
+        if a and b and (a[1]=='TOPLEFT' or a[1]=='TOPRIGHT') and b[1]=='BOTTOMRIGHT' and a[2]==b[2] then
+            return a[2]:GetHeight()+(a[5] or 0)-(b[5] or 0)
+        end
+        return self.height
+    end
     function f:GetEffectiveScale() return self.scale or 1 end
     function f:ClearAllPoints() self.points = {} end
-    function f:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end
+    function f:SetPoint(...)
+        self.points=self.points or {};local point={...}
+        for i,old in ipairs(self.points) do if old[1]==point[1] then self.points[i]=point;return end end
+        self.points[#self.points+1]=point
+    end
     function f:GetNormalTexture() return self.normal end
     function f:GetFontString() return self.text end
     function f:IsShown() return self.shown end
@@ -152,14 +170,30 @@ for _, key in ipairs({'NavBack', 'NavForward', 'NavHere', 'OptionsButton'}) do r
 root.OptionsButton.normal = region(root.OptionsButton, 'nativeIcon')
 root.navBar = frame('Frame', root)
 region(root.navBar, 'InsetBorderBottom'); region(root.navBar, 'InsetBorderLeft')
-local nav=root.navBar
+local nav=root.navBar;nav.width=500;nav.widthBuffer=20
 nav.overlay=frame('Frame',nav);nav.overlay.frameLevel=50;region(nav.overlay,'tile')
 nav.home=frame('Button',nav);region(nav.home,'text','FontString');region(nav.home,'normal')
-nav.home.width=86;nav.home.labelAnchor='native-home';nav.home.action=function()return 'home-native' end
+nav.home.xoffset=-15;nav.home.height=30;nav.home.width=86;nav.home.labelAnchor='native-home';nav.home.action=function()return 'home-native' end
 nav.overflow=frame('Button',nav);region(nav.overflow,'normal');nav.overflow.width=44;nav.overflow.shown=false
-nav.overflow.action=function()return 'overflow-native' end
+nav.overflow.xoffset=-18;nav.overflow.action=function()return 'overflow-native' end
 nav.homeButton=nav.home;nav.overflowButton=nav.overflow
 nav.navList={nav.home};nav.freeButtons={}
+-- Source-shaped native length/collapse pass: previous button xoffset places
+-- its successor, and widthBuffer reserves the new spacing budget.
+NavBar_CheckLength=function(self)
+    local width,maxWidth,lastShown,collapsed=0,self:GetWidth()-self.widthBuffer,nil,false
+    for i=#self.navList,1,-1 do
+        local f=self.navList[i];width=width+f:GetWidth()
+        f.shown=width<=maxWidth
+        if f.shown then
+            if lastShown then self.navList[lastShown]:SetPoint('LEFT',f,'RIGHT',f.xoffset or 0,0) end
+            lastShown=i
+        else collapsed=true end
+        if i==#self.navList then f:Disable() else f:Enable() end
+    end
+    self.overflowButton.shown=collapsed
+    if collapsed and lastShown then self.navList[lastShown]:SetPoint('LEFT',self.overflowButton,'RIGHT',self.overflowButton.xoffset or 0,0) end
+end
 local function navRow(name)
     local f=frame('Button',nav);f.width=160;f.height=30;f.labelAnchor='native-left-20'
     for _,key in ipairs({'arrowUp','arrowDown','selected','normal'}) do region(f,key) end
@@ -180,6 +214,7 @@ function nav:AddButton(name)
     end
     -- Native may finish state/text after Show; the completed AddButton hook
     -- must repair the last label and selection in the same UI turn.
+    NavBar_CheckLength(self)
     return 'added-native',nil,f
 end
 function nav:AddButtons()
@@ -191,7 +226,7 @@ function nav:Reset()
     while #self.navList>1 do
         local f=table.remove(self.navList);f.shown=false;self.freeButtons[#self.freeButtons+1]=f
     end
-    self.home:Disable();return 'reset-native'
+    self.home:Disable();NavBar_CheckLength(self);return 'reset-native'
 end
 nav.home:Disable()
 
@@ -291,10 +326,25 @@ local function result()
 end
 root.SearchPreview.UpdateResults = function() result(); return 'results-native' end
 root.SearchResults.UpdateSearch = function() return 'scroll-native' end
-local menuCalls = 0
+local menuCalls,characterClicks = 0,0
 local function dropdown(parent)
     local f = frame('Frame', parent); region(f, 'Text', 'FontString'); region(f, 'Icon')
     f.Button = frame('Button', f); region(f.Button, 'normal')
+    f.Button.width=24;f.Button.height=24
+    f.Button:SetPoint('TOPRIGHT',f,'TOPRIGHT',16,-18)
+    f.Button:SetScript('OnClick',function(button)
+        characterClicks=characterClicks+1
+        return button:GetParent():Toggle()
+    end)
+    f.Toggle=function(self)
+        self.open=not self.open
+        if self.open then self:Open() end
+        return 'toggle-native',nil,self.open
+    end
+    f.Button.ClickAt=function(button,x,y)
+        if x<0 or y<0 or x>button:GetWidth() or y>button:GetHeight() then return false end
+        return button.hooks.OnClick(button)
+    end
     f.GetListFrame = function(self)
         menuCalls = menuCalls + 1
         if not self.list then
@@ -326,6 +376,7 @@ local function dropdown(parent)
     return f
 end
 root.CharacterDropDown = dropdown(root)
+local characterClickHandler=root.CharacterDropDown.Button.hooks.OnClick
 BtWQuestsOptionsMenu = dropdown(); BtWQuestsOptionsMenu.displayMode = 'MENU'
 nav.dropDown=dropdown(nav);nav.dropDown.displayMode='MENU'
 local denied = frame('Button', root); denied.protected = true; region(denied, 'Name', 'FontString')
@@ -368,9 +419,19 @@ assert(current.text.color[1]==.92 and not current:IsEnabled() and ancestor:IsEna
 assert(current.width==160 and current.height==30 and current.labelAnchor=='native-left-20'
     and nav.home.width==86 and nav.home.labelAnchor=='native-home','breadcrumb geometry changed')
 assert(current.MenuArrowButton.Art.alpha==0 and current.MenuArrowButton.glyph=='v'
-    and current.MenuArrowButton.width==27 and current.MenuArrowButton.height==31,
-    'sibling menu arrow art or native hit size changed')
+    and current.MenuArrowButton:GetWidth()==24 and current.MenuArrowButton:GetHeight()==current:GetHeight()-2
+    and current.MenuArrowButton.points[1][5]==-1 and current.MenuArrowButton.points[2][5]==1,
+    'sibling menu arrow protrudes beyond tab surface')
 assert(nav.overflow.glyph=='v' and not nav.overflow.shown and nav.overflow.width==44,'overflow visibility/geometry changed')
+assert(nav.home.xoffset==3 and ancestor.xoffset==3 and current.xoffset==3 and nav.overflow.xoffset==3,
+    'native negative breadcrumb overlap remains')
+assert(ancestor.points[1][2]==nav.home and ancestor.points[1][4]==3
+    and current.points[1][2]==ancestor and current.points[1][4]==3,'breadcrumb layout still overlaps')
+local wide=nav.width;nav.width=260;NavBar_CheckLength(nav)
+assert(nav.overflow.shown and not nav.home.shown,'native collapse/overflow no longer responds to width')
+nav.width=wide;NavBar_CheckLength(nav)
+assert(not nav.overflow.shown and nav.home.shown,'wide navigation did not restore Home')
+
 assert(nav.home.action()=='home-native' and current.action()=='breadcrumb-native'
     and current.MenuArrowButton.action()=='siblings-native' and nav.overflow.action()=='overflow-native')
 assert(nav:Reset()=='reset-native' and nav.home.euiJournalSelected.shown,'Home-only page did not update selection')
@@ -380,6 +441,19 @@ assert(nr=='added-native' and nn==nil and reused==ancestor and reused.text.capti
 
 assert(root.CharacterDropDown.dropdown and root.CharacterDropDown.height == 22 and root.CharacterDropDown.Icon.alpha == 1)
 assert(menuCalls == 0 and not BtWQuestsOptionsMenu.list, 'skin forced lazy menus to load')
+local character=root.CharacterDropDown;local hit=character.Button
+assert(hit.hooks.OnClick==characterClickHandler,'character click handler was replaced')
+assert(hit:GetWidth()==character:GetWidth() and hit:GetHeight()==character:GetHeight()
+    and hit.hitInsets[1]==0 and hit.hitInsets[4]==0,'character selector hit area does not fill box')
+for _,point in ipairs({{1,1},{50,11},{99,21},{99,1},{1,21}}) do
+    local beforeClicks=characterClicks
+    local clickResult=hit:ClickAt(point[1],point[2])
+    assert(clickResult=='toggle-native' and characterClicks==beforeClicks+1,'character box click did not reach exactly one native Toggle')
+end
+character.width=250
+assert(hit:GetWidth()==250 and hit:ClickAt(249,11)=='toggle-native','character selector hit area did not follow resize')
+assert(hit:ClickAt(251,11)==false,'character selector hit area extends beyond box')
+
 assert(root.SearchBox.edit and root.SearchPreview.panel.noBorder and root.SearchResults.CloseButton.close)
 assert(expansion.Base.alpha == 0 and expansion.Background.alpha == 1 and expansion.AutoLoad.checkbox)
 assert(expansionButton.Active.alpha == 1 and expansionButton.Active.color[4] == 0.12

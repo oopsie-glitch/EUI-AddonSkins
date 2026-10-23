@@ -12,7 +12,7 @@ end, function(S, module)
     local painting, waiting = false, false
     local surfaces = {}
     local readable, tooltipBindings = nil, {}
-    local checks, menuChecks, navButtons, navBindings = {}, {}, {}, {}
+    local checks, menuChecks, navButtons, navBindings, dropdownHits = {}, {}, {}, {}, {}
     local Paint, Walk, Menu, BindMenu, Navigation
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -388,6 +388,15 @@ end, function(S, module)
             -- The custom arrow button is separate from the dropdown's regions.
             if H.Allowed(f.Button) then
                 for _, region in ipairs(H.Regions(f.Button)) do if H.Texture(region) then H.Fade(region) end end
+                if f == root.CharacterDropDown and not dropdownHits[f.Button] then
+                    dropdownHits[f.Button] = true
+                    -- Reuse the original click handler/sound/Toggle path. Its
+                    -- old arrow-only anchor rides hidden native label artwork.
+                    f.Button:ClearAllPoints()
+                    f.Button:SetPoint("TOPLEFT", f, "TOPLEFT")
+                    f.Button:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT")
+                    if f.Button.SetHitRectInsets then f.Button:SetHitRectInsets(0, 0, 0, 0) end
+                end
             end
         end
     end
@@ -417,13 +426,20 @@ end, function(S, module)
             local arrow = f.MenuArrowButton
             H.Fade(arrow.Art); H.Fade(arrow.NormalTexture); H.Fade(arrow.PushedTexture)
             soft.SoftPageButton(arrow, "v", 12)
+            if not navButtons[arrow] then
+                navButtons[arrow] = true
+                arrow:ClearAllPoints()
+                arrow:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -1)
+                arrow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+                arrow:SetWidth(24)
+            end
         end
     end
     Navigation = function()
         local nav = root.navBar
         if not H.Allowed(nav) then return end
         if not navBindings[nav] then
-            navBindings[nav] = true
+            navBindings[nav] = {widthBuffer = nav.widthBuffer or 20}
             for _, method in ipairs({"AddButtons", "AddButton", "Reset", "OnShow"}) do
                 H.Hook(nav, method, function() Run(Navigation) end)
             end
@@ -436,11 +452,27 @@ end, function(S, module)
                 for _, region in ipairs(H.Regions(owner)) do if H.Texture(region) then H.Fade(region) end end
             end
         end
-        NavButton(nav.homeButton or nav.home)
+        local home, overflow = nav.homeButton or nav.home, nav.overflowButton or nav.overflow
+        local layoutChanged = false
+        local function Gap(button)
+            if H.Allowed(button) and button.xoffset ~= 3 then
+                button.xoffset = 3; layoutChanged = true
+            end
+        end
+        Gap(home); Gap(overflow)
+        for _, button in ipairs(nav.navList or {}) do Gap(button) end
+        -- Blizzard's breadcrumb geometry deliberately overlaps its decorative
+        -- wedges. Flat tabs need a real gap; let its own overflow/collapse
+        -- routine lay them out with that gap and account for the added space.
+        local buffer = navBindings[nav].widthBuffer + math.max(0, #(nav.navList or {}) - 1) * 3
+        if nav.widthBuffer ~= buffer then nav.widthBuffer = buffer; layoutChanged = true end
+        if layoutChanged and type(NavBar_CheckLength) == "function" and nav.navList and nav.homeButton and nav.overflowButton then
+            NavBar_CheckLength(nav)
+        end
+        NavButton(home)
         for _, button in ipairs(nav.navList or {}) do
             if button ~= (nav.homeButton or nav.home) then NavButton(button) end
         end
-        local overflow = nav.overflowButton or nav.overflow
         if H.Allowed(overflow) then soft.SoftPageButton(overflow, "v", 12) end
         BindMenu(nav.dropDown)
     end

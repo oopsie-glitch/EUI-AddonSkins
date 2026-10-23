@@ -16,6 +16,7 @@ ignore:
   - tests
   - scripts
   - docs
+  - screenshots
   - README.md
   - CHANGELOG.md
   - CURSEFORGE.md

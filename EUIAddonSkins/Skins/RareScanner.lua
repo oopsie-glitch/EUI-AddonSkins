@@ -11,8 +11,9 @@ end, function(S, module)
     local fills, skinArt, tracks, arrows, labels = {}, {}, {}, {}, {}
     local lifts, views = {}, {}
     local optionGroups, libraryHooks, mediaRecords = {}, {}, {}
+    local explorerControls, menuContexts, menuMarks = {}, setmetatable({}, {__mode = "k"}), {}
     local generation, waiting, applying = 1, false, false
-    local Walk, PaintWidget, Refresh, Pullout, Options, BindGroup, MediaPopup
+    local Walk, PaintWidget, Refresh, Pullout, Options, BindGroup, MediaPopup, ExplorerControls, ExplorerMenu
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
     events:RegisterEvent("ADDON_LOADED")
@@ -249,6 +250,7 @@ end, function(S, module)
     end
     local function Control(f)
         local kind, widget = f:GetObjectType(), f.obj
+        if explorerControls[f] then return end
         if not owners[f] and (f.BaseFrameBackground or f.Background1) then
             Panel(f, f.Texture)
             if H.Texture(f.Header) then H.Fade(f.Header) end
@@ -308,6 +310,7 @@ end, function(S, module)
         end
         if owner then owner.nodes[f] = true; owners[f] = owner end
         Control(f)
+        if explorerControls[f] then return end -- explicitly styled native controls own their artwork
         for _, text in ipairs(H.Regions(f)) do Font(text) end
         local children = H.Children(f)
         for _, child in ipairs(children) do
@@ -346,6 +349,150 @@ end, function(S, module)
             r:SetSize(d.width, d.height)
         end
         if d.points then r:ClearAllPoints(); for _, point in ipairs(d.points) do r:SetPoint(unpack(point)) end end
+    end
+    local function ExplorerOwner(owner)
+        local root = _G.RSExplorerFrame
+        local filters = root and root.Filters
+        for _ = 1, 12 do
+            if not owner then return false end
+            if filters and (owner == filters.FilterDropDown or owner == filters.ContinentDropDown) then return true end
+            owner = owner.GetOwnerRegion and owner:GetOwnerRegion() or owner.GetParent and owner:GetParent()
+        end
+        return false
+    end
+    local function RestoreMarks(list)
+        local record = menuMarks[list]
+        if not record then return end
+        for texture, saved in pairs(record.saved) do RestoreRegion(texture, saved) end
+        record.saved, record.active = {}, false
+    end
+    local function MenuArt(list, row, description)
+        local record = menuMarks[list]
+        if not record or not record.active or not Ready() or not list:IsShown()
+            or list:GetOwnerRegion() ~= record.owner or not ExplorerOwner(record.owner) then return end
+        local function Remember(texture)
+            if H.Texture(texture) and not record.saved[texture] then record.saved[texture] = RegionState(texture) end
+            return H.Texture(texture)
+        end
+        -- Compositor-owned text/regions keep native fonts and callbacks. Only
+        -- existing selection and arrow textures are changed, never raw regions.
+        local selected = description and ((description.IsCheckbox and description:IsCheckbox())
+            or (description.IsRadio and description:IsRadio()))
+        if selected then
+            local box, mark = Remember(row.leftTexture1), Remember(row.leftTexture2)
+            if box then box:SetColorTexture(0.18, 0.18, 0.2, 1) end
+            if mark then
+                mark:SetColorTexture(S.GetAccentColor()); mark:SetSize(7, 7)
+                mark:ClearAllPoints(); mark:SetPoint("CENTER", box or row, "CENTER")
+            end
+        end
+        local arrow = Remember(row.arrow)
+        if arrow then
+            arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-right.png")
+            arrow:SetVertexColor(0.75, 0.75, 0.78, 1)
+        end
+    end
+    ExplorerMenu = function(list)
+        if InCombatLockdown and InCombatLockdown() then waiting = true; return end
+        local manager = Menu and Menu.GetManager and Menu.GetManager()
+        list = list or manager and manager.GetOpenMenu and manager:GetOpenMenu()
+        local owner = list and list.GetOwnerRegion and list:GetOwnerRegion()
+        if not H.Allowed(list) then return end
+        local record = menuMarks[list]
+        if record and (not Ready() or not ExplorerOwner(owner) or record.owner ~= owner) then RestoreMarks(list) end
+        if not Ready() or not ExplorerOwner(owner) then return end
+        if not record then
+            record = {saved = {}}; menuMarks[list] = record
+            -- Cleanup is deliberately independent of the integration toggle.
+            list:HookScript("OnHide", function() RestoreMarks(list) end)
+        end
+        record.owner, record.active = owner, true
+        if list.EnumerateElementDescriptions then
+            list:EnumerateElementDescriptions(function(_, description)
+                if not description.AddInitializer then return end
+                local context = menuContexts[description]
+                if not context then
+                    context = {}; menuContexts[description] = context
+                    description:AddInitializer(function(row, desc, menu)
+                        if context.list and (not menu or menu == context.list) then MenuArt(context.list, row, desc) end
+                    end)
+                end
+                context.list = list
+            end)
+        end
+        for _, row in ipairs(H.Children(list)) do
+            if row.GetElementDescription then MenuArt(list, row, row:GetElementDescription()) end
+        end
+        if ns.BindPopupList then ns.BindPopupList(S, module, owner, list) end
+    end
+    ExplorerControls = function()
+        local root = _G.RSExplorerFrame
+        if not root then return end
+        local filters, controls = root.Filters, root.Control
+        local function Action(button, dropdown)
+            if not H.Allowed(button) then return end
+            local state = explorerControls[button]
+            if not state then
+                state = {}; explorerControls[button] = state
+                -- SharedButtonSmallTemplate refreshes its red atlas on hover,
+                -- enable and show. Keep native art hidden through those resets.
+                local native = H.Regions(button)
+                if dropdown then soft.Dropdown(button)
+                else soft.Button(button); if S.StateButtonLabel then S.StateButtonLabel(button) end end
+                for _, texture in ipairs(native) do if H.Texture(texture) then H.Fade(texture) end end
+                if dropdown then
+                    if ns.BindPopupOwner then ns.BindPopupOwner(S, module, button) end
+                    H.Hook(button, "OnMenuOpened", function(_, list) ExplorerMenu(list) end)
+                end
+            end
+            if state.generation ~= generation then
+                if dropdown then soft.Dropdown(button) else soft.Button(button) end
+                state.generation = generation
+            end
+            Font(button.GetFontString and button:GetFontString())
+        end
+        local function NativeCheck(button)
+            if not H.Allowed(button) then return end
+            local state = explorerControls[button]
+            if not state then
+                state = {}; explorerControls[button] = state
+                for _, texture in ipairs(H.Regions(button)) do if H.Texture(texture) then H.Fade(texture) end end
+                local host = CreateFrame("Frame", nil, button)
+                host:SetPoint("CENTER", button, "CENTER"); host:SetSize(22, 22); host:EnableMouse(false)
+                layers[host] = true; state.host = host
+                soft.Checkbox(host, {borderInset = 4})
+                state.mark = host:CreateTexture(nil, "OVERLAY", nil, 2)
+                state.mark:SetSize(8, 8); state.mark:SetPoint("CENTER", host, "CENTER")
+                local function Paint()
+                    if not Ready() then return end
+                    local checked = button.GetChecked and button:GetChecked() and true or false
+                    if state.mark:IsShown() ~= checked then if checked then state.mark:Show() else state.mark:Hide() end end
+                    local enabled = not button.IsEnabled or button:IsEnabled()
+                    if state.generation ~= generation or state.enabled ~= enabled then
+                        if enabled then state.mark:SetColorTexture(S.GetAccentColor())
+                        else state.mark:SetColorTexture(0.4, 0.4, 0.4, 0.8) end
+                        Font(button.Text)
+                        if H.Allowed(button.Text) then
+                            local shade = enabled and 0.9 or 0.5; button.Text:SetTextColor(shade, shade, shade, 1)
+                        end
+                        state.generation, state.enabled = generation, enabled
+                    end
+                end
+                state.paint = Paint
+                for _, method in ipairs({"SetChecked", "Enable", "Disable", "SetEnabled"}) do H.Hook(button, method, Paint) end
+                H.Script(button, "OnClick", Paint)
+            end
+            state.paint()
+        end
+        if filters then
+            Action(filters.FilterDropDown, true); Action(filters.ContinentDropDown, true)
+            NativeCheck(filters.LockCurrentZoneCheckButton); Action(filters.RestartScanningButton)
+        end
+        if controls then
+            NativeCheck(controls.AutoFilterCheckButton); NativeCheck(controls.CreateProfilesBackupCheckButton)
+            Action(controls.ApplyFiltersButton)
+        end
+        Action(root.ScanRequired and root.ScanRequired.StartScanningButton)
     end
     local function Snapshot(f, record, depth)
         if not H.Allowed(f) or layers[f] == true or (depth or 0) > 24 then return end
@@ -707,6 +854,7 @@ end, function(S, module)
         if not Ready() then return end
         local root = _G.RSExplorerFrame
         if not H.Allowed(root) then return end
+        ExplorerControls()
         if explorerGeneration ~= generation then
             Panel(root); Lift(root)
             if root.Border then Strip(root.Border) end
@@ -733,12 +881,21 @@ end, function(S, module)
         H.Hook(library, "Spawn", function(_, reference, data)
             if Ready() and type(reference) == "string" and reference:match("^RARESCANNER_") and library.ActiveDialog then
                 local frame = library:ActiveDialog(reference, data)
-                if H.Allowed(frame) then ns.StyleTextureDialog(S, module, frame, true) end
+                if H.Allowed(frame) then
+                    ns.StyleTextureDialog(S, module, frame, true)
+                    -- LibDialog-1.0RS stores pooled actions in buttons[], not
+                    -- accept/cancel. Apply reversible texture-only styling to
+                    -- each action without touching its font, click or layout.
+                    for _, button in ipairs(frame.buttons or {}) do
+                        if H.Allowed(button) then ns.StyleTextureDialog(S, module, button, true) end
+                    end
+                end
             end
         end)
     end
     local function Discover()
         Alert(); Explorer(); Options(); Dialogs()
+        ExplorerMenu()
         soft.RefreshSoftBorders()
     end
     Refresh = function()
@@ -750,6 +907,10 @@ end, function(S, module)
     H.Hook(_G.RSLootMixin, "AddItem", function(item) if Ready() and H.Allowed(item) and H.Texture(item.Icon) then S.SquareIcon(item.Icon) end end)
     H.Script(root, "OnShow", Refresh)
     H.Hook(root, "Initialize", Explorer)
+    H.Hook(root and root.Filters, "Initialize", ExplorerControls)
+    H.Hook(root and root.Control, "Initialize", ExplorerControls)
+    local menuManager = Menu and Menu.GetManager and Menu.GetManager()
+    LibraryHook(menuManager, "OpenMenu", function() ExplorerMenu() end, true)
     local rareList = root and root.RareNPCList
     H.Hook(rareList, "Initialize", Explorer)
     H.Hook(rareList, "OnElementInitialize", function(_, row) ExplorerRow(row) end)
@@ -762,7 +923,14 @@ end, function(S, module)
     H.Hook(custom, "OnElementSelectionChanged", function()
         Loot(custom and custom.GroupInfo and custom.GroupInfo.lootItemsPool)
     end)
-    module.refresh = function() generation = generation + 1; Refresh() end
+    module.refresh = function()
+        if not ns.IsEnabled(module) then
+            if InCombatLockdown and InCombatLockdown() then waiting = true; return end
+            for list in pairs(menuMarks) do RestoreMarks(list) end
+            return
+        end
+        generation = generation + 1; Refresh()
+    end
     if S.OnLooksChanged then S.OnLooksChanged(module.refresh) end
     events:SetScript("OnEvent", function(_, event)
         if event == "ADDON_LOADED" then
@@ -779,7 +947,7 @@ end, function(S, module)
                 if Ready() then Options(true) end
             end
         elseif waiting then
-            waiting = false; generation = generation + 1; Refresh()
+            waiting = false; module.refresh()
         end
     end)
     Refresh()

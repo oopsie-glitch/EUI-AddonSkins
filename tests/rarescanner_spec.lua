@@ -212,12 +212,31 @@ explorer.RareNPCList.scrollBox=Object('Frame',explorer.RareNPCList)
 explorer.RareNPCList.scrollBar=Object('Frame',explorer.RareNPCList)
 local listView={}
 function listView:RegisterCallback(event,fn,owner) assert(event=='OnInitializedFrame' and not self.fn); self.fn,self.owner=fn,owner end
-function explorer.RareNPCList.scrollBox:GetView() return listView end
+function explorer.RareNPCList.scrollBox:GetView() return self.view end
+function explorer.RareNPCList:Initialize() self.scrollBox.view=listView; return 'native-list-init' end
 local row=Object('Button',explorer.RareNPCList.scrollBox)
 row.Name=Text(row); row.Name.color={1,0.1,0.1,1}
 row.BG=row:CreateTexture(nil,'BACKGROUND'); row.Selected=row:CreateTexture(nil,'BACKGROUND'); row.Selected:Hide()
 row.MountTexture=row:CreateTexture(nil,'BACKGROUND'); row.MountTexture:SetTexture('native-collectible')
-function explorer.RareNPCList.scrollBox:ForEachFrame(fn) fn(row) end
+function listView:ForEachFrame(fn) fn(row) end
+local rowPasses=0
+function explorer.RareNPCList.scrollBox:ForEachFrame(fn)
+    rowPasses=rowPasses+1
+    return self:GetView():ForEachFrame(fn)
+end
+explorer.CustomLoot=Object('Frame',explorer)
+local custom=explorer.CustomLoot
+custom.GroupList=Object('Frame',custom); custom.GroupList.ScrollBox=Object('Frame',custom.GroupList)
+local groupView={}
+local groupRow=Object('Button',custom.GroupList.ScrollBox); groupRow.Name=Text(groupRow)
+function groupView:RegisterCallback(event,fn,owner) assert(event=='OnInitializedFrame' and not self.fn); self.fn,self.owner=fn,owner end
+function groupView:ForEachFrame(fn) fn(groupRow) end
+function custom.GroupList.ScrollBox:GetView() return self.view end
+function custom.GroupList.ScrollBox:ForEachFrame(fn)
+    rowPasses=rowPasses+1
+    return self:GetView():ForEachFrame(fn)
+end
+function custom:Initialize() self.GroupList.ScrollBox.view=groupView; return 'native-group-init' end
 function explorer.RareNPCList:OnElementInitialize(element) element.Name:SetText('Rare'); return 'native-row' end
 function explorer:Initialize() return 'native-explorer' end
 local loot=Object('Frame',explorer.RareInfo); loot.Icon=loot:CreateTexture(); loot.Icon:SetTexture('native-item')
@@ -236,6 +255,21 @@ LibStub=function(id,silent)
 end
 RSLootMixin={AddItem=function(self,id) self.itemID=id; return 'native-item' end}
 assert(module.available()); module.install(S,module); Flush()
+assert(#errors==0 and rowPasses==0, 'cold Explorer must not iterate ScrollBoxes without a view')
+assert(not listView.fn and not groupView.fn, 'callbacks must wait for native views')
+assert(explorer.RareNPCList:Initialize()=='native-list-init')
+assert(listView.fn and row.Name.path=='EUI', 'late rare-list initialization must style existing rows')
+assert(custom:Initialize()=='native-group-init')
+assert(groupView.fn and groupRow.Name.path=='EUI', 'late custom-group initialization must style existing rows')
+local lateGroupRow=Object('Button',custom.GroupList.ScrollBox); lateGroupRow.Name=Text(lateGroupRow)
+groupView.fn(groupView.owner,lateGroupRow); assert(lateGroupRow.Name.path=='EUI')
+-- A temporarily cleared native view must be safe on subsequent refreshes too.
+explorer.RareNPCList.scrollBox.view=nil; custom.GroupList.ScrollBox.view=nil
+local passes=rowPasses
+for i=1,10 do explorer:Show() end
+assert(rowPasses==passes and #errors==0, 'refresh iterated a temporarily uninitialized view')
+assert(explorer.RareNPCList:Initialize()=='native-list-init')
+assert(custom:Initialize()=='native-group-init')
 assert(scanner.panel and scanner.backdrop==nil and scanner.attributes.macrotext=='/targetexact rare')
 assert(scanner.ModelView.displayID==123 and scanner.CloseButton.scripts.OnClick()=='native-action')
 assert(scanner.FilterEntityButton.normal.texture=='native-stop' and scanner.NextButton.scripts.OnMouseDown()=='native-navigation')

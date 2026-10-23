@@ -694,7 +694,8 @@ end, function(S, module)
         if not H.Allowed(list) then return end
         local box = list.scrollBox or list.ScrollBox
         local view = box and box.GetView and box:GetView()
-        if view and view.RegisterCallback and not views[view] then
+        if not view then return end -- Native ScrollBoxes can exist before Initialize assigns their view.
+        if view.RegisterCallback and not views[view] then
             views[view] = true
             view:RegisterCallback("OnInitializedFrame", function(_, row)
                 if Ready() then H.Safe(ExplorerRow, row) end

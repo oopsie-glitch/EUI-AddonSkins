@@ -1,5 +1,7 @@
 # Skin engineering checklist
 
+[Design & Development Standard](DESIGN_AND_DEVELOPMENT.md) owns visual guidance and reference choices; this guide owns the detailed engineering and regression checks.
+
 Use this guide for every new integration and when revisiting an existing skin. Keep addon-specific behaviour in its adapter. Changes to shared helpers need caller review and regression coverage for affected and unaffected integrations.
 
 ## 1. Establish ownership and lifecycle

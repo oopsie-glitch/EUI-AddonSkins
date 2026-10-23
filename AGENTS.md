@@ -1,6 +1,6 @@
 # Working on EUI AddonSkins
 
-Read CONTRIBUTING.md and docs/RELEASING.md before changing code or preparing a release.
+Start with docs/DESIGN_AND_DEVELOPMENT.md for visual standards, reference implementations and the authoritative reading path. Read CONTRIBUTING.md and docs/RELEASING.md before changing code or preparing a release.
 
 ## Engineering checks
 

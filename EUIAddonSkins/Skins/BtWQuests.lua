@@ -16,6 +16,7 @@ end, function(S, module)
     local Paint, Walk, Menu, BindMenu
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
+    events:RegisterEvent("UI_SCALE_CHANGED")
 
     local function Run(fn, ...)
         if painting or not ns.IsEnabled(module) then return end
@@ -259,6 +260,29 @@ end, function(S, module)
             end
         end
     end
+    local function CheckSizes(f)
+        local scale = f.GetEffectiveScale and f:GetEffectiveScale() or 1
+        local factor = PixelUtil and PixelUtil.GetPixelToUIUnitFactor and PixelUtil.GetPixelToUIUnitFactor()
+        if not factor and GetPhysicalScreenSize then
+            local _, height = GetPhysicalScreenSize()
+            if height and height > 0 then factor = 768 / height end
+        end
+        local pixel = (factor or 1) / math.max(scale, 0.01)
+        local outerPixels = math.max(5, math.floor(14 / pixel + 0.5))
+        local borderPixels = math.max(1, math.floor(1 / pixel + 0.5))
+        local gapPixels = math.max(borderPixels + 1, math.floor(2 / pixel + 0.5))
+        -- Derive both inner sizes from the same outer pixel count. Independent
+        -- rounding of 14px and 10px can leave an odd difference at UI scales,
+        -- putting one extra pixel of padding on one side of the indicator.
+        return outerPixels * pixel, math.max(1, outerPixels - 2 * borderPixels) * pixel,
+            math.max(1, outerPixels - 2 * gapPixels) * pixel
+    end
+    local function CheckSquare(part, host, size, point, x)
+        if part.SetSnapToPixelGrid then part:SetSnapToPixelGrid(false) end
+        if part.SetTexelSnappingBias then part:SetTexelSnappingBias(0) end
+        part:ClearAllPoints(); part:SetPoint("CENTER", host, point or "CENTER", x or 0, 0)
+        part:SetSize(size, size)
+    end
     local function Check(f)
         if not H.Allowed(f) then return end
         if not checks[f] then
@@ -271,13 +295,15 @@ end, function(S, module)
             checks[f] = art
             -- Auto Load has a 15px frame with a wider native label hit area.
             -- Fit the artwork to that slot without resizing the input frame.
-            for _, part in ipairs(art) do
-                part:ClearAllPoints(); part:SetPoint("CENTER", f, "CENTER"); part:SetSize(14, 14)
-            end
             for _, method in ipairs({"SetCheckedTexture", "SetDisabledCheckedTexture", "SetChecked", "Enable", "Disable", "SetEnabled"}) do
                 H.Hook(f, method, function() Run(Check, f) end)
             end
             H.Script(f, "OnShow", function() Run(Check, f) end)
+        end
+        local outer, _, indicator = CheckSizes(f)
+        if checks[f].size ~= outer then
+            checks[f].size = outer
+            for _, part in ipairs(checks[f]) do CheckSquare(part, f, outer) end
         end
         for i, getter in ipairs({"GetCheckedTexture", "GetDisabledCheckedTexture"}) do
             local mark = f[getter] and H.Texture(f[getter](f))
@@ -285,7 +311,7 @@ end, function(S, module)
                 mark:SetVertexColor(1, 1, 1, 1)
                 if i == 1 then local r, g, b = S.GetAccentColor(); mark:SetColorTexture(r, g, b, 1)
                 else mark:SetColorTexture(0.4, 0.4, 0.4, 0.8) end
-                mark:ClearAllPoints(); mark:SetPoint("CENTER", f, "CENTER"); mark:SetSize(10, 10)
+                CheckSquare(mark, f, indicator)
             end
         end
     end
@@ -298,8 +324,6 @@ end, function(S, module)
             art = {}; menuChecks[row] = art
             art.border = row:CreateTexture(nil, "BORDER", nil, 0)
             art.fill = row:CreateTexture(nil, "BORDER", nil, 1)
-            art.border:SetPoint("CENTER", row, "LEFT", 8, 0); art.border:SetSize(14, 14)
-            art.fill:SetPoint("CENTER", row, "LEFT", 8, 0); art.fill:SetSize(12, 12)
             art.border:SetColorTexture(0.25, 0.25, 0.25, 1)
             art.fill:SetColorTexture(0.02, 0.02, 0.02, 1)
             -- AddButton resets pooled art before Show, including while the
@@ -309,6 +333,12 @@ end, function(S, module)
                 H.Hook(row, method, function() Run(MenuCheck, row) end)
             end
         end
+        local outer, inner, indicator = CheckSizes(row)
+        if art.size ~= outer or art.inner ~= inner then
+            art.size, art.inner = outer, inner
+            CheckSquare(art.border, row, outer, "LEFT", 8)
+            CheckSquare(art.fill, row, inner, "LEFT", 8)
+        end
         art.border:SetShown(not row.notCheckable)
         art.fill:SetShown(not row.notCheckable)
         if row.notCheckable then return end
@@ -316,7 +346,7 @@ end, function(S, module)
         if row.IsEnabled and not row:IsEnabled() then r, g, b = 0.4, 0.4, 0.4 end
         for _, mark in ipairs({check, uncheck}) do
             mark:SetVertexColor(1, 1, 1, 1)
-            mark:ClearAllPoints(); mark:SetPoint("CENTER", row, "LEFT", 8, 0); mark:SetSize(10, 10)
+            CheckSquare(mark, row, indicator, "LEFT", 8)
         end
         check:SetColorTexture(r, g, b, 1)
         uncheck:SetColorTexture(0.02, 0.02, 0.02, 1)
@@ -500,7 +530,7 @@ end, function(S, module)
         soft.RefreshSoftBorders()
     end
     module.refresh = function() H.Queue(module, function() Run(Paint) end) end
-    events:SetScript("OnEvent", function() if waiting then Run(Paint) end end)
+    events:SetScript("OnEvent", function(_, event) if waiting or event == "UI_SCALE_CHANGED" then Run(Paint) end end)
     if S.OnLooksChanged then S.OnLooksChanged(module.refresh) end
     Run(Paint)
 end)

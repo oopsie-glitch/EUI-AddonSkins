@@ -38,6 +38,8 @@ local function texture(kind)
     function t:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end
     function t:SetSize(w, h) self.width, self.height = w, h end
     function t:SetDesaturated(v) self.desaturated = v end
+    function t:SetSnapToPixelGrid(v) self.pixelSnap=v end
+    function t:SetTexelSnappingBias(v) self.snapBias=v end
     function t:SetAtlas(v) self.atlas = v end
     function t:SetThickness(v) self.thickness = v end
     function t:GetFont() return self.fontPath or 'native', self.fontSize or 18, '' end
@@ -71,6 +73,7 @@ local function frame(kind, parent)
     function f:SetHeight(h) self.height = h end
     function f:GetWidth() return self.width end
     function f:GetHeight() return self.height end
+    function f:GetEffectiveScale() return self.scale or 1 end
     function f:ClearAllPoints() self.points = {} end
     function f:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end
     function f:GetNormalTexture() return self.normal end
@@ -375,6 +378,28 @@ assert(menuArt[1].shown and menuArt[2].shown and row.Check.solid and row.Check.s
 -- Same-count replacement and late Auto Load controls are discovered by completed pages.
 local later=autoLoad(expansion);root:DisplayItemList()
 assert(later.checkedTexture.solid and later.checkedTexture.width==10)
+-- Screenshot regression: fractional scale previously produced a 24px box
+-- with a 17px mark, forcing asymmetric 3px/2px interior padding.
+PixelUtil={GetPixelToUIUnitFactor=function()return 1 end}
+for _,scale in ipairs({.64,.8,1,1.25,1.68,2}) do
+    row.scale=scale;expansion.AutoLoad.scale=scale
+    for _,event in ipairs(events) do
+        if event.events and event.events.UI_SCALE_CHANGED then event.hooks.OnEvent(event,'UI_SCALE_CHANGED') end
+    end
+    for _,pair in ipairs({{expansion.AutoLoad.checkFill,expansion.AutoLoad.checkedTexture},
+        {expansion.AutoLoad.checkFill,expansion.AutoLoad.disabledCheckedTexture},{menuArt[1],row.Check},
+        {menuArt[1],row.UnCheck}}) do
+        local box,mark=pair[1],pair[2]
+        local padding=(box.width-mark.width)*scale/2
+        assert(math.abs(padding-math.floor(padding+.5))<.00001,'checkbox has asymmetric fractional-pixel padding')
+        assert(box.points[1][1]==mark.points[1][1] and box.points[1][2]==mark.points[1][2]
+            and box.points[1][3]==mark.points[1][3] and box.points[1][4]==mark.points[1][4],
+            'checkbox fill and border do not share their centre')
+        assert(mark.pixelSnap==false and mark.snapBias==0,'native texture snapping can displace indicator')
+    end
+end
+row.scale=1;expansion.AutoLoad.scale=1
+modules.BtWQuests.refresh();flush();PixelUtil=nil
 local countBefore,hooksAtStart,readsAtStart=created,hookCount,hierarchyReads
 for i=1,1000 do row:Rebuild(i%2==0);expansion.AutoLoad:SetChecked(i%2==0) end
 assert(created==countBefore and hookCount==hooksAtStart and hierarchyReads==readsAtStart,

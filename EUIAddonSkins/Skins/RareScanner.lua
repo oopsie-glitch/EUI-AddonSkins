@@ -10,6 +10,7 @@ end, function(S, module)
     local pooledButtons, dropdownArrows, closeGlyphs, nativeChecks, pooledThumbs = {}, {}, {}, {}, {}
     local fills, skinArt, tracks, arrows, labels = {}, {}, {}, {}, {}
     local lifts, views = {}, {}
+    local alertBackgrounds, alertHovers = {}, {}
     local optionGroups, libraryHooks, mediaRecords = {}, {}, {}
     local explorerControls, menuContexts, menuMarks = {}, setmetatable({}, {__mode = "k"}), {}
     local generation, waiting, applying = 1, false, false
@@ -21,6 +22,43 @@ end, function(S, module)
         if not ns.IsEnabled(module) then return false end
         if InCombatLockdown and InCombatLockdown() then waiting = true; return false end
         return true
+    end
+    local function BackgroundOpacity()
+        EUIAddonSkinsDB = EUIAddonSkinsDB or {}
+        local db = EUIAddonSkinsDB
+        db.rareScanner = db.rareScanner or {}
+        local value = db.rareScanner.backgroundOpacity
+        if type(value) ~= "number" or value ~= value then value = 0.8 end
+        value = math.max(0, math.min(1, value))
+        db.rareScanner.backgroundOpacity = value
+        return value
+    end
+    local function ApplyAlertOpacity()
+        if not Ready() then return end
+        local opacity = BackgroundOpacity()
+        local r, g, b = S.GetPanelColor()
+        for _, texture in pairs(alertBackgrounds) do texture:SetColorTexture(r, g, b, opacity) end
+        for _, texture in pairs(alertHovers) do texture:SetColorTexture(1, 1, 1, 0.06 * opacity) end
+    end
+    local function OpacityOptions()
+        local registry = LibStub and LibStub("AceConfigRegistry-3.0", true)
+        if not registry or type(registry.GetOptionsTable) ~= "function" then return end
+        local options = registry:GetOptionsTable("RareScanner Display", "dialog", "AceConfigDialog-3.0")
+        if type(options) ~= "table" or type(options.args) ~= "table" or options.args.euiAddonSkinsBackgroundOpacity then return end
+        options.args.euiAddonSkinsBackgroundOpacity = {
+            type = "range", name = "Background opacity", order = 7.5, width = "full",
+            desc = "Alert and navigation button background opacity (default: 80%). Text, icons and models stay fully visible.",
+            min = 0, max = 100, step = 1, bigStep = 5,
+            get = function() return math.floor(BackgroundOpacity() * 100 + 0.5) end,
+            set = function(_, value)
+                if type(value) ~= "number" or value ~= value then return end
+                BackgroundOpacity()
+                EUIAddonSkinsDB.rareScanner.backgroundOpacity = math.max(0, math.min(100, value)) / 100
+                ApplyAlertOpacity() -- No scans, font writes or target actions while dragging.
+            end,
+            disabled = function() return not ns.IsEnabled(module) end,
+        }
+        if registry.NotifyChange then registry:NotifyChange("RareScanner Display") end
     end
     local function OptionID(id)
         return type(id) == "string" and (id == "RareScanner" or id:match("^RareScanner "))
@@ -758,6 +796,7 @@ end, function(S, module)
         end, true)
     end
     Options = function(bindOnly)
+        OpacityOptions()
         local ace = LibStub and LibStub("AceAddon-3.0", true)
         local target = ace and ace.GetAddon and ace:GetAddon("RareScanner", true)
         H.Hook(target, "SetupOptions", function() Options(true) end)
@@ -798,7 +837,21 @@ end, function(S, module)
         if not Ready() then return end
         local f = _G.RARESCANNER_BUTTON
         if not Visual(f) or alertGeneration == generation then return end
-        S.Panel(f, {noBorder = true})
+        local function Surface(host, inset)
+            local fill = alertBackgrounds[host]
+            if not fill then
+                -- Same-frame art stays behind native text and does not change
+                -- the secure alert's alpha, geometry, attributes or hit area.
+                fill = host:CreateTexture(nil, "BACKGROUND", nil, -7)
+                fill:SetPoint("TOPLEFT", host, "TOPLEFT", inset or 0, 0)
+                fill:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -(inset or 0), 0)
+                alertBackgrounds[host] = fill
+                for _, region in ipairs(H.Regions(host)) do
+                    if region ~= fill and Visual(region) and region:GetObjectType() == "Texture" then H.Fade(region) end
+                end
+            end
+        end
+        Surface(f)
         if f.SetBackdrop then f:SetBackdrop(nil) end
         for _, text in ipairs(H.Regions(f)) do Font(text) end
         if Visual(f.CloseButton) then S.CloseButton(f.CloseButton) end
@@ -812,13 +865,28 @@ end, function(S, module)
         for i, key in ipairs({"PreviousButton", "NextButton"}) do
             local button = f[key]
             if Visual(button) and H.Texture(button.Texture) then
-                S.Button(button, {"Texture"})
+                if not alertBackgrounds[button] then
+                    -- Native navigation frames are 32px wide. Inset the painted
+                    -- background to 24px while retaining their native hit box.
+                    local fill = button:CreateTexture(nil, "BACKGROUND", nil, -7)
+                    fill:SetPoint("TOPLEFT", button, "TOPLEFT", 4, 0)
+                    fill:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -4, 0)
+                    alertBackgrounds[button] = fill
+                    local hover = button:CreateTexture(nil, "HIGHLIGHT")
+                    hover:SetPoint("TOPLEFT", button, "TOPLEFT", 4, 0)
+                    hover:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -4, 0)
+                    alertHovers[button] = hover
+                    if H.Texture(button.HighlightTexture) then H.Fade(button.HighlightTexture) end
+                end
                 button.Texture:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
-                button.Texture:SetSize(16, 16)
+                -- The down-chevron is rotated sideways, so its pre-rotation
+                -- height controls the visible horizontal width.
+                button.Texture:SetSize(16, 12)
                 if button.Texture.SetRotation then button.Texture:SetRotation(i == 1 and -math.pi / 2 or math.pi / 2) end
                 button.Texture:SetVertexColor(S.GetAccentColor())
             end
         end
+        ApplyAlertOpacity()
         alertGeneration = generation
     end
     local function Loot(pool)

@@ -193,7 +193,7 @@ scanner.CloseButton=Button(scanner)
 scanner.FilterEntityButton=Button(scanner); scanner.FilterEntityButton:SetNormalTexture('native-stop')
 scanner.UnFilterEntityButton=Button(scanner); scanner.UnFilterEntityButton:SetNormalTexture('native-skull')
 for _,k in ipairs({'PreviousButton','NextButton'}) do
-    scanner[k]=Object('Frame',scanner); scanner[k].Texture=scanner[k]:CreateTexture(nil,'ARTWORK')
+    scanner[k]=Object('Frame',scanner); scanner[k]:SetSize(32,32); scanner[k].Texture=scanner[k]:CreateTexture(nil,'ARTWORK')
     scanner[k].scripts.OnMouseDown=function() return 'native-navigation' end
 end
 scanner.ModelView=Object('PlayerModel',scanner); scanner.ModelView.displayID=123
@@ -278,6 +278,14 @@ local gui={Release=function(_,widget) if widget.OnRelease then widget:OnRelease(
 local dialog={OpenFrames={},BlizOptions={['RareScanner General']={}}}
 function dialog:FeedGroup(id,_,container) self.feeds=(self.feeds or 0)+1; return 'native-feed',container,id end
 local targetApp={SetupOptions=function() return "native-setup" end}
+local displayOptions={type='group',args={scale={type='range',name='Native scale',get=function() return 1 end}}}
+local nativeScale=displayOptions.args.scale
+local registry={notifications=0}
+function registry:GetOptionsTable(id,ui,caller)
+    assert(id=='RareScanner Display' and ui=='dialog' and caller=='AceConfigDialog-3.0')
+    return displayOptions
+end
+function registry:NotifyChange(id) assert(id=='RareScanner Display');self.notifications=self.notifications+1 end
 local libDialog={}
 function libDialog:Spawn(reference,data)
     self.last=Object('Frame',UIParent);self.last.Text=Text(self.last)
@@ -287,7 +295,7 @@ end
 function libDialog:ActiveDialog() return self.last end
 LibStub=function(id,silent)
     assert(silent)
-    if id=='AceConfigDialog-3.0' then return dialog elseif id=='AceGUI-3.0' then return gui elseif id=='LibDialog-1.0RS' then return libDialog elseif id=='AceAddon-3.0' then return {GetAddon=function(_,id,quiet) assert(id=='RareScanner' and quiet); return targetApp end} end
+    if id=='AceConfigRegistry-3.0' then return registry elseif id=='AceConfigDialog-3.0' then return dialog elseif id=='AceGUI-3.0' then return gui elseif id=='LibDialog-1.0RS' then return libDialog elseif id=='AceAddon-3.0' then return {GetAddon=function(_,id,quiet) assert(id=='RareScanner' and quiet); return targetApp end} end
 end
 RSLootMixin={AddItem=function(self,id) self.itemID=id; return 'native-item' end}
 assert(module.available()); module.install(S,module); Flush()
@@ -306,7 +314,48 @@ for i=1,10 do explorer:Show() end
 assert(rowPasses==passes and #errors==0, 'refresh iterated a temporarily uninitialized view')
 assert(explorer.RareNPCList:Initialize()=='native-list-init')
 assert(custom:Initialize()=='native-group-init')
-assert(scanner.panel and scanner.backdrop==nil and scanner.attributes.macrotext=='/targetexact rare')
+assert(scanner.backdrop==nil and scanner.normal.alpha==0 and scanner.attributes.macrotext=='/targetexact rare')
+local function AlertFill(host)
+    for _,texture in ipairs(host.regions) do if texture.layer=='BACKGROUND' and texture~=host.normal then return texture end end
+end
+local mainFill=AlertFill(scanner)
+local previousFill,nextFill=AlertFill(scanner.PreviousButton),AlertFill(scanner.NextButton)
+assert(mainFill and previousFill and nextFill)
+assert(mainFill.color[4]==.8 and previousFill.color[4]==.8 and nextFill.color[4]==.8)
+assert(scanner.alpha==1 and scanner.Title.alpha==1 and scanner.ModelView.alpha==1,'background opacity faded alert content')
+assert(scanner.NextButton.width==32 and nextFill.point[4]==-4,'native navigation hit width changed')
+assert(scanner.NextButton.Texture.width==16 and scanner.NextButton.Texture.height==12)
+local opacity=displayOptions.args.euiAddonSkinsBackgroundOpacity
+assert(opacity and opacity.type=='range' and opacity.min==0 and opacity.max==100 and opacity.get()==80)
+assert(displayOptions.args.scale==nativeScale and nativeScale.get()==1,'native display settings replaced')
+local oc,orr,oa,oh,of=childReads,regionReads,allocated,hookCount,fontWrites
+for _,value in ipairs({0,25,50,80,100}) do
+    opacity.set(nil,value)
+    assert(mainFill.color[4]==value/100 and previousFill.color[4]==value/100 and nextFill.color[4]==value/100)
+end
+assert(childReads==oc and regionReads==orr and allocated==oa and hookCount==oh and fontWrites==of,'opacity drag scanned or rebuilt UI')
+assert(scanner.alpha==1 and scanner.Title.alpha==1 and scanner.ModelView.alpha==1)
+opacity.set(nil,0/0);assert(opacity.get()==100)
+opacity.set(nil,150);assert(opacity.get()==100)
+opacity.set(nil,-5);assert(opacity.get()==0)
+combat=true;opacity.set(nil,35);assert(mainFill.color[4]==0,'combat touched secure alert cosmetics')
+combat=false;for _,event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.scripts.OnEvent(event,'PLAYER_REGEN_ENABLED') end end
+Flush();assert(mainFill.color[4]==.35 and previousFill.color[4]==.35)
+local savedOpacity=displayOptions.args.euiAddonSkinsBackgroundOpacity
+for _=1,10 do assert(targetApp:SetupOptions()=='native-setup') end
+assert(displayOptions.args.euiAddonSkinsBackgroundOpacity==savedOpacity and registry.notifications==1,'settings insertion duplicated')
+-- Re-registration after native SetupOptions must attach the control to the new
+-- table, preserving our saved preference and all native option identities.
+displayOptions={type='group',args={scale=nativeScale}}
+targetApp:SetupOptions();opacity=displayOptions.args.euiAddonSkinsBackgroundOpacity
+assert(opacity.get()==35 and displayOptions.args.scale==nativeScale)
+opacity.set(nil,80)
+assert(EUIAddonSkinsDB.rareScanner.backgroundOpacity==.8)
+local ac,ar,aa,ah,af=childReads,regionReads,allocated,hookCount,fontWrites
+for i=1,1000 do opacity.set(nil,i%101) end
+assert(childReads==ac and regionReads==ar and allocated==aa and hookCount==ah and fontWrites==af,
+    'warm opacity slider updates must remain cosmetic and constant-size')
+opacity.set(nil,80)
 assert(scanner.ModelView.displayID==123 and scanner.CloseButton.scripts.OnClick()=='native-action')
 assert(scanner.FilterEntityButton.normal.texture=='native-stop' and scanner.NextButton.scripts.OnMouseDown()=='native-navigation')
 assert(explorer.Border.art.alpha==0 and explorer.RareInfo.Mounts.Texture.alpha==1)

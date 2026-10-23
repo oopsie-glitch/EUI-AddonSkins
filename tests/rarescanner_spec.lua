@@ -9,6 +9,7 @@ local ns = {IsEnabled = function() return enabled end}
 ns.RegisterSkinDefinition = function(id, fn) assert(id == 'RareScanner'); factory = fn end
 ns.RegisterModule = function(id, _, available, install) module = {id=id, available=available, install=install} end
 ns.BindPopupList=function(_,_,owner,list) assert(owner==list.dropdown); menuBindings=menuBindings+1 end
+ns.BindPopupOwner=function(_,_,owner) owner.popupOwner=true end
 ns.RefreshPopupMenusNow=function() end
 ns.StyleTextureDialog=function(_,_,popup,active) dialogStyles=dialogStyles+1; popup.styled=active end
 MSA_ToggleDropDownMenu=function() return 'native-menu' end
@@ -192,13 +193,44 @@ scanner.CloseButton=Button(scanner)
 scanner.FilterEntityButton=Button(scanner); scanner.FilterEntityButton:SetNormalTexture('native-stop')
 scanner.UnFilterEntityButton=Button(scanner); scanner.UnFilterEntityButton:SetNormalTexture('native-skull')
 for _,k in ipairs({'PreviousButton','NextButton'}) do
-    scanner[k]=Object('Frame',scanner); scanner[k].Texture=scanner[k]:CreateTexture(nil,'ARTWORK')
+    scanner[k]=Object('Frame',scanner); scanner[k]:SetSize(32,32); scanner[k].Texture=scanner[k]:CreateTexture(nil,'ARTWORK')
     scanner[k].scripts.OnMouseDown=function() return 'native-navigation' end
 end
 scanner.ModelView=Object('PlayerModel',scanner); scanner.ModelView.displayID=123
 function scanner:ShowButton() self:Show(); return 'native-alert' end
 local rootFrame=CreateFrame('Frame','RSExplorerFrame',UIParent)
 local explorer=rootFrame
+-- Retail DropdownButton mixins report Button, not DropdownButton. The named
+-- XML controls include native red atlas resets and ChatConfig check buttons.
+explorer.Filters=Object('Frame',explorer)
+local filters=explorer.Filters
+for _,key in ipairs({'FilterDropDown','ContinentDropDown'}) do
+    local button=Button(filters);filters[key]=button
+    button.SetupMenu=function() return 'native-menu-setup' end
+    button.OnMenuOpened=function() return 'native-menu-opened' end
+end
+local rescan=Button(filters);filters.RestartScanningButton=rescan
+rescan.normal=rescan:CreateTexture(nil,'ARTWORK');rescan.normal:SetTexture('128-RedButton')
+rescan.scripts.OnShow=function() rescan.normal:SetAlpha(1) end
+rescan.scripts.OnEnter=function() rescan.normal:SetAlpha(1) end
+rescan.scripts.OnClick=function() return 'native-rescan',nil,42 end
+local function NativeCheck(parent)
+    local check=Object('CheckButton',parent);check:SetSize(32,32);check.Text=Text(check)
+    check.checkedArt=check:CreateTexture(nil,'ARTWORK');check.checkedArt:SetTexture('native-tick')
+    check.disabledArt=check:CreateTexture(nil,'ARTWORK');check:SetChecked(true)
+    check.scripts.OnClick=function() check:SetChecked(not check:GetChecked());return 'native-check' end
+    return check
+end
+filters.LockCurrentZoneCheckButton=NativeCheck(filters)
+explorer.Control=Object('Frame',explorer)
+explorer.Control.AutoFilterCheckButton=NativeCheck(explorer.Control)
+explorer.Control.CreateProfilesBackupCheckButton=NativeCheck(explorer.Control)
+explorer.Control.ApplyFiltersButton=Button(explorer.Control)
+explorer.ScanRequired=Object('Frame',explorer)
+explorer.ScanRequired.StartScanningButton=Button(explorer.ScanRequired)
+function filters:Initialize() return 'native-filters-init' end
+local explorerMenuManager={OpenMenu=function() return 'native-menu' end,GetOpenMenu=function(self) return self.list end}
+Menu={GetManager=function() return explorerMenuManager end}
 explorer.Border=Object('Frame',explorer); explorer.Border.art=explorer.Border:CreateTexture(nil,'OVERLAY')
 explorer.RareInfo=Object('Frame',explorer); explorer.RareInfo.BaseFrameBackground=explorer.RareInfo:CreateTexture(nil,'BACKGROUND')
 explorer.RareInfo.Name=Text(explorer.RareInfo); explorer.RareInfo.Name.color={0.2,1,0.2,1}
@@ -212,12 +244,31 @@ explorer.RareNPCList.scrollBox=Object('Frame',explorer.RareNPCList)
 explorer.RareNPCList.scrollBar=Object('Frame',explorer.RareNPCList)
 local listView={}
 function listView:RegisterCallback(event,fn,owner) assert(event=='OnInitializedFrame' and not self.fn); self.fn,self.owner=fn,owner end
-function explorer.RareNPCList.scrollBox:GetView() return listView end
+function explorer.RareNPCList.scrollBox:GetView() return self.view end
+function explorer.RareNPCList:Initialize() self.scrollBox.view=listView; return 'native-list-init' end
 local row=Object('Button',explorer.RareNPCList.scrollBox)
 row.Name=Text(row); row.Name.color={1,0.1,0.1,1}
 row.BG=row:CreateTexture(nil,'BACKGROUND'); row.Selected=row:CreateTexture(nil,'BACKGROUND'); row.Selected:Hide()
 row.MountTexture=row:CreateTexture(nil,'BACKGROUND'); row.MountTexture:SetTexture('native-collectible')
-function explorer.RareNPCList.scrollBox:ForEachFrame(fn) fn(row) end
+function listView:ForEachFrame(fn) fn(row) end
+local rowPasses=0
+function explorer.RareNPCList.scrollBox:ForEachFrame(fn)
+    rowPasses=rowPasses+1
+    return self:GetView():ForEachFrame(fn)
+end
+explorer.CustomLoot=Object('Frame',explorer)
+local custom=explorer.CustomLoot
+custom.GroupList=Object('Frame',custom); custom.GroupList.ScrollBox=Object('Frame',custom.GroupList)
+local groupView={}
+local groupRow=Object('Button',custom.GroupList.ScrollBox); groupRow.Name=Text(groupRow)
+function groupView:RegisterCallback(event,fn,owner) assert(event=='OnInitializedFrame' and not self.fn); self.fn,self.owner=fn,owner end
+function groupView:ForEachFrame(fn) fn(groupRow) end
+function custom.GroupList.ScrollBox:GetView() return self.view end
+function custom.GroupList.ScrollBox:ForEachFrame(fn)
+    rowPasses=rowPasses+1
+    return self:GetView():ForEachFrame(fn)
+end
+function custom:Initialize() self.GroupList.ScrollBox.view=groupView; return 'native-group-init' end
 function explorer.RareNPCList:OnElementInitialize(element) element.Name:SetText('Rare'); return 'native-row' end
 function explorer:Initialize() return 'native-explorer' end
 local loot=Object('Frame',explorer.RareInfo); loot.Icon=loot:CreateTexture(); loot.Icon:SetTexture('native-item')
@@ -227,16 +278,84 @@ local gui={Release=function(_,widget) if widget.OnRelease then widget:OnRelease(
 local dialog={OpenFrames={},BlizOptions={['RareScanner General']={}}}
 function dialog:FeedGroup(id,_,container) self.feeds=(self.feeds or 0)+1; return 'native-feed',container,id end
 local targetApp={SetupOptions=function() return "native-setup" end}
+local displayOptions={type='group',args={scale={type='range',name='Native scale',get=function() return 1 end}}}
+local nativeScale=displayOptions.args.scale
+local registry={notifications=0}
+function registry:GetOptionsTable(id,ui,caller)
+    assert(id=='RareScanner Display' and ui=='dialog' and caller=='AceConfigDialog-3.0')
+    return displayOptions
+end
+function registry:NotifyChange(id) assert(id=='RareScanner Display');self.notifications=self.notifications+1 end
 local libDialog={}
-function libDialog:Spawn(reference,data) self.last=Object('Frame',UIParent); self.last.Text=Text(self.last); return self.last end
+function libDialog:Spawn(reference,data)
+    self.last=Object('Frame',UIParent);self.last.Text=Text(self.last)
+    self.last.buttons={Button(self.last),Button(self.last)}
+    return self.last
+end
 function libDialog:ActiveDialog() return self.last end
 LibStub=function(id,silent)
     assert(silent)
-    if id=='AceConfigDialog-3.0' then return dialog elseif id=='AceGUI-3.0' then return gui elseif id=='LibDialog-1.0RS' then return libDialog elseif id=='AceAddon-3.0' then return {GetAddon=function(_,id,quiet) assert(id=='RareScanner' and quiet); return targetApp end} end
+    if id=='AceConfigRegistry-3.0' then return registry elseif id=='AceConfigDialog-3.0' then return dialog elseif id=='AceGUI-3.0' then return gui elseif id=='LibDialog-1.0RS' then return libDialog elseif id=='AceAddon-3.0' then return {GetAddon=function(_,id,quiet) assert(id=='RareScanner' and quiet); return targetApp end} end
 end
 RSLootMixin={AddItem=function(self,id) self.itemID=id; return 'native-item' end}
 assert(module.available()); module.install(S,module); Flush()
-assert(scanner.panel and scanner.backdrop==nil and scanner.attributes.macrotext=='/targetexact rare')
+assert(#errors==0 and rowPasses==0, 'cold Explorer must not iterate ScrollBoxes without a view')
+assert(not listView.fn and not groupView.fn, 'callbacks must wait for native views')
+assert(explorer.RareNPCList:Initialize()=='native-list-init')
+assert(listView.fn and row.Name.path=='EUI', 'late rare-list initialization must style existing rows')
+assert(custom:Initialize()=='native-group-init')
+assert(groupView.fn and groupRow.Name.path=='EUI', 'late custom-group initialization must style existing rows')
+local lateGroupRow=Object('Button',custom.GroupList.ScrollBox); lateGroupRow.Name=Text(lateGroupRow)
+groupView.fn(groupView.owner,lateGroupRow); assert(lateGroupRow.Name.path=='EUI')
+-- A temporarily cleared native view must be safe on subsequent refreshes too.
+explorer.RareNPCList.scrollBox.view=nil; custom.GroupList.ScrollBox.view=nil
+local passes=rowPasses
+for i=1,10 do explorer:Show() end
+assert(rowPasses==passes and #errors==0, 'refresh iterated a temporarily uninitialized view')
+assert(explorer.RareNPCList:Initialize()=='native-list-init')
+assert(custom:Initialize()=='native-group-init')
+assert(scanner.backdrop==nil and scanner.normal.alpha==0 and scanner.attributes.macrotext=='/targetexact rare')
+local function AlertFill(host)
+    for _,texture in ipairs(host.regions) do if texture.layer=='BACKGROUND' and texture~=host.normal then return texture end end
+end
+local mainFill=AlertFill(scanner)
+local previousFill,nextFill=AlertFill(scanner.PreviousButton),AlertFill(scanner.NextButton)
+assert(mainFill and previousFill and nextFill)
+assert(mainFill.color[4]==.8 and previousFill.color[4]==.8 and nextFill.color[4]==.8)
+assert(scanner.alpha==1 and scanner.Title.alpha==1 and scanner.ModelView.alpha==1,'background opacity faded alert content')
+assert(scanner.NextButton.width==32 and nextFill.point[4]==-4,'native navigation hit width changed')
+assert(scanner.NextButton.Texture.width==16 and scanner.NextButton.Texture.height==12)
+local opacity=displayOptions.args.euiAddonSkinsBackgroundOpacity
+assert(opacity and opacity.type=='range' and opacity.min==0 and opacity.max==100 and opacity.get()==80)
+assert(displayOptions.args.scale==nativeScale and nativeScale.get()==1,'native display settings replaced')
+local oc,orr,oa,oh,of=childReads,regionReads,allocated,hookCount,fontWrites
+for _,value in ipairs({0,25,50,80,100}) do
+    opacity.set(nil,value)
+    assert(mainFill.color[4]==value/100 and previousFill.color[4]==value/100 and nextFill.color[4]==value/100)
+end
+assert(childReads==oc and regionReads==orr and allocated==oa and hookCount==oh and fontWrites==of,'opacity drag scanned or rebuilt UI')
+assert(scanner.alpha==1 and scanner.Title.alpha==1 and scanner.ModelView.alpha==1)
+opacity.set(nil,0/0);assert(opacity.get()==100)
+opacity.set(nil,150);assert(opacity.get()==100)
+opacity.set(nil,-5);assert(opacity.get()==0)
+combat=true;opacity.set(nil,35);assert(mainFill.color[4]==0,'combat touched secure alert cosmetics')
+combat=false;for _,event in ipairs(events) do if event.events and event.events.PLAYER_REGEN_ENABLED then event.scripts.OnEvent(event,'PLAYER_REGEN_ENABLED') end end
+Flush();assert(mainFill.color[4]==.35 and previousFill.color[4]==.35)
+local savedOpacity=displayOptions.args.euiAddonSkinsBackgroundOpacity
+for _=1,10 do assert(targetApp:SetupOptions()=='native-setup') end
+assert(displayOptions.args.euiAddonSkinsBackgroundOpacity==savedOpacity and registry.notifications==1,'settings insertion duplicated')
+-- Re-registration after native SetupOptions must attach the control to the new
+-- table, preserving our saved preference and all native option identities.
+displayOptions={type='group',args={scale=nativeScale}}
+targetApp:SetupOptions();opacity=displayOptions.args.euiAddonSkinsBackgroundOpacity
+assert(opacity.get()==35 and displayOptions.args.scale==nativeScale)
+opacity.set(nil,80)
+assert(EUIAddonSkinsDB.rareScanner.backgroundOpacity==.8)
+local ac,ar,aa,ah,af=childReads,regionReads,allocated,hookCount,fontWrites
+for i=1,1000 do opacity.set(nil,i%101) end
+assert(childReads==ac and regionReads==ar and allocated==aa and hookCount==ah and fontWrites==af,
+    'warm opacity slider updates must remain cosmetic and constant-size')
+opacity.set(nil,80)
 assert(scanner.ModelView.displayID==123 and scanner.CloseButton.scripts.OnClick()=='native-action')
 assert(scanner.FilterEntityButton.normal.texture=='native-stop' and scanner.NextButton.scripts.OnMouseDown()=='native-navigation')
 assert(explorer.Border.art.alpha==0 and explorer.RareInfo.Mounts.Texture.alpha==1)
@@ -249,7 +368,70 @@ assert(childReads==c and regionReads==r and allocated==o and hookCount==h and fo
 local newRow=Object('Button',explorer.RareNPCList.scrollBox); newRow.Name=Text(newRow)
 listView.fn(listView.owner,newRow); assert(newRow.Name.path=='EUI')
 local popup=libDialog:Spawn('RARESCANNER_DELETE_GROUP_CONFIRMATION'); assert(popup.styled and popup.Text.path=='Native')
-local foreign=libDialog:Spawn('FOREIGN_CONFIRM'); assert(not foreign.styled)
+assert(popup.buttons[1].styled and popup.buttons[2].styled, 'LibDialog buttons[] were not styled')
+assert(popup.buttons[1].Text.path=='Native' and popup.buttons[1].scripts.OnClick()=='native-action')
+local foreign=libDialog:Spawn('FOREIGN_CONFIRM'); assert(not foreign.styled and not foreign.buttons[1].styled)
+assert(filters.FilterDropDown.dropdown and filters.ContinentDropDown.dropdown and filters.FilterDropDown.popupOwner)
+assert(filters:Initialize()=='native-filters-init')
+assert(rescan.button and rescan.normal.alpha==0)
+rescan:Show();rescan.scripts.OnEnter(rescan);assert(rescan.normal.alpha==0,'native atlas reset exposed red button')
+local actionResult,actionNil,actionValue=rescan.scripts.OnClick(rescan)
+assert(actionResult=='native-rescan' and actionNil==nil and actionValue==42)
+local check=filters.LockCurrentZoneCheckButton
+local checkHost
+for _,child in ipairs(check.children) do if child.width==22 then checkHost=child end end
+local checkMark
+for _,texture in ipairs(checkHost.regions) do if texture.layer=='OVERLAY' then checkMark=texture end end
+assert(check.width==32 and check.height==32 and check.checkedArt.alpha==0 and checkMark.width==8 and checkMark:IsShown())
+check.scripts.OnClick(check);assert(not checkMark:IsShown())
+check:SetChecked(true);assert(checkMark:IsShown())
+local menuList=Object('Frame',UIParent);menuList.dropdown=filters.ContinentDropDown
+menuList.GetOwnerRegion=function(self) return self.dropdown end
+local desc={IsRadio=function() return true end,AddInitializer=function(self,fn) self.initializers=self.initializers or {};table.insert(self.initializers,fn) end}
+local menuRow=Object('Button',menuList)
+menuRow.GetFont=function() error('restricted menu text was accessed') end
+menuRow.GetElementDescription=function() return desc end
+menuRow.leftTexture1=menuRow:CreateTexture(nil,'ARTWORK');menuRow.leftTexture1:SetTexture('native-radio-circle')
+menuRow.leftTexture2=menuRow:CreateTexture(nil,'ARTWORK');menuRow.leftTexture2:SetTexture('native-radio-mark')
+menuRow.leftTexture2:SetSize(12,12);menuRow.leftTexture2:Hide()
+menuRow.arrow=menuRow:CreateTexture(nil,'ARTWORK');menuRow.arrow:SetTexture('native-arrow')
+menuList.EnumerateElementDescriptions=function(_,fn) fn(nil,desc) end
+explorerMenuManager.list=menuList
+assert(explorerMenuManager:OpenMenu()=='native-menu')
+assert(menuRow.leftTexture2.width==7 and menuRow.leftTexture2.color[1]==accent and not menuRow.leftTexture2:IsShown())
+assert(menuRow.arrow.texture:find('eui%-arrow%-right'))
+-- A native response clears cosmetics and runs the appended initializer again.
+menuRow.leftTexture1:SetTexture('native-radio-circle');menuRow.leftTexture2:SetTexture('native-radio-mark')
+for _,fn in ipairs(desc.initializers) do fn(menuRow,desc,menuList) end
+assert(menuRow.leftTexture2.width==7 and #desc.initializers==1)
+menuList:Hide();assert(menuRow.leftTexture2.width==12 and menuRow.leftTexture1.texture=='native-radio-circle' and menuRow.arrow.texture=='native-arrow')
+menuList:Show();explorerMenuManager:OpenMenu()
+local submenu=Object('Frame',UIParent);submenu.dropdown=menuList;submenu.GetOwnerRegion=menuList.GetOwnerRegion
+explorerMenuManager.list=submenu;explorerMenuManager:OpenMenu();assert(submenu.dropdown==menuList)
+-- Shared menus may be transferred without hiding. Old initializers must not
+-- repaint foreign controls, and original marker cosmetics must be restored.
+menuList.dropdown=Object('Frame');explorerMenuManager.list=menuList
+explorerMenuManager:OpenMenu()
+assert(menuRow.leftTexture2.width==12 and menuRow.leftTexture2.texture=='native-radio-mark')
+local menuReads,menuObjects,menuHooks=childReads,allocated,hookCount
+for _=1,100 do rescan:Show();check:SetChecked(true) end
+assert(childReads==menuReads and allocated==menuObjects and hookCount==menuHooks,'warm action/check changes traversed or allocated')
+-- Theme updates and native reinitialization must recolour an already-open
+-- owned submenu; combat and disable paths must not leak styling to reuse.
+menuList.dropdown=filters.FilterDropDown;menuList:Show();explorerMenuManager.list=menuList
+explorerMenuManager:OpenMenu()
+local oldAccent=accent;accent=.67;module.refresh();Flush()
+assert(menuRow.leftTexture2.color[1]==.67 and #desc.initializers==1)
+combat=true
+local oldColour=menuRow.leftTexture2.color[1]
+for _,fn in ipairs(desc.initializers) do fn(menuRow,desc,menuList) end
+assert(menuRow.leftTexture2.color[1]==oldColour)
+combat=false;enabled=false;module.refresh()
+assert(menuRow.leftTexture2.texture=='native-radio-mark' and menuRow.leftTexture2.width==12)
+local oldBindings=menuBindings
+for _,fn in ipairs(desc.initializers) do fn(menuRow,desc,menuList) end
+explorerMenuManager:OpenMenu();assert(menuBindings==oldBindings)
+enabled=true;accent=oldAccent;menuList:Hide();explorerMenuManager.list=nil;module.refresh();Flush()
 local function Widget(kind,parent)
     local w={type=kind,frame=Object('Frame',parent),children={}}
     w.frame.obj=w; w.OnRelease=function(self) self.releases=(self.releases or 0)+1 end

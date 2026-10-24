@@ -105,4 +105,4 @@ EUI AddonSkins integrates with EllesmereUI's public skinning API. EllesmereUI an
 
 ## Addon authors
 
-If you prefer that your addon is not supported by this skin collection, please [open an issue](https://github.com/oopsie-glitch/EUI-AddonSkins/issues). The skin will be removed on request.
+If you are an addon author and have any concerns regarding an EUI AddonSkins integration, please contact me through CurseForge or GitHub.

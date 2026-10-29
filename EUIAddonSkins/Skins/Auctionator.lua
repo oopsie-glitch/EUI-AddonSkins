@@ -272,6 +272,12 @@ end, function(S, module)
             local socket = H.Texture(f.EmptySlot)
             if not socket then socket = f:CreateTexture(nil, "BACKGROUND", nil, 1); f.EmptySlot = socket end
             socket:SetAtlas("auctionhouse-itemicon-empty", false)
+            local selling = _G.AuctionatorSellingFrame
+            if selling and selling.SaleItemFrame and selling.SaleItemFrame.Icon == f then
+                -- The reused preview EmptySlot inherits the old sheet's 0.640625
+                -- crop. The AH atlas needs its full region, in every item state.
+                socket:SetTexCoord(0, 1, 0, 1)
+            end
             socket:ClearAllPoints(); socket:SetAllPoints(f); socket:SetAlpha(1)
             state.socket = socket
             local border = H.Texture(f.IconBorder)

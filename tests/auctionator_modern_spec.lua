@@ -69,7 +69,8 @@ local function texture(layer, w, h)
     function t:SetWidth(w) self.w = w end
     function t:SetShown(v) self.shown = v end
     function t:Hide() self.shown = false end
-    function t:SetTexCoord(...) self.crop = {...} end
+    function t:Show() self.shown = true end
+    function t:SetTexCoord(...) self.crop = {...}; self.texCoordWrites=(self.texCoordWrites or 0)+1 end
     function t:GetNumMaskTextures() return #self.masks end
     function t:GetMaskTexture(i) return self.masks[i] end
     function t:AddMaskTexture(m) self.masks[#self.masks + 1] = m end
@@ -752,6 +753,8 @@ do
         local f=frame('Button',parent);f:SetSize(size,size)
         f.Icon=f:CreateTexture(nil,'BACKGROUND');f.IconBorder=f:CreateTexture(nil,'OVERLAY')
         f.EmptySlot=f:CreateTexture(nil,'BACKGROUND');f.EmptySlot:SetTexture('old-empty-slot')
+        -- Source/Groups/ViewItem.xml crops the old 64px sprite sheet.
+        f.EmptySlot:SetTexCoord(0,.640625,0,.640625)
         f.IconSelectedHighlight=f:CreateTexture(nil,'BACKGROUND')
         f.IconSelectedHighlight:SetAtlas('bags-glow-artifact');f.IconSelectedHighlight:SetVertexColor(.977,.592,.086,1)
         f.ProfessionQualityOverlay=f:CreateTexture(nil,'OVERLAY')
@@ -760,7 +763,7 @@ do
         f.SetItemInfo=function(self,info)
             self.itemInfo=info
             if info then
-                self.Icon:SetTexture(info.iconTexture)
+                self.Icon:SetTexture(info.iconTexture);self.Icon:Show()
                 local c=ITEM_QUALITY_COLORS[info.quality]
                 self.IconBorder:SetVertexColor(c.r,c.g,c.b,1)
                 self.IconBorder:SetShown(not info.selected)
@@ -768,7 +771,7 @@ do
                 self.Icon:SetAlpha(info.selected and .8 or 1)
                 self.Text.text=tostring(info.count)
             else
-                self.IconBorder:Hide();self.IconSelectedHighlight:Hide();self.Text.text=''
+                self.Icon:Hide();self.IconBorder:Hide();self.IconSelectedHighlight:Hide();self.Text.text=''
             end
             return 'native-item',nil,9
         end
@@ -777,6 +780,7 @@ do
         return f
     end
     local large=item(sale,60)
+    sale.Icon=large -- Actual SaleItemFrame.Icon identity, not every selling slot.
     -- Selected-sale subclass has native special handling after base SetItemInfo.
     local baseSet=large.SetItemInfo
     large.SetItemInfo=function(self,info)
@@ -784,6 +788,7 @@ do
         self.IconSelectedHighlight:Hide();self.IconBorder:SetShown(info~=nil);self.Icon:SetAlpha(1)
         return a,b,c
     end
+    large:SetItemInfo(nil)
     local inventory=item(selling,40)
     local foreign=item(frame('Frame',shopping),40)
     local position=large.points
@@ -796,6 +801,18 @@ do
     assert(#large.Icon.masks==1 and large.Icon.masks[1].path=='Interface\\Common\\common-iconmask')
     assert(large.Icon.masks[1].all==large.Icon)
     assert(inventory.IconSelectedHighlight.path=='Interface\\Common\\WhiteIconFrame')
+    local function fullPreview()
+        local uv=large.EmptySlot.crop
+        assert(uv and uv[1]==0 and uv[2]==1 and uv[3]==0 and uv[4]==1,
+            'preview retained the legacy crop instead of the full AH atlas region')
+    end
+    fullPreview()
+    assert(not large.Icon:IsShown() and large.EmptySlot:IsShown() and not large.IconBorder:IsShown())
+    assert(large.EmptySlot.texCoordWrites==2, 'preview crop should be corrected once at setup')
+    assert(inventory.EmptySlot.crop[2]==.640625 and foreign.EmptySlot.crop[2]==.640625,
+        'preview correction changed inventory/foreign texture coordinates')
+    assert(large.EmptySlot.layer=='BACKGROUND' and large.IconBorder.all==large.Icon)
+    local socket=large.EmptySlot
     local mask=large.Icon.masks[1]
     local c,h,reads,geo=created,hookCount,hierarchyReads,geometryWrites
     for i=1,1000 do
@@ -803,19 +820,21 @@ do
         inventory:SetItemInfo({quality=i%8,iconTexture='inventory',selected=i%2==0,count=i})
         assert(a=='native-item' and b==nil and index==9)
         assert(large.IconBorder:IsShown() and not large.IconSelectedHighlight:IsShown())
+        fullPreview();assert(large.EmptySlot==socket)
         assert(inventory.IconSelectedHighlight:IsShown()==(i%2==0))
     end
     assert(created==c and hookCount==h and hierarchyReads==reads and geometryWrites==geo and #timers==0)
     assert(large.Icon.masks[1]==mask and #large.Icon.masks==1 and large.Text.text=='1000')
+    assert(socket.texCoordWrites==2, 'item updates repeated the preview UV correction')
     assert(large.scripts.OnClick()=='native-click' and large.scripts.OnReceiveDrag()=='native-drag')
     assert(large.ProfessionQualityOverlay.alpha==1)
-    large:SetItemInfo(nil);assert(not large.IconBorder:IsShown() and large.Text.text=='')
-    large:SetItemInfo({quality=3,iconTexture='new-item',count=2});assert(large.IconBorder:GetVertexColor()==0)
+    large:SetItemInfo(nil);assert(not large.IconBorder:IsShown() and large.Text.text=='' and not large.Icon:IsShown() and socket:IsShown());fullPreview()
+    large:SetItemInfo({quality=3,iconTexture='new-item',count=2});assert(large.IconBorder:GetVertexColor()==0);fullPreview()
     -- Native geometry/mask resets are repaired locally with one retained mask.
     large.Icon:SetAllPoints(large);large.Icon:AddMaskTexture({})
     assert(large.Icon.points[1][2]==2 and #large.Icon.masks==1 and large.Icon.masks[1]==mask)
     for _,fn in ipairs(looks)do fn()end;flush()
-    assert(large.EmptySlot.alpha==1 and large.IconBorder.all==large.Icon and not large.button)
+    assert(large.EmptySlot.alpha==1 and large.IconBorder.all==large.Icon and not large.button);fullPreview()
     -- Geometry changed while disabled or in combat is repaired at recovery.
     enabled=false;large.Icon:SetAllPoints(large);enabled=true
     modules.Auctionator.refresh();flush();assert(large.Icon.points[1][2]==2 and large.Icon.all==nil)
@@ -842,4 +861,5 @@ do
     C_Texture=previousTextureAPI
     print('PASS: Auctionator selling matches EUI retained GiantItemButton socket/inset ring: large and pooled inventory slots, local reset repair, selection/count/tier/actions, theme and protected/disabled/API fallbacks')
     print('BENCH Auctionator selling mock: 1000 large plus 1000 inventory updates: new UI objects/hooks, hierarchy reads, geometry writes and queued refreshes=0')
+    print('PASS: Auctionator preview-only legacy UV crop reset: full atlas region on first empty display, selected/cleared states and theme refresh; inventory coordinates and rarity/layout unchanged')
 end

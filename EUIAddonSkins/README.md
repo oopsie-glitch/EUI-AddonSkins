@@ -7,6 +7,7 @@ EllesmereUI skins for World of Warcraft addons.
 - AllTheThings
 - Altoholic
 - Angrier World Quests
+- Atlas
 - AtlasLootClassic Continued
 - Attune
 - Auctionator

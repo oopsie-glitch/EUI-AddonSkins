@@ -21,6 +21,7 @@ Loader.lua
 Skins\AllTheThings.lua
 Skins\Altoholic.lua
 Skins\AngrierWorldQuests.lua
+Skins\Atlas.lua
 Skins\AtlasLootContinued.lua
 Skins\Attune.lua
 Skins\Auctionator.lua

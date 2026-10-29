@@ -14,7 +14,7 @@ InCombatLockdown = function() return combat end
 geterrorhandler = function() return function(e) error(e) end end
 NORMAL_FONT_COLOR = {GetRGB = function() return 1, 0.82, 0 end}
 PixelUtil = {GetNearestPixelSize = function() return 0.5 end}
-C_Texture = {GetAtlasInfo = function(atlas) return atlas == 'UI-RefreshButton' and {} or nil end}
+C_Texture = {GetAtlasInfo = function(atlas) return (atlas == 'UI-RefreshButton' or atlas == 'auctionhouse-itemicon-empty') and {} or nil end}
 hooksecurefunc = function(obj, key, callback)
     hookCount = hookCount + 1
     local original = obj[key]
@@ -40,6 +40,14 @@ local function texture(layer, w, h)
     created = created + 1
     local t = {kind = 'Texture', layer = layer, alpha = 1, w = w or 16, h = h or 16, masks = {}}
     anchors(t)
+    function t:GetPoint(i)
+        if self.all then return 'TOPLEFT',self.all,'TOPLEFT',0,0 end
+        local point=self.points and self.points[i]
+        if not point then return end
+        if type(point[2])=='number' then return point[1],self.parent,point[1],point[2],point[3] end
+        return table.unpack(point)
+    end
+    function t:ClearAllPoints() geometryWrites=geometryWrites+1;self.points={};self.all=nil end
     function t:GetObjectType() return self.kind end
     function t:GetDrawLayer() return self.layer end
     function t:IsShown() return self.shown ~= false end
@@ -109,7 +117,11 @@ local function frame(kind, parent, name)
     function f:SetScript(key, fn) self.scripts[key] = fn end
     function f:RegisterEvent(e) self.events = self.events or {}; self.events[e] = true end
     function f:CreateTexture(_, layer)
-        local t = texture(layer); self.regions[#self.regions + 1] = t; return t
+        local t = texture(layer); t.parent=self; self.regions[#self.regions + 1] = t; return t
+    end
+    function f:CreateMaskTexture()
+        local t = texture('BORDER'); t.kind='MaskTexture'
+        self.regions[#self.regions+1]=t;return t
     end
     function f:GetFontString() return self.label end
     function f:GetNormalTexture() return self.normal end
@@ -255,6 +267,9 @@ local refreshButton = frame('Button', sale); refreshButton.Icon = refreshButton:
 refreshButton.Icon:SetAtlas('UI-RefreshButton')
 local bag = frame('Button', selling); bag.Icon = bag:CreateTexture(nil, 'ARTWORK'); bag.IconBorder = bag:CreateTexture(nil, 'OVERLAY')
 bag.IconBorder:SetVertexColor(0.12, 1, 0, 1); bag.Icon:AddMaskTexture({})
+bag.IconSelectedHighlight=bag:CreateTexture(nil,'BACKGROUND')
+bag.IconSelectedHighlight:SetAtlas('bags-glow-artifact')
+bag.EmptySlot=bag:CreateTexture(nil,'BACKGROUND')
 local plain = frame('Button', selling); plain.Icon = plain:CreateTexture(nil, 'ARTWORK'); plain.IconBorder = plain:CreateTexture(nil, 'OVERLAY')
 plain.IconBorder:SetVertexColor(1, 1, 1, 1)
 local listing = frame('Frame', selling); listing.HeaderContainer = frame('Frame', listing)
@@ -441,10 +456,10 @@ assert(cancelRefresh.Icon.alpha == 0 and cancelRefresh.normal.alpha == 0, 'panel
 assert(listIcon.Icon.alpha ~= 0 and listIcon.regions[#listIcon.regions] == listIcon.Icon, 'non-refresh icon button glyphed')
 assert(refreshButton.Icon.alpha == 0 and refreshButton.regions[2].atlas == 'UI-RefreshButton' and refreshButton.regions[2].desaturated)
 -- Bag icons: unmasked, inset, re-squared when the pooled button refills.
-assert(#bag.Icon.masks == 0 and bag.Icon.points[1][2] == 2 and bag.IconBorder.alpha == 1 and plain.IconBorder.alpha == 1)
+assert(#bag.Icon.masks == 1 and bag.Icon.points[1][2] == 2 and bag.IconBorder.alpha == 1 and plain.IconBorder.alpha == 1)
 assert(not bag.euiQualityTop and not plain.euiQualityTop, 'redundant rarity overlays created')
 bag.Icon:AddMaskTexture({}); bag.Icon:SetAllPoints(bag); bag.Icon:SetTexture('next-item')
-assert(#bag.Icon.masks == 0 and bag.Icon.points[1][2] == 2 and bag.Icon.square >= 2, 'pooled icon not re-squared')
+assert(#bag.Icon.masks == 1 and bag.Icon.points[1][2] == 2 and bag.Icon.square >= 2, 'pooled icon not repaired')
 -- Shopping buttons: three equal widths, 4px apart, inside the lists column.
 assert(shopping.NewListButton.w == 106 and shopping.ImportButton.w == 106 and shopping.ExportButton.w == 106)
 assert(shopping.NewListButton.points[1][2] == shopping.ListsContainer and #shopping.ExportButton.points == 1)
@@ -633,7 +648,6 @@ do
         return r==c.r and g==c.g and b==c.b and a==1 and border:IsShown() and border.alpha==1
     end
     -- Native selling path owns selected/empty visibility and count/tier overlays.
-    bag.IconSelectedHighlight = bag:CreateTexture(nil,'BACKGROUND')
     bag.ProfessionQualityOverlay = bag:CreateTexture(nil,'OVERLAY')
     bag.Text = fontString('17'); bag.regions[#bag.regions+1]=bag.Text
     bag.SetItemInfo = function(self, info)
@@ -722,9 +736,110 @@ do
     purchase:SetItem(1)
     for _,fn in ipairs(looks)do fn()end;flush()
     -- Simulate EUI reapplying its recorded Button keep list during a theme pass.
-    S.Button(bag,bag.keepKeys)
+    assert(not bag.button, 'selling item registered as an EUI text button')
     assert(matches(bag.IconBorder,0) and matches(purchase.QualityBorder,1) and matches(reused.IconBorder,3))
     assert(not bag.euiQualityTop and bag.Text.text=='1' and bag.ProfessionQualityOverlay.alpha==1)
     print('PASS: Auctionator native rarity borders: all eight qualities, selling/purchase native state, pooled/late/missing result data, native returns, theme, combat/disabled/stock guards')
     print('BENCH Auctionator rarity mock: 1000 populated result cells: new UI objects/hooks, hierarchy reads, geometry writes and queued refreshes=0')
+end
+
+
+-- EUI 9.7 Skin_AuctionHouse keeps GiantItemButton's socket and inset ring.
+do
+    local previousTextureAPI=C_Texture
+    C_Texture={GetAtlasInfo=function(atlas)return atlas=='auctionhouse-itemicon-empty' and {} or nil end}
+    local function item(parent, size)
+        local f=frame('Button',parent);f:SetSize(size,size)
+        f.Icon=f:CreateTexture(nil,'BACKGROUND');f.IconBorder=f:CreateTexture(nil,'OVERLAY')
+        f.EmptySlot=f:CreateTexture(nil,'BACKGROUND');f.EmptySlot:SetTexture('old-empty-slot')
+        f.IconSelectedHighlight=f:CreateTexture(nil,'BACKGROUND')
+        f.IconSelectedHighlight:SetAtlas('bags-glow-artifact');f.IconSelectedHighlight:SetVertexColor(.977,.592,.086,1)
+        f.ProfessionQualityOverlay=f:CreateTexture(nil,'OVERLAY')
+        f.Text=fontString('5');f.regions[#f.regions+1]=f.Text
+        f:SetPoint('TOPLEFT',parent,'TOPLEFT',15,-20)
+        f.SetItemInfo=function(self,info)
+            self.itemInfo=info
+            if info then
+                self.Icon:SetTexture(info.iconTexture)
+                local c=ITEM_QUALITY_COLORS[info.quality]
+                self.IconBorder:SetVertexColor(c.r,c.g,c.b,1)
+                self.IconBorder:SetShown(not info.selected)
+                self.IconSelectedHighlight:SetShown(info.selected)
+                self.Icon:SetAlpha(info.selected and .8 or 1)
+                self.Text.text=tostring(info.count)
+            else
+                self.IconBorder:Hide();self.IconSelectedHighlight:Hide();self.Text.text=''
+            end
+            return 'native-item',nil,9
+        end
+        f.scripts.OnClick=function()return 'native-click'end
+        f.scripts.OnReceiveDrag=function()return 'native-drag'end
+        return f
+    end
+    local large=item(sale,60)
+    -- Selected-sale subclass has native special handling after base SetItemInfo.
+    local baseSet=large.SetItemInfo
+    large.SetItemInfo=function(self,info)
+        local a,b,c=baseSet(self,info)
+        self.IconSelectedHighlight:Hide();self.IconBorder:SetShown(info~=nil);self.Icon:SetAlpha(1)
+        return a,b,c
+    end
+    local inventory=item(selling,40)
+    local foreign=item(frame('Frame',shopping),40)
+    local position=large.points
+    modules.Auctionator.refresh();flush()
+    assert(not large.button and not inventory.button and foreign.button)
+    assert(large.EmptySlot.atlas=='auctionhouse-itemicon-empty' and large.EmptySlot.all==large and large.EmptySlot.alpha==1)
+    assert(large.IconBorder.all==large.Icon and large.IconBorder.layer=='OVERLAY')
+    assert(large.Icon.owner==nil and inventory.Icon.owner==nil,'extra EUI BorderRegion requested')
+    assert(large.Icon.points[1][2]==2 and large.Icon.points[2][2]==-2 and large.w==60 and large.h==60 and large.points==position)
+    assert(#large.Icon.masks==1 and large.Icon.masks[1].path=='Interface\\Common\\common-iconmask')
+    assert(large.Icon.masks[1].all==large.Icon)
+    assert(inventory.IconSelectedHighlight.path=='Interface\\Common\\WhiteIconFrame')
+    local mask=large.Icon.masks[1]
+    local c,h,reads,geo=created,hookCount,hierarchyReads,geometryWrites
+    for i=1,1000 do
+        local a,b,index=large:SetItemInfo({quality=i%8,iconTexture='updated',selected=true,count=i})
+        inventory:SetItemInfo({quality=i%8,iconTexture='inventory',selected=i%2==0,count=i})
+        assert(a=='native-item' and b==nil and index==9)
+        assert(large.IconBorder:IsShown() and not large.IconSelectedHighlight:IsShown())
+        assert(inventory.IconSelectedHighlight:IsShown()==(i%2==0))
+    end
+    assert(created==c and hookCount==h and hierarchyReads==reads and geometryWrites==geo and #timers==0)
+    assert(large.Icon.masks[1]==mask and #large.Icon.masks==1 and large.Text.text=='1000')
+    assert(large.scripts.OnClick()=='native-click' and large.scripts.OnReceiveDrag()=='native-drag')
+    assert(large.ProfessionQualityOverlay.alpha==1)
+    large:SetItemInfo(nil);assert(not large.IconBorder:IsShown() and large.Text.text=='')
+    large:SetItemInfo({quality=3,iconTexture='new-item',count=2});assert(large.IconBorder:GetVertexColor()==0)
+    -- Native geometry/mask resets are repaired locally with one retained mask.
+    large.Icon:SetAllPoints(large);large.Icon:AddMaskTexture({})
+    assert(large.Icon.points[1][2]==2 and #large.Icon.masks==1 and large.Icon.masks[1]==mask)
+    for _,fn in ipairs(looks)do fn()end;flush()
+    assert(large.EmptySlot.alpha==1 and large.IconBorder.all==large.Icon and not large.button)
+    -- Geometry changed while disabled or in combat is repaired at recovery.
+    enabled=false;large.Icon:SetAllPoints(large);enabled=true
+    modules.Auctionator.refresh();flush();assert(large.Icon.points[1][2]==2 and large.Icon.all==nil)
+    combat=true;large.Icon:SetAllPoints(large)
+    assert(large.Icon.all==large)
+    combat=false
+    for _,eventFrame in ipairs(events)do
+        if eventFrame.events and eventFrame.events.PLAYER_REGEN_ENABLED then eventFrame.scripts.OnEvent(eventFrame,'PLAYER_REGEN_ENABLED') end
+    end
+    flush();assert(large.Icon.all==nil and large.Icon.points[1][2]==2)
+    -- No new style is applied to protected or disabled late slots.
+    local secret=item(selling,40);secret.protected=true
+    enabled=false;local disabled=item(selling,40)
+    modules.Auctionator.refresh();flush();assert(not disabled.button and disabled.EmptySlot.atlas==nil)
+    enabled=true;modules.Auctionator.refresh();flush()
+    assert(secret.EmptySlot.atlas==nil and not secret.button and disabled.EmptySlot.atlas=='auctionhouse-itemicon-empty')
+    -- Missing atlas/mask APIs retain a usable native border fallback.
+    local noMask=item(selling,40);noMask.CreateMaskTexture=false
+    modules.Auctionator.refresh();flush()
+    assert(not noMask.button and noMask.EmptySlot.atlas=='auctionhouse-itemicon-empty' and noMask.Icon.owner==nil)
+    C_Texture=nil
+    local fallback=item(selling,40);fallback.CreateMaskTexture=false
+    modules.Auctionator.refresh();flush();assert(fallback.button and fallback.IconBorder.alpha==1)
+    C_Texture=previousTextureAPI
+    print('PASS: Auctionator selling matches EUI retained GiantItemButton socket/inset ring: large and pooled inventory slots, local reset repair, selection/count/tier/actions, theme and protected/disabled/API fallbacks')
+    print('BENCH Auctionator selling mock: 1000 large plus 1000 inventory updates: new UI objects/hooks, hierarchy reads, geometry writes and queued refreshes=0')
 end

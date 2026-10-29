@@ -16,7 +16,14 @@ end, function(S, module)
     local H = ns.CreateSkinHelper(S, module)
     local roots, shells, panels = {}, {}, {}
     local scrollChrome, qualityCells, radioMarks, layouts = {}, {}, {}, {}
-    local itemBorders = {}
+    local itemBorders, sellingItems = {}, {}
+    -- The shared first-visit crop also supplies an owner. Selling tiles use
+    -- the native socket instead; suppress only that redundant border request.
+    S.SquareIcon = function(icon, owner, quality)
+        if owner and sellingItems[owner] then return end
+        local api = _G.AuctionHouseFrame and raw or soft
+        if api.SquareIcon then return api.SquareIcon(icon, owner, quality) end
+    end
     local rows, squares, squaring, zones, money, centered, glyphs, labels, darkTabs, chained = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
     local coppers, cleared, rowWidths, aligned, widgets, refreshes, stripAt = {}, {}, {}, {}, {}, {}, {}
     local scanned, refreshHosts, radioLabels = {}, {}, {}
@@ -200,8 +207,22 @@ end, function(S, module)
             for index = icon:GetNumMaskTextures(), 1, -1 do icon:RemoveMaskTexture(icon:GetMaskTexture(index)) end
         end
         if f.IconMask and f.IconMask.Hide then f.IconMask:Hide() end
-        icon:ClearAllPoints(); icon:SetPoint("TOPLEFT", 2, -2); icon:SetPoint("BOTTOMRIGHT", -2, 2)
-        S.SquareIcon(icon, f)
+        local state = sellingItems[f]
+        if state and state.geometry then
+            state.geometry = icon:GetNumPoints() == 2
+            if state.geometry then
+                local p1, r1, rp1, x1, y1 = icon:GetPoint(1)
+                local p2, r2, rp2, x2, y2 = icon:GetPoint(2)
+                state.geometry = p1 == "TOPLEFT" and r1 == f and rp1 == "TOPLEFT" and x1 == 2 and y1 == -2
+                    and p2 == "BOTTOMRIGHT" and r2 == f and rp2 == "BOTTOMRIGHT" and x2 == -2 and y2 == 2
+            end
+        end
+        if not state or not state.geometry then
+            icon:ClearAllPoints(); icon:SetPoint("TOPLEFT", 2, -2); icon:SetPoint("BOTTOMRIGHT", -2, 2)
+            if state then state.geometry = true end
+        end
+        if state then S.SquareIcon(icon) else S.SquareIcon(icon, f) end
+        if state and state.mask then icon:AddMaskTexture(state.mask) end
         squaring[f] = nil
     end
     -- Keep the accepted legacy AuctionFrame treatment unchanged.
@@ -232,8 +253,58 @@ end, function(S, module)
             for _, line in ipairs(itemBorders[f]) do line:SetColorTexture(r, g, b, a or 1); line:SetAlpha(1) end
         end
     end
+    -- EllesmereUI's AH ItemDisplay deliberately retains GiantItemButton art.
+    -- Reuse that client socket and native rarity texture, without Button's plate
+    -- or SquareIcon's extra black edge. Auctionator still owns actions/state.
+    local function SellingItem(f, icon)
+        local state = sellingItems[f]
+        if not state then
+            local parent, owned = f, false
+            for _ = 1, 16 do
+                if parent == _G.AuctionatorSellingFrame then owned = true; break end
+                if not H.Allowed(parent) or not parent.GetParent then break end
+                parent = parent:GetParent()
+            end
+            if not owned then return false end
+            -- Older clients without this atlas keep the existing native path.
+            if not (C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("auctionhouse-itemicon-empty")) then return false end
+            state = {}; sellingItems[f] = state
+            local socket = H.Texture(f.EmptySlot)
+            if not socket then socket = f:CreateTexture(nil, "BACKGROUND", nil, 1); f.EmptySlot = socket end
+            socket:SetAtlas("auctionhouse-itemicon-empty", false)
+            socket:ClearAllPoints(); socket:SetAllPoints(f); socket:SetAlpha(1)
+            state.socket = socket
+            local border = H.Texture(f.IconBorder)
+            if border then
+                border:ClearAllPoints(); border:SetAllPoints(icon)
+                border:SetDrawLayer("OVERLAY", 0)
+            end
+            local selected = H.Texture(f.IconSelectedHighlight)
+            if selected then
+                -- Keep the native selection colour/visibility; use a restrained
+                -- outer ring rather than the broad artifact glow.
+                selected:SetTexture("Interface\\Common\\WhiteIconFrame")
+            end
+            if f.CreateMaskTexture and icon.AddMaskTexture then
+                local mask = f:CreateMaskTexture()
+                mask:SetTexture("Interface\\Common\\common-iconmask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+                mask:SetAllPoints(icon); state.mask = mask
+            end
+            for _, method in ipairs({"SetTexture", "SetAtlas", "AddMaskTexture", "SetTexCoord", "SetAllPoints"}) do
+                H.Hook(icon, method, function()
+                    if InCombatLockdown() then waiting = true; return end
+                    if not Stock() then Square(f, icon) end
+                end)
+            end
+        end
+        if state.socket:GetAlpha() ~= 1 then state.socket:SetAlpha(1) end
+        Square(f, icon)
+        for _, region in ipairs(H.Regions(f)) do H.Font(region) end
+        return true
+    end
     local function Item(f, icon)
         if not Modern() then LegacyItem(f, icon); return end
+        if SellingItem(f, icon) then return end
         -- Auctionator owns rarity colour and selected/empty visibility. Keep its
         -- texture in EUI's theme registry instead of replacing it with four lines.
         H.Action(f, {"Icon", "icon", "IconBorder", "IconSelectedHighlight", "Highlight",

@@ -60,7 +60,7 @@ local function texture(layer, w, h)
     function t:SetVertexColor(...) self.vertex = {...} end
     function t:GetVertexColor() return table.unpack(self.vertex or {1, 1, 1, 1}) end
     function t:SetDesaturated(v) self.desaturated = v end
-    function t:SetAlpha(a) self.alpha = a end
+    function t:SetAlpha(a) self.alpha = a; self.alphaWrites=(self.alphaWrites or 0)+1 end
     function t:GetAlpha() return self.alpha end
     function t:GetSize() return self.w, self.h end
     function t:SetSize(w, h) self.w, self.h = w, h end
@@ -790,6 +790,9 @@ do
     end
     large:SetItemInfo(nil)
     local inventory=item(selling,40)
+    inventory.IconQuestTexture=inventory:CreateTexture(nil,'OVERLAY')
+    inventory.Cooldown=frame('Cooldown',inventory)
+    local inventoryPosition=inventory.points
     local foreign=item(frame('Frame',shopping),40)
     local position=large.points
     modules.Auctionator.refresh();flush()
@@ -801,6 +804,11 @@ do
     assert(#large.Icon.masks==1 and large.Icon.masks[1].path=='Interface\\Common\\common-iconmask')
     assert(large.Icon.masks[1].all==large.Icon)
     assert(inventory.IconSelectedHighlight.path=='Interface\\Common\\WhiteIconFrame')
+    assert(inventory.EmptySlot.alpha==0 and large.EmptySlot.alpha==1,
+        'inventory socket leaked outside rarity border or preview socket was hidden')
+    assert(inventory.IconQuestTexture.alpha==1 and inventory.Cooldown.shown and inventory.ProfessionQualityOverlay.alpha==1)
+    assert(inventory.w==40 and inventory.h==40 and inventory.points==inventoryPosition)
+    local inventoryAlphaWrites=inventory.EmptySlot.alphaWrites
     local function fullPreview()
         local uv=large.EmptySlot.crop
         assert(uv and uv[1]==0 and uv[2]==1 and uv[3]==0 and uv[4]==1,
@@ -820,12 +828,25 @@ do
         inventory:SetItemInfo({quality=i%8,iconTexture='inventory',selected=i%2==0,count=i})
         assert(a=='native-item' and b==nil and index==9)
         assert(large.IconBorder:IsShown() and not large.IconSelectedHighlight:IsShown())
-        fullPreview();assert(large.EmptySlot==socket)
+        fullPreview();assert(large.EmptySlot==socket and inventory.EmptySlot.alpha==0)
         assert(inventory.IconSelectedHighlight:IsShown()==(i%2==0))
     end
     assert(created==c and hookCount==h and hierarchyReads==reads and geometryWrites==geo and #timers==0)
     assert(large.Icon.masks[1]==mask and #large.Icon.masks==1 and large.Text.text=='1000')
     assert(socket.texCoordWrites==2, 'item updates repeated the preview UV correction')
+    assert(inventory.EmptySlot.alphaWrites==inventoryAlphaWrites, 'stable item updates repainted decorative alpha')
+    inventory.EmptySlot:SetAlpha(1)
+    assert(inventory.EmptySlot.alpha==0,'native alpha reset exposed inventory socket')
+    inventory:SetItemInfo(nil);assert(inventory.EmptySlot.alpha==0)
+    inventory:SetItemInfo({quality=4,iconTexture='recycled',selected=true,count=7})
+    assert(inventory.EmptySlot.alpha==0 and inventory.IconSelectedHighlight:IsShown() and inventory.Text.text=='7')
+    assert(inventory.IconQuestTexture.alpha==1 and inventory.Cooldown.shown and inventory.ProfessionQualityOverlay.alpha==1)
+    local pooled=item(selling,40)
+    modules.Auctionator.refresh();flush()
+    assert(pooled.EmptySlot.alpha==0 and large.EmptySlot.alpha==1,'newly pooled slot not isolated from preview')
+    local stableWrites=inventory.EmptySlot.alphaWrites
+    for _=1,20 do modules.Auctionator.refresh();flush()end
+    assert(inventory.EmptySlot.alphaWrites==stableWrites,'warm refresh rewrote hidden decorative alpha')
     assert(large.scripts.OnClick()=='native-click' and large.scripts.OnReceiveDrag()=='native-drag')
     assert(large.ProfessionQualityOverlay.alpha==1)
     large:SetItemInfo(nil);assert(not large.IconBorder:IsShown() and large.Text.text=='' and not large.Icon:IsShown() and socket:IsShown());fullPreview()
@@ -835,9 +856,11 @@ do
     assert(large.Icon.points[1][2]==2 and #large.Icon.masks==1 and large.Icon.masks[1]==mask)
     for _,fn in ipairs(looks)do fn()end;flush()
     assert(large.EmptySlot.alpha==1 and large.IconBorder.all==large.Icon and not large.button);fullPreview()
+    assert(inventory.EmptySlot.alpha==0 and pooled.EmptySlot.alpha==0)
     -- Geometry changed while disabled or in combat is repaired at recovery.
-    enabled=false;large.Icon:SetAllPoints(large);enabled=true
+    enabled=false;large.Icon:SetAllPoints(large);inventory.EmptySlot:SetAlpha(1);enabled=true
     modules.Auctionator.refresh();flush();assert(large.Icon.points[1][2]==2 and large.Icon.all==nil)
+    assert(inventory.EmptySlot.alpha==0,'inventory socket not repaired after re-enabling')
     combat=true;large.Icon:SetAllPoints(large)
     assert(large.Icon.all==large)
     combat=false
@@ -862,4 +885,5 @@ do
     print('PASS: Auctionator selling matches EUI retained GiantItemButton socket/inset ring: large and pooled inventory slots, local reset repair, selection/count/tier/actions, theme and protected/disabled/API fallbacks')
     print('BENCH Auctionator selling mock: 1000 large plus 1000 inventory updates: new UI objects/hooks, hierarchy reads, geometry writes and queued refreshes=0')
     print('PASS: Auctionator preview-only legacy UV crop reset: full atlas region on first empty display, selected/cleared states and theme refresh; inventory coordinates and rarity/layout unchanged')
+    print('PASS: Auctionator inventory-only EmptySlot fade: preview/rarity/selection/count/quest/cooldown/tier/layout preserved, pooled/native redraw/theme/warm refresh covered; stable socket alpha writes=0')
 end

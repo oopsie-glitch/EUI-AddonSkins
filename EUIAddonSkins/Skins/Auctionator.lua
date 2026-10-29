@@ -15,7 +15,8 @@ end, function(S, module)
     local A = _G.Auctionator
     local H = ns.CreateSkinHelper(S, module)
     local roots, shells, panels = {}, {}, {}
-    local scrollChrome, itemBorders, radioMarks, layouts = {}, {}, {}, {}
+    local scrollChrome, qualityCells, radioMarks, layouts = {}, {}, {}, {}
+    local itemBorders = {}
     local rows, squares, squaring, zones, money, centered, glyphs, labels, darkTabs, chained = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
     local coppers, cleared, rowWidths, aligned, widgets, refreshes, stripAt = {}, {}, {}, {}, {}, {}, {}
     local scanned, refreshHosts, radioLabels = {}, {}, {}
@@ -203,49 +204,79 @@ end, function(S, module)
         S.SquareIcon(icon, f)
         squaring[f] = nil
     end
-    local function Item(f, icon)
-        local modern = Modern()
+    -- Keep the accepted legacy AuctionFrame treatment unchanged.
+    local function LegacyItem(f, icon)
         local border = H.Texture(f.IconBorder)
         if border and not itemBorders[f] and f.CreateTexture then
             local lines = {}
             for _, side in ipairs({"Top", "Bottom", "Left", "Right"}) do
                 local line = f:CreateTexture(nil, "OVERLAY", nil, 6)
                 f["euiQuality" .. side] = line; lines[#lines + 1] = line
-                if modern then
-                    -- Ring the inset icon one pixel out, over its square border.
-                    if side == "Top" then line:SetPoint("BOTTOMLEFT", icon, "TOPLEFT", -1, 0); line:SetPoint("BOTTOMRIGHT", icon, "TOPRIGHT", 1, 0)
-                    elseif side == "Bottom" then line:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", -1, 0); line:SetPoint("TOPRIGHT", icon, "BOTTOMRIGHT", 1, 0)
-                    elseif side == "Left" then line:SetPoint("TOPRIGHT", icon, "TOPLEFT", 0, 1); line:SetPoint("BOTTOMRIGHT", icon, "BOTTOMLEFT", 0, -1)
-                    else line:SetPoint("TOPLEFT", icon, "TOPRIGHT", 0, 1); line:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 0, -1) end
-                    if side == "Top" or side == "Bottom" then line:SetHeight(1) else line:SetWidth(1) end
-                elseif side == "Top" or side == "Bottom" then
+                if side == "Top" or side == "Bottom" then
                     local edge = side:upper(); line:SetPoint(edge .. "LEFT"); line:SetPoint(edge .. "RIGHT"); line:SetHeight(1)
                 else
                     local edge = side:upper(); line:SetPoint("TOP" .. edge); line:SetPoint("BOTTOM" .. edge); line:SetWidth(1)
                 end
             end
             itemBorders[f] = lines
-            H.Hook(border, "SetVertexColor", function() Item(f, icon) end)
+            H.Hook(border, "SetVertexColor", function() LegacyItem(f, icon) end)
         end
-        -- Register keep regions after creation so EUI's theme restrip retains them.
         H.Action(f, {"Icon", "icon", "IconSelectedHighlight", "Highlight",
             "euiQualityTop", "euiQualityBottom", "euiQualityLeft", "euiQualityRight"})
         icon:SetAlpha(1)
-        if modern and not squares[f] then
+        S.SquareIcon(icon, f)
+        if H.Texture(f.EmptySlot) then H.Fade(f.EmptySlot) end
+        H.Fade(border)
+        if itemBorders[f] and border.GetVertexColor then
+            local r, g, b, a = border:GetVertexColor()
+            for _, line in ipairs(itemBorders[f]) do line:SetColorTexture(r, g, b, a or 1); line:SetAlpha(1) end
+        end
+    end
+    local function Item(f, icon)
+        if not Modern() then LegacyItem(f, icon); return end
+        -- Auctionator owns rarity colour and selected/empty visibility. Keep its
+        -- texture in EUI's theme registry instead of replacing it with four lines.
+        H.Action(f, {"Icon", "icon", "IconBorder", "IconSelectedHighlight", "Highlight",
+            "ProfessionQualityOverlay"})
+        local border = H.Texture(f.IconBorder)
+        if border then border:SetDrawLayer("OVERLAY", 6) end
+        if not squares[f] then
             squares[f] = true
             if f.GetNormalTexture and f:GetNormalTexture() then H.Fade(f:GetNormalTexture()) end
             for _, method in ipairs({"SetTexture", "SetAtlas", "AddMaskTexture", "SetTexCoord", "SetAllPoints"}) do
                 H.Hook(icon, method, function() Square(f, icon) end)
             end
         end
-        if modern then Square(f, icon) else S.SquareIcon(icon, f) end
+        Square(f, icon)
         if H.Texture(f.EmptySlot) then H.Fade(f.EmptySlot) end
-        H.Fade(border)
-        if itemBorders[f] and border.GetVertexColor then
+    end
+    -- Retail result cells have native border art but Populate never colours it.
+    -- Read the current entry at completed Populate; never cache rarity by row.
+    local function ResultQuality(cell)
+        if not H.Allowed(cell) or Stock() then return end
+        if InCombatLockdown() then waiting = true; return end
+        local border = H.Texture(cell.IconBorder)
+        if not border then return end
+        local data = cell.rowData
+        local quality
+        if data then
+            if data.itemKey and C_AuctionHouse and C_AuctionHouse.GetItemKeyInfo then
+                local info = C_AuctionHouse.GetItemKeyInfo(data.itemKey)
+                quality = info and info.quality
+            end
+            if quality == nil and data.itemLink and C_Item and C_Item.GetItemInfo then
+                quality = select(3, C_Item.GetItemInfo(data.itemLink))
+            end
+        end
+        local color = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality]
+        -- A recycled cell with missing data must not show the previous rarity.
+        local shown = color ~= nil
+        if not border.IsShown or border:IsShown() ~= shown then border:SetShown(shown) end
+        if color then
             local r, g, b, a = border:GetVertexColor()
-            -- Poor and common rings are gray or white; the square black edge stands in, as in EUI's pack.
-            local plain = modern and math.max(r, g, b) - math.min(r, g, b) < 0.1
-            for _, line in ipairs(itemBorders[f]) do line:SetColorTexture(r, g, b, a or 1); line:SetAlpha(plain and 0 or 1) end
+            if r ~= color.r or g ~= color.g or b ~= color.b or a ~= 1 then
+                border:SetVertexColor(color.r, color.g, color.b, 1)
+            end
         end
     end
     local function Row(row)
@@ -260,7 +291,14 @@ end, function(S, module)
             if icon and not squares[cell] then
                 squares[cell] = true
                 S.SquareIcon(icon)
-                if cell.IconBorder then H.Fade(cell.IconBorder) end
+            end
+            if icon and H.Texture(cell.IconBorder) then
+                if not qualityCells[cell] then
+                    qualityCells[cell] = true
+                    cell.IconBorder:SetDrawLayer("OVERLAY", 6)
+                    H.Hook(cell, "Populate", function() ResultQuality(cell) end)
+                end
+                ResultQuality(cell)
             end
         end
     end

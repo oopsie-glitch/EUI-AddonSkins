@@ -157,6 +157,7 @@ local function Restore(f)
     if r.fill then r.fill:SetAlpha(0) end
     if r.accent then r.accent:SetAlpha(0) end
     for _, marker in pairs(r.markers or {}) do marker:SetAlpha(0) end
+    for _, box in pairs(r.markerBoxes or {}) do box:SetAlpha(0) end
     for _, arrow in pairs(r.arrows or {}) do arrow:SetAlpha(0) end
     r.active = false
 end
@@ -188,7 +189,7 @@ local function Tint(r, texture, red, green, blue, alpha)
     texture:SetVertexColor(red, green, blue, alpha)
     r.appliedColors[texture] = {red, green, blue, alpha}
 end
-local function Marker(r, button, native, checked, S)
+local function Marker(r, button, native, checked, S, options)
     if not native or not native.IsShown or not button.CreateTexture then return end
     r.markers = r.markers or {}
     local marker = r.markers[native]
@@ -198,8 +199,37 @@ local function Marker(r, button, native, checked, S)
         r.markers[native] = marker
     end
     local red, green, blue = S.GetAccentColor()
-    marker:SetColorTexture(checked and red or 0.3, checked and green or 0.3, checked and blue or 0.3, 1)
-    marker:SetAlpha(native:IsShown() and 1 or 0)
+    local compact = options and options.compactChecks == true or false
+    r.markerModes = r.markerModes or {}
+    if r.markerModes[native] ~= compact then
+        local size = compact and not checked and 12 or 8
+        marker:SetSize(size, size); marker:SetDrawLayer("OVERLAY", compact and 2 or 0)
+        r.markerModes[native] = compact
+    end
+    if compact then
+        if button.disabled then red, green, blue = 0.4, 0.4, 0.4 end
+        r.markerBoxes = r.markerBoxes or {}
+        local box = r.markerBoxes[native]
+        if not box then
+            box = button:CreateTexture(nil, "OVERLAY", nil, 1)
+            box:SetSize(14, 14); box:SetPoint("CENTER", native, "CENTER")
+            box:SetColorTexture(checked and 0.05 or 0.16, checked and 0.05 or 0.16, checked and 0.06 or 0.18, 1)
+            r.markerBoxes[native] = box
+        end
+        local alpha = native:IsShown() and 1 or 0
+        if box:GetAlpha() ~= alpha then box:SetAlpha(alpha) end
+        local mr, mg, mb = checked and red or 0.05, checked and green or 0.05, checked and blue or 0.06
+        r.markerColors = r.markerColors or {}
+        local color = r.markerColors[native]
+        if not color or color[1] ~= mr or color[2] ~= mg or color[3] ~= mb then
+            marker:SetColorTexture(mr, mg, mb, 1); r.markerColors[native] = {mr, mg, mb}
+        end
+    else
+        marker:SetColorTexture(checked and red or 0.3, checked and green or 0.3, checked and blue or 0.3, 1)
+        if r.markerColors then r.markerColors[native] = nil end
+    end
+    local alpha = native:IsShown() and 1 or 0
+    if not compact or marker:GetAlpha() ~= alpha then marker:SetAlpha(alpha) end
     Fade(r, native)
 end
 local function HeadingColor(r, text, heading, S)
@@ -390,8 +420,8 @@ local function Style(f, binding, owner)
                 check = check or buttonName and _G[buttonName .. 'Check']
                 uncheck = uncheck or buttonName and _G[buttonName .. 'UnCheck']
             end
-            Marker(r, button, check, true, S)
-            Marker(r, button, uncheck, false, S)
+            Marker(r, button, check, true, S, binding.options)
+            Marker(r, button, uncheck, false, S, binding.options)
             if not r.rowHooks[button] and button.HookScript then
                 r.rowHooks[button] = true
                 button:HookScript("OnClick", ns.RefreshPopupMenusNow)

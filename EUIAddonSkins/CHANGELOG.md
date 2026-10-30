@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.2 — Atlas and Auctionator Improvements
+
+- Added an Atlas skin for Retail and Forever, including map windows, selectors, search controls and settings while preserving map artwork and meaningful colours.
+- Atlas: refined backgrounds, restored the round globe, added selector accent bars and full-field dropdown clicks, and reduced redundant styling during reopening and map updates.
+- Auctionator: improved item-quality borders and selling-item frames, fixed clipped empty-slot artwork, and removed redundant inventory-slot backgrounds.
+
 ## 1.6.1 — Skin Fixes and Polish
 
 - RareScanner: fixed an error when Explorer lists initialize late; styled dropdowns, filters, checkboxes, Rescan and confirmation controls.

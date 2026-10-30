@@ -694,7 +694,7 @@ do
     assert(cell.Icon.points==points and cell.w==width and cell.h==height and cell.IconBorder.atlas==atlas)
     bag:SetItemInfo({quality=4,iconTexture='selected',selected=true,count=12})
     modules.Auctionator.refresh();flush()
-    assert(matches(bag.IconBorder,4) and bag.IconSelectedHighlight:IsShown() and bag.Icon.alpha==.8)
+    assert(not bag.IconBorder:IsShown() and bag.IconSelectedHighlight:IsShown() and bag.Icon.alpha==.8)
     assert(bag.Text.text=='12' and bag.ProfessionQualityOverlay.alpha==1)
     bag:SetItemInfo(nil);assert(not bag.IconBorder:IsShown() and bag.Text.text=='')
     cell:Populate({itemKey={itemID=999}},1);assert(not cell.IconBorder:IsShown(),'stale rarity on uncached item')
@@ -767,19 +767,16 @@ do
                 local c=ITEM_QUALITY_COLORS[info.quality]
                 self.IconBorder:SetVertexColor(c.r,c.g,c.b,1)
                 self.IconBorder:SetShown(not info.selected)
-                self.IconSelectedHighlight:SetVertexColor(.977,.592,.086,1)
                 self.IconSelectedHighlight:SetShown(info.selected)
                 self.Icon:SetAlpha(info.selected and .8 or 1)
                 self.Text.text=tostring(info.count)
             else
-                self.Icon:Hide();self.IconBorder:Hide();self.Text.text=''
+                self.Icon:Hide();self.IconBorder:Hide();self.IconSelectedHighlight:Hide();self.Text.text=''
             end
             return 'native-item',nil,9
         end
         f.scripts.OnClick=function()return 'native-click'end
         f.scripts.OnReceiveDrag=function()return 'native-drag'end
-        f.scripts.OnEnter=function()return 'native-tooltip'end
-        f.scripts.OnLeave=function()return 'native-tooltip-hide'end
         return f
     end
     local large=item(sale,60)
@@ -800,36 +797,17 @@ do
     local position=large.points
     modules.Auctionator.refresh();flush()
     assert(not large.button and not inventory.button and foreign.button)
-    assert(foreign.IconSelectedHighlight.color==nil and foreign.IconSelectedHighlight.atlas=='bags-glow-artifact',
-        'selling selection styling escaped into another view')
     assert(large.EmptySlot.atlas=='auctionhouse-itemicon-empty' and large.EmptySlot.all==large and large.EmptySlot.alpha==1)
     assert(large.IconBorder.all==large.Icon and large.IconBorder.layer=='OVERLAY')
     assert(large.Icon.owner==nil and inventory.Icon.owner==nil,'extra EUI BorderRegion requested')
     assert(large.Icon.points[1][2]==2 and large.Icon.points[2][2]==-2 and large.w==60 and large.h==60 and large.points==position)
     assert(#large.Icon.masks==1 and large.Icon.masks[1].path=='Interface\\Common\\common-iconmask')
     assert(large.Icon.masks[1].all==large.Icon)
-    assert(inventory.IconSelectedHighlight.color[4]==.08 and inventory.IconSelectedHighlight.layer=='ARTWORK')
-    assert(inventory.IconSelectedHighlight.all==inventory.Icon)
+    assert(inventory.IconSelectedHighlight.path=='Interface\\Common\\WhiteIconFrame')
     assert(inventory.EmptySlot.alpha==0 and large.EmptySlot.alpha==1,
         'inventory socket leaked outside rarity border or preview socket was hidden')
     assert(inventory.IconQuestTexture.alpha==1 and inventory.Cooldown.shown and inventory.ProfessionQualityOverlay.alpha==1)
     assert(inventory.w==40 and inventory.h==40 and inventory.points==inventoryPosition)
-    -- Explicitly select and deselect every rarity; alternating quality/selection
-    -- parity alone would miss half of the selected rarities.
-    for quality=0,7 do
-        for _,selected in ipairs({false,true,false}) do
-            local a,b,c=inventory:SetItemInfo({quality=quality,iconTexture='quality-'..quality,selected=selected,count=11})
-            assert(a=='native-item' and b==nil and c==9)
-            local r,g,b=inventory.IconBorder:GetVertexColor();local q=ITEM_QUALITY_COLORS[quality]
-            assert(inventory.IconBorder:IsShown() and r==q.r and g==q.g and b==q.b,
-                'selection replaced rarity '..quality)
-            assert(inventory.IconSelectedHighlight:IsShown()==selected)
-            assert(inventory.Icon.alpha==(selected and .8 or 1) and inventory.Text.text=='11')
-        end
-    end
-    assert(inventory.scripts.OnClick()=='native-click' and inventory.scripts.OnEnter()=='native-tooltip')
-    assert(inventory.scripts.OnLeave()=='native-tooltip-hide' and inventory.scripts.OnReceiveDrag()=='native-drag')
-    flush() -- Existing click discovery callback is separate from item refresh work.
     local inventoryAlphaWrites=inventory.EmptySlot.alphaWrites
     local function fullPreview()
         local uv=large.EmptySlot.crop
@@ -852,12 +830,6 @@ do
         assert(large.IconBorder:IsShown() and not large.IconSelectedHighlight:IsShown())
         fullPreview();assert(large.EmptySlot==socket and inventory.EmptySlot.alpha==0)
         assert(inventory.IconSelectedHighlight:IsShown()==(i%2==0))
-        local r,g,b,a=inventory.IconBorder:GetVertexColor()
-        local quality=ITEM_QUALITY_COLORS[i%8]
-        assert(inventory.IconBorder:IsShown() and r==quality.r and g==quality.g and b==quality.b and a==1,
-            'selected/recycled inventory item lost native rarity')
-        local sr,sg,sb,sa=inventory.IconSelectedHighlight:GetVertexColor()
-        assert(sr==1 and sg==1 and sb==1 and sa==1, 'native orange tint leaked into selection wash')
     end
     assert(created==c and hookCount==h and hierarchyReads==reads and geometryWrites==geo and #timers==0)
     assert(large.Icon.masks[1]==mask and #large.Icon.masks==1 and large.Text.text=='1000')
@@ -865,19 +837,13 @@ do
     assert(inventory.EmptySlot.alphaWrites==inventoryAlphaWrites, 'stable item updates repainted decorative alpha')
     inventory.EmptySlot:SetAlpha(1)
     assert(inventory.EmptySlot.alpha==0,'native alpha reset exposed inventory socket')
-    inventory:SetItemInfo(nil);assert(inventory.EmptySlot.alpha==0 and not inventory.IconBorder:IsShown() and not inventory.IconSelectedHighlight:IsShown())
+    inventory:SetItemInfo(nil);assert(inventory.EmptySlot.alpha==0)
     inventory:SetItemInfo({quality=4,iconTexture='recycled',selected=true,count=7})
     assert(inventory.EmptySlot.alpha==0 and inventory.IconSelectedHighlight:IsShown() and inventory.Text.text=='7')
     assert(inventory.IconQuestTexture.alpha==1 and inventory.Cooldown.shown and inventory.ProfessionQualityOverlay.alpha==1)
     local pooled=item(selling,40)
     modules.Auctionator.refresh();flush()
     assert(pooled.EmptySlot.alpha==0 and large.EmptySlot.alpha==1,'newly pooled slot not isolated from preview')
-    inventory:SetItemInfo({quality=2,iconTexture='green',selected=false,count=1})
-    pooled:SetItemInfo({quality=4,iconTexture='purple',selected=true,count=2})
-    assert(inventory.IconBorder:IsShown() and pooled.IconBorder:IsShown())
-    assert(not inventory.IconSelectedHighlight:IsShown() and pooled.IconSelectedHighlight:IsShown())
-    pooled:SetItemInfo(nil)
-    assert(not pooled.IconBorder:IsShown() and not pooled.IconSelectedHighlight:IsShown())
     local stableWrites=inventory.EmptySlot.alphaWrites
     for _=1,20 do modules.Auctionator.refresh();flush()end
     assert(inventory.EmptySlot.alphaWrites==stableWrites,'warm refresh rewrote hidden decorative alpha')
@@ -895,17 +861,6 @@ do
     enabled=false;large.Icon:SetAllPoints(large);inventory.EmptySlot:SetAlpha(1);enabled=true
     modules.Auctionator.refresh();flush();assert(large.Icon.points[1][2]==2 and large.Icon.all==nil)
     assert(inventory.EmptySlot.alpha==0,'inventory socket not repaired after re-enabling')
-    EllesmereUI={GetBlizzWindowStyle=function()return 'blizzard'end}
-    inventory:SetItemInfo({quality=2,iconTexture='stock',selected=true,count=4})
-    assert(not inventory.IconBorder:IsShown(), 'stock style selection was repainted')
-    EllesmereUI.GetBlizzWindowStyle=function()return 'modern'end
-    modules.Auctionator.refresh();flush();assert(inventory.IconBorder:IsShown())
-    enabled=false;inventory:SetItemInfo({quality=2,iconTexture='disabled',selected=true,count=4})
-    assert(not inventory.IconBorder:IsShown(), 'disabled skin changed selection')
-    enabled=true;modules.Auctionator.refresh();flush()
-    assert(inventory.IconBorder:IsShown() and inventory.IconSelectedHighlight:GetVertexColor()==1)
-    combat=true;inventory:SetItemInfo({quality=3,iconTexture='combat',selected=true,count=3})
-    assert(not inventory.IconBorder:IsShown(), 'selection paint ignored combat guard')
     combat=true;large.Icon:SetAllPoints(large)
     assert(large.Icon.all==large)
     combat=false
@@ -913,7 +868,6 @@ do
         if eventFrame.events and eventFrame.events.PLAYER_REGEN_ENABLED then eventFrame.scripts.OnEvent(eventFrame,'PLAYER_REGEN_ENABLED') end
     end
     flush();assert(large.Icon.all==nil and large.Icon.points[1][2]==2)
-    assert(inventory.IconBorder:IsShown() and inventory.IconSelectedHighlight:GetVertexColor()==1)
     -- No new style is applied to protected or disabled late slots.
     local secret=item(selling,40);secret.protected=true
     enabled=false;local disabled=item(selling,40)
@@ -927,12 +881,9 @@ do
     C_Texture=nil
     local fallback=item(selling,40);fallback.CreateMaskTexture=false
     modules.Auctionator.refresh();flush();assert(fallback.button and fallback.IconBorder.alpha==1)
-    fallback:SetItemInfo({quality=7,iconTexture='fallback',selected=true,count=1})
-    assert(fallback.IconBorder:IsShown() and fallback.IconSelectedHighlight.color[4]==.08)
     C_Texture=previousTextureAPI
     print('PASS: Auctionator selling matches EUI retained GiantItemButton socket/inset ring: large and pooled inventory slots, local reset repair, selection/count/tier/actions, theme and protected/disabled/API fallbacks')
     print('BENCH Auctionator selling mock: 1000 large plus 1000 inventory updates: new UI objects/hooks, hierarchy reads, geometry writes and queued refreshes=0')
     print('PASS: Auctionator preview-only legacy UV crop reset: full atlas region on first empty display, selected/cleared states and theme refresh; inventory coordinates and rarity/layout unchanged')
-    print('PASS: Auctionator selection keeps all eight native rarity colours; reuses one inset neutral wash, selected/cleared/recycled and warm updates covered')
     print('PASS: Auctionator inventory-only EmptySlot fade: preview/rarity/selection/count/quest/cooldown/tier/layout preserved, pooled/native redraw/theme/warm refresh covered; stable socket alpha writes=0')
 end

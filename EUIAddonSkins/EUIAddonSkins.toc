@@ -5,7 +5,7 @@
 ## Author: Smarre
 ## X-License: MIT
 ## X-Wago-ID: aN0a2M6j
-## Version: 1.6.1
+## Version: 1.6.2
 ## Dependencies: EllesmereUI, EllesmereUIBlizzardSkin
 ## SavedVariables: EUIAddonSkinsDB
 
@@ -21,6 +21,7 @@ Loader.lua
 Skins\AllTheThings.lua
 Skins\Altoholic.lua
 Skins\AngrierWorldQuests.lua
+Skins\Atlas.lua
 Skins\AtlasLootContinued.lua
 Skins\Attune.lua
 Skins\Auctionator.lua

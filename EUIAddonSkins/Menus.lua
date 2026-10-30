@@ -157,6 +157,7 @@ local function Restore(f)
     if r.fill then r.fill:SetAlpha(0) end
     if r.accent then r.accent:SetAlpha(0) end
     for _, marker in pairs(r.markers or {}) do marker:SetAlpha(0) end
+    for _, box in pairs(r.markerBoxes or {}) do box:SetAlpha(0) end
     for _, arrow in pairs(r.arrows or {}) do arrow:SetAlpha(0) end
     r.active = false
 end
@@ -188,7 +189,7 @@ local function Tint(r, texture, red, green, blue, alpha)
     texture:SetVertexColor(red, green, blue, alpha)
     r.appliedColors[texture] = {red, green, blue, alpha}
 end
-local function Marker(r, button, native, checked, S)
+local function Marker(r, button, native, checked, S, options)
     if not native or not native.IsShown or not button.CreateTexture then return end
     r.markers = r.markers or {}
     local marker = r.markers[native]
@@ -198,8 +199,37 @@ local function Marker(r, button, native, checked, S)
         r.markers[native] = marker
     end
     local red, green, blue = S.GetAccentColor()
-    marker:SetColorTexture(checked and red or 0.3, checked and green or 0.3, checked and blue or 0.3, 1)
-    marker:SetAlpha(native:IsShown() and 1 or 0)
+    local compact = options and options.compactChecks == true or false
+    r.markerModes = r.markerModes or {}
+    if r.markerModes[native] ~= compact then
+        local size = compact and not checked and 12 or 8
+        marker:SetSize(size, size); marker:SetDrawLayer("OVERLAY", compact and 2 or 0)
+        r.markerModes[native] = compact
+    end
+    if compact then
+        if button.disabled then red, green, blue = 0.4, 0.4, 0.4 end
+        r.markerBoxes = r.markerBoxes or {}
+        local box = r.markerBoxes[native]
+        if not box then
+            box = button:CreateTexture(nil, "OVERLAY", nil, 1)
+            box:SetSize(14, 14); box:SetPoint("CENTER", native, "CENTER")
+            box:SetColorTexture(checked and 0.05 or 0.16, checked and 0.05 or 0.16, checked and 0.06 or 0.18, 1)
+            r.markerBoxes[native] = box
+        end
+        local alpha = native:IsShown() and 1 or 0
+        if box:GetAlpha() ~= alpha then box:SetAlpha(alpha) end
+        local mr, mg, mb = checked and red or 0.05, checked and green or 0.05, checked and blue or 0.06
+        r.markerColors = r.markerColors or {}
+        local color = r.markerColors[native]
+        if not color or color[1] ~= mr or color[2] ~= mg or color[3] ~= mb then
+            marker:SetColorTexture(mr, mg, mb, 1); r.markerColors[native] = {mr, mg, mb}
+        end
+    else
+        marker:SetColorTexture(checked and red or 0.3, checked and green or 0.3, checked and blue or 0.3, 1)
+        if r.markerColors then r.markerColors[native] = nil end
+    end
+    local alpha = native:IsShown() and 1 or 0
+    if not compact or marker:GetAlpha() ~= alpha then marker:SetAlpha(alpha) end
     Fade(r, native)
 end
 local function HeadingColor(r, text, heading, S)
@@ -219,7 +249,7 @@ local function HeadingColor(r, text, heading, S)
         r.textColors[text], r.appliedTextColors[text] = nil, nil
     end
 end
-local function Chevron(r, button, native)
+local function Chevron(r, button, native, owner)
     if not native or not native.IsShown or not button.CreateTexture then return end
     r.arrows = r.arrows or {}
     local arrow = r.arrows[native]
@@ -230,7 +260,10 @@ local function Chevron(r, button, native)
         arrow:SetVertexColor(0.75, 0.75, 0.78, 1)
         r.arrows[native] = arrow
     end
-    arrow:SetAlpha(native:IsShown() and 1 or 0); Fade(r, native)
+    -- LibDD hides its ExpandArrow BUTTON, leaving the normal texture's own
+    -- shown flag true. Our replacement belongs to the row and must follow both.
+    local shown = native:IsShown() and (not owner or owner == native or not owner.IsShown or owner:IsShown())
+    arrow:SetAlpha(shown and 1 or 0); Fade(r, native)
 end
 local function ModernFont(r, text, S)
     -- Compositor FontStrings forbid even indexing SetFont. Apply a standalone
@@ -378,9 +411,10 @@ local function Style(f, binding, owner)
                 if region.GetObjectType and region:GetObjectType() == "FontString" then Font(r, region, S) end
             end
             local arrow = button.ExpandArrow or _G[(button.GetName and button:GetName() or "") .. "ExpandArrow"]
+            local arrowOwner = arrow
             if arrow and arrow.GetNormalTexture then arrow = arrow:GetNormalTexture() end
             local red, green, blue = S.GetAccentColor()
-            if binding.options and binding.options.chevrons then Chevron(r, button, arrow)
+            if binding.options and binding.options.chevrons then Chevron(r, button, arrow, arrowOwner)
             else Tint(r, arrow, red, green, blue, 1) end
             local highlight = button.Highlight or (button.GetHighlightTexture and button:GetHighlightTexture())
             Tint(r, highlight, 1, 1, 1, binding.options and binding.options.hoverAlpha or 0.1)
@@ -390,8 +424,8 @@ local function Style(f, binding, owner)
                 check = check or buttonName and _G[buttonName .. 'Check']
                 uncheck = uncheck or buttonName and _G[buttonName .. 'UnCheck']
             end
-            Marker(r, button, check, true, S)
-            Marker(r, button, uncheck, false, S)
+            Marker(r, button, check, true, S, binding.options)
+            Marker(r, button, uncheck, false, S, binding.options)
             if not r.rowHooks[button] and button.HookScript then
                 r.rowHooks[button] = true
                 button:HookScript("OnClick", ns.RefreshPopupMenusNow)

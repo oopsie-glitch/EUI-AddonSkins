@@ -28,6 +28,7 @@ local function region(kind)
     function r:SetDrawLayer(value) self.layer = value end
     function r:SetPoint() end
     function r:SetColorTexture(...) self.color = {...} end
+    function r:SetTexture(path) self.path = path end
     function r:GetAlpha() return self.alpha end
     function r:SetAlpha(a) self.alpha = a end
     function r:GetDrawLayer() return self.layer or 'BACKGROUND' end
@@ -161,6 +162,55 @@ assert(customRow.Check.alpha == 0.8 and customRow.regions[2].alpha == 0 and cust
 custom:Toggle(unrelated)
 assert(customText.font[1] == 'native-font' and custom.Backdrop.alpha == 1 and customLayer.alpha == 0, 'unrelated pool owner inherited skin')
 custom:Toggle(emoteOwner); assert(custom.Backdrop.alpha == 0)
+-- Compact menu checks are opt-in; defaults above keep their existing artwork.
+local previousLibList = L_DropDownList1
+local compactOwner, compactModule = frame(), {enabled = true}
+local compactOptions = {compactChecks = true, noAccent = true, chevrons = true}
+local compactList = frame('Frame', 'L_DropDownList1')
+compactList.Backdrop = frame('Frame', nil, compactList)
+local compactRow = frame('Button', nil, compactList)
+local compactText = region('FontString'); compactRow.regions = {compactText}
+compactRow.GetFontString = function() return compactText end
+compactRow.Check, compactRow.UnCheck = region(), region()
+compactRow.Check.shown, compactRow.UnCheck.shown = false, true
+-- The native texture stays shown while its actual submenu button is hidden.
+local expand = frame('Button', nil, compactRow); local expandTexture = region()
+expand.GetNormalTexture = function() return expandTexture end
+expand.scripts.OnMouseDown = function() return 'native submenu', nil, 17 end
+compactRow.ExpandArrow = expand
+compactList.dropdown, compactList.shown = compactOwner, true
+ns.BindPopupOwner(S, compactModule, compactOwner, compactOptions)
+local compactLayer = compactList.children[#compactList.children]
+assert(not compactLayer.accent, 'compact owner unexpectedly acquired a top accent stripe')
+local submenuChevron = compactRow.regions[2]
+assert(expandTexture:IsShown() and not expand:IsShown() and submenuChevron.alpha == 0, 'leaf row gained a false submenu arrow')
+expand.shown = true; ns.RefreshPopupMenusNow(); assert(submenuChevron.alpha == 1)
+local sa,sb,sc = expand.scripts.OnMouseDown(); assert(sa == 'native submenu' and sb == nil and sc == 17)
+expand:Hide(); ns.RefreshPopupMenusNow(); assert(submenuChevron.alpha == 0)
+local checkedMarker, firstBox = compactRow.regions[3], compactRow.regions[4]
+local uncheckedMarker, secondBox = compactRow.regions[5], compactRow.regions[6]
+assert(firstBox.alpha == 0 and secondBox.alpha == 1 and uncheckedMarker.color[1] == 0.05)
+compactRow.Check.shown, compactRow.UnCheck.shown = true, false
+compactRow.hooks.OnClick()
+assert(firstBox.alpha == 1 and secondBox.alpha == 0 and checkedMarker.color[1] == accent)
+local compactCount, markerWrites = #compactRow.regions, 0
+for _, marker in ipairs({checkedMarker, uncheckedMarker}) do
+    local original = marker.SetColorTexture
+    marker.SetColorTexture = function(...) markerWrites = markerWrites + 1; return original(...) end
+end
+for _ = 1, 1000 do compactRow.hooks.OnClick() end
+assert(#compactRow.regions == compactCount and markerWrites == 0, 'stable compact checks recreated or repainted artwork')
+compactRow.disabled = true; compactRow.hooks.OnClick(); assert(checkedMarker.color[1] == 0.4)
+compactRow.disabled = false; compactRow.hooks.OnClick(); assert(checkedMarker.color[1] == accent)
+compactModule.enabled = false; ns.RefreshPopupMenusNow()
+assert(firstBox.alpha == 0 and secondBox.alpha == 0 and compactRow.Check.alpha == 0.8)
+compactModule.enabled = true; ns.RefreshPopupMenusNow()
+compactList.dropdown = unrelated; ns.RefreshPopupMenusNow()
+assert(firstBox.alpha == 0 and secondBox.alpha == 0 and compactRow.Check.alpha == 0.8)
+assert(compactText.font[1] == 'native-font' and compactText.color[2] == 0.82)
+compactList.dropdown = emoteOwner; ns.RefreshPopupMenusNow()
+assert(firstBox.alpha == 0 and secondBox.alpha == 0 and uncheckedMarker.color[1] == 0.3, 'default owner inherited compact artwork')
+compactList:Hide(); L_DropDownList1 = previousLibList
 -- Modern Menu.GetManager() proxies expose their current owner publicly.
 local modern = frame('Frame'); modern.NineSlice = frame('Frame', nil, modern)
 modern.shown, modern.owner = true, emoteOwner

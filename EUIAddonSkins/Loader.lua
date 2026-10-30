@@ -5,6 +5,7 @@ ns.skinCatalog = {
     {id = "AllTheThings", label = "AllTheThings", targets = {"AllTheThings"}},
     {id = "Altoholic", label = "Altoholic", targets = {"Altoholic"}},
     {id = "AngrierWorldQuests", label = "Angrier World Quests", targets = {"AngrierWorldQuests"}},
+    {id = "Atlas", label = "Atlas", targets = {"Atlas"}},
     {id = "AtlasLootContinued", label = "AtlasLootClassic Continued", targets = {"AtlasLootContinued"}},
     {id = "Attune", label = "Attune", targets = {"Attune"}},
     {id = "Auctionator", label = "Auctionator", targets = {"Auctionator"}},

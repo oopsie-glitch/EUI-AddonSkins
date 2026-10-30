@@ -32,20 +32,35 @@ one background fill below the native map textures on the same frame. Map
 artwork, proportions, pin sprites, labels, legend colours, tooltip handlers,
 window geometry and input callbacks stay native.
 
-Iteration 2 suppresses the anonymous `AtlasFrame-*`, `AtlasFrameSmall-*` and
-`AtlasFrameLarge-*` composite decoration (including the stone, metallic edges
-and information-panel borders). Path matching has a structural fallback for
-file-ID returns, limited to the inspected root ARTWORK dimensions/anchors.
-Map BACKGROUND tiles, map-frame children and unrelated annotation art are
-excluded. Subtle same-frame header/toolbar and two information-area fills sit
-below content without changing its layout.
+Iteration 3 removes the extra header, toolbar, info and legend fills added in
+iteration 2. The unwanted upper-right rectangle corresponds to `d.info`, an
+anonymous texture owned by `AtlasFrame`, at BACKGROUND sublevel -7 and the root's
+unchanged frame level/strata, anchored from (538, -82) to TOPRIGHT (-18, -197).
+It was not an independently raised window. Only the original full-window fill
+at BACKGROUND sublevel -8 remains; native text-frame placement separates the
+information sections without stacked opaque panels or clipping changes.
+
+The anonymous `AtlasFrame-*`, `AtlasFrameSmall-*` and `AtlasFrameLarge-*`
+composites contain the stone, metallic edges and globe. Discovery now matches
+exact normalized asset basenames and resolved file IDs; opaque-ID fallback is
+limited to inspected ARTWORK/BORDER root slots, accepting subpixel rounding and
+native named/implicit parent references. Known map paths are excluded even if
+their dimensions match. Incomplete construction is retried at owned show/refresh
+points instead of permanently caching an early empty pass. Completed roots
+perform no region walk on warm show callbacks.
+
+The screenshots confirm that the original composite survived the previous
+pass. Source-shaped tests reproduce failures from the earlier path/geometry
+assumptions and early caching; the specific texture getter/anchor values on the
+user's live client cannot be measured from a screenshot and remain unverified.
 
 The globe is baked into the TopLeft texture rather than being an independent
-button. A 32-by-32 crop of that installed Atlas asset is placed at header offset
-(16, -9), using the same Blizzard portrait mask Atlas already uses for its pins.
-No image is redistributed. The root's native drag/click/tooltip handling stays
-unchanged. Native open/closed lock textures retain their state changes and UVs,
-with desaturation and a subdued tint to reduce the decorative red/yellow plate.
+button. Its ORIGINAL texture is now cropped (including its rim), masked and
+resized to 32-by-32 at header offset (16, -9). No second globe texture is created,
+even if the original is not identified until a later show. The same Blizzard
+portrait mask Atlas uses for pins is reused. No image is redistributed. Native
+root drag/click/tooltip handling stays unchanged. Native open/closed lock
+textures retain their state changes, desaturation and subdued tint.
 
 LibDD's existing clickable child arrow is styled directly with a 10-pixel EUI
 chevron; the adapter does not also request EUI's root-level decorative arrow.
@@ -54,6 +69,12 @@ of the accent stripe and use subdued submenu chevrons plus compact checks.
 `Menus.lua` adds only an opt-in `compactChecks` treatment because its owned marker
 art is private to the shared renderer. Existing callers retain their defaults;
 foreign/default reuse hides the new artwork and restores native cosmetics.
+Iteration 3 also fixes the opt-in chevron's visibility: LibDD hides the actual
+ExpandArrow button while its normal texture's own shown flag remains true.
+The replacement now follows both, so leaf rows cannot acquire false submenu
+arrows. Native expansion button anchors, callbacks and hit areas do not change.
+The other chevron caller (KiwiFarm) and default menu paths retain regression
+coverage; no unrelated addon adapter changes.
 
 General, Options and Profiles AceConfig categories receive scoped backgrounds,
 buttons, dropdowns, compact checks and sliders. Pooled input fonts remain
@@ -121,6 +142,12 @@ An additional 1,000 warm open/map/options/tree callback cycles per client also
 add no UI objects/hooks, hierarchy reads or font writes. Styling is cached per
 theme generation and ownership acquisition; no polling or timers are added.
 
+Iteration 3 adds assertions for exactly one full-window fill, no new globe art,
+reuse of the original globe/rim, unchanged levels/strata/text, late texture
+assignment with an unchanged region count, numeric IDs, normalized basenames,
+subpixel anchors and hidden native submenu buttons. The previous implementations
+fail the new regression assertions.
+
 ## In-game verification still required
 
 On each client with current Atlas and suitable separately installed map modules:
@@ -129,7 +156,7 @@ On each client with current Atlas and suitable separately installed map modules:
    Confirm complete maps/tiles, original proportions, readable headers and
    legend data at opaque and transparent Atlas settings.
    Check the smaller globe's crop/placement and the remaining separation of
-   header, toolbar and right-side information areas.
+   native upper/lower information sections over the single matte background.
 2. Change map type/map, navigate back/forward, search/clear, scroll the legend
    and hover/click native pins and entries. Check dropdown/submenu reuse.
 3. Open General, Options and Profiles; change checkboxes, scales and dropdowns.

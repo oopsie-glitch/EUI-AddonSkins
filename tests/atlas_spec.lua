@@ -3,6 +3,8 @@
 for _, client in ipairs({'Retail','Forever'}) do
     local created,hooks,reads,fontWrites,colorWrites=0,0,0,0,0
     local looks,events,modules,errors={},{},{},{}
+    local fileIDs,assetReads={},0
+    GetFileIDFromPath=function(path)assetReads=assetReads+1;return fileIDs[path:lower():gsub('%.blp$','')]end
     local enabled,combat=true,false
     local accent={.2,.7,.4};local face='eui-font'
     local function anchors(o)
@@ -37,6 +39,7 @@ for _, client in ipairs({'Retail','Forever'}) do
         function t:GetParent()return self.parent end
         function t:IsForbidden()return false end
         function t:GetTexture()return self.path end
+        function t:GetTextureFileID()return self.path end
         function t:SetTexture(v)self.path=v end
         function t:SetAtlas(v)self.atlas=v end
         function t:SetDesaturated(v)self.desaturated=v end
@@ -64,6 +67,7 @@ for _, client in ipairs({'Retail','Forever'}) do
         function f:GetName()return self.name end
         function f:GetParent()return self.parent end
         function f:GetFrameLevel()return self.level end
+        function f:GetFrameStrata()return 'MEDIUM'end
         function f:SetFrameLevel(v)self.level=v end
         function f:EnableMouse(v)self.mouse=v end
         function f:IsForbidden()return self.forbidden end
@@ -75,7 +79,7 @@ for _, client in ipairs({'Retail','Forever'}) do
         function f:RegisterEvent(e)self.events=self.events or {};self.events[e]=true end
         function f:SetScript(key,fn)self.scripts[key]=fn end
         function f:HookScript(key,fn)local old=self.scripts[key];self.scripts[key]=function(...)local r=old and table.pack(old(...))or{n=0};fn(...);return table.unpack(r,1,r.n)end end
-        function f:CreateTexture(name,layer)return region('Texture',self,name,layer)end
+        function f:CreateTexture(name,layer,_,sublevel)local r=region('Texture',self,name,layer);r.sublevel=sublevel;return r end
         function f:CreateFontString(name,layer)return region('FontString',self,name,layer)end
         function f:CreateMaskTexture(name,layer)return region('MaskTexture',self,name,layer)end
         function f:GetFontString()return self.label end
@@ -142,8 +146,8 @@ for _, client in ipairs({'Retail','Forever'}) do
         return 'lock',nil,6
     end
     ATLAS_HAS_EJ=client=='Retail';ATLAS_NUM_LINES=2
-    local mapRegions={};local chrome={}
-    for _,name in ipairs({'AtlasFrame','AtlasFrameSmall','AtlasFrameLarge'})do
+    local mapRegions,chrome,nativeGlobes,rootMetadata={},{},{},{}
+    for rootIndex,name in ipairs({'AtlasFrame','AtlasFrameSmall','AtlasFrameLarge'})do
         local f=frame('Frame',name);f:SetSize(name=='AtlasFrameSmall' and 534 or 1023,name=='AtlasFrameLarge' and 790 or 631);f:SetPoint('TOPLEFT',0,-104)
         f.MapFrame=frame('Frame',name..'MapFrame',f)
         local map=f.MapFrame:CreateTexture(nil,'BACKGROUND');map:SetTexture('module/map');mapRegions[#mapRegions+1]=map
@@ -152,10 +156,18 @@ for _, client in ipairs({'Retail','Forever'}) do
         end
         local slots=name=='AtlasFrameLarge' and {{512,512,0,0},{512,512,512,0},{512,256,0,-512},{512,256,512,-512},{512,32,0,-768},{512,32,512,-768}}
             or {{512,128,0,0},{512,512,0,-128},{name=='AtlasFrameSmall' and 32 or 512,128,512,0},{name=='AtlasFrameSmall' and 32 or 512,512,512,-128}}
+        local parts=name=='AtlasFrameLarge' and {'TopLeft','TopRight','MidLeft','MidRight','BottomLeft','BottomRight'}
+            or {'TopLeft','BottomLeft','TopRight','BottomRight'}
         for i,slot in ipairs(slots)do
-            local art=f:CreateTexture(nil,'ARTWORK');art:SetSize(slot[1],slot[2]);art:SetPoint('TOPLEFT',slot[3],slot[4])
-            -- Retail models opaque file IDs; Forever models returned path strings.
-            art:SetTexture(client=='Retail' and 900000+i or 'Interface/ADDONS/Atlas/Images/'..name..'-part'..i..'.blp')
+            local art=f:CreateTexture(nil,i==#slots and 'BORDER' or 'ARTWORK')
+            -- Float sizes and named relative frames model scaled native geometry.
+            art:SetSize(slot[1]+.015,slot[2]-.015);art:SetPoint('TOPLEFT',name,'TOPLEFT',slot[3]+.015,slot[4]-.015)
+            local path='Interface\\AddOns\\Atlas\\Images\\'..name..'-'..parts[i]
+            local id=900000+rootIndex*100+i
+            if i~=#slots then fileIDs[path:lower()]=id end -- one opaque ID must use the geometry fallback
+            art.pendingPath=client=='Retail' and id or (name..'-'..parts[i]..'.BLP')
+            if client=='Forever' then art:SetTexture(art.pendingPath) end
+            if i==1 then nativeGlobes[name]=art end
             chrome[#chrome+1]=art
         end
         local semantic=f:CreateTexture(nil,'ARTWORK');semantic:SetTexture('module/annotation');semantic:SetSize(512,128);semantic:SetPoint('TOPLEFT',0,0)
@@ -174,7 +186,14 @@ for _, client in ipairs({'Retail','Forever'}) do
         f.ZoneName=frame('Button',name..'MapZoneName',f);f.ZoneName.Text=text(f.ZoneName)
         local pin=button(name..'NPC',f.MapFrame);pin.art=pin:CreateTexture(nil,'ARTWORK');pin.art:SetTexture('map-marker');pin.art:SetTexCoord(.2,.3,.4,.5)
     end
+    local info=frame('Frame','AtlasText_ZoneName',AtlasFrame);info:SetPoint('TOPLEFT',546,-84)
+    info.label=text(info);local infoPoints,infoColor=info.points,info.label.color
     local rootSize,rootPoints=AtlasFrame.w,AtlasFrame.points
+    for _,name in ipairs({'AtlasFrame','AtlasFrameSmall','AtlasFrameLarge'})do
+        local f=_G[name];local artwork=0
+        for _,r in ipairs(f.regions)do if r.kind=='Texture' and r.layer=='ARTWORK' then artwork=artwork+1 end end
+        rootMetadata[f]={level=f:GetFrameLevel(),strata=f:GetFrameStrata(),artwork=artwork}
+    end
     AtlasSearchEditBox=frame('EditBox','AtlasSearchEditBox',AtlasFrame);AtlasSearchEditBox.SetTextInsets=function()end
     AtlasSearchEditBox.action=function(v)AtlasSearchEditBox.value=v;return 'input'end
     for _,n in ipairs({'AtlasSearchButton','AtlasSearchClearButton','AtlasSwitchButton'})do button(n,AtlasFrame)end
@@ -202,23 +221,41 @@ for _, client in ipairs({'Retail','Forever'}) do
     LibStub=function(name)if name=='AceGUI-3.0'then return gui elseif name=='AceConfigDialog-3.0'then return dialog end end
     modules.Atlas.install(S,modules.Atlas)
     assert(#errors==0,table.concat(errors,'; '))
+    -- First observation can precede native texture assignment; never add a second globe.
+    for _,name in ipairs({'AtlasFrame','AtlasFrameSmall','AtlasFrameLarge'})do
+        local f=_G[name];local artwork=0
+        for _,r in ipairs(f.regions)do if r.kind=='Texture' and r.layer=='ARTWORK' then artwork=artwork+1 end end
+        assert(artwork==rootMetadata[f].artwork,'skin created duplicate globe artwork')
+    end
+    if client=='Retail' then
+        for _,r in ipairs(chrome)do r:SetTexture(r.pendingPath)end
+        for _,name in ipairs({'AtlasFrame','AtlasFrameSmall','AtlasFrameLarge'})do _G[name]:Show() end
+    end
+    assert(#errors==0,table.concat(errors,'; '))
+    assert(info.points==infoPoints and info.label.color[1]==infoColor[1] and info.label.alpha==1)
     assert(AtlasFrame.w==rootSize and AtlasFrame.points==rootPoints)
     for _,map in ipairs(mapRegions)do assert(map.alpha==1 and map.path:find('module/'),'map tiles stripped')end
-    for _,art in ipairs(chrome)do assert(art.alpha==0)end
+    for _,art in ipairs(chrome)do assert(art==nativeGlobes[art.parent.name] and art.alpha==1 or art.alpha==0,'native composite survived outside globe')end
     assert(AtlasFrameDropDown.Button.glyph=='v' and AtlasFrameDropDown.Button.glyphSize==10 and AtlasFrameDropDown.Button.normal.alpha==0 and AtlasFrameDropDown.Button.w==24 and AtlasFrameDropDown.Button.h==24)
     assert(AtlasFrameDropDown.Left.alpha==0 and AtlasFrameDropDown.favorite.icon.alpha==1)
     assert(AtlasFrameDropDown.Button.scripts.OnClick()=='native' and AtlasFrameDropDown.favorite.scripts.OnClick()=='native')
     assert(popupOwners[AtlasFrameDropDown].noAccent and popupOwners[AtlasFrameDropDown].chevrons and popupOwners[AtlasFrameDropDown].compactChecks)
     assert(popupOwners.AtlasSwitchDD==nil)
     for _,name in ipairs({'AtlasFrame','AtlasFrameSmall','AtlasFrameLarge'})do
-        local globes=0
-        for _,r in ipairs(_G[name].regions)do
-            if r.w==32 and r.h==32 and r.crop and r.crop[1]==4/512 then
-                globes=globes+1;assert(r.path:find(name..'-TopLeft',1,true) and r.mask)
-                assert(r.points[1][4]==16 and r.points[1][5]==-9)
+        local f=_G[name];local globes,fills=0,0
+        for _,r in ipairs(f.regions)do
+            if r.kind=='Texture' and r.path==nil then
+                fills=fills+1
+                assert(r.layer=='BACKGROUND' and r.sublevel==-8 and r.all==f,'covering info/header/legend rectangle returned')
+            end
+            if r.w==32 and r.h==32 and r.crop and r.crop[1]==2/512 then
+                globes=globes+1
+                assert(r==nativeGlobes[name] and r.mask,'globe must reuse original composite')
+                assert(r.crop[2]==74/512 and r.points[1][4]==16 and r.points[1][5]==-9)
             end
         end
-        assert(globes==1,'one contained globe expected per Atlas window')
+        assert(fills==1 and globes==1,'one base fill and one original globe expected')
+        assert(f:GetFrameLevel()==rootMetadata[f].level and f:GetFrameStrata()==rootMetadata[f].strata)
     end
     Atlas.db.profile.options.frames.lock=true
     local la,lb,lc=Atlas:UpdateLock();assert(la=='lock' and lb==nil and lc==6)
@@ -294,11 +331,11 @@ for _, client in ipairs({'Retail','Forever'}) do
     for _=1,1000 do check:SetValue(true);check:SetDisabled(false)end
     -- First disabled flag normalisation may repaint once.
     assert(created==nn and hooks==hh and reads==rr and fontWrites==ff and colorWrites<=cc+1)
-    local warmObjects,warmHooks,warmReads,warmFonts=created,hooks,reads,fontWrites
+    local warmObjects,warmHooks,warmReads,warmFonts,warmAssets=created,hooks,reads,fontWrites,assetReads
     for _=1,1000 do
         AtlasFrame:Show();Atlas:RefreshMap();tree:RefreshTree();dialog:FeedGroup('Atlas',{},group)
     end
-    assert(created==warmObjects and hooks==warmHooks and reads==warmReads and fontWrites==warmFonts,'warm open/options/navigation scans or allocations')
+    assert(created==warmObjects and hooks==warmHooks and reads==warmReads and fontWrites==warmFonts and assetReads==warmAssets,'warm open/options/navigation scans or allocations')
     slider:SetDisabled(true);assert(slider.slider.regions[3].color[1]==.4)
     check:SetValue(false);assert(mark.alpha==0)
     check:SetValue(true);check:SetDisabled(true);assert(mark.color[1]==.4 and mark.alpha==1)
@@ -335,7 +372,7 @@ for _, client in ipairs({'Retail','Forever'}) do
     for _,fn in ipairs(looks)do fn()end
     assert(AtlasEntry1.Text.font[1]==face and late.frame.regions[5].color[1]==.9)
     assert(late.check.font[1]=='native' and #errors==0,table.concat(errors,'; '))
-    Atlas.optionsFrames={};AtlasEJLootFrame=nil;Atlas=nil;AtlasLoot=nil
+    Atlas.optionsFrames={};AtlasEJLootFrame=nil;Atlas=nil;AtlasLoot=nil;GetFileIDFromPath=nil
     print('PASS: Atlas '..client..': main/small/large map tiles/pins/geometry, dropdown ownership, native actions/colours, legend pooling, options release/foreign reuse, combat/theme/toggles and optional EJ handling')
     print('BENCH Atlas '..client..' mock: 1000 legend updates and 1000 warm open/map/options/tree cycles: objects/hooks/hierarchy reads/font writes=0; 1000 stable option state updates: same zero counts, at most one normalisation colour write')
 end

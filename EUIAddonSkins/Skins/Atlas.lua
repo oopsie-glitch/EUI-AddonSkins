@@ -9,14 +9,18 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
     local Apply, Options, PaintWidget
     local menuOptions = {noAccent = true, chevrons = true, compactChecks = true, hoverAlpha = 0.08}
     local imagePath = "Interface\\AddOns\\Atlas\\Images\\"
-    -- Anonymous CreateArt regions can report file IDs instead of paths. Match
-    -- only the inspected root chrome's layer, dimensions and anchor as fallback.
+    -- Exact upstream composite assets; geometry is only a fallback for opaque
+    -- IDs. Never classify a known map path by its dimensions alone.
     local chromeSlots = {
-        AtlasFrame = {{512,128,0,0}, {512,512,0,-128}, {512,128,512,0}, {512,512,512,-128}},
-        AtlasFrameSmall = {{512,128,0,0}, {512,512,0,-128}, {32,128,512,0}, {32,512,512,-128}},
-        AtlasFrameLarge = {{512,512,0,0}, {512,512,512,0}, {512,256,0,-512}, {512,256,512,-512},
-            {512,32,0,-768}, {512,32,512,-768}},
+        AtlasFrame = {{"TopLeft",512,128,0,0}, {"BottomLeft",512,512,0,-128},
+            {"TopRight",512,128,512,0}, {"BottomRight",512,512,512,-128}},
+        AtlasFrameSmall = {{"TopLeft",512,128,0,0}, {"BottomLeft",512,512,0,-128},
+            {"TopRight",32,128,512,0}, {"BottomRight",32,512,512,-128}},
+        AtlasFrameLarge = {{"TopLeft",512,512,0,0}, {"TopRight",512,512,512,0},
+            {"MidLeft",512,256,0,-512}, {"MidRight",512,256,512,-512},
+            {"BottomLeft",512,32,0,-768}, {"BottomRight",512,32,512,-768}},
     }
+    local chromeAssets = {}
     local events = CreateFrame("Frame")
     events:RegisterEvent("ADDON_LOADED"); events:RegisterEvent("PLAYER_REGEN_ENABLED")
     local function Ready()
@@ -42,66 +46,97 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
         for _, region in ipairs(H.Regions(f)) do Font(region) end
         fonts[f] = generation
     end
-    local function Chrome(f, region)
-        if not H.Texture(region) then return end
-        local path = region:GetTexture()
-        if type(path) == "string" and path:lower():match("atlas[/\\]images[/\\]atlasframe") then return true end
-        if region:GetName() == "AtlasEJLootFrame_Back" then return true end
-        if type(path) ~= "number" or region:GetDrawLayer() ~= "ARTWORK" or not region.GetPoint then return end
-        local w, h = region:GetSize()
-        local point, relative, relativePoint, x, y = region:GetPoint(1)
-        if point ~= "TOPLEFT" or relative ~= f or relativePoint ~= "TOPLEFT" then return end
-        for _, slot in ipairs(chromeSlots[f:GetName()] or {}) do
-            if w == slot[1] and h == slot[2] and x == slot[3] and y == slot[4] then return true end
+    local function AssetKey(path)
+        if type(path) == "string" then
+            local key = path:lower():gsub("\\", "/"):match("([^/]+)$")
+            return key and key:gsub("%.blp$", ""):gsub("%.tga$", "")
         end
     end
-    -- Same-frame fill sits below both copies of the large map tile grid.
-    -- Never pass a map root through a blanket texture-strip/shell operation.
+    local function Assets(f)
+        local assets = chromeAssets[f]
+        if assets then return assets end
+        assets = {}; chromeAssets[f] = assets
+        for _, slot in ipairs(chromeSlots[f:GetName()] or {}) do
+            local path = imagePath .. f:GetName() .. "-" .. slot[1]
+            assets[AssetKey(path)] = slot[1]
+            if type(GetFileIDFromPath) == "function" then
+                for _, file in ipairs({path, path .. ".blp"}) do
+                    local id = GetFileIDFromPath(file)
+                    if type(id) == "number" and id > 0 then assets[id] = slot[1] end
+                end
+            end
+        end
+        return assets
+    end
+    local function Near(a, b) return type(a) == "number" and math.abs(a - b) < 0.25 end
+    local function Chrome(f, region)
+        if not H.Texture(region) then return end
+        if region:GetName() == "AtlasEJLootFrame_Back" then return "Backdrop" end
+        local slots = chromeSlots[f:GetName()]
+        if not slots then return end
+        local path = region:GetTexture()
+        local filePath = region.GetTextureFilePath and region:GetTextureFilePath()
+        local assets = Assets(f)
+        local key = AssetKey(filePath) or AssetKey(path)
+        if key then return assets[key] end
+        local id = region.GetTextureFileID and region:GetTextureFileID() or path
+        if type(id) ~= "number" then return end
+        if assets[id] then return assets[id] end
+        local layer = region:GetDrawLayer()
+        if (layer ~= "ARTWORK" and layer ~= "BORDER") or not region.GetPoint then return end
+        local w, h = region:GetSize()
+        local point, relative, relativePoint, x, y = region:GetPoint(1)
+        if point ~= "TOPLEFT" or relativePoint ~= "TOPLEFT"
+            or relative and relative ~= f and relative ~= f:GetName() then return end
+        for _, slot in ipairs(slots) do
+            if Near(w, slot[2]) and Near(h, slot[3]) and Near(x, slot[4]) and Near(y, slot[5]) then return slot[1] end
+        end
+    end
+    local function Globe(f, d, texture)
+        -- Resize the ORIGINAL composite's complete globe/rim crop. Creating a
+        -- second globe before suppressing the original caused the duplication.
+        d.globe = texture
+        local height = f:GetName() == "AtlasFrameLarge" and 512 or 128
+        texture:SetTexCoord(2 / 512, 74 / 512, 0, 72 / height)
+        texture:ClearAllPoints(); texture:SetSize(32, 32)
+        texture:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -9)
+        if f.CreateMaskTexture and texture.AddMaskTexture then
+            d.globeMask = f:CreateMaskTexture(nil, "ARTWORK")
+            d.globeMask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            d.globeMask:SetAllPoints(texture); texture:AddMaskTexture(d.globeMask)
+        end
+    end
+    local function DiscoverChrome(f, d)
+        local count = f.GetNumRegions and f:GetNumRegions()
+        if count and count == d.regionCount and not d.pendingChrome then return end
+        for _, region in ipairs(H.Regions(f)) do
+            if region ~= d.fill and not d.chrome[region] then
+                local part = Chrome(f, region)
+                if part then
+                    d.chrome[region], d.parts[part] = true, true
+                    if part == "TopLeft" and not d.globe then Globe(f, d, region)
+                    else H.Fade(region) end
+                end
+            end
+        end
+        local found = 0; for _ in pairs(d.parts) do found = found + 1 end
+        local slots = chromeSlots[f:GetName()]
+        d.pendingChrome = slots and found < #slots or false
+        d.regionCount = f.GetNumRegions and f:GetNumRegions()
+    end
+    -- One same-frame background, below native map tiles and information. No
+    -- extra info/legend/header rectangles, raised sibling panels or clipping.
     local function Surface(f)
         if not H.Allowed(f) then return end
         local d = surfaces[f]
         if not d then
-            d = {}; surfaces[f] = d
+            d = {chrome = {}, parts = {}}; surfaces[f] = d
             d.fill = f:CreateTexture(nil, "BACKGROUND", nil, -8); d.fill:SetAllPoints(f)
-            for _, region in ipairs(H.Regions(f)) do
-                if Chrome(f, region) then H.Fade(region) end
-            end
-            if chromeSlots[f:GetName()] then
-                d.header = f:CreateTexture(nil, "BACKGROUND", nil, -7)
-                d.header:SetPoint("TOPLEFT", 1, -1); d.header:SetPoint("TOPRIGHT", -1, -1); d.header:SetHeight(80)
-                d.toolbar = f:CreateTexture(nil, "BACKGROUND", nil, -7)
-                d.toolbar:SetPoint("BOTTOMLEFT", 1, 1); d.toolbar:SetPoint("BOTTOMRIGHT", -1, 1); d.toolbar:SetHeight(32)
-                if f:GetName() == "AtlasFrame" then
-                    d.info = f:CreateTexture(nil, "BACKGROUND", nil, -7)
-                    d.info:SetPoint("TOPLEFT", f, "TOPLEFT", 538, -82)
-                    d.info:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", -18, -197)
-                    d.legend = f:CreateTexture(nil, "BACKGROUND", nil, -7)
-                    d.legend:SetPoint("TOPLEFT", f, "TOPLEFT", 538, -201)
-                    d.legend:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -18, 36)
-                end
-                -- The original globe is baked into TopLeft, not a button.
-                -- Reuse that asset's globe crop; never resize the root/hit area.
-                d.globe = f:CreateTexture(nil, "ARTWORK")
-                d.globe:SetTexture(imagePath .. f:GetName() .. "-TopLeft")
-                local textureHeight = f:GetName() == "AtlasFrameLarge" and 512 or 128
-                d.globe:SetTexCoord(4 / 512, 72 / 512, 0, 70 / textureHeight)
-                d.globe:SetSize(32, 32); d.globe:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -9)
-                if f.CreateMaskTexture and d.globe.AddMaskTexture then
-                    d.globeMask = f:CreateMaskTexture(nil, "ARTWORK")
-                    d.globeMask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-                    d.globeMask:SetAllPoints(d.globe); d.globe:AddMaskTexture(d.globeMask)
-                end
-            end
         end
-        if d.generation ~= generation then
-            local r, g, b, a = Color()
-            d.fill:SetColorTexture(r, g, b, a)
-            if d.header then d.header:SetColorTexture(r * 0.8, g * 0.8, b * 0.8, a) end
-            if d.toolbar then d.toolbar:SetColorTexture(r * 0.7, g * 0.7, b * 0.7, a) end
-            if d.info then d.info:SetColorTexture(r * 1.12, g * 1.12, b * 1.12, a) end
-            if d.legend then d.legend:SetColorTexture(r * 0.9, g * 0.9, b * 0.9, a) end
-            d.generation = generation
-        end
+        -- Constructors may assign textures after the frame is first observed.
+        -- Completed roots do no region walk on warm show/map/theme callbacks.
+        DiscoverChrome(f, d)
+        if d.generation ~= generation then d.fill:SetColorTexture(Color()); d.generation = generation end
         Texts(f)
     end
     local function Button(f, glyph, size)

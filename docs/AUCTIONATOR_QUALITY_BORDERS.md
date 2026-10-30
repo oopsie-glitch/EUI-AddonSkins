@@ -18,7 +18,7 @@ The selling refinement follows EllesmereUI 9.7, commit `5abb35ba158463ca25acc89c
 
 Blizzard's `AuctionHouseSellFrameTemplate` uses `AuctionHouseInteractableItemDisplayTemplate`, whose `GiantItemButtonTemplate` supplies the `auctionhouse-itemicon-empty` socket, a 2-unit inset icon and `common-iconmask`. `SetItemButtonQuality` sets its native `IconBorder` to `Interface/Common/WhiteIconFrame`. References: [Auction House templates](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_AuctionHouseUI/Shared/Blizzard_AuctionHouseSharedTemplates.xml), [item templates](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_ItemButton/Mainline/ItemButtonTemplate.xml), [native quality setter](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_ItemButton/Mainline/ItemButtonTemplate.lua).
 
-For selling-owned slots only, anchor the existing rarity ring to the inset icon and retain one native corner mask per slot. The large preview reuses Auctionator's EmptySlot region with the same client socket atlas; inventory tiles fade only their redundant EmptySlot decoration through H.Fade. Reuse the existing selection texture as a restrained outer WhiteIconFrame ring, retaining Auctionator's selection colour/visibility. Keep native rarity visibility, count, profession-quality overlay and interaction. The large selected-sale subclass still keeps its populated rarity ring visible. Preserve the accepted 2-unit icon inset/crop and all button sizes, positions and click areas.
+For selling-owned slots only, anchor the existing rarity ring to the inset icon and retain one native corner mask per slot. The large preview reuses Auctionator's EmptySlot region with the same client socket atlas; inventory tiles fade only their redundant EmptySlot decoration through H.Fade. Reuse the existing selection texture as a faint inset neutral wash below the rarity ring. Preserve the native rarity colour and keep its border visible for populated slots, including selected inventory items. Keep count, profession-quality overlay and interaction. The large selected-sale subclass still keeps its populated rarity ring visible. Preserve the accepted 2-unit icon inset/crop and all button sizes, positions and click areas.
 
 Do not register selling slots as EUI text Buttons; this removes their unrelated rectangular plate. An Auctionator-local SquareIcon facade suppresses only the shared scanner's redundant BorderRegion request for those known slots. Other SquareIcon callers, generic helpers, results, purchase headers and legacy AuctionFrame remain unchanged. Native icon setter hooks repair only that slot, with unchanged anchors skipped. Combat recovery and re-enabling inspect current anchors. Missing socket atlas keeps the previous usable native-border path; missing mask API omits only the mask. No private implementation or external artwork is bundled.
 
@@ -53,3 +53,52 @@ The exposed decoration around inventory icons belongs to each `AuctionatorGroups
 Cache the preview identity at setup. Keep its corrected socket visible, and use the existing H.Fade mechanism only on the other selling-owned slots' EmptySlot textures. Skip the old warm alpha=1 repair for inventory slots. This adds no texture, scan, polling or item-update callback; H.Fade installs one alpha-reset guard per owned decoration. No dimensions, positions, spacing, hit areas, other controls, shared helpers, release metadata or selected-preview cosmetics change.
 
 Focused regressions verify first/newly pooled and repopulated inventory slots, native alpha reset, selected/cleared transitions, live theme refresh and repeated warm refreshes. Item/ring geometry, selection, quantity, quest indicator, cooldown and profession-quality overlay are retained. The 1,000 inventory update workload and 20 repeated refreshes add no stable EmptySlot alpha writes. The preceding 33b36a1 runtime fails the new inventory-background assertion. Full package validation and whitespace checks pass. In-game verification remains: exposed edges/gaps under Gem and Tradeskill, inventory selection/scrolling and the preserved large preview's empty/selected/cleared states.
+
+## Selection border correction after 1.6.2
+
+Branch `skin/auctionator-selection-highlight`, based on released main `1e45cec`.
+No version, changelog, shared helper or publication changes.
+
+Auctionator 341's actual `Source/Groups/ViewItem.lua:SetItemInfo` hides
+`IconBorder` for selected inventory items and assigns orange (0.977, 0.592,
+0.086) to `IconSelectedHighlight`. Its XML places both in BACKGROUND sublevel 3.
+The preceding adapter converted that orange highlight to WhiteIconFrame, so the
+selected tile displayed an orange ring while its correctly coloured rarity
+texture was hidden. The earlier fixture explicitly accepted the hidden rarity
+border; this assertion now requires the rarity border to remain visible.
+
+For modern Selling-owned item buttons only, a completed per-button SetItemInfo
+post-hook restores populated rarity visibility without changing its native
+vertex colour. The existing selection region becomes an 8% white inset wash on
+ARTWORK, below the OVERLAY rarity/quest/profession art; its native orange tint is
+normalised. There is no additional texture or border. Empty slots hide both
+regions, clearing the native base mixin's potentially stale selection highlight.
+The selected-preview subclass retains its no-wash appearance. Counts, native
+icon alpha, hover, tooltips, clicks, drag actions and nil-containing native
+returns are unchanged. The missing-socket-atlas fallback also receives the
+selection correction. Disabled, stock-style, protected and combat guards remain;
+existing refresh/combat recovery repairs the current state.
+
+Source ownership review found the shared Groups/ViewItem template used by the
+Selling inventory and selected-sale preview, with the latter's explicit border
+restoration in `Source/Tabs/Selling/Mixins/BagItemSelected.lua`. Modern search,
+shopping/list results and cancelling use ItemKeyCell; buying uses QualityBorder.
+Those distinct implementations do not perform this selection substitution and
+are unchanged. The legacy AuctionFrame path remains unchanged. The module
+supports Retail and Forever; this source review uses Retail 341, so Forever
+in-game confirmation remains outstanding.
+
+Regression coverage selects/deselects all eight qualities, switches between
+two tiles, recycles and clears them, models native orange resets and stale empty
+selection, and checks late methods/controls, preview behaviour, theme refresh,
+stock/disabled/combat recovery, fallback APIs and foreign-view isolation.
+The 1,000-preview plus 1,000-inventory mock updates create zero objects/hooks,
+perform zero hierarchy reads/geometry writes and queue zero timers. Full
+`python3 scripts/package.py` and `git diff --check` pass. Replacing the fixed
+adapter with released 1.6.2 fails the selected-rarity assertion, confirming
+regression sensitivity. The installation ZIP
+has 59 files in one EUIAddonSkins folder with the exact MIT license; no sources,
+tests or documentation are bundled. Automated fixtures cannot establish actual
+rendering, taint safety or client compatibility. In-game review should confirm
+the subtle fill on selected items of each rarity, hover/tooltip/click behaviour,
+scroll/recycling and the large preview's selected/empty transitions.

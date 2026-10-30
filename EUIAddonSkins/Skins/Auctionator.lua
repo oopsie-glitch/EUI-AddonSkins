@@ -16,7 +16,7 @@ end, function(S, module)
     local H = ns.CreateSkinHelper(S, module)
     local roots, shells, panels = {}, {}, {}
     local scrollChrome, qualityCells, radioMarks, layouts = {}, {}, {}, {}
-    local itemBorders, sellingItems = {}, {}
+    local itemBorders, sellingItems, sellingSelections = {}, {}, {}
     -- The shared first-visit crop also supplies an owner. Selling tiles use
     -- the native socket instead; suppress only that redundant border request.
     S.SquareIcon = function(icon, owner, quality)
@@ -253,6 +253,36 @@ end, function(S, module)
             for _, line in ipairs(itemBorders[f]) do line:SetColorTexture(r, g, b, a or 1); line:SetAlpha(1) end
         end
     end
+    local function SellingSelection(f, icon)
+        local selected, border = H.Texture(f.IconSelectedHighlight), H.Texture(f.IconBorder)
+        if not selected or not border then return end
+        local paint = sellingSelections[f]
+        if not paint then
+            -- Reuse the native selection region as an inset wash, not a second
+            -- rarity ring. Keep it below the OVERLAY quality/count/quest art.
+            selected:SetColorTexture(1, 1, 1, 0.08)
+            selected:ClearAllPoints(); selected:SetAllPoints(icon)
+            selected:SetDrawLayer("ARTWORK", 0)
+            paint = function()
+                if InCombatLockdown() then waiting = true; return end
+                if Stock() or not H.Allowed(f) then return end
+                local info = f.itemInfo
+                local selling = _G.AuctionatorSellingFrame
+                local preview = selling and selling.SaleItemFrame and selling.SaleItemFrame.Icon == f
+                -- SetItemInfo deliberately hides rarity when selected and tints
+                -- the highlight orange. Repair only those completed cosmetics.
+                local r, g, b, a = selected:GetVertexColor()
+                if r ~= 1 or g ~= 1 or b ~= 1 or a ~= 1 then selected:SetVertexColor(1, 1, 1, 1) end
+                local shown = info ~= nil and not preview and info.selected == true
+                if selected:IsShown() ~= shown then selected:SetShown(shown) end
+                if border:IsShown() ~= (info ~= nil) then border:SetShown(info ~= nil) end
+            end
+            sellingSelections[f] = paint
+        end
+        -- A method can arrive after the frame; the helper installs it only once.
+        H.Hook(f, "SetItemInfo", paint)
+        paint()
+    end
     -- EllesmereUI's AH ItemDisplay deliberately retains GiantItemButton art.
     -- Reuse that client socket and native rarity texture, without Button's plate
     -- or SquareIcon's extra black edge. Auctionator still owns actions/state.
@@ -267,7 +297,10 @@ end, function(S, module)
             end
             if not owned then return false end
             -- Older clients without this atlas keep the existing native path.
-            if not (C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("auctionhouse-itemicon-empty")) then return false end
+            if not (C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("auctionhouse-itemicon-empty")) then
+                SellingSelection(f, icon)
+                return false
+            end
             state = {}; sellingItems[f] = state
             local socket = H.Texture(f.EmptySlot)
             if not socket then socket = f:CreateTexture(nil, "BACKGROUND", nil, 1); f.EmptySlot = socket end
@@ -289,12 +322,6 @@ end, function(S, module)
                 border:ClearAllPoints(); border:SetAllPoints(icon)
                 border:SetDrawLayer("OVERLAY", 0)
             end
-            local selected = H.Texture(f.IconSelectedHighlight)
-            if selected then
-                -- Keep the native selection colour/visibility; use a restrained
-                -- outer ring rather than the broad artifact glow.
-                selected:SetTexture("Interface\\Common\\WhiteIconFrame")
-            end
             if f.CreateMaskTexture and icon.AddMaskTexture then
                 local mask = f:CreateMaskTexture()
                 mask:SetTexture("Interface\\Common\\common-iconmask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
@@ -307,6 +334,7 @@ end, function(S, module)
                 end)
             end
         end
+        SellingSelection(f, icon)
         local alpha = state.preview and 1 or 0
         if state.socket:GetAlpha() ~= alpha then
             if state.preview then state.socket:SetAlpha(1) else H.Fade(state.socket) end

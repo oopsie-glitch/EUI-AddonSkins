@@ -62,7 +62,46 @@ button. Its ORIGINAL globe-and-rim crop is now 35-by-35 (about 10% larger than
 been removed; the recognizable original globe/rim stays in its square crop.
 No second globe texture or upstream image is added. Late discovery receives
 its slot colour immediately. Native root drag/click/tooltip handling stays
-unchanged. Open/closed lock textures retain native state changes and tint.
+unchanged.
+
+## Owned control refinement
+
+Atlas's lock button is 36×36 and originally stretches low-resolution 32×32
+art containing a red plate and a yellow padlock. The prior adapter preserved
+that entire normal/pushed artwork plus its native highlight. It now reuses
+those same normal/pushed Texture objects with the existing required EUI core
+`media/icons/eui-lock-locked.png` / `eui-lock-unlocked.png` assets, displayed
+at 12×16 with full UVs and a one-pixel pressed offset. The decorative native
+highlight is suppressed by the public Button primitive. A local UpdateLock
+post-hook follows native lock state without replacing its callbacks/returns.
+No icon asset is bundled and no optional EUI module is required.
+
+Owned action/arrow/icon controls reuse the public API's fill and hover textures.
+Their fill is opaque, slightly lighter than the current theme panel; disabled
+states dim and suppress hover. Painting is inset inside the native frame and
+redundant pixel borders are disabled through the existing soft-helper opt-in.
+No second button surface is created. The same primitive's later fill/anchor
+resets repair locally. Options and Lock deliberately overlap by six pixels in
+Atlas's constructor; positive hit insets and matching painted bounds separate
+Options, Lock and Close without changing their native positions or sizes.
+Adjacent Search/Clear buttons have contained inset fills with a small gap.
+Borrowed Settings controls keep their separate existing restoration path.
+
+The native 150×32 search EditBox retains its text, font, caret, scripts, text
+insets and hit area. Its reused fill is contained to the centred 24-pixel bar.
+An empty/unfocused Search hint and one contained input edge identify the field;
+the edge follows the current EUI accent while focused. No hint is written into
+the actual input. Text/focus events touch only this field's own cosmetics.
+
+LibDD opens selectors from its arrow's OnMouseDown, not the parent Frame. The
+adapter enables mouse input on the existing selector Frame and forwards left
+clicks from its text field to the original arrow handler with the original
+receiver. Native arrow scripts, menu anchoring, selection and submenus remain
+unchanged. The clickable field excludes LibDD's decorative left/top/bottom
+padding and does not cover the label or neighboring selector. Child actions
+remain independent. Disabled/hidden arrows, disabled skin and combat gate the
+added field-click path. A small local hover wash is reused on reopening.
+
 
 LibDD's existing clickable child arrow is styled directly with a 10-pixel EUI
 chevron; the adapter does not also request EUI's root-level decorative arrow.
@@ -143,6 +182,9 @@ FPS, taint or retained-memory measurements.
 An additional 1,000 warm open/map/options/tree callback cycles per client also
 add no UI objects/hooks, hierarchy reads or font writes. Styling is cached per
 theme generation and ownership acquisition; no polling or timers are added.
+The same warm open/map/options/tree workload also performs zero geometry or
+icon-texture writes. One thousand native search text/focus cycles create no
+objects/hooks or hierarchy/font work; these remain mock operation counts.
 
 Regression coverage checks the adjoining opaque surface, no new globe art,
 reuse of the original globe/rim, unchanged levels/strata/text, late texture
@@ -159,6 +201,9 @@ On each client with current Atlas and suitable separately installed map modules:
    legend data at opaque and transparent Atlas settings.
    Check the square globe slot/crop/placement, centre-to-edge shading, header
    and search/footer contrast, and subtle upper/lower information separation.
+   Test both lock states/pressed/hover feedback, Options/Lock/Close separation,
+   Search/Clear input, accent focus/hint, and Category/Map text/arrow clicks.
+   Check neighboring hit areas and disabled/reopened menus at multiple scales.
    Atlas's own opacity slider still fades the entire native window.
 2. Change map type/map, navigate back/forward, search/clear, scroll the legend
    and hover/click native pins and entries. Check dropdown/submenu reuse.

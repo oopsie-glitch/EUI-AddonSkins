@@ -2,6 +2,7 @@
 -- duplicate root map tiles, LibDD controls and borrowed AceConfig widgets.
 for _, client in ipairs({'Retail','Forever'}) do
     local created,hooks,reads,fontWrites,colorWrites=0,0,0,0,0
+    local geometryWrites,textureWrites=0,0
     local looks,events,modules,errors={},{},{},{}
     local fileIDs,assetReads={},0
     GetFileIDFromPath=function(path)assetReads=assetReads+1;return fileIDs[path:lower():gsub('%.blp$','')]end
@@ -9,19 +10,19 @@ for _, client in ipairs({'Retail','Forever'}) do
     local enabled,combat=true,false
     local accent={.2,.7,.4};local face='eui-font';local panel={.05,.06,.07,.9}
     local function anchors(o)
-        function o:SetAllPoints(f) self.all=f end
-        function o:SetPoint(...) self.points=self.points or {};self.points[#self.points+1]={...}end
+        function o:SetAllPoints(f) geometryWrites=geometryWrites+1;self.all=f end
+        function o:SetPoint(...) geometryWrites=geometryWrites+1;self.points=self.points or {};self.points[#self.points+1]={...}end
         function o:GetPoint()
             local p=self.points and self.points[1]
             if not p then return end
             if type(p[2])=='number' then return p[1],self.parent,p[1],p[2],p[3] end
             return table.unpack(p)
         end
-        function o:ClearAllPoints()self.points={}end
-        function o:SetSize(w,h)self.w,self.h=w,h end
+        function o:ClearAllPoints()geometryWrites=geometryWrites+1;self.points={}end
+        function o:SetSize(w,h)geometryWrites=geometryWrites+1;self.w,self.h=w,h end
         function o:GetSize()return self.w or 10,self.h or 10 end
-        function o:SetWidth(v)self.w=v end
-        function o:SetHeight(v)self.h=v end
+        function o:SetWidth(v)geometryWrites=geometryWrites+1;self.w=v end
+        function o:SetHeight(v)geometryWrites=geometryWrites+1;self.h=v end
         function o:GetWidth()return self.w or 10 end
         function o:GetHeight()return self.h or 10 end
         function o:SetAlpha(v)self.alpha=v end
@@ -41,7 +42,7 @@ for _, client in ipairs({'Retail','Forever'}) do
         function t:IsForbidden()return false end
         function t:GetTexture()return self.path end
         function t:GetTextureFileID()return self.path end
-        function t:SetTexture(v)self.path=v end
+        function t:SetTexture(v)textureWrites=textureWrites+1;self.path=v end
         function t:SetAtlas(v)self.atlas=v end
         function t:SetDesaturated(v)self.desaturated=v end
         function t:AddMaskTexture(mask)self.mask=mask end
@@ -76,6 +77,16 @@ for _, client in ipairs({'Retail','Forever'}) do
         function f:GetFrameStrata()return 'MEDIUM'end
         function f:SetFrameLevel(v)self.level=v end
         function f:EnableMouse(v)self.mouse=v end
+        function f:GetScript(key)return self.scripts[key]end
+        function f:SetHitRectInsets(...)self.hitInsets={...}end
+        function f:GetText()return self.value or ''end
+        function f:SetText(v)self.value=v;if self.scripts.OnTextChanged then self.scripts.OnTextChanged(self,true)end end
+        function f:HasFocus()return self.focused end
+        function f:SetFocus()self.focused=true;if self.scripts.OnEditFocusGained then self.scripts.OnEditFocusGained(self)end end
+        function f:ClearFocus()self.focused=false;if self.scripts.OnEditFocusLost then self.scripts.OnEditFocusLost(self)end end
+        function f:SetTextColor(...)self.inputColor={...}end
+        function f:Enable()self.enabled=true;if self.scripts.OnEnable then self.scripts.OnEnable(self)end end
+        function f:Disable()self.enabled=false;if self.scripts.OnDisable then self.scripts.OnDisable(self)end end
         function f:IsForbidden()return self.forbidden end
         function f:IsProtected()return self.protected end
         function f:GetNumChildren()return #self.children end
@@ -116,7 +127,17 @@ for _, client in ipairs({'Retail','Forever'}) do
     local S={GetAccentColor=function()return table.unpack(accent)end,GetPanelColor=function()return table.unpack(panel)end,
         GetFont=function()return face,''end,OnLooksChanged=function(fn)looks[#looks+1]=fn end}
     local function paint(f,kind,keep)
-        if not f["painted"..kind]then f["painted"..kind]=true;local bg=f:CreateTexture(nil,'BACKGROUND');bg:SetColorTexture(.05,.06,.07,.9)end
+        if not f["painted"..kind]then
+            f["painted"..kind]=true
+            local retained={};for _,key in ipairs(keep or {})do retained[f[key]]=true end
+            for _,r in ipairs(f.regions)do if r.kind=='Texture' and not retained[r]then r:SetAlpha(0)end end
+            f.apiFill=f:CreateTexture(nil,'BACKGROUND');f.apiFill:SetColorTexture(.05,.06,.07,.9);f.apiFill:SetAllPoints(f)
+            if kind~='edit'then
+                f.apiHover=f:CreateTexture(nil,'HIGHLIGHT');f.apiHover:SetColorTexture(1,1,1,.1);f.apiHover:SetAllPoints(f)
+                f.apiBorder=frame('Frame',nil,f)
+                for i=1,4 do local e=f.apiBorder:CreateTexture(nil,'BORDER');e:SetSize(i<3 and 1 or 20,i<3 and 20 or 1)end
+            end
+        end
         f.style=kind;f.keep=keep
     end
     S.Button=function(f,keep)paint(f,'button',keep)end
@@ -130,7 +151,10 @@ for _, client in ipairs({'Retail','Forever'}) do
     S.EditBox=function(f)paint(f,'edit')end
     S.Panel=function(f)error('Atlas must not blanket-strip map roots or borrowed widget trees')end
     S.Shell=S.Panel
-    S.StateButtonLabel=function()end
+    S.StateButtonLabel=function(f)
+        local function state()f.label:SetTextColor(f:IsEnabled() and 1 or .5,1,1,1)end
+        f:HookScript('OnEnable',state);f:HookScript('OnDisable',state);state()
+    end
     S.ScrollBar=function(f)paint(f,'scroll')end
     S.Font=function(t,r,g,b)local _,size=t:GetFont();t:SetFont(face,size,'');if r then t:SetTextColor(r,g,b,1)end end
     local ns={IsEnabled=function()return enabled end}
@@ -148,6 +172,7 @@ for _, client in ipairs({'Retail','Forever'}) do
     Atlas.UpdateLock=function(self)
         for _,name in ipairs({'AtlasFrame','AtlasFrameSmall','AtlasFrameLarge'})do
             _G[name..'LockButton'].normal:SetTexture(self.db.profile.options.frames.lock and 'locked' or 'unlocked')
+            _G[name..'LockButton'].pushed:SetTexture('native-pressed')
         end
         return 'lock',nil,6
     end
@@ -178,15 +203,29 @@ for _, client in ipairs({'Retail','Forever'}) do
         end
         local semantic=f:CreateTexture(nil,'ARTWORK');semantic:SetTexture('module/annotation');semantic:SetSize(512,128);semantic:SetPoint('TOPLEFT',0,0)
         mapRegions[#mapRegions+1]=semantic
-        text(f);button(name..'CloseButton',f);button(name..'OptionsButton',f)
+        text(f)
+        local close=button(name..'CloseButton',f);close:SetSize(20,20);close:SetPoint('TOPRIGHT',f,'TOPRIGHT',-2,-14)
+        local options=button(name..'OptionsButton',f);options:SetSize(80,20);options:SetPoint('RIGHT',name..'LockButton','LEFT',6,1)
         for _,suffix in ipairs({'PrevMapButton','NextMapButton','SizeUpButton','SizeDownButton','CollapseButton','ExpandButton'})do button(name..suffix,f)end
         for _,suffix in ipairs({'LockButton','LFGButton','AdventureJournalMapButton','AdventureJournalButton','AtlasLootButton'})do
             local b=button(name..suffix,f);b.normal=b:CreateTexture(nil,'ARTWORK');b.normal:SetTexture('meaningful-glyph');b.normal:SetTexCoord(.1,.2,.3,.4)
+            if suffix=='LockButton'then
+                b:SetSize(36,36);b:SetPoint('RIGHT',close,'LEFT',6,0)
+                b.pushed=b:CreateTexture(nil,'ARTWORK');b.pushed:SetTexture('native-lock-pressed')
+                b.highlight=b:CreateTexture(nil,'HIGHLIGHT');b.highlight:SetTexture('native-lock-highlight')
+                b.scripts.OnClick=function()Atlas.db.profile.options.frames.lock=not Atlas.db.profile.options.frames.lock;return Atlas:UpdateLock()end
+            end
         end
         for _,suffix in ipairs({'DropDown','DropDownType'})do
             local d=frame('Frame',name..suffix,f);d.initialize=function()end;d.Label=text(d);d.Text=text(d)
             for _,side in ipairs({'Left','Middle','Right'})do d[side]=d:CreateTexture(nil,'ARTWORK')end
             d.Button=button(name..suffix..'Button',d);d.Button:SetSize(24,24);d.Button.normal=d.Button:CreateTexture(nil,'ARTWORK')
+            d:SetSize(240,32);d.Button:SetPoint('TOPRIGHT',d,'TOPRIGHT',2,-1)
+            d.openCount=0;d.Button.scripts.OnMouseDown=function(self,mouse)
+                assert(self==d.Button,'native dropdown receiver changed')
+                if self:IsEnabled() then d.openCount=d.openCount+1;d.lastMouse=mouse end
+                return 'native dropdown',nil,9
+            end
             d.favorite=button(name..suffix..'OptionalFavorite',d);d.favorite.icon=d.favorite:CreateTexture(nil,'ARTWORK')
         end
         f.ZoneName=frame('Button',name..'MapZoneName',f);f.ZoneName.Text=text(f.ZoneName)
@@ -201,6 +240,10 @@ for _, client in ipairs({'Retail','Forever'}) do
         rootMetadata[f]={level=f:GetFrameLevel(),strata=f:GetFrameStrata(),artwork=artwork}
     end
     AtlasSearchEditBox=frame('EditBox','AtlasSearchEditBox',AtlasFrame);AtlasSearchEditBox.SetTextInsets=function()end
+    AtlasSearchEditBox:SetSize(150,32);AtlasSearchEditBox:SetPoint('BOTTOMRIGHT',AtlasFrame,'BOTTOMRIGHT',-210,0)
+    local nativeTextChanges=0
+    AtlasSearchEditBox.scripts.OnTextChanged=function()nativeTextChanges=nativeTextChanges+1 end
+    AtlasSearchEditBox.scripts.OnEnterPressed=function(self)self.searched=self:GetText();self:ClearFocus();return 'search native'end
     AtlasSearchEditBox.action=function(v)AtlasSearchEditBox.value=v;return 'input'end
     for _,n in ipairs({'AtlasSearchButton','AtlasSearchClearButton','AtlasSwitchButton'})do button(n,AtlasFrame)end
     AtlasScrollBarScrollBar=frame('Slider','AtlasScrollBarScrollBar',AtlasFrame)
@@ -283,10 +326,53 @@ for _, client in ipairs({'Retail','Forever'}) do
     end
     Atlas.db.profile.options.frames.lock=true
     local la,lb,lc=Atlas:UpdateLock();assert(la=='lock' and lb==nil and lc==6)
-    assert(AtlasFrameLockButton.normal.path=='locked' and AtlasFrameLockButton.normal.desaturated)
-    Atlas.db.profile.options.frames.lock=false;Atlas:UpdateLock();assert(AtlasFrameLockButton.normal.path=='unlocked')
+    assert(AtlasFrameLockButton.normal.path:find('eui%-lock%-locked.png') and AtlasFrameLockButton.pushed.path==AtlasFrameLockButton.normal.path)
+    Atlas.db.profile.options.frames.lock=false;Atlas:UpdateLock();assert(AtlasFrameLockButton.normal.path:find('eui%-lock%-unlocked.png'))
     assert(popupOwners[AtlasSwitchDD] and AtlasFrameNextMapButton.glyph=='>')
-    assert(AtlasFrameLockButton.normal.crop[1]==.1 and AtlasFrameLFGButton.normal.path=='meaningful-glyph')
+    assert(AtlasFrameLockButton.normal.crop[1]==0 and AtlasFrameLockButton.normal.crop[2]==1 and AtlasFrameLFGButton.normal.path=='meaningful-glyph')
+    local lock=AtlasFrameLockButton
+    assert(lock.normal.w==12 and lock.normal.h==16 and lock.highlight.alpha==0,'lock must use proportionate EUI art without native glow')
+    assert(lock.pushed.points[1][4]==1 and lock.pushed.points[1][5]==-1)
+    assert(lock.w==36 and lock.h==36 and lock.hitInsets[1]==6 and lock.hitInsets[2]==6)
+    assert(AtlasFrameOptionsButton.hitInsets[2]==6)
+    -- Native frames overlap by 6: the painted/hit ranges now remain disjoint.
+    local lockLeft=80-6;local closeLeft=lockLeft+36-6
+    assert(80-AtlasFrameOptionsButton.hitInsets[2]<=lockLeft+lock.hitInsets[1])
+    assert(lockLeft+36-lock.hitInsets[2]<=closeLeft)
+    lock.scripts.OnClick();assert(Atlas.db.profile.options.frames.lock and lock.normal.path:find('eui%-lock%-locked.png'))
+    lock.scripts.OnClick();assert(not Atlas.db.profile.options.frames.lock and lock.normal.path:find('eui%-lock%-unlocked.png'))
+    for _,b in ipairs({AtlasFrameOptionsButton,AtlasFrameNextMapButton,AtlasSearchButton,lock})do
+        assert(b.apiFill.color[4]==1 and b.apiFill.color[1]>panel[1],'owned buttons need opaque contrast')
+        assert(b.apiFill.points[1][4]>=1 and b.apiFill.points[2][4]<=-1,'button paint protrudes')
+        for _,e in ipairs(b.apiBorder.regions)do assert(e.color[4]==0,'owned decorative border should not cross neighbours')end
+        b.apiFill:SetColorTexture(.02,.02,.02,.1);b.apiFill:SetAllPoints(b)
+        assert(b.apiFill.color[4]==1 and b.apiFill.points[1][4]>=1,'native API repaint lost containment')
+        b:Disable();assert(b.apiHover.alpha==0);b:Enable();assert(b.apiHover.alpha==1)
+    end
+    local dropdown=AtlasFrameDropDown
+    assert(dropdown.mouse and dropdown.hitInsets[1]==16 and dropdown.hitInsets[3]==1 and dropdown.hitInsets[4]==7)
+    dropdown.scripts.OnMouseDown(dropdown,'LeftButton');assert(dropdown.openCount==1 and dropdown.lastMouse=='LeftButton')
+    local a,b,c=dropdown.Button.scripts.OnMouseDown(dropdown.Button,'LeftButton');assert(a=='native dropdown'and b==nil and c==9 and dropdown.openCount==2)
+    dropdown.scripts.OnMouseDown(dropdown,'RightButton');assert(dropdown.openCount==2)
+    dropdown.scripts.OnEnter(dropdown);dropdown.Button:Disable();assert(dropdown.regions[#dropdown.regions].alpha==0);dropdown.scripts.OnMouseDown(dropdown,'LeftButton');assert(dropdown.openCount==2);dropdown.Button:Enable()
+    enabled=false;dropdown.scripts.OnMouseDown(dropdown,'LeftButton');assert(dropdown.openCount==2);enabled=true
+    combat=true;dropdown.scripts.OnMouseDown(dropdown,'LeftButton');assert(dropdown.openCount==2);combat=false
+    assert(dropdown.favorite.scripts.OnClick()=='native' and dropdown.openCount==2,'distinct child action changed')
+    local search=AtlasSearchEditBox;local hint,edge
+    for _,r in ipairs(search.regions)do
+        if r.kind=='FontString' and r.text=='Search' then hint=r end
+        if r.layer=='BORDER' then edge=r end
+    end
+    assert(hint and hint.shown and edge and search.w==150 and search.h==32)
+    search:SetFocus();assert(not hint.shown and edge.color[1]==accent[1])
+    search:SetText('boss');assert(nativeTextChanges==1 and not hint.shown)
+    assert(search.scripts.OnEnterPressed(search)=='search native' and search.searched=='boss' and not search.focused)
+    search:SetText('');assert(nativeTextChanges==2 and hint.shown and edge.color[1]==.25)
+    local objs,hookCount,walks,fontCount=created,hooks,reads,fontWrites
+    for _=1,1000 do search:SetFocus();search:SetText('typed');search:ClearFocus()end
+    assert(created==objs and hooks==hookCount and reads==walks and fontWrites==fontCount,'search events must stay local')
+    search:SetText('');assert(hint.shown)
+    assert(search.inputColor[1]==.92 and search.apiFill.points[1][5]==-4 and search.apiFill.points[2][5]==4)
     assert(world.Border.alpha==0 and world.Icon.alpha==1)
     local n,r,fw,c=created,reads,fontWrites,hooks
     for _=1,1000 do local a,b,v=Atlas:ScrollBar_Update();assert(a=='scroll'and b==nil and v==4)end
@@ -356,10 +442,12 @@ for _, client in ipairs({'Retail','Forever'}) do
     -- First disabled flag normalisation may repaint once.
     assert(created==nn and hooks==hh and reads==rr and fontWrites==ff and colorWrites<=cc+1)
     local warmObjects,warmHooks,warmReads,warmFonts,warmAssets=created,hooks,reads,fontWrites,assetReads
+    local warmGeometry,warmTextures=geometryWrites,textureWrites
     for _=1,1000 do
         AtlasFrame:Show();Atlas:RefreshMap();tree:RefreshTree();dialog:FeedGroup('Atlas',{},group)
     end
     assert(created==warmObjects and hooks==warmHooks and reads==warmReads and fontWrites==warmFonts and assetReads==warmAssets,'warm open/options/navigation scans or allocations')
+    assert(geometryWrites==warmGeometry and textureWrites==warmTextures,'warm controls rewrote geometry or icon textures')
     slider:SetDisabled(true);assert(slider.slider.regions[3].color[1]==.4)
     check:SetValue(false);assert(mark.alpha==0)
     check:SetValue(true);check:SetDisabled(true);assert(mark.color[1]==.4 and mark.alpha==1)
@@ -393,9 +481,13 @@ for _, client in ipairs({'Retail','Forever'}) do
     -- Open Settings groups are discovered at combat recovery without invoking native data actions.
     assert(late.check.alpha==0)
     local beforeTheme=created
+    search:SetFocus()
     panel={.12,.10,.08,0};face='changed-font';accent={.9,.1,.2}
     for _,fn in ipairs(looks)do fn()end
     assert(created==beforeTheme,'theme change must reuse surface textures')
+    assert(edge.color[1]==accent[1] and edge.color[2]==accent[2],'focused search must follow accent')
+    assert(AtlasSearchButton.apiFill.color[4]==1 and AtlasSearchButton.apiFill.color[1]>panel[1])
+    search:ClearFocus()
     for _,r in ipairs(AtlasFrame.regions)do
         if r.gradient then
             assert(r.color[4]==1,'EUI transparent panel setting must not fade Atlas surface')
@@ -408,5 +500,5 @@ for _, client in ipairs({'Retail','Forever'}) do
     assert(late.check.font[1]=='native' and #errors==0,table.concat(errors,'; '))
     Atlas.optionsFrames={};AtlasEJLootFrame=nil;Atlas=nil;AtlasLoot=nil;GetFileIDFromPath=nil
     print('PASS: Atlas '..client..': main/small/large map tiles/pins/geometry, dropdown ownership, native actions/colours, legend pooling, options release/foreign reuse, combat/theme/toggles and optional EJ handling')
-    print('BENCH Atlas '..client..' mock: 1000 legend updates and 1000 warm open/map/options/tree cycles: objects/hooks/hierarchy reads/font writes=0; 1000 stable option state updates: same zero counts, at most one normalisation colour write')
+    print('BENCH Atlas '..client..' mock: 1000 legend updates and 1000 warm open/map/options/tree cycles: objects/hooks/hierarchy reads/font/geometry/icon-texture writes=0; 1000 stable option state updates: same zero counts, at most one normalisation colour write')
 end

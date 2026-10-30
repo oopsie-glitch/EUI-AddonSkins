@@ -2,7 +2,8 @@ local ADDON, ns = ...
 local function DefineSkin()
 ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" end, function(S, module)
     local A = _G.Atlas
-    local soft = ns.CreateSoftSkin(S, module)
+    local flatControls = {}
+    local soft = ns.CreateSoftSkin(S, module, function(f) return flatControls[f] end)
     local H = ns.CreateSkinHelper(S, module)
     local styled, fonts, surfaces, pooled, poolArt, groups = {}, {}, {}, {}, {}, {}
     local generation, waiting, applying = 1, false, false
@@ -184,14 +185,69 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
         end
         Texts(f)
     end
+    local function InsetArt(texture, f, pads)
+        texture:ClearAllPoints()
+        texture:SetPoint("TOPLEFT", f, "TOPLEFT", pads[1], -pads[3])
+        texture:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -pads[2], pads[4])
+    end
+    -- Reuse the public primitive's fill/hover; do not stack another button.
+    -- Atlas deliberately overlaps template bounds, so contain the paint and
+    -- remove decorative borders on owned buttons only (borrowed widgets keep theirs).
+    local function OwnedControl(f, apply, pads)
+        local d = styled[f] or {}; styled[f] = d
+        if d.control then return d.control end
+        local before = {}; for _, r in ipairs(H.Regions(f)) do before[r] = true end
+        flatControls[f] = true
+        apply()
+        local c = {fills = {}, hover = {}, pads = pads or {1, 1, 1, 1}}; d.control = c
+        local painting = false
+        local function Paint(force)
+            if painting or not Ready() then return end
+            local enabled = not f.IsEnabled or f:IsEnabled()
+            if not force and c.generation == generation and c.enabled == enabled then return end
+            painting = true
+            local r, g, b = Color()
+            local factor = enabled and 1 or 0.65
+            for _, t in ipairs(c.fills) do
+                t:SetColorTexture(math.min(1, r + 0.045) * factor,
+                    math.min(1, g + 0.045) * factor, math.min(1, b + 0.045) * factor, 1)
+            end
+            for _, t in ipairs(c.hover) do t:SetAlpha(enabled and 1 or 0) end
+            c.generation, c.enabled = generation, enabled
+            if c.onState then c.onState(enabled) end
+            painting = false
+        end
+        for _, t in ipairs(H.Regions(f)) do
+            if not before[t] and H.Texture(t) then
+                local layer = t:GetDrawLayer()
+                if layer == "BACKGROUND" or layer == "HIGHLIGHT" then
+                    local list = layer == "BACKGROUND" and c.fills or c.hover
+                    list[#list + 1] = t; InsetArt(t, f, c.pads)
+                    H.Hook(t, "SetAllPoints", function() if Ready() then InsetArt(t, f, c.pads) end end)
+                    if layer == "BACKGROUND" then H.Hook(t, "SetColorTexture", function() Paint(true) end) end
+                end
+            end
+        end
+        c.Paint = Paint
+        H.Script(f, "OnEnable", function() Paint() end)
+        H.Script(f, "OnDisable", function() Paint() end)
+        Paint()
+        return c
+    end
     local function Button(f, glyph, size)
         if not H.Allowed(f) then return end
         local d = styled[f] or {}; styled[f] = d
         if not d.button then
             d.button = true
-            if glyph then soft.SoftPageButton(f, glyph, size or 10)
-            else soft.Button(f); if S.StateButtonLabel then S.StateButtonLabel(f) end end
+            local options = (f:GetName() or ""):match("OptionsButton$")
+            OwnedControl(f, function()
+                if glyph then soft.SoftPageButton(f, glyph, size or 10)
+                else soft.Button(f); if S.StateButtonLabel then S.StateButtonLabel(f) end end
+            end, options and {1, 7, 1, 1} or nil)
+            -- Native Options overlaps Lock by six pixels; keep both hit areas distinct.
+            if options and f.SetHitRectInsets then f:SetHitRectInsets(0, 6, 0, 0) end
         end
+        if d.control then d.control.Paint() end
         Texts(f)
     end
     local function IconButton(f)
@@ -208,22 +264,51 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
                 if region then local key = "euiAtlasState" .. index; f[key] = region; keep[#keep + 1] = key end
             end
             -- These are navigation/lock/role glyphs, not square item artwork.
-            soft.Button(f, keep)
+            OwnedControl(f, function() soft.Button(f, keep) end)
         end
+        if d.control then d.control.Paint() end
     end
     local function Dropdown(f)
         if not H.Allowed(f) then return end
         local d = styled[f] or {}; styled[f] = d
+        local arrow = f.Button or _G[(f:GetName() or "") .. "Button"]
+        if not H.Allowed(arrow) then return end
         if not d.dropdown then
             d.dropdown = true
             for _, key in ipairs({"Left", "Middle", "Right", "Background"}) do H.Fade(f[key]) end
-            -- EUI Dropdown adds a decorative arrow on the root. LibDD already
-            -- has its own clickable child: style that child instead of both.
-            d.fill = f:CreateTexture(nil, "BACKGROUND", nil, -8); d.fill:SetAllPoints(f)
-            Button(f.Button or _G[(f:GetName() or "") .. "Button"], "v", 10)
+            d.fill = f:CreateTexture(nil, "BACKGROUND", nil, -8)
+            -- LibDD includes invisible label-frame padding; exclude it from the
+            -- field hit area. Keep native arrow, text and optional child actions.
+            InsetArt(d.fill, f, {16, 0, 1, 7})
+            d.hover = f:CreateTexture(nil, "BACKGROUND", nil, -7); d.hover:SetAllPoints(d.fill)
+            d.hover:SetColorTexture(1, 1, 1, 0.08); d.hover:SetAlpha(0)
+            Button(arrow, "v", 10)
+            d.Tone = function(enabled)
+                local r, g, b = Color(); local factor = enabled and 1 or 0.65
+                d.fill:SetColorTexture(math.min(1, r + 0.035) * factor,
+                    math.min(1, g + 0.035) * factor, math.min(1, b + 0.035) * factor, 1)
+                if not enabled then d.hover:SetAlpha(0) end
+            end
+            styled[arrow].control.onState = d.Tone
+            f:EnableMouse(true)
+            if f.SetHitRectInsets then f:SetHitRectInsets(16, 0, 1, 7) end
+            H.Script(f, "OnMouseDown", function(_, mouse)
+                if mouse ~= "LeftButton" or not Ready() or not H.Allowed(arrow)
+                    or not arrow:IsEnabled() or not arrow:IsShown() then return end
+                local handler = arrow.GetScript and arrow:GetScript("OnMouseDown")
+                if handler then handler(arrow, mouse) end
+            end)
+            H.Script(f, "OnEnter", function()
+                if Ready() and H.Allowed(arrow) and arrow:IsEnabled() then d.hover:SetAlpha(1) end
+            end)
+            H.Script(f, "OnLeave", function() d.hover:SetAlpha(0) end)
+            H.Script(f, "OnHide", function() d.hover:SetAlpha(0) end)
             if ns.BindPopupOwner then ns.BindPopupOwner(S, module, f, menuOptions) end
         end
-        if d.generation ~= generation then d.fill:SetColorTexture(Color()); d.generation = generation end
+        if d.generation ~= generation then
+            d.Tone(arrow:IsEnabled()); d.generation = generation
+        end
+        Button(arrow, "v", 10)
         Font(f.Label); Texts(f)
     end
     local function Scroll(f)
@@ -257,25 +342,79 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
         -- Atlas reuses a fixed visible legend budget, not its full data list.
         for i = 1, (_G.ATLAS_NUM_LINES or 26) do Entry(_G["AtlasEntry" .. i]) end
     end
+    local function Search(f)
+        if not H.Allowed(f) then return end
+        local d = styled[f] or {}; styled[f] = d
+        if not d.search then
+            d.search = true
+            OwnedControl(f, function() soft.EditBox(f) end, {1, 1, 4, 4})
+            -- A contained input edge provides focus feedback without an outer
+            -- border crossing the immediately adjacent Search button.
+            local edge = f:CreateTexture(nil, "BORDER"); edge:SetHeight(1)
+            edge:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 2, 4)
+            edge:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 4)
+            d.edges = {edge}
+            d.hint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            S.Font(d.hint, 0.6, 0.6, 0.62)
+            d.hint:SetPoint("LEFT", f, "LEFT", 7, 0)
+            d.hint:SetText(_G.SEARCH or _G.ATLAS_STRING_SEARCH or "Search")
+            local function Hint()
+                if not Ready() then return end
+                local show = (not f.GetText or f:GetText() == "") and not (f.HasFocus and f:HasFocus())
+                if d.hint:IsShown() ~= show then
+                    if show then d.hint:Show() else d.hint:Hide() end
+                end
+            end
+            local function Focus()
+                if not Ready() then return end
+                local r, g, b = 0.25, 0.25, 0.27
+                if f.HasFocus and f:HasFocus() then r, g, b = S.GetAccentColor() end
+                for _, edge in ipairs(d.edges) do edge:SetColorTexture(r, g, b, 1) end
+                Hint()
+            end
+            d.Focus = Focus
+            H.Script(f, "OnEditFocusGained", Focus); H.Script(f, "OnEditFocusLost", Focus)
+            H.Script(f, "OnTextChanged", Hint)
+        end
+        if d.searchGeneration ~= generation then
+            S.Font(d.hint, 0.6, 0.6, 0.62)
+            if f.SetTextColor then f:SetTextColor(0.92, 0.92, 0.94, 1) end
+            d.control.Paint(); d.Focus(); d.searchGeneration = generation
+        end
+    end
     local roots = {"AtlasFrame", "AtlasFrameSmall", "AtlasFrameLarge"}
     local glyphs = {PrevMapButton = "<", NextMapButton = ">", SizeUpButton = "+", SizeDownButton = "-",
         CollapseButton = ">", ExpandButton = "<"}
     local icons = {"LFGButton", "AdventureJournalMapButton", "AdventureJournalButton", "AtlasLootButton"}
-    local function Lock(f)
+    local function Lock(f, redraw)
         if not H.Allowed(f) then return end
-        IconButton(f)
-        local d = styled[f]
-        if d.lockTone then return end
-        for _, getter in ipairs({"GetNormalTexture", "GetPushedTexture"}) do
-            local texture = f[getter] and f[getter](f)
-            if H.Texture(texture) then
-                -- Keep the native open/closed padlock silhouettes and state
-                -- updates; desaturate the red/yellow decorative plate only.
-                if texture.SetDesaturated then texture:SetDesaturated(true) end
-                texture:SetVertexColor(0.78, 0.78, 0.8, 1)
+        local d = styled[f] or {}; styled[f] = d
+        if not d.lock then
+            d.lock = true
+            f.euiAtlasNormal = f:GetNormalTexture(); f.euiAtlasPushed = f:GetPushedTexture()
+            OwnedControl(f, function() soft.Button(f, {"euiAtlasNormal", "euiAtlasPushed"}) end, {6, 6, 8, 8})
+            if f.SetHitRectInsets then f:SetHitRectInsets(6, 6, 0, 0) end
+            for _, getter in ipairs({"GetNormalTexture", "GetPushedTexture"}) do
+                local t = f[getter](f)
+                if H.Texture(t) then
+                    t:ClearAllPoints(); t:SetSize(12, 16)
+                    t:SetPoint("CENTER", f, "CENTER", getter == "GetPushedTexture" and 1 or 0, getter == "GetPushedTexture" and -1 or 0)
+                    t:SetTexCoord(0, 1, 0, 1); t:SetVertexColor(0.9, 0.9, 0.9, 1)
+                end
             end
         end
-        d.lockTone = true
+        local frames = A.db and A.db.profile and A.db.profile.options and A.db.profile.options.frames
+        local locked = frames and frames.lock
+        -- Atlas replaces these textures in UpdateLock; use those same state slots.
+        if not d.iconDone or d.locked ~= locked or redraw then
+            local path = "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-lock-" .. (locked and "locked.png" or "unlocked.png")
+            for _, getter in ipairs({"GetNormalTexture", "GetPushedTexture"}) do
+                local t = f[getter](f)
+                if H.Texture(t) then t:SetTexture(path) end
+            end
+            d.iconDone, d.locked = true, locked
+        end
+        d.control.Paint()
     end
     local function Window(f)
         if not H.Allowed(f) then return end
@@ -644,6 +783,7 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
         end
     end
     local function Bind()
+        H.Hook(A, "UpdateLock", function() if Ready() then for _, name in ipairs(roots) do Lock(_G[name .. "LockButton"], true) end end end)
         H.Hook(A, "ScrollBar_Update", Entries)
         H.Hook(A, "RefreshMap", function() if Ready() then Entries(); Loot() end end)
         H.Hook(A, "ToggleWindowSize", function() if Ready() then for _, name in ipairs(roots) do Window(_G[name]) end end end)
@@ -666,7 +806,7 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
                 local f = _G["AtlasText_" .. suffix]; if H.Allowed(f) then Texts(f) end
             end
             local search = _G.AtlasSearchEditBox
-            if H.Allowed(search) and not styled[search] then soft.EditBox(search); styled[search] = {} end
+            Search(search)
             for _, name in ipairs({"AtlasSearchButton", "AtlasSearchClearButton", "AtlasSwitchButton"}) do Button(_G[name]) end
             Scroll(_G.AtlasScrollBarScrollBar)
             if ns.BindPopupOwner and _G.AtlasSwitchDD then ns.BindPopupOwner(S, module, _G.AtlasSwitchDD, menuOptions) end

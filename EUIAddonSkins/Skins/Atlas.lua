@@ -98,13 +98,14 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
         d.globe = texture
         local height = f:GetName() == "AtlasFrameLarge" and 512 or 128
         texture:SetTexCoord(2 / 512, 74 / 512, 0, 72 / height)
-        texture:ClearAllPoints(); texture:SetSize(32, 32)
-        texture:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -9)
-        if f.CreateMaskTexture and texture.AddMaskTexture then
-            d.globeMask = f:CreateMaskTexture(nil, "ARTWORK")
-            d.globeMask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-            d.globeMask:SetAllPoints(texture); texture:AddMaskTexture(d.globeMask)
-        end
+        texture:ClearAllPoints(); texture:SetSize(35, 35)
+        texture:SetPoint("TOPLEFT", f, "TOPLEFT", 7, -6)
+        -- Keep the original round globe/rim recognizable inside a square slot.
+        -- Do not add a circular mask: the slot follows the reference icon shape.
+        d.logoSlot = f:CreateTexture(nil, "BACKGROUND", nil, -6)
+        d.logoSlot:SetAllPoints(texture)
+        local r, g, b = Color()
+        d.logoSlot:SetColorTexture(r * 0.6, g * 0.6, b * 0.6, 1)
     end
     local function DiscoverChrome(f, d)
         local count = f.GetNumRegions and f:GetNumRegions()
@@ -124,19 +125,63 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
         d.pendingChrome = slots and found < #slots or false
         d.regionCount = f.GetNumRegions and f:GetNumRegions()
     end
-    -- One same-frame background, below native map tiles and information. No
-    -- extra info/legend/header rectangles, raised sibling panels or clipping.
+    local function Gradient(texture, r1, g1, b1, r2, g2, b2)
+        texture:SetColorTexture(1, 1, 1, 1)
+        if texture.SetGradient and CreateColor then
+            texture:SetGradient("HORIZONTAL", CreateColor(r1, g1, b1, 1), CreateColor(r2, g2, b2, 1))
+        elseif texture.SetGradientAlpha then
+            texture:SetGradientAlpha("HORIZONTAL", r1, g1, b1, 1, r2, g2, b2, 1)
+        else texture:SetColorTexture(r1, g1, b1, 1) end
+    end
+    -- Two adjoining opaque halves form one cohesive surface. All art stays on
+    -- the native root below map tiles/text; no raised information-panel fills.
     local function Surface(f)
         if not H.Allowed(f) then return end
         local d = surfaces[f]
         if not d then
             d = {chrome = {}, parts = {}}; surfaces[f] = d
-            d.fill = f:CreateTexture(nil, "BACKGROUND", nil, -8); d.fill:SetAllPoints(f)
+            d.fill = f:CreateTexture(nil, "BACKGROUND", nil, -8)
+            d.right = f:CreateTexture(nil, "BACKGROUND", nil, -8)
+            d.fill:SetPoint("TOPLEFT", f, "TOPLEFT")
+            d.fill:SetPoint("BOTTOMRIGHT", f, "BOTTOM")
+            d.right:SetPoint("TOPLEFT", f, "TOP")
+            d.right:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT")
+            if chromeSlots[f:GetName()] then
+                d.header = f:CreateTexture(nil, "BACKGROUND", nil, -7)
+                d.header:SetPoint("TOPLEFT", f, "TOPLEFT")
+                d.header:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", 0, -80)
+                d.footer = f:CreateTexture(nil, "BACKGROUND", nil, -7)
+                d.footer:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 0, 35)
+                d.footer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT")
+                if f:GetName() == "AtlasFrame" then
+                    d.separator = f:CreateTexture(nil, "BACKGROUND", nil, -6)
+                    d.separator:SetPoint("TOPLEFT", f, "TOPLEFT", 540, -195)
+                    d.separator:SetPoint("TOPRIGHT", f, "TOPRIGHT", -18, -195)
+                    d.separator:SetHeight(1)
+                    d.divider = f:CreateTexture(nil, "BACKGROUND", nil, -6)
+                    d.divider:SetPoint("TOPLEFT", f, "TOPLEFT", 534, -84)
+                    d.divider:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 534, 35)
+                    d.divider:SetWidth(1)
+                end
+            end
         end
-        -- Constructors may assign textures after the frame is first observed.
-        -- Completed roots do no region walk on warm show/map/theme callbacks.
         DiscoverChrome(f, d)
-        if d.generation ~= generation then d.fill:SetColorTexture(Color()); d.generation = generation end
+        if d.generation ~= generation then
+            local r, g, b = Color()
+            local cr, cg, cb = math.min(1, r + 0.045), math.min(1, g + 0.045), math.min(1, b + 0.04)
+            Gradient(d.fill, r, g, b, cr, cg, cb)
+            Gradient(d.right, cr, cg, cb, r, g, b)
+            if d.header then
+                d.header:SetColorTexture(r * 0.8, g * 0.8, b * 0.8, 1)
+                d.footer:SetColorTexture(r * 0.8, g * 0.8, b * 0.8, 1)
+            end
+            if d.separator then
+                d.separator:SetColorTexture(1, 1, 1, 0.10)
+                d.divider:SetColorTexture(1, 1, 1, 0.08)
+            end
+            if d.logoSlot then d.logoSlot:SetColorTexture(r * 0.6, g * 0.6, b * 0.6, 1) end
+            d.generation = generation
+        end
         Texts(f)
     end
     local function Button(f, glyph, size)

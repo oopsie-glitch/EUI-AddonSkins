@@ -27,18 +27,20 @@ root: blanket texture stripping would remove meaningful content.
 
 The adapter styles the normal, small and large window chrome, headers, close,
 options, lock, size/navigation/legend controls, dropdowns, search and legend
-scrollbar. It replaces only the identified Atlas frame decoration and places
-one background fill below the native map textures on the same frame. Map
-artwork, proportions, pin sprites, labels, legend colours, tooltip handlers,
-window geometry and input callbacks stay native.
+scrollbar. It suppresses only identified Atlas decoration. The current
+background uses two adjoining opaque, theme-derived horizontal gradients at
+BACKGROUND -8: slightly lighter in the centre and darker at the outer edges.
+Header and 35-pixel footer surfaces at BACKGROUND -7 establish restrained
+contrast and integrate the native search field/buttons without moving them.
+The main information section has a one-pixel horizontal separator at y=-195
+and a one-pixel map/information divider at x=534, both BACKGROUND -6. No filled
+information or legend rectangle, raised sibling or clipping change is used.
+Map artwork, proportions, pins, labels, semantic colours and callbacks remain
+native. Atlas's explicit whole-window opacity settings remain authoritative;
+the skin's surface alpha is always 1, independent of EUI panel transparency.
 
-Iteration 3 removes the extra header, toolbar, info and legend fills added in
-iteration 2. The unwanted upper-right rectangle corresponds to `d.info`, an
-anonymous texture owned by `AtlasFrame`, at BACKGROUND sublevel -7 and the root's
-unchanged frame level/strata, anchored from (538, -82) to TOPRIGHT (-18, -197).
-It was not an independently raised window. Only the original full-window fill
-at BACKGROUND sublevel -8 remains; native text-frame placement separates the
-information sections without stacked opaque panels or clipping changes.
+Iteration 3 removed the unwanted `d.info` rectangle and redundant composites.
+Those fixes remain: no large opaque information-panel overlay is reintroduced.
 
 The anonymous `AtlasFrame-*`, `AtlasFrameSmall-*` and `AtlasFrameLarge-*`
 composites contain the stone, metallic edges and globe. Discovery now matches
@@ -55,12 +57,12 @@ assumptions and early caching; the specific texture getter/anchor values on the
 user's live client cannot be measured from a screenshot and remain unverified.
 
 The globe is baked into the TopLeft texture rather than being an independent
-button. Its ORIGINAL texture is now cropped (including its rim), masked and
-resized to 32-by-32 at header offset (16, -9). No second globe texture is created,
-even if the original is not identified until a later show. The same Blizzard
-portrait mask Atlas uses for pins is reused. No image is redistributed. Native
-root drag/click/tooltip handling stays unchanged. Native open/closed lock
-textures retain their state changes, desaturation and subdued tint.
+button. Its ORIGINAL globe-and-rim crop is now 35-by-35 (about 10% larger than
+32), at header offset (7, -6), inside a dark square slot. The circular mask has
+been removed; the recognizable original globe/rim stays in its square crop.
+No second globe texture or upstream image is added. Late discovery receives
+its slot colour immediately. Native root drag/click/tooltip handling stays
+unchanged. Open/closed lock textures retain native state changes and tint.
 
 LibDD's existing clickable child arrow is styled directly with a 10-pixel EUI
 chevron; the adapter does not also request EUI's root-level decorative arrow.
@@ -142,7 +144,7 @@ An additional 1,000 warm open/map/options/tree callback cycles per client also
 add no UI objects/hooks, hierarchy reads or font writes. Styling is cached per
 theme generation and ownership acquisition; no polling or timers are added.
 
-Iteration 3 adds assertions for exactly one full-window fill, no new globe art,
+Regression coverage checks the adjoining opaque surface, no new globe art,
 reuse of the original globe/rim, unchanged levels/strata/text, late texture
 assignment with an unchanged region count, numeric IDs, normalized basenames,
 subpixel anchors and hidden native submenu buttons. The previous implementations
@@ -155,8 +157,9 @@ On each client with current Atlas and suitable separately installed map modules:
 1. Open/reopen all three sizes; lock, drag, scale, resize and collapse/expand.
    Confirm complete maps/tiles, original proportions, readable headers and
    legend data at opaque and transparent Atlas settings.
-   Check the smaller globe's crop/placement and the remaining separation of
-   native upper/lower information sections over the single matte background.
+   Check the square globe slot/crop/placement, centre-to-edge shading, header
+   and search/footer contrast, and subtle upper/lower information separation.
+   Atlas's own opacity slider still fades the entire native window.
 2. Change map type/map, navigate back/forward, search/clear, scroll the legend
    and hover/click native pins and entries. Check dropdown/submenu reuse.
 3. Open General, Options and Profiles; change checkboxes, scales and dropdowns.

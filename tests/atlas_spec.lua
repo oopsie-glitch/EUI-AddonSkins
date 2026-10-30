@@ -5,8 +5,9 @@ for _, client in ipairs({'Retail','Forever'}) do
     local looks,events,modules,errors={},{},{},{}
     local fileIDs,assetReads={},0
     GetFileIDFromPath=function(path)assetReads=assetReads+1;return fileIDs[path:lower():gsub('%.blp$','')]end
+    CreateColor=function(r,g,b,a)return {r,g,b,a}end
     local enabled,combat=true,false
-    local accent={.2,.7,.4};local face='eui-font'
+    local accent={.2,.7,.4};local face='eui-font';local panel={.05,.06,.07,.9}
     local function anchors(o)
         function o:SetAllPoints(f) self.all=f end
         function o:SetPoint(...) self.points=self.points or {};self.points[#self.points+1]={...}end
@@ -47,6 +48,11 @@ for _, client in ipairs({'Retail','Forever'}) do
         function t:GetDrawLayer()return self.layer end
         function t:SetColorTexture(...)colorWrites=colorWrites+1;self.color={...}end
         function t:SetVertexColor(...)self.color={...}end
+        if client=='Retail' then
+            function t:SetGradient(direction,first,last) self.gradient={direction,first,last} end
+        else
+            function t:SetGradientAlpha(direction,...) self.gradient={direction,{...}} end
+        end
         function t:GetVertexColor()return table.unpack(self.color)end
         function t:SetTexCoord(...)self.crop={...}end
         function t:GetFont()return table.unpack(self.font)end
@@ -107,7 +113,7 @@ for _, client in ipairs({'Retail','Forever'}) do
         local b=frame('Button',name,parent);b.label=text(b);b.action=function()return 'native',nil,7 end
         b.scripts.OnClick=b.action;return b
     end
-    local S={GetAccentColor=function()return table.unpack(accent)end,GetPanelColor=function()return .05,.06,.07,.9 end,
+    local S={GetAccentColor=function()return table.unpack(accent)end,GetPanelColor=function()return table.unpack(panel)end,
         GetFont=function()return face,''end,OnLooksChanged=function(fn)looks[#looks+1]=fn end}
     local function paint(f,kind,keep)
         if not f["painted"..kind]then f["painted"..kind]=true;local bg=f:CreateTexture(nil,'BACKGROUND');bg:SetColorTexture(.05,.06,.07,.9)end
@@ -242,19 +248,37 @@ for _, client in ipairs({'Retail','Forever'}) do
     assert(popupOwners[AtlasFrameDropDown].noAccent and popupOwners[AtlasFrameDropDown].chevrons and popupOwners[AtlasFrameDropDown].compactChecks)
     assert(popupOwners.AtlasSwitchDD==nil)
     for _,name in ipairs({'AtlasFrame','AtlasFrameSmall','AtlasFrameLarge'})do
-        local f=_G[name];local globes,fills=0,0
+        local f=_G[name];local globes,halves,lines=0,0,0
         for _,r in ipairs(f.regions)do
             if r.kind=='Texture' and r.path==nil then
-                fills=fills+1
-                assert(r.layer=='BACKGROUND' and r.sublevel==-8 and r.all==f,'covering info/header/legend rectangle returned')
+                assert(r.layer=='BACKGROUND','surface must stay below native art')
+                if r.gradient then
+                    halves=halves+1
+                    assert(r.sublevel==-8 and r.color[4]==1,'background must be opaque')
+                    local grad=r.gradient
+                    if client=='Retail' then
+                        assert(grad[2][4]==1 and grad[3][4]==1)
+                        if halves==1 then assert(grad[2][1]<grad[3][1],'centre must be lighter')
+                        else assert(grad[2][1]>grad[3][1],'edge must be darker')end
+                    else assert(grad[2][4]==1 and grad[2][8]==1)end
+                elseif r.h==1 or r.w==1 then
+                    lines=lines+1;assert(r.sublevel==-6,'section separators must stay on root')
+                else
+                    local header=r.sublevel==-7 and r.points[1][1]=='TOPLEFT' and r.points[2][3]=='TOPRIGHT' and r.points[2][5]==-80
+                    local footer=r.sublevel==-7 and r.points[1][3]=='BOTTOMLEFT' and r.points[1][5]==35 and r.points[2][3]=='BOTTOMRIGHT'
+                    assert(header or footer or r.sublevel==-6 and r.all==nativeGlobes[name],
+                        'large information-panel overlay returned')
+                    assert(r.color[4]==1,'header/footer/logo must remain opaque')
+                end
             end
-            if r.w==32 and r.h==32 and r.crop and r.crop[1]==2/512 then
+            if r.w==35 and r.h==35 and r.crop and r.crop[1]==2/512 then
                 globes=globes+1
-                assert(r==nativeGlobes[name] and r.mask,'globe must reuse original composite')
-                assert(r.crop[2]==74/512 and r.points[1][4]==16 and r.points[1][5]==-9)
+                assert(r==nativeGlobes[name] and not r.mask,'square globe must reuse original without circular mask')
+                assert(r.crop[2]==74/512 and r.points[1][4]==7 and r.points[1][5]==-6)
             end
         end
-        assert(fills==1 and globes==1,'one base fill and one original globe expected')
+        assert(halves==2 and globes==1,'one adjoining background and one original globe expected')
+        assert(lines==(name=='AtlasFrame' and 2 or 0),'only main information panel needs separators')
         assert(f:GetFrameLevel()==rootMetadata[f].level and f:GetFrameStrata()==rootMetadata[f].strata)
     end
     Atlas.db.profile.options.frames.lock=true
@@ -368,8 +392,18 @@ for _, client in ipairs({'Retail','Forever'}) do
     for _,e in ipairs(events)do if e.events and e.events.PLAYER_REGEN_ENABLED then e.scripts.OnEvent(e,'PLAYER_REGEN_ENABLED')end end
     -- Open Settings groups are discovered at combat recovery without invoking native data actions.
     assert(late.check.alpha==0)
-    face='changed-font';accent={.9,.1,.2}
+    local beforeTheme=created
+    panel={.12,.10,.08,0};face='changed-font';accent={.9,.1,.2}
     for _,fn in ipairs(looks)do fn()end
+    assert(created==beforeTheme,'theme change must reuse surface textures')
+    for _,r in ipairs(AtlasFrame.regions)do
+        if r.gradient then
+            assert(r.color[4]==1,'EUI transparent panel setting must not fade Atlas surface')
+            if client=='Retail' then assert(r.gradient[2][1]>=.12 and r.gradient[3][1]>=.12)end
+        end
+    end
+    AtlasFrame:SetAlpha(.4);modules.Atlas.refresh()
+    assert(AtlasFrame.alpha==.4,'explicit native whole-window opacity must survive refresh')
     assert(AtlasEntry1.Text.font[1]==face and late.frame.regions[5].color[1]==.9)
     assert(late.check.font[1]=='native' and #errors==0,table.concat(errors,'; '))
     Atlas.optionsFrames={};AtlasEJLootFrame=nil;Atlas=nil;AtlasLoot=nil;GetFileIDFromPath=nil

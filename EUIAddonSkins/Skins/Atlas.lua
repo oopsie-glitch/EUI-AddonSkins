@@ -99,14 +99,14 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
         d.globe = texture
         local height = f:GetName() == "AtlasFrameLarge" and 512 or 128
         texture:SetTexCoord(2 / 512, 74 / 512, 0, 72 / height)
-        texture:ClearAllPoints(); texture:SetSize(35, 35)
-        texture:SetPoint("TOPLEFT", f, "TOPLEFT", 7, -6)
-        -- Keep the original round globe/rim recognizable inside a square slot.
-        -- Do not add a circular mask: the slot follows the reference icon shape.
-        d.logoSlot = f:CreateTexture(nil, "BACKGROUND", nil, -6)
-        d.logoSlot:SetAllPoints(texture)
-        local r, g, b = Color()
-        d.logoSlot:SetColorTexture(r * 0.6, g * 0.6, b * 0.6, 1)
+        texture:ClearAllPoints(); texture:SetSize(32, 32)
+        texture:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -9)
+        -- Restore the complete original round globe/rim, without a square slot.
+        if f.CreateMaskTexture and texture.AddMaskTexture then
+            d.globeMask = f:CreateMaskTexture(nil, "ARTWORK")
+            d.globeMask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            d.globeMask:SetAllPoints(texture); texture:AddMaskTexture(d.globeMask)
+        end
     end
     local function DiscoverChrome(f, d)
         local count = f.GetNumRegions and f:GetNumRegions()
@@ -180,7 +180,6 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
                 d.separator:SetColorTexture(1, 1, 1, 0.10)
                 d.divider:SetColorTexture(1, 1, 1, 0.08)
             end
-            if d.logoSlot then d.logoSlot:SetColorTexture(r * 0.6, g * 0.6, b * 0.6, 1) end
             d.generation = generation
         end
         Texts(f)
@@ -282,12 +281,17 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
             InsetArt(d.fill, f, {16, 0, 1, 7})
             d.hover = f:CreateTexture(nil, "BACKGROUND", nil, -7); d.hover:SetAllPoints(d.fill)
             d.hover:SetColorTexture(1, 1, 1, 0.08); d.hover:SetAlpha(0)
+            d.accent = f:CreateTexture(nil, "BACKGROUND", nil, -6)
+            d.accent:SetPoint("BOTTOMLEFT", d.fill, "BOTTOMLEFT")
+            d.accent:SetPoint("BOTTOMRIGHT", d.fill, "BOTTOMRIGHT"); d.accent:SetHeight(1)
             Button(arrow, "v", 10)
             d.Tone = function(enabled)
                 local r, g, b = Color(); local factor = enabled and 1 or 0.65
                 d.fill:SetColorTexture(math.min(1, r + 0.035) * factor,
                     math.min(1, g + 0.035) * factor, math.min(1, b + 0.035) * factor, 1)
-                if not enabled then d.hover:SetAlpha(0) end
+                local ar, ag, ab = S.GetAccentColor()
+                if not enabled then ar, ag, ab = 0.4, 0.4, 0.4; d.hover:SetAlpha(0) end
+                d.accent:SetColorTexture(ar, ag, ab, 0.65)
             end
             styled[arrow].control.onState = d.Tone
             f:EnableMouse(true)
@@ -330,15 +334,18 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
     end
     local function Entry(f)
         if not H.Allowed(f) then return end
+        local cached = styled[f]
+        if cached and cached.entryGeneration == generation and cached.entryText == (f.Text or f.text) then return end
         Font(f.Text or f.text)
         local d = styled[f] or {}; styled[f] = d
         if not d.entry then
             d.entry = true
             if H.Texture(f.Highlight) then f.Highlight:SetColorTexture(1, 1, 1, 0.08) end
         end
+        d.entryGeneration, d.entryText = generation, f.Text or f.text
     end
     local function Entries()
-        if not Ready() then return end
+        if not Ready() or _G.AtlasFrame and not _G.AtlasFrame:IsShown() then return end
         -- Atlas reuses a fixed visible legend budget, not its full data list.
         for i = 1, (_G.ATLAS_NUM_LINES or 26) do Entry(_G["AtlasEntry" .. i]) end
     end
@@ -418,6 +425,11 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
     end
     local function Window(f)
         if not H.Allowed(f) then return end
+        local cached, surface = styled[f], surfaces[f]
+        -- These Atlas roots construct their controls eagerly. Revisit incomplete
+        -- chrome, changed root regions, explicit refreshes and new look generations.
+        if cached and cached.windowGeneration == generation and surface and not surface.pendingChrome
+            and f.GetNumRegions and f:GetNumRegions() == surface.regionCount then return end
         Surface(f)
         local name = f:GetName()
         local d = styled[f] or {}; styled[f] = d
@@ -433,6 +445,7 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
         for _, suffix in ipairs(icons) do IconButton(_G[name .. suffix]) end
         Dropdown(_G[name .. "DropDownType"]); Dropdown(_G[name .. "DropDown"])
         Font(f.ZoneName and f.ZoneName.Text)
+        d.windowGeneration = generation
     end
     local function LootRow(item)
         if not Ready() or not H.Allowed(item) then return end
@@ -785,7 +798,7 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
     local function Bind()
         H.Hook(A, "UpdateLock", function() if Ready() then for _, name in ipairs(roots) do Lock(_G[name .. "LockButton"], true) end end end)
         H.Hook(A, "ScrollBar_Update", Entries)
-        H.Hook(A, "RefreshMap", function() if Ready() then Entries(); Loot() end end)
+        -- RefreshMap already completes ScrollBar_Update, and hides EJ itself.
         H.Hook(A, "ToggleWindowSize", function() if Ready() then for _, name in ipairs(roots) do Window(_G[name]) end end end)
         H.Hook(A, "ToggleLegendPanel", function() if Ready() then for _, name in ipairs(roots) do Window(_G[name]) end end end)
         H.Hook(A, "OpenOptions", function() if Ready() then Options() end end)
@@ -817,11 +830,18 @@ ns.RegisterModule("Atlas", "Atlas", function() return type(_G.Atlas) == "table" 
         soft.RefreshSoftBorders()
         applying = false
     end
-    events:SetScript("OnEvent", function(_, event)
-        if event ~= "PLAYER_REGEN_ENABLED" or waiting then H.Safe(Apply) end
+    events:SetScript("OnEvent", function(_, event, name)
+        if event == "PLAYER_REGEN_ENABLED" then
+            if waiting then H.Safe(Apply) end
+        elseif name == "Atlas" or name == "Blizzard_EncounterJournal" then H.Safe(Apply) end
     end)
     if S.OnLooksChanged then S.OnLooksChanged(function() generation = generation + 1; H.Safe(Apply) end) end
-    module.refresh = function() H.Safe(Apply) end
+    module.refresh = function()
+        for _, name in ipairs(roots) do
+            local d = styled[_G[name]]; if d then d.windowGeneration = nil end
+        end
+        H.Safe(Apply)
+    end
     H.Safe(Apply)
 end)
 end

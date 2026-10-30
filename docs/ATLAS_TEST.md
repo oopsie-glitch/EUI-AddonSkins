@@ -57,12 +57,10 @@ assumptions and early caching; the specific texture getter/anchor values on the
 user's live client cannot be measured from a screenshot and remain unverified.
 
 The globe is baked into the TopLeft texture rather than being an independent
-button. Its ORIGINAL globe-and-rim crop is now 35-by-35 (about 10% larger than
-32), at header offset (7, -6), inside a dark square slot. The circular mask has
-been removed; the recognizable original globe/rim stays in its square crop.
-No second globe texture or upstream image is added. Late discovery receives
-its slot colour immediately. Native root drag/click/tooltip handling stays
-unchanged.
+button. Its ORIGINAL globe-and-rim crop again uses the previous round design:
+32-by-32 at (16, -9), with the existing Blizzard portrait mask. The obsolete
+square slot is removed. Native decorative rim and root interactions remain;
+no duplicate globe texture or redistributed image is used.
 
 ## Owned control refinement
 
@@ -100,7 +98,10 @@ receiver. Native arrow scripts, menu anchoring, selection and submenus remain
 unchanged. The clickable field excludes LibDD's decorative left/top/bottom
 padding and does not cover the label or neighboring selector. Child actions
 remain independent. Disabled/hidden arrows, disabled skin and combat gate the
-added field-click path. A small local hover wash is reused on reopening.
+added field-click path. A small local hover wash is reused on reopening. Each selector also has one
+contained one-pixel bottom accent bar at alpha 0.65, synchronized with the EUI
+accent on look changes (grey while disabled). This is an Atlas-specific choice;
+no menu top stripe or shared-helper default was changed.
 
 
 LibDD's existing clickable child arrow is styled directly with a 10-pixel EUI
@@ -192,6 +193,15 @@ assignment with an unchanged region count, numeric IDs, normalized basenames,
 subpixel anchors and hidden native submenu buttons. The previous implementations
 fail the new regression assertions.
 
+## Reopening performance
+
+See [the audit](ATLAS_PERFORMANCE.md) for repeatable before/after timings,
+call counts, allocation churn, source review and limits. Completed eager roots
+skip warm control passes, nested map/legend styling runs once, unrelated addon
+loads do not repaint closed Atlas, and hidden legend cosmetics wait for show.
+Pending/changed chrome, look changes, explicit refresh and row/text replacement
+remain covered. No actual in-game latency or FPS improvement is claimed.
+
 ## In-game verification still required
 
 On each client with current Atlas and suitable separately installed map modules:
@@ -199,7 +209,7 @@ On each client with current Atlas and suitable separately installed map modules:
 1. Open/reopen all three sizes; lock, drag, scale, resize and collapse/expand.
    Confirm complete maps/tiles, original proportions, readable headers and
    legend data at opaque and transparent Atlas settings.
-   Check the square globe slot/crop/placement, centre-to-edge shading, header
+   Check the round globe/rim crop/placement, centre-to-edge shading, header
    and search/footer contrast, and subtle upper/lower information separation.
    Test both lock states/pressed/hover feedback, Options/Lock/Close separation,
    Search/Clear input, accent focus/hint, and Category/Map text/arrow clicks.

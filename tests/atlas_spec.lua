@@ -162,10 +162,10 @@ for _, client in ipairs({'Retail','Forever'}) do
     local popupOwners={}
     ns.BindPopupOwner=function(_,_,f,options)popupOwners[f]=options or true end
     assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins',ns)
-    assert(loadfile('EUIAddonSkins/Skins/Atlas.lua'))('EUIAddonSkins',ns)
+    assert(loadfile(os.getenv('ATLAS_SKIN_PATH') or 'EUIAddonSkins/Skins/Atlas.lua'))('EUIAddonSkins',ns)
     Atlas=nil;AtlasLoot={GUI={}};assert(not modules.Atlas.available(),'AtlasLoot wrongly activates Atlas')
     Atlas={LocName='Atlas',optionsFrames={},ScrollBar_Update=function()return 'scroll',nil,4 end,
-        RefreshMap=function()return 'map',nil,8 end,ToggleWindowSize=function()return 'size'end,
+        RefreshMap=function(self)self:ScrollBar_Update();return 'map',nil,8 end,ToggleWindowSize=function()return 'size'end,
         ToggleLegendPanel=function()return 'legend'end,OpenOptions=function()return 'options'end,
         SetupOptions=function()end,RegisterModuleOptions=function()end}
     Atlas.db={profile={options={frames={lock=false}}}}
@@ -176,7 +176,7 @@ for _, client in ipairs({'Retail','Forever'}) do
         end
         return 'lock',nil,6
     end
-    ATLAS_HAS_EJ=client=='Retail';ATLAS_NUM_LINES=2
+    ATLAS_HAS_EJ=client=='Retail';ATLAS_NUM_LINES=ATLAS_BENCHMARK and 26 or 2
     local mapRegions,chrome,nativeGlobes,rootMetadata={},{},{},{}
     for rootIndex,name in ipairs({'AtlasFrame','AtlasFrameSmall','AtlasFrameLarge'})do
         local f=frame('Frame',name);f:SetSize(name=='AtlasFrameSmall' and 534 or 1023,name=='AtlasFrameLarge' and 790 or 631);f:SetPoint('TOPLEFT',0,-104)
@@ -250,7 +250,7 @@ for _, client in ipairs({'Retail','Forever'}) do
     AtlasScrollBarScrollBar.thumb=AtlasScrollBarScrollBar:CreateTexture(nil,'ARTWORK')
     for _,suffix in ipairs({'ScrollUpButton','ScrollDownButton'})do button('AtlasScrollBarScrollBar'..suffix,AtlasScrollBarScrollBar)end
     AtlasSwitchDD=frame('Frame','AtlasSwitchDD',AtlasFrame)
-    for i=1,2 do local b=button('AtlasEntry'..i,AtlasFrame);b.Text=b.label;b.Highlight=b:CreateTexture(nil,'HIGHLIGHT');b.scripts.OnUpdate=function()return 'native tooltip'end end
+    for i=1,ATLAS_NUM_LINES do local b=button('AtlasEntry'..i,AtlasFrame);b.Text=b.label;b.Highlight=b:CreateTexture(nil,'HIGHLIGHT');b.scripts.OnUpdate=function()return 'native tooltip'end end
     Atlas.WorldMap={Button=button(nil,frame('Frame'))};local world=Atlas.WorldMap.Button
     world.Icon=world:CreateTexture(nil,'ARTWORK');world.Border=world:CreateTexture(nil,'ARTWORK');world.Background=world:CreateTexture(nil,'BACKGROUND')
     AtlasEJLootFrame=nil
@@ -268,6 +268,17 @@ for _, client in ipairs({'Retail','Forever'}) do
     local gui={Release=function(_,widget)widget.released=true;return 'release'end}
     local dialog={FeedGroup=function(_,id,_,container)return 'feed',nil,id end,OpenFrames={}}
     LibStub=function(name)if name=='AceGUI-3.0'then return gui elseif name=='AceConfigDialog-3.0'then return dialog end end
+    if ATLAS_BENCHMARK then
+        local context={client=client,A=Atlas,S=S,ns=ns,module=modules.Atlas,events=events,
+            root=AtlasFrame,gui=gui,dialog=dialog,errors=errors}
+        context.counts=function()return {objects=created,hooks=hooks,hierarchy_reads=reads,
+            font_writes=fontWrites,geometry_writes=geometryWrites,texture_writes=textureWrites,color_writes=colorWrites}end
+        context.complete=function()
+            for _,r in ipairs(chrome)do if r.pendingPath then r:SetTexture(r.pendingPath)end end
+        end
+        context.install=function()modules.Atlas.install(S,modules.Atlas)end
+        ATLAS_BENCHMARK(context)
+    else
     modules.Atlas.install(S,modules.Atlas)
     assert(#errors==0,table.concat(errors,'; '))
     -- First observation can precede native texture assignment; never add a second globe.
@@ -309,15 +320,15 @@ for _, client in ipairs({'Retail','Forever'}) do
                 else
                     local header=r.sublevel==-7 and r.points[1][1]=='TOPLEFT' and r.points[2][3]=='TOPRIGHT' and r.points[2][5]==-80
                     local footer=r.sublevel==-7 and r.points[1][3]=='BOTTOMLEFT' and r.points[1][5]==35 and r.points[2][3]=='BOTTOMRIGHT'
-                    assert(header or footer or r.sublevel==-6 and r.all==nativeGlobes[name],
+                    assert(header or footer,
                         'large information-panel overlay returned')
                     assert(r.color[4]==1,'header/footer/logo must remain opaque')
                 end
             end
-            if r.w==35 and r.h==35 and r.crop and r.crop[1]==2/512 then
+            if r.w==32 and r.h==32 and r.crop and r.crop[1]==2/512 then
                 globes=globes+1
-                assert(r==nativeGlobes[name] and not r.mask,'square globe must reuse original without circular mask')
-                assert(r.crop[2]==74/512 and r.points[1][4]==7 and r.points[1][5]==-6)
+                assert(r==nativeGlobes[name] and r.mask,'round globe must reuse original and portrait mask')
+                assert(r.crop[2]==74/512 and r.points[1][4]==16 and r.points[1][5]==-9)
             end
         end
         assert(halves==2 and globes==1,'one adjoining background and one original globe expected')
@@ -354,10 +365,14 @@ for _, client in ipairs({'Retail','Forever'}) do
     dropdown.scripts.OnMouseDown(dropdown,'LeftButton');assert(dropdown.openCount==1 and dropdown.lastMouse=='LeftButton')
     local a,b,c=dropdown.Button.scripts.OnMouseDown(dropdown.Button,'LeftButton');assert(a=='native dropdown'and b==nil and c==9 and dropdown.openCount==2)
     dropdown.scripts.OnMouseDown(dropdown,'RightButton');assert(dropdown.openCount==2)
-    dropdown.scripts.OnEnter(dropdown);dropdown.Button:Disable();assert(dropdown.regions[#dropdown.regions].alpha==0);dropdown.scripts.OnMouseDown(dropdown,'LeftButton');assert(dropdown.openCount==2);dropdown.Button:Enable()
+    dropdown.scripts.OnEnter(dropdown);dropdown.Button:Disable();assert(dropdown.regions[#dropdown.regions-1].alpha==0);dropdown.scripts.OnMouseDown(dropdown,'LeftButton');assert(dropdown.openCount==2);dropdown.Button:Enable()
     enabled=false;dropdown.scripts.OnMouseDown(dropdown,'LeftButton');assert(dropdown.openCount==2);enabled=true
     combat=true;dropdown.scripts.OnMouseDown(dropdown,'LeftButton');assert(dropdown.openCount==2);combat=false
     assert(dropdown.favorite.scripts.OnClick()=='native' and dropdown.openCount==2,'distinct child action changed')
+    local selectorAccent=dropdown.regions[#dropdown.regions]
+    assert(selectorAccent.h==1 and selectorAccent.color[1]==accent[1] and selectorAccent.color[4]==.65)
+    assert(selectorAccent.points[1][2]==selectorAccent.points[2][2] and selectorAccent.points[1][3]=='BOTTOMLEFT' and selectorAccent.points[2][3]=='BOTTOMRIGHT')
+    dropdown.Button:Disable();assert(selectorAccent.color[1]==.4);dropdown.Button:Enable();assert(selectorAccent.color[1]==accent[1])
     local search=AtlasSearchEditBox;local hint,edge
     for _,r in ipairs(search.regions)do
         if r.kind=='FontString' and r.text=='Search' then hint=r end
@@ -374,12 +389,42 @@ for _, client in ipairs({'Retail','Forever'}) do
     search:SetText('');assert(hint.shown)
     assert(search.inputColor[1]==.92 and search.apiFill.points[1][5]==-4 and search.apiFill.points[2][5]==4)
     assert(world.Border.alpha==0 and world.Icon.alpha==1)
+    local function profile(fn)
+        local names={}
+        debug.sethook(function(event)
+            if event=='call' then
+                local info=debug.getinfo(2,'Sn')
+                if info.source:match('[/\\]Atlas%.lua$')then local key=info.name or '(closure)';names[key]=(names[key]or 0)+1 end
+            end
+        end,'c')
+        fn();debug.sethook();return names
+    end
+    local visits=profile(function()local a,b,c=Atlas:RefreshMap();assert(a=='map'and b==nil and c==8)end)
+    assert(visits.Entry==ATLAS_NUM_LINES,'map completion styled the legend more than once')
+    visits=profile(function()AtlasFrame:Hide();AtlasFrame:Show()end)
+    assert(not visits.Button and not visits.IconButton and not visits.Lock,'warm reopen revisits completed eager controls')
+    local beforeClosed={created,hooks,reads,fontWrites,geometryWrites,colorWrites}
+    AtlasFrame:Hide()
+    for _=1,1000 do
+        for _,event in ipairs(events)do
+            if event.events and event.events.ADDON_LOADED then event.scripts.OnEvent(event,'ADDON_LOADED','UnrelatedAddon')end
+        end
+        Atlas:ScrollBar_Update()
+    end
+    assert(created==beforeClosed[1] and hooks==beforeClosed[2] and reads==beforeClosed[3] and fontWrites==beforeClosed[4] and geometryWrites==beforeClosed[5] and colorWrites==beforeClosed[6],'closed Atlas performs unrelated cosmetic work')
+    visits=profile(function()Atlas:ScrollBar_Update()end);assert(not visits.Entry,'closed legend walked rows')
+    AtlasFrame:Show()
     local n,r,fw,c=created,reads,fontWrites,hooks
     for _=1,1000 do local a,b,v=Atlas:ScrollBar_Update();assert(a=='scroll'and b==nil and v==4)end
     assert(created==n and reads==r and fontWrites==fw and hooks==c,'warm legend updates do skin discovery')
     assert(AtlasEntry1.scripts.OnUpdate()=='native tooltip' and AtlasEntry1.scripts.OnClick()=='native')
     local newEntry=button('AtlasEntry2',AtlasFrame);newEntry.Text=newEntry.label
     Atlas:ScrollBar_Update();assert(newEntry.Text.font[1]==face,'same-count legend replacement missed')
+    newEntry.Text=text(newEntry);Atlas:ScrollBar_Update();assert(newEntry.Text.font[1]==face,'reused row text replacement missed')
+    local lateChrome=AtlasFrame:CreateTexture(nil,'ARTWORK');lateChrome:SetTexture('AtlasFrame-TopRight.blp')
+    AtlasFrame:Hide();AtlasFrame:Show();assert(lateChrome.alpha==0,'changed root decoration escaped cached reopening')
+    local replacement=button('AtlasFrameOptionsButton',AtlasFrame);modules.Atlas.refresh()
+    assert(replacement.apiFill and replacement.hitInsets[2]==6,'explicit refresh must rediscover owned control replacements')
     if ATLAS_HAS_EJ then
         local item=AtlasEJLootFrame.lootScroll.buttons[1]
         local a,b,v=Atlas_EncounterJournal_SetLootButton(item);assert(a=='loot'and b==nil and v==5)
@@ -486,6 +531,7 @@ for _, client in ipairs({'Retail','Forever'}) do
     for _,fn in ipairs(looks)do fn()end
     assert(created==beforeTheme,'theme change must reuse surface textures')
     assert(edge.color[1]==accent[1] and edge.color[2]==accent[2],'focused search must follow accent')
+    assert(selectorAccent.color[1]==accent[1] and selectorAccent.color[2]==accent[2],'selector bars must follow accent')
     assert(AtlasSearchButton.apiFill.color[4]==1 and AtlasSearchButton.apiFill.color[1]>panel[1])
     search:ClearFocus()
     for _,r in ipairs(AtlasFrame.regions)do
@@ -501,4 +547,5 @@ for _, client in ipairs({'Retail','Forever'}) do
     Atlas.optionsFrames={};AtlasEJLootFrame=nil;Atlas=nil;AtlasLoot=nil;GetFileIDFromPath=nil
     print('PASS: Atlas '..client..': main/small/large map tiles/pins/geometry, dropdown ownership, native actions/colours, legend pooling, options release/foreign reuse, combat/theme/toggles and optional EJ handling')
     print('BENCH Atlas '..client..' mock: 1000 legend updates and 1000 warm open/map/options/tree cycles: objects/hooks/hierarchy reads/font/geometry/icon-texture writes=0; 1000 stable option state updates: same zero counts, at most one normalisation colour write')
+    end
 end

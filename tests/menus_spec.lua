@@ -28,6 +28,7 @@ local function region(kind)
     function r:SetDrawLayer(value) self.layer = value end
     function r:SetPoint() end
     function r:SetColorTexture(...) self.color = {...} end
+    function r:SetTexture(path) self.path = path end
     function r:GetAlpha() return self.alpha end
     function r:SetAlpha(a) self.alpha = a end
     function r:GetDrawLayer() return self.layer or 'BACKGROUND' end
@@ -172,12 +173,22 @@ local compactText = region('FontString'); compactRow.regions = {compactText}
 compactRow.GetFontString = function() return compactText end
 compactRow.Check, compactRow.UnCheck = region(), region()
 compactRow.Check.shown, compactRow.UnCheck.shown = false, true
+-- The native texture stays shown while its actual submenu button is hidden.
+local expand = frame('Button', nil, compactRow); local expandTexture = region()
+expand.GetNormalTexture = function() return expandTexture end
+expand.scripts.OnMouseDown = function() return 'native submenu', nil, 17 end
+compactRow.ExpandArrow = expand
 compactList.dropdown, compactList.shown = compactOwner, true
 ns.BindPopupOwner(S, compactModule, compactOwner, compactOptions)
 local compactLayer = compactList.children[#compactList.children]
 assert(not compactLayer.accent, 'compact owner unexpectedly acquired a top accent stripe')
-local checkedMarker, firstBox = compactRow.regions[2], compactRow.regions[3]
-local uncheckedMarker, secondBox = compactRow.regions[4], compactRow.regions[5]
+local submenuChevron = compactRow.regions[2]
+assert(expandTexture:IsShown() and not expand:IsShown() and submenuChevron.alpha == 0, 'leaf row gained a false submenu arrow')
+expand.shown = true; ns.RefreshPopupMenusNow(); assert(submenuChevron.alpha == 1)
+local sa,sb,sc = expand.scripts.OnMouseDown(); assert(sa == 'native submenu' and sb == nil and sc == 17)
+expand:Hide(); ns.RefreshPopupMenusNow(); assert(submenuChevron.alpha == 0)
+local checkedMarker, firstBox = compactRow.regions[3], compactRow.regions[4]
+local uncheckedMarker, secondBox = compactRow.regions[5], compactRow.regions[6]
 assert(firstBox.alpha == 0 and secondBox.alpha == 1 and uncheckedMarker.color[1] == 0.05)
 compactRow.Check.shown, compactRow.UnCheck.shown = true, false
 compactRow.hooks.OnClick()

@@ -249,7 +249,7 @@ local function HeadingColor(r, text, heading, S)
         r.textColors[text], r.appliedTextColors[text] = nil, nil
     end
 end
-local function Chevron(r, button, native)
+local function Chevron(r, button, native, owner)
     if not native or not native.IsShown or not button.CreateTexture then return end
     r.arrows = r.arrows or {}
     local arrow = r.arrows[native]
@@ -260,7 +260,10 @@ local function Chevron(r, button, native)
         arrow:SetVertexColor(0.75, 0.75, 0.78, 1)
         r.arrows[native] = arrow
     end
-    arrow:SetAlpha(native:IsShown() and 1 or 0); Fade(r, native)
+    -- LibDD hides its ExpandArrow BUTTON, leaving the normal texture's own
+    -- shown flag true. Our replacement belongs to the row and must follow both.
+    local shown = native:IsShown() and (not owner or owner == native or not owner.IsShown or owner:IsShown())
+    arrow:SetAlpha(shown and 1 or 0); Fade(r, native)
 end
 local function ModernFont(r, text, S)
     -- Compositor FontStrings forbid even indexing SetFont. Apply a standalone
@@ -408,9 +411,10 @@ local function Style(f, binding, owner)
                 if region.GetObjectType and region:GetObjectType() == "FontString" then Font(r, region, S) end
             end
             local arrow = button.ExpandArrow or _G[(button.GetName and button:GetName() or "") .. "ExpandArrow"]
+            local arrowOwner = arrow
             if arrow and arrow.GetNormalTexture then arrow = arrow:GetNormalTexture() end
             local red, green, blue = S.GetAccentColor()
-            if binding.options and binding.options.chevrons then Chevron(r, button, arrow)
+            if binding.options and binding.options.chevrons then Chevron(r, button, arrow, arrowOwner)
             else Tint(r, arrow, red, green, blue, 1) end
             local highlight = button.Highlight or (button.GetHighlightTexture and button:GetHighlightTexture())
             Tint(r, highlight, 1, 1, 1, binding.options and binding.options.hoverAlpha or 0.1)

@@ -3,10 +3,11 @@
 Development branch: `skin/oneforall-eui`, based on released main `1e45cec`.
 Awaiting in-game review. No release metadata or shared helper defaults change.
 
-**Current blocker:** `76a3297` still fails first-open Gear Planner borders in
-game. See [temporary live trace instructions](ONEFORALL_TRACE.md). Previous
-passing source-shaped assertions did not reproduce that failure and do not
-establish a fix. The new diagnostic build preserves existing styling.
+**Gear Planner candidate fix:** the live `98f3dc3` trace establishes that an
+initially valid quality is later overwritten by nil during native delayed
+refresh. Preserve it only for the same equipped item before native paint;
+see [evidence, fix and verification](ONEFORALL_QUALITY.md). Temporary diagnostics
+have been removed. Actual first-open acceptance still requires in-game review.
 
 ## Sources and identity
 

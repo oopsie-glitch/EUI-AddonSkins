@@ -365,6 +365,35 @@ if qolSource then
     actualQoL.key='sourceQoL'
 end
 local gearSource=os.getenv('ONEFORALL_GEARPLANNER')
+local inventoryIDs, inventoryQualities, qualityReady, identityReads = {},{},true,0
+for id=1,19 do if id~=4 and id~=19 then inventoryIDs[id]=1000+id;inventoryQualities[id]=(id-1)%8 end end
+GetInventoryItemID=function(_,slot)identityReads=identityReads+1;return inventoryIDs[slot]end
+GetInventoryItemQuality=function(_,slot)if qualityReady and inventoryIDs[slot] then return inventoryQualities[slot]end end
+if not gearSource then
+    -- Same data/paint boundary as supplied GearPlanner: Refresh assigns q
+    -- unconditionally, selection paints stored metadata only.
+    UI.CreateGearPlanner=function(parent)
+        local f=CreateFrame('Frame',nil,parent);f:Hide()
+        local left=CreateFrame('Frame',nil,f);local buttons,selected={},1
+        for id=1,19 do
+            local b=CreateFrame('Button',nil,left);b:SetSize(38,38)
+            b.card=UI.Card(b,b,4,{.28,.25,.2,.9},{.05,.05,.06,.95},'BACKGROUND',0)
+            b.slot,b.slotName=id,'Slot'..id;b.icon=b:CreateTexture(nil,'ARTWORK');buttons[id]=b
+            b:SetScript('OnClick',function()selected=id;f.paintSlots()end)
+        end
+        function f.paintSlots()
+            for _,b in ipairs(buttons)do
+                local q=ITEM_QUALITY_COLORS[b.q]
+                if b.slot==selected then b.card:SetBorder(1,.82,.25,1)
+                elseif q then b.card:SetBorder(q.r,q.g,q.b,1)
+                else b.card:SetBorder(.28,.25,.2,.9)end
+            end
+        end
+        function f:Refresh()for _,b in ipairs(buttons)do b.q=GetInventoryItemQuality('player',b.slot)end;f.paintSlots()end
+        f:SetScript('OnShow',function()f:Refresh()end)
+        return f
+    end
+end
 if gearSource then
     assert(source,'actual GearPlanner requires actual Widgets')
     wipe=function(t)for k in pairs(t)do t[k]=nil end;return t end
@@ -372,26 +401,18 @@ if gearSource then
     UnitName=function()return 'Test' end
     UnitLevel=function()return 42 end
     GetInventoryItemTexture=function(_,slot)if slot~=4 and slot~=19 then return 'equipped-'..slot end end
-    GetInventoryItemQuality=function(_,slot)if slot~=4 and slot~=19 then return (slot-1)%8 end end
-    GetInventoryItemID=function()return nil end
+    GetItemInfoInstant=function()return nil,nil,nil,'INVTYPE_HEAD',nil,4,1 end
     GetInventorySlotInfo=function()return 1,'empty-slot' end
     assert(loadfile(gearSource))('OneForAll',A)
     A.GearIndex=function()return {},{} end -- data provider, not the UI factory
 end
+local nativeGearPlanner=UI.CreateGearPlanner
 -- A window may already exist when EUI/the target integration becomes ready.
 local prebuilt=CreateFrame('Frame','OneForAllWeightEditor',UIParent)
 local preSlot=CreateFrame('Button',nil,prebuilt);preSlot.slot=2;preSlot.q=2
 preSlot.card=UI.Card(preSlot,preSlot,4,{.12,1,0,1},{.05,.05,.06,.95},'BACKGROUND',0)
 local preRow=CreateFrame('Button',nil,prebuilt);preRow.card=UI.CardRow(preRow);preRow.card:SetSelected(true)
 preRow.card:SetBorder(1,.8000000119,.3400000036,1) -- native float readback
-local traceSource=os.getenv('ONEFORALL_TRACE')
-if traceSource then
-    SlashCmdList={EUIADDONSKINS=function()end}
-    debugstack=function()return 'source lifecycle test; not a client trace'end
-    assert(loadfile(traceSource))('EUIAddonSkins',ns)
-    assert(not ns.OneForAllTrace.active)
-    ns.OneForAllTrace.Command('start')
-end
 assert(loadfile('EUIAddonSkins/Skins/OneForAll.lua'))('EUIAddonSkins',ns)
 local m=assert(modules.OneForAll);assert(m.available())
 m.install(S,m);flush()
@@ -531,6 +552,53 @@ if mainSource or UI.testMainTab then
     assert(tested>0,'main tabs not exercised')
 end
 local p=pages.armory
+local function gearSlots(f)
+    local out={}
+    local function visit(frame)
+        if frame.slotName then out[frame.slot]=frame end
+        for _,child in ipairs(frame.children)do visit(child)end
+    end
+    visit(f);return out
+end
+-- Replay the live sequence: initially valid quality, later native refresh
+-- returns nil for the same equipment, click paints nil, next native refresh
+-- recovers once the provider returns quality again. No click populates q.
+local raw=nativeGearPlanner(root);local rawSlots=gearSlots(raw)
+raw:Show();raw:Refresh();assert(rawSlots[2].q==1)
+qualityReady=false;raw:Refresh();assert(rawSlots[2].q==nil,'native control no longer reproduces nil quality')
+rawSlots[2]:Click();assert(rawSlots[2].q==nil,'native selection unexpectedly loaded quality')
+qualityReady=true;raw:Refresh();assert(rawSlots[2].q==1);raw:Hide();flush()
+local fixed=UI.CreateGearPlanner(root);local fixedSlots=gearSlots(fixed)
+fixed:Show();fixed:Refresh();flush()
+qualityReady=false;fixed:Refresh() -- replay delayed Armory refresh before any click
+for id,b in pairs(fixedSlots)do
+    assert(b.q==inventoryQualities[id],'delayed refresh lost quality before selection: '..id)
+    local q=ITEM_QUALITY_COLORS[b.q]
+    if q then for i=1,4 do
+        local r,g,bl=b.card.border.pieces[i]:GetVertexColor()
+        assert(r==q.r and g==q.g and bl==q.b,'pre-selection rarity border wrong')
+    end end
+end
+local stableObjects,stableHooks,stableReads=count.objects,count.hooks,count.reads
+local identityStart=identityReads
+for i=1,100 do fixed.paintSlots()end
+assert(identityReads-identityStart==1900,'quality binding not bounded to 19 slot identity reads per paint')
+assert(count.objects==stableObjects and count.hooks==stableHooks and count.reads==stableReads,'quality repaint rescanned or allocated UI')
+enabled=false;identityStart=identityReads;fixed.paintSlots()
+assert(identityReads==identityStart,'disabled skin still sampled equipment')
+enabled=true;combat=true;fixed.paintSlots()
+assert(identityReads==identityStart,'combat skin still sampled equipment')
+combat=false
+fixedSlots[3]:Click();assert(fixedSlots[3].q==inventoryQualities[3],'selection lost quality')
+fixed:Hide();fixed:Show();assert(fixedSlots[16].q==inventoryQualities[16],'reopen lost same-item quality')
+local savedID=inventoryIDs[2]
+inventoryIDs[2]=2002;fixed:Refresh();assert(fixedSlots[2].q==nil,'replacement inherited old quality')
+inventoryQualities[2]=6;qualityReady=true;fixed:Refresh();assert(fixedSlots[2].q==6)
+qualityReady=false;fixed:Refresh();assert(fixedSlots[2].q==6,'newly learned replacement quality lost')
+inventoryIDs[2]=nil;fixed:Refresh();assert(fixedSlots[2].q==nil,'empty slot retained cached quality')
+inventoryIDs[2]=savedID;fixed:Refresh();assert(fixedSlots[2].q==nil,'re-equipped unknown item reused invalidated quality')
+qualityReady=true;inventoryQualities[2]=1;fixed:Refresh();fixed:Hide();flush()
+print('PASS: GearPlanner quality: native nil-before-click/recovery control, fixed first-open delayed nil repaint, all qualities, identity invalidation, empty slots, selection/reopen; 100 paints: 1900 identity reads, zero hierarchy reads/objects/hooks')
 if gearSource then
     local planner=UI.CreateGearPlanner(root)
     local slots={}
@@ -555,22 +623,7 @@ if gearSource then
         end
     end
     checkSlots()
-    if traceSource then ns.OneForAllTrace.Command('before') end
     slots[3]:Click();flush();checkSlots()
-    if traceSource then
-        ns.OneForAllTrace.Command('after');ns.OneForAllTrace.Command('export')
-        local text
-        for _,child in ipairs(EUIAddonSkinsOFATraceExport.children)do
-            if child.scrollChild then text=child.scrollChild:GetText()end
-        end
-        assert(text and text:find('slots=19 ',1,true),'real GearPlanner trace has no discovered slots')
-        assert(text:find('SNAPSHOT before slots=19',1,true)and text:find('SNAPSHOT after slots=19',1,true))
-        assert(text:find('VALID comparison: 19 equipment slots',1,true),'real GearPlanner comparison is empty')
-        for id=1,19 do
-            for edge=1,4 do assert(text:find('slot'..id..'.border'..edge,1,true),'missing native slot border in exported trace')end
-        end
-        print('PASS: real GearPlanner diagnostic export: before/after contain all 19 slots and 76 retained border edges')
-    end
     planner:Hide();planner:Show();flush();checkSlots()
     print('PASS: real GearPlanner: 19 slots, create/Refresh/first Show before click, later art reset, selection and reopen')
 end

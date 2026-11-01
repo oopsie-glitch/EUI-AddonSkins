@@ -731,8 +731,41 @@ end, function(S, module)
     end)
     Wrap(UI, "WindowFrame", function(_, deco) for _, t in ipairs(H.Regions(deco)) do if H.Texture(t) then H.Fade(t) end end end)
     Wrap(UI, "SmallCaps", function(v, owner, text, big) Caption(v[1], text, big); Queue(owner) end)
+    local function GearQuality(f)
+        if not H.Allowed(f) or type(f.paintSlots) ~= "function" or State(f).gearQuality then return end
+        local slots = {}
+        -- GearPlanner's completed character panel owns the nineteen buttons.
+        -- Bind once, before Armory's first Show/Refresh; never walk on repaint.
+        for _, panel in ipairs(H.Children(f)) do
+            for _, b in ipairs(H.Children(panel)) do
+                if H.Allowed(b) and type(b.slot) == "number" and type(b.slotName) == "string"
+                    and type(b.card) == "table" and b.card.border then
+                    slots[#slots+1] = {button=b}
+                end
+            end
+        end
+        State(f).gearQuality = slots
+        local paint = f.paintSlots
+        f.paintSlots = function(...)
+            if Ready() and GetInventoryItemID then
+                for _, saved in ipairs(slots) do
+                    local b = saved.button
+                    local id = GetInventoryItemID("player", b.slot)
+                    if id ~= saved.id then saved.id, saved.quality = id, nil end
+                    if id then
+                        if b.q ~= nil then saved.quality = b.q
+                        elseif saved.quality ~= nil then b.q = saved.quality end
+                    end
+                end
+            end
+            -- refreshSlots unconditionally overwrites q, even when the quality
+            -- provider temporarily returns nil. Retain only a previously known
+            -- quality for this same item, before native selected/quality paint.
+            return paint(...)
+        end
+    end
     Wrap(UI, "CreateGearPlanner", function(v, owner)
-        if ns.OneForAllTrace then ns.OneForAllTrace.Planner(v[1]) end
+        GearQuality(v[1])
         if H.Allowed(v[1]) then Queue(v[1]) end
         Queue(owner)
     end)

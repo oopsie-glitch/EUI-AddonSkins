@@ -3,6 +3,10 @@
 PR #68 remains draft. No release metadata, shared helpers, layouts or border
 textures/layers change in this iteration.
 
+The owner subsequently confirmed the `7676fdb` rarity fix in game and approved
+the appearance. It is the accepted baseline for the
+[performance audit](ONEFORALL_PERFORMANCE.md).
+
 ## Confirmed failure sequence
 
 The user's `98f3dc3` trace identifies OneForAll `6.0.1-retail.1`, Retail
@@ -104,5 +108,5 @@ instrumentation-only tests and capture instructions have been removed. Replace
 the installed diagnostic folder with the new ordinary test ZIP, then /reload.
 Verify first opening without clicking, waiting beyond the native delayed
 refresh, switching selection, reopening and equipment changes. The live trace
-confirms the failure path; actual rendering with this fix still needs in-game
-acceptance. No claim of completed client verification is based on mocks.
+confirms the failure path. The owner has now supplied in-game acceptance for
+this fix; later performance changes still need their own client timing/review.

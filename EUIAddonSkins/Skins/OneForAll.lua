@@ -139,7 +139,7 @@ end, function(S, module)
                     else t:SetTextColor(.91, .91, .93) end
                 elseif d.neutral and not Semantic(t) then
                     local r, g, b, a = t:GetTextColor()
-                    if not Quality(r, g, b) and r > .7 and g > .35 and b < g * .95 then t:SetTextColor(.91, .91, .93, a) end
+                    if r > .7 and g > .35 and b < g * .95 and not Quality(r, g, b) then t:SetTextColor(.91, .91, .93, a) end
                 end
                 d.painting = nil
             end
@@ -196,10 +196,10 @@ end, function(S, module)
                 elseif d.role == "border" then
                     -- Normal card chrome is neutral; a native quality/class/
                     -- quest-state colour supplied later remains authoritative.
-                    local warm = not Quality(cr, cg, cb) and cr > cg and cg > cb and cb < .4
                     local owner = t:GetParent()
                     local itemSlot = owner and type(owner.slot) == "number"
                     local quality = itemSlot and owner.q ~= nil and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[owner.q]
+                    local warm = not quality and cr > cg and cg > cb and cb < .4 and not Quality(cr, cg, cb)
                     if itemSlot and not d.itemEdge then
                         d.itemEdge = true
                         t:SetDrawLayer("OVERLAY", 1)
@@ -290,21 +290,22 @@ end, function(S, module)
                 end
             end
         end
-        H.Hook(card, "SetSelected", function(_, selected)
-            if not Ready() then return end
-            if selection then
-                selection.selected = selected and true or false
-                for _, t in ipairs(card.border and card.border.pieces or {}) do
-                    if colours[t] then colours[t].paint() end
+        local selectCard = card.SetSelected
+        if type(selectCard) == "function" then
+            card.SetSelected = function(self, selected, ...)
+                -- Native SetSelected immediately paints border and fill. Set
+                -- their cosmetic roles first so those existing setter hooks
+                -- paint the final state once, without a second post-paint pass.
+                if Ready() then
+                    if selection then selection.selected = selected and true or false end
+                    for _, t in ipairs(card.fill and card.fill.pieces or {}) do
+                        local d = colours[t]
+                        if d then d.role = selected and "rowselection" or "surface" end
+                    end
                 end
+                return selectCard(self, selected, ...)
             end
-            if card.fill and card.fill.pieces then
-                for _, t in ipairs(card.fill.pieces) do
-                    local d = colours[t]
-                    if d then d.role = selected and "rowselection" or "surface"; d.paint() end
-                end
-            end
-        end)
+        end
     end
     local function Decorative(t)
         if not H.Texture(t) then return end
@@ -568,6 +569,7 @@ end, function(S, module)
     end
     Flush = function()
         if not Ready() then return end
+        if not next(pending) then return end
         local work = pending; pending = {}
         -- A completed ancestor covers child construction in the same burst.
         for f in pairs(work) do
@@ -624,6 +626,7 @@ end, function(S, module)
     -- Return-preserving wrappers are scoped to OneForAll's own constructors.
     -- Native functions run directly (never under pcall or secure post-hooks):
     -- ShowNews/ShowWelcome are also passed to C_Timer and are left untouched.
+    local function Pack(...) return {n = select("#", ...), ...} end
     local function Wrap(object, name, after, delayed)
         local original = object[name]
         if type(original) ~= "function" then return end
@@ -641,7 +644,6 @@ end, function(S, module)
                 return original(...)
             end
             depth = depth + 1
-            local function Pack(...) return {n = select("#", ...), ...} end
             local result = Pack(original(...))
             H.Safe(after, result, ...)
             depth = depth - 1
@@ -659,9 +661,12 @@ end, function(S, module)
     -- not schedule discovery or styling.
     H.Hook(A, "SetTex", function(t, path)
         if faded[t] then faded[t](true); return end
-        if not Object(t) or not Owned(t) then return end
         local name = AssetName(path)
-        assets[t] = name and {value=t:GetTexture(), name=name} or nil
+        -- Data icons never need decorative classification/owner traversal.
+        -- Invalidate an earlier asset association without walking their UI.
+        if not name then if assets[t] then assets[t] = nil end; return end
+        if not Object(t) or not Owned(t) then return end
+        assets[t] = {value=t:GetTexture(), name=name}
     end)
     Wrap(A, "SkinBlizz", function(v) if H.Allowed(v[1]) and not nodes[v[1]] then Queue(v[1]) end end, true)
     for _, name in ipairs({"GoldButton", "makeButton", "NavButton", "CloseButton", "SkinBlizzButton"}) do
@@ -832,6 +837,7 @@ end, function(S, module)
         for _, paint in pairs(faded) do paint() end
         for _, d in pairs(colours) do d.paint() end
         for _, d in pairs(nodes) do if d.paintCheck then d.paintCheck() end end
+        Layout() -- manual refresh still applies a font/layout change with no new UI
         Flush()
     end
     Flush()

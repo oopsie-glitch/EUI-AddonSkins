@@ -5,7 +5,7 @@ WOW_PROJECT_MAINLINE, WOW_PROJECT_CAMELOT = 1, 99
 WOW_PROJECT_ID = client=='Retail' and WOW_PROJECT_MAINLINE or WOW_PROJECT_CAMELOT
 for _,suffix in ipairs({'Frame','ProfilePopup','Confirm','BugReport','Discord','CraftList','QuestChain','WeightEditor','TrainerSpells','TalentCode','Welcome','WhatsNew','PreviewFrame','QuestSharePopup'})do _G['OneForAll'..suffix]=nil end
 local timers, modules, looks, events = {}, {}, {}, {}
-local count = {objects=0,hooks=0,reads=0,geometry=0,fonts=0,scans=0,colours=0}
+local count = {objects=0,hooks=0,reads=0,geometry=0,fonts=0,scans=0,colours=0,children=0,regions=0,parent_reads=0,alpha_reads=0,vertex_reads=0,font_reads=0,texture_writes=0,timers=0}
 local enabled, combat, accent, face = true, false, {.1,.7,.9}, 'eui-font'
 local numeric = os.getenv('ONEFORALL_NUMERIC_TEXTURES')
 local textureIDs, nextTextureID = {}, 1000
@@ -18,7 +18,7 @@ local ns={IsEnabled=function()return enabled end}
 function ns.RegisterModule(id,_,available,install) modules[id]={available=available,install=install} end
 function ns.RegisterSkinDefinition(_,fn) fn() end
 InCombatLockdown=function()return combat end
-C_Timer={After=function(_,fn)timers[#timers+1]=fn end}
+C_Timer={After=function(_,fn)count.timers=count.timers+1;timers[#timers+1]=fn end}
 geterrorhandler=function()return function(err)error(err)end end
 ITEM_QUALITY_COLORS={ [0]={r=.62,g=.62,b=.62}, {r=1,g=1,b=1}, {r=.12,g=1,b=0},
     {r=0,g=.44,b=.87}, {r=.64,g=.21,b=.93}, {r=1,g=.5,b=0}, {r=.9,g=.8,b=.5}, {r=0,g=.8,b=1} }
@@ -48,9 +48,9 @@ local function object(kind,parent,name)
         return false,nil
     end
     function f:GetName()return self.name end
-    function f:GetParent()return self.parent end
-    function f:GetChildren()assert(self~=UIParent,'global traversal');count.reads=count.reads+1;return unpack(self.children)end
-    function f:GetRegions()count.reads=count.reads+1;return unpack(self.regions)end
+    function f:GetParent()count.parent_reads=count.parent_reads+1;return self.parent end
+    function f:GetChildren()assert(self~=UIParent,'global traversal');count.reads=count.reads+1;count.children=count.children+#self.children;return unpack(self.children)end
+    function f:GetRegions()count.reads=count.reads+1;count.regions=count.regions+#self.regions;return unpack(self.regions)end
     function f:GetNumChildren()return #self.children end
     function f:GetNumRegions()return #self.regions end
     function f:SetSize(w,h)count.geometry=count.geometry+1;self.w,self.h=w,h end
@@ -64,13 +64,13 @@ local function object(kind,parent,name)
     function f:GetNumPoints()return #self.points end
     function f:ClearAllPoints()count.geometry=count.geometry+1;self.points={};self.all=nil end
     function f:SetAllPoints(to)count.geometry=count.geometry+1;self.all=to or self.parent end
-    function f:SetTexture(path)self.path=path;self.base=nil end
+    function f:SetTexture(path)count.texture_writes=count.texture_writes+1;self.path=path;self.base=nil end
     function f:GetTexture()return numeric and self.path and GetFileIDFromPath(self.path) or self.path end
     function f:SetColorTexture(...)count.colours=count.colours+1;self.path=nil;self.base={...}end
     function f:SetVertexColor(r,g,b,a)count.colours=count.colours+1;self.vertex={r,g,b,a or 1}end
-    function f:GetVertexColor()return unpack(self.vertex)end
+    function f:GetVertexColor()count.vertex_reads=count.vertex_reads+1;return unpack(self.vertex)end
     function f:SetAlpha(a)self.alpha=a end
-    function f:GetAlpha()return self.alpha end
+    function f:GetAlpha()count.alpha_reads=count.alpha_reads+1;return self.alpha end
     function f:SetShown(v)self.shown=v and true or false end
     function f:IsShown()return self.shown end
     function f:IsVisible()return self.shown and (not self.parent or self.parent:IsVisible())end
@@ -112,7 +112,7 @@ local function object(kind,parent,name)
     function f:SetBackdrop(v)self.backdrop=v end
     function f:GetBackdrop()return self.backdrop end
     function f:SetFont(path,size,flags)count.fonts=count.fonts+1;self.font,self.fontSize,self.flags=path,size,flags or ''end
-    function f:GetFont()return self.font,self.fontSize,self.flags or ''end
+    function f:GetFont()count.font_reads=count.font_reads+1;return self.font,self.fontSize,self.flags or ''end
     function f:SetFontObject()end
     function f:SetText(t)self.textValue=t end
     function f:GetText()return self.textValue or ''end
@@ -264,6 +264,7 @@ else
         function c:SetSelected(on,nfill)
             if on then self:SetBorder(1,.8,.34,1);self:SetFill(.22,.155,.055,.98)
             else self:SetBorder(.28,.25,.2,.9);self:SetFill(table.unpack(nfill or {.06,.062,.074,.97}))end
+            return 'native-selected',nil,nfill
         end
         return c
     end
@@ -413,8 +414,16 @@ local preSlot=CreateFrame('Button',nil,prebuilt);preSlot.slot=2;preSlot.q=2
 preSlot.card=UI.Card(preSlot,preSlot,4,{.12,1,0,1},{.05,.05,.06,.95},'BACKGROUND',0)
 local preRow=CreateFrame('Button',nil,prebuilt);preRow.card=UI.CardRow(preRow);preRow.card:SetSelected(true)
 preRow.card:SetBorder(1,.8000000119,.3400000036,1) -- native float readback
-assert(loadfile('EUIAddonSkins/Skins/OneForAll.lua'))('EUIAddonSkins',ns)
+local loadStart=os.clock()
+assert(loadfile(os.getenv('ONEFORALL_SKIN_PATH') or 'EUIAddonSkins/Skins/OneForAll.lua'))('EUIAddonSkins',ns)
+local loadMs=(os.clock()-loadStart)*1000
 local m=assert(modules.OneForAll);assert(m.available())
+if ONEFORALL_BENCHMARK then
+    ONEFORALL_BENCHMARK({client=client,A=A,UI=UI,S=S,module=m,install=function()m.install(S,m);flush()end,
+        flush=flush,events=events,pages=pages,settings=actualSettings,qol=actualQoL,looks=looks,load_ms=loadMs,
+        changeLooks=function()accent={.85,.15,.25};face='benchmark-new-font'end,
+        counts=function()local v={};for k,n in pairs(count)do v[k]=n end;v.identity_reads=identityReads;return v end})
+else
 m.install(S,m);flush()
 local r,n,last=A:ToggleUI();flush()
 if not mainSource then assert(r=='native-toggle' and n==nil and last==42)end
@@ -688,7 +697,15 @@ for _,t in ipairs(p.row.regions)do
         end
     end
 end
+local selectionReads=count.vertex_reads
 p.row.card:SetSelected(true)
+assert(count.vertex_reads-selectionReads==5,'selection repainted the four border edges/fill twice')
+if not source then
+    local fill={.035,.16,.055,.9}
+    local selected,empty,returned=p.row.card:SetSelected(false,fill)
+    assert(selected=='native-selected' and empty==nil and returned==fill,'selection arguments/returns changed')
+    p.row.card:SetSelected(true)
+end
 local selectedFill=p.row.card.fill.pieces[#p.row.card.fill.pieces]
 local r,g,b,a=selectedFill:GetVertexColor()
 assert(math.abs(r-(.08*.9+accent[1]*.1))<.00001 and a>.5,'selected row is not one cohesive surface')
@@ -778,12 +795,17 @@ accent={.9,.2,.3};face='changed-font';for _,fn in ipairs(looks)do fn()end;flush(
 local r,g,b=p.button.euiOfaSelection:GetVertexColor();assert(r==.9 and g==.2 and b==.3)
 local r,g,b=p.row.card.border.pieces[2]:GetVertexColor();assert(r==.9 and g==.2 and b==.3,'row indicator did not follow accent')
 assert(p.button._label.font==face)
+local nativeLayout,manualLayouts=UI.LayoutTabs,0
+UI.LayoutTabs=function(...)manualLayouts=manualLayouts+1;if nativeLayout then return nativeLayout(...)end end
+face='manual-font';m.refresh();flush()
+assert(manualLayouts>0 and p.button._label.font==face,'manual refresh lost font/layout with no pending construction')
 if mainSource then UI.SetWindowAlpha(.7)else UI.alpha=.7;UI.ApplyWindowAlpha()end;for _,t in ipairs(shells[root])do assert(t.alpha==.7)end
 UI.banner:SetAlpha(0);UI.brandLogo:SetAlpha(0);assert(UI.banner.alpha==1 and UI.brandLogo.alpha==1)
 -- Closed, unrelated data updates and scrolling do not schedule discovery.
-root:Hide();local reads=count.reads
+root:Hide();local reads=count.reads;local parents=count.parent_reads
 for i=1,1000 do A.SetTex(p.art,'map-art-'..i)end
 assert(count.reads==reads and #timers==0)
+assert(count.parent_reads==parents,'data icon updates walked ancestry')
 -- A new late control while disabled stays native, then explicit refresh finds it.
 enabled=false;local late=UI.GoldButton(root,'late',90,24);assert(not late.euiButton)
 enabled=true;m.refresh();flush();assert(late.euiButton)
@@ -796,4 +818,5 @@ for _,t in ipairs(shells[root])do assert(t.alpha==.7)end
 OneForAll=nil;assert(not m.available());OneForAll=A
 print('PASS: OneForAll '..client..' '..(source and 'upstream Widgets.lua' or 'source-shaped')..': eight lazy sections, native actions/returns, rarity/art/model ownership, pooled state, theme/opacity/toggle/combat')
 print('BENCH OneForAll mock: 1000 warm reopen/selection/check cycles: new objects/hooks and child/region discovery reads=0; skin geometry writes=0 (upstream knob moves excluded); 1000 closed texture updates: queued work=0')
+end
 end

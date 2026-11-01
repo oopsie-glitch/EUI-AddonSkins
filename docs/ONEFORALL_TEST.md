@@ -1,13 +1,15 @@
 # OneForAll skin
 
 Development branch: `skin/oneforall-eui`, based on released main `1e45cec`.
-Awaiting in-game review. No release metadata or shared helper defaults change.
+The owner approved the visual skin and confirmed the rarity fix in game at
+`7676fdb`. No release metadata or shared helper defaults change.
 
-**Gear Planner candidate fix:** the live `98f3dc3` trace establishes that an
+**Gear Planner fix:** the live `98f3dc3` trace establishes that an
 initially valid quality is later overwritten by nil during native delayed
 refresh. Preserve it only for the same equipped item before native paint;
 see [evidence, fix and verification](ONEFORALL_QUALITY.md). Temporary diagnostics
-have been removed. Actual first-open acceptance still requires in-game review.
+have been removed. See the [performance audit](ONEFORALL_PERFORMANCE.md) for
+the next candidate's measured changes and remaining in-game timing limits.
 
 ## Sources and identity
 

@@ -757,6 +757,21 @@ if UI.OpenDropDown then
     UI.OpenDropDown(p.button,{{key='first',label='First'}},'first',function(k)picked=k end)
     flush();assert(menu.rows[1]:IsShown() and not menu.rows[2]:IsShown())
     assert(menu.rows[1].check:IsShown() and not menu.rows[1].del:IsShown())
+    if os.getenv('ONEFORALL_MULTISELECT') then
+        -- 6.0.2 source-filter menu: explicit checked overrides single current.
+        menu:Hide() -- a second click on an already open owner closes natively
+        UI.OpenDropDown(p.button,{{key='boe',label='BoE',checked=true},
+            {key='quest',label='Quests',checked=true},
+            {key='crafted',label='Crafted',checked=false}},'crafted',function(k)picked=k end)
+        flush()
+        assert(menu.rows[1].check:IsShown() and menu.rows[2].check:IsShown()
+            and not menu.rows[3].check:IsShown(),'native multi-selection overwritten')
+        menu.rows[2].scripts.OnClick(menu.rows[2]);assert(picked=='quest')
+        UI.OpenDropDown(p.button,{{key='crafted',label='Crafted',checked=false}},nil,function(k)picked=k end)
+        flush()
+        assert(not menu.rows[1].check:IsShown() and not menu.rows[2]:IsShown()
+            and not menu.rows[3]:IsShown(),'pooled multi-select state leaked')
+    end
 end
 if UI.QuietHead then
     local header=CreateFrame('Button',nil,root)

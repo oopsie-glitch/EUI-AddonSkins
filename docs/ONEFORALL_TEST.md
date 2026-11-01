@@ -270,6 +270,10 @@ and native interaction still need the owner's in-game review.
 
 ## Client limits and in-game review
 
+See the [Forever source/activation audit and release gate](ONEFORALL_FOREVER.md).
+The supplied 6.0.1 tree matches official Forever source byte-for-byte; no
+Retail-specific adaptation was found in those files.
+
 The supplied TOC declares interface 16001 (Forever). Its Retail-loadable
 adaptations do not certify Retail gameplay features: talent planning, dungeon,
 item and profession data remain Forever-specific. The skin uses public UI APIs

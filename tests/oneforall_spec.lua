@@ -128,6 +128,9 @@ local function object(kind,parent,name)
     function f:SetShadowOffset()end
     function f:SetTextInsets(...)self.insets={...}end
     function f:SetAutoFocus()end
+    function f:SetMultiLine()end
+    function f:HighlightText()end
+    function f:SetFocus()end
     function f:SetMaxLetters()end
     function f:SetNumeric()end
     function f:HasFocus()return false end
@@ -554,7 +557,20 @@ if gearSource then
     checkSlots()
     if traceSource then ns.OneForAllTrace.Command('before') end
     slots[3]:Click();flush();checkSlots()
-    if traceSource then ns.OneForAllTrace.Command('after');ns.OneForAllTrace.Command('stop') end
+    if traceSource then
+        ns.OneForAllTrace.Command('after');ns.OneForAllTrace.Command('export')
+        local text
+        for _,child in ipairs(EUIAddonSkinsOFATraceExport.children)do
+            if child.scrollChild then text=child.scrollChild:GetText()end
+        end
+        assert(text and text:find('slots=19 ',1,true),'real GearPlanner trace has no discovered slots')
+        assert(text:find('SNAPSHOT before slots=19',1,true)and text:find('SNAPSHOT after slots=19',1,true))
+        assert(text:find('VALID comparison: 19 equipment slots',1,true),'real GearPlanner comparison is empty')
+        for id=1,19 do
+            for edge=1,4 do assert(text:find('slot'..id..'.border'..edge,1,true),'missing native slot border in exported trace')end
+        end
+        print('PASS: real GearPlanner diagnostic export: before/after contain all 19 slots and 76 retained border edges')
+    end
     planner:Hide();planner:Show();flush();checkSlots()
     print('PASS: real GearPlanner: 19 slots, create/Refresh/first Show before click, later art reset, selection and reopen')
 end

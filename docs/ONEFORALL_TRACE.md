@@ -4,6 +4,41 @@ PR #68 remains unresolved: the user reproduced disappearing first-open borders
 at `76a3297`. This build adds instrumentation, **not another styling fix**.
 The exact in-game overwriting callback is not yet confirmed.
 
+## Diagnostic correction after the first live capture
+
+The supplied live export from `21dd166` identifies OneForAll
+`6.0.1-retail.1` on Retail `12.1.5`, build `70688`. It contains 19 lifecycle
+events but **zero bound slots**; all seven snapshots are empty. It confirms
+that `Armory.lua:852` called the native delayed Refresh at 7673.153 and
+7684.573, with a slot-click paint at 7684.169. It cannot establish which
+texture changed or whether either delayed refresh caused the border failure.
+No raw user trace is committed.
+
+The diagnostic incorrectly depended on Card-time candidate registration,
+including exact `GetWidth()==38` / `GetHeight()==38` equality. No creation
+candidate records reached the live export, although the completed planner and
+refresh hooks ran. The export alone does not prove why the candidate gate was
+missed (for example, it contains no dimension readback); that assumption has
+been removed rather than treating a floating-point explanation as confirmed.
+
+Trace format v2 discovers the completed source hierarchy directly:
+`GearPlanner frame -> character panel (left) -> 19 equipment Buttons`.
+Equipment identity comes from integer inventory `slot`, native `slotName` and
+`card.border.pieces` Texture references, not dimensions or constructor hooks.
+Enchant controls lack the slotName identity and are excluded. One inspection
+per planner is capped at 64 direct containers / 512 candidate frames; there
+are no repeated walks on Refresh, show, click or snapshot. The export records
+the discovery budget/results. Before/after comparison requires entries for
+all 19 slots and their four retained border edges; an empty/partial comparison
+is explicitly INVALID, never a successful zero-change result.
+
+The real supplied Gear Planner source fixture now asserts the **exported
+text**, not just discovered test-side frames: both snapshots have 19 slots and
+all 76 retained edges, with a valid comparison. A separate fixture omits Card
+registration, uses non-exact 38px size readback, rejects enchant/foreign controls
+and checks the empty-export failure. These validate the discovery correction;
+the next live v2 capture must still confirm it in the client.
+
 ## Install and reproduce
 
 1. Exit WoW. Replace the existing `Interface/AddOns/EUIAddonSkins` folder with
@@ -16,7 +51,7 @@ The exact in-game overwriting callback is not yet confirmed.
 3. Open OneForAll > Armory > Gear Planner normally. Do not click equipment.
    Wait until the borders disappear/stabilize (about a second lets the existing
    native 0.4-second delayed redraw run). Enter `/euiskins ofatrace before`.
-   It should report **19 slots**. Take a screenshot if helpful.
+   It must report **19 slots**. Take a screenshot if helpful.
 4. Click one equipment item once. Enter `/euiskins ofatrace after`. This saves
    the corrected state, without refreshing or repainting it. Optionally take
    the matching screenshot.
@@ -42,14 +77,16 @@ capture status, slot count, event count and dropped-event count.
 
 ## What is observed
 
-- Native Card creation and completed Gear Planner construction, before Armory's
+- Completed Gear Planner construction and initial slot textures, before Armory's
   initial `gear:Show()` / `gear:Refresh()` calls.
 - `paintSlots`, `Refresh`, ancestor OnShow/OnHide, physical slot mouse-down and
   post-click phases. Existing delayed native redraws call `Refresh`; their
   actual caller stacks are captured without replacing the native timer or
   adding a diagnostic timer.
 - All nine existing border pieces, retained native fill and item icon, plus
-  the finite slot ancestry. No UIParent or repeated subtree scan is performed.
+  the finite slot ancestry. One bounded two-level inspection binds these at
+  completed construction (or first start for an existing planner). No UIParent
+  or repeated subtree scan is performed.
 - Changed setter arguments and readback: shown/visible flags, local alpha,
   product of parent alphas, effective alpha when exported by the client,
   draw layer/sublayer, texture/file path, vertex RGBA, quality/expected RGB,
@@ -71,7 +108,7 @@ lookup/request, visual repair, native callback replacement or SavedVariables
 logging. Recording uses memory and getter/post-hook work while explicitly
 enabled, so this build is not a performance benchmark.
 
-Only known constructor references are retained while disabled; no setter
+Only known completed planner references are retained while disabled; no setter
 observers, UI objects, timers or hierarchy walks are installed then. Observer
 hooks installed by `start` remain until `/reload` but return immediately when
 stopped, without reading states. The export window is created only on request,
@@ -83,11 +120,11 @@ sharing publicly. `/reload` disables capture again.
 
 `diagnostics/OneForAllTrace.lua` is excluded by `.pkgmeta` and is absent from
 all tracked runtime manifests and ordinary installation ZIPs. The adapter has
-two optional observer entry points; without the diagnostic namespace they
-perform no action. `scripts/package_oneforall_trace.py` derives a separate ZIP
+one optional completed-planner observer entry point; without the diagnostic
+namespace it performs no action. `scripts/package_oneforall_trace.py` derives a separate ZIP
 from the already validated ordinary package, inserts the trace after Core in
 each client TOC and marks those TOCs `X-EUI-Development`. It does not edit tracked
-TOCs, versions or styling. Remove both observer entry points and this temporary
+TOCs, versions or styling. Remove the observer entry point and this temporary
 diagnostic code when the targeted fix is ready.
 
 Build from a clean development commit:
@@ -113,5 +150,6 @@ caps, native writes/returns, duplicate-hook prevention, stopped getter silence
 and absence of timers. Optional source runs of `tests/oneforall_spec.lua` with
 `ONEFORALL_TRACE=diagnostics/OneForAllTrace.lua` additionally bind all 19 slots
 through the real supplied Gear Planner constructors under Retail/Forever mock
-identities. These validate instrumentation only. Live captures are pending;
+identities, now asserting exported before/after data for every slot/edge.
+These validate instrumentation only. A corrected live v2 capture is pending;
 neither mocks nor the diagnostic ZIP establish a rarity-border fix.

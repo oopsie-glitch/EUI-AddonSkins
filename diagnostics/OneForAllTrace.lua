@@ -4,7 +4,8 @@ local _, ns = ...
 local BUILD = "@TRACE_BUILD@"
 local D = {active=false}
 ns.OneForAllTrace = D
-local cards, planners, slots, watched = {}, {}, {}, {}
+local planners, slots, watched = {}, {}, {}
+local discovery = {}
 local log, snapshots, last, dropped, serial = {}, {}, {}, 0, 0
 local phaseSeen = {}
 local attempts = {}
@@ -70,7 +71,8 @@ local function capture(label)
         data["slot"..s.slot]="quality="..value(s.q).." expected="..(q and values(q.r,q.g,q.b) or "empty/unknown")
         for _,r in ipairs(regions(s)) do data["slot"..s.slot.."."..r[2]]=state(r[1]) end
     end
-    snapshots[#snapshots+1]={label=label,data=data}
+    snapshots[#snapshots+1]={label=label,data=data,count=#slots}
+    if #slots~=19 and label~="start" then say("INCOMPLETE snapshot: "..#slots.."/19 slots. Export this log; do not interpret it as a valid comparison.") end
     return data
 end
 local function observe(t, label, slot)
@@ -113,43 +115,69 @@ end
 local function bind(f)
     if planners[f] then return end
     planners[f]=true
-    -- Only completed Card references registered by this adapter; no UI walk.
-    for owner in pairs(cards) do
-        if owner.slotName and type(owner.slot)=="number" then
-        local p=owner
+    -- GearPlanner.lua creates all equipment buttons under its direct child
+    -- character panel (f -> left -> slot). Inspect that completed two-level
+    -- hierarchy once; constructor-time dimensions are not slot identity.
+    local owners, ids, visited, rejected = {}, {}, 0, 0
+    local function candidate(owner)
+        if visited>=512 then return end
+        visited=visited+1
+        if not owner or owner==UIParent then return end
+        if owner.IsForbidden and owner:IsForbidden() then return end
+        local card=owner.card
+        if type(owner.slot)=="number" and type(owner.slotName)=="string"
+            and owner.slot>=1 and owner.slot<=19 and owner.slot%1==0
+            and type(card)=="table" and type(card.border)=="table"
+            and type(card.border.pieces)=="table" and #card.border.pieces>=4
+            and owner.GetObjectType and owner:GetObjectType()=="Button" then
+            for i=1,4 do
+                local edge=card.border.pieces[i]
+                if not edge or not edge.GetObjectType or edge:GetObjectType()~="Texture" then
+                    rejected=rejected+1;return
+                end
+            end
+            if not ids[owner.slot] then ids[owner.slot]=true;owners[#owners+1]=owner end
+        end
+    end
+    local roots={f:GetChildren()}
+    for i=1,math.min(#roots,64) do
+        local child=roots[i]
+        candidate(child)
+        if visited<512 and child~=UIParent and child.GetChildren
+            and not (child.IsForbidden and child:IsForbidden()) then
+            for _,owner in ipairs({child:GetChildren()}) do
+                if visited>=512 then break end
+                candidate(owner)
+            end
+        end
+    end
+    discovery[#discovery+1]="completed hierarchy: roots="..#roots.." visited="..visited
+        .." slots="..#owners.." rejected="..rejected.." capped="..value(#roots>64 or visited>=512)
+    add(discovery[#discovery],stack())
+    for _,owner in ipairs(owners) do
+        slots[#slots+1]=owner
+        for _,r in ipairs(regions(owner)) do observe(r[1],r[2],owner) end
+        owner:HookScript("OnMouseDown",function() phase("before-mousedown slot"..owner.slot) end)
+        owner:HookScript("OnClick",function() phase("after-click slot"..owner.slot) end)
+        -- Ancestor state can hide a perfectly valid texture. Watch
+        -- only this finite ancestry, shared by the existing slots.
+        local parent=owner
         for _=1,20 do
-            if p==f then
-                if owner.slotName and type(owner.slot)=="number" then
-                    slots[#slots+1]=owner
-                    for _,r in ipairs(regions(owner)) do observe(r[1],r[2],owner) end
-                    owner:HookScript("OnMouseDown",function() phase("before-mousedown slot"..owner.slot) end)
-                    owner:HookScript("OnClick",function() phase("after-click slot"..owner.slot) end)
-                    -- Ancestor state can hide a perfectly valid texture. Watch
-                    -- only this finite ancestry, shared by the existing slots.
-                    local parent=owner
-                    for _=1,20 do
-                        if not parent or parent==UIParent then break end
-                        if not watched[parent] then
-                            watched[parent]=true
-                            local observed=parent
-                            for _,method in ipairs({"SetAlpha","Show","Hide","SetShown","SetFrameLevel","SetFrameStrata","SetParent","DisableDrawLayer","EnableDrawLayer"}) do
-                                if type(observed[method])=="function" then
-                                    hooksecurefunc(observed,method,function(_, ...)
-                                        if D.active and #log<LIMIT then add("PARENT "..method.." args="..values(...),stack()) end
-                                    end)
-                                end
-                            end
-                            observed:HookScript("OnShow",function() phase("ancestor OnShow") end)
-                            observed:HookScript("OnHide",function() if D.active and #log<LIMIT then add("ancestor OnHide",stack()) end end)
-                        end
-                        parent=parent:GetParent()
+            if not parent or parent==UIParent then break end
+            if not watched[parent] then
+                watched[parent]=true
+                local observed=parent
+                for _,method in ipairs({"SetAlpha","Show","Hide","SetShown","SetFrameLevel","SetFrameStrata","SetParent","DisableDrawLayer","EnableDrawLayer"}) do
+                    if type(observed[method])=="function" then
+                        hooksecurefunc(observed,method,function(_, ...)
+                            if D.active and #log<LIMIT then add("PARENT "..method.." args="..values(...),stack()) end
+                        end)
                     end
                 end
-                break
+                observed:HookScript("OnShow",function() phase("ancestor OnShow") end)
+                observed:HookScript("OnHide",function() if D.active and #log<LIMIT then add("ancestor OnHide",stack()) end end)
             end
-            p=p and p:GetParent()
-            if not p then break end
-        end
+            parent=parent:GetParent()
         end
     end
     table.sort(slots,function(a,b)return a.slot<b.slot end)
@@ -158,32 +186,33 @@ local function bind(f)
     end
     phase("completed factory")
 end
-function D.Card(card,owner)
-    -- Slot identity is assigned after Card returns. Remember just native
-    -- equipment-sized candidates until the completed planner confirms them.
-    if owner and owner.GetWidth and owner:GetWidth()==38 and owner:GetHeight()==38 then
-        cards[owner]=card
-        if D.active and not owner.card then add("Card creation 38x38 border="..state(card.border.pieces[1]),stack()) end
-    end
-end
 local known={}
 function D.Planner(f)
     if not f or type(f.paintSlots)~="function" then return end
     known[f]=true
     if D.active then bind(f) end
 end
+local function complete(data)
+    if not data then return false end
+    for i=1,19 do
+        if not data["slot"..i] then return false end
+        for edge=1,4 do if not data["slot"..i..".border"..edge] then return false end end
+    end
+    return true
+end
 local function report()
     local version,build,date,interface
     if GetBuildInfo then version,build,date,interface=GetBuildInfo() end
-    local lines={"EUI OneForAll LIVE TRACE v1 | development build "..BUILD,
+    local lines={"EUI OneForAll LIVE TRACE v2 | development build "..BUILD,
         "Client="..values(version,build,date,interface).." project="..value(WOW_PROJECT_ID),
         "OneForAll="..value((C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata)
             and (C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata)("OneForAll","Version")),
         "slots="..#slots.." events="..#log.." dropped="..dropped.." snapshots="..#snapshots,
+        table.concat(discovery,"\n"),
         "No names, item links, chat or inventory IDs collected. Native caller paths may appear."}
     for _,entry in ipairs(log) do lines[#lines+1]=entry end
     for _,snapshot in ipairs(snapshots) do
-        lines[#lines+1]="SNAPSHOT "..snapshot.label
+        lines[#lines+1]="SNAPSHOT "..snapshot.label.." slots="..snapshot.count
         local keys={};for key in pairs(snapshot.data) do keys[#keys+1]=key end;table.sort(keys)
         for _,key in ipairs(keys) do lines[#lines+1]=key.." "..snapshot.data[key] end
     end
@@ -193,14 +222,15 @@ local function report()
         if snapshot.label=="after" then after=snapshot.data end
     end
     lines[#lines+1]="COMPARE before -> after"
-    if before and after then
+    if complete(before) and complete(after) then
+        lines[#lines+1]="VALID comparison: 19 equipment slots with four border edges each"
         local keys={};for key in pairs(before) do keys[#keys+1]=key end;table.sort(keys)
         local n=0
         for _,key in ipairs(keys) do if before[key]~=after[key] then
             n=n+1;lines[#lines+1]=key.."\nBEFORE "..before[key].."\nAFTER "..value(after[key])
         end end
         lines[#lines+1]="Changed entries="..n
-    else lines[#lines+1]="Run before and after commands to compare." end
+    else lines[#lines+1]="INVALID comparison: require before/after with all 19 discovered slots; no empty comparison is accepted." end
     return table.concat(lines,"\n")
 end
 local window,box

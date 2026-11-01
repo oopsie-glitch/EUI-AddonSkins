@@ -257,8 +257,6 @@ end, function(S, module)
     local cards = {}
     local function Card(card, anchor, row)
         if type(card) ~= "table" then return end
-        -- Only the explicitly built diagnostic ZIP supplies this observer.
-        if ns.OneForAllTrace then ns.OneForAllTrace.Card(card, anchor) end
         local state = cards[card]
         if not state then state = {}; cards[card] = state end
         if state.finished and (not row or state.row) then return end

@@ -3,7 +3,9 @@
 local ns, hooks, writes, reads, timers = {},0,0,0,0
 local objects={}
 local function obj(kind,parent,name)
-    local o={kind=kind,parent=parent,name=name,alpha=1,shown=true,layer='BACKGROUND',sub=0,rgba={1,1,1,1},scripts={},w=38,h=38}
+    local o={kind=kind,parent=parent,name=name,children={},alpha=1,shown=true,layer='BACKGROUND',sub=0,rgba={1,1,1,1},scripts={},w=38.000004,h=37.999996}
+    if parent and kind~='Texture' then parent.children[#parent.children+1]=o end
+    function o:GetChildren()assert(self~=UIParent,'global walk');reads=reads+1;return table.unpack(self.children)end
     objects[#objects+1]=o;if name then _G[name]=o end
     function o:GetObjectType()return self.kind end
     function o:GetParent()return self.parent end
@@ -59,7 +61,7 @@ hooksecurefunc=function(o,k,fn)
     hooks=hooks+1;local old=o[k]
     o[k]=function(...)local r=table.pack(old(...));fn(...);return table.unpack(r,1,r.n)end
 end
-debugstack=function()return 'native-delay-redraw.lua:42 -> refreshSlots -> paintSlots'end
+debugstack=function()return 'OneForAll/UI/Armory.lua:852 -> refreshSlots -> paintSlots'end
 GetTime=function()return 1.234 end
 GetBuildInfo=function()return 'test','build','date',16001 end
 GetAddOnMetadata=function()return '6.0.1'end
@@ -72,10 +74,19 @@ assert(loadfile('diagnostics/OneForAllTrace.lua'))('EUIAddonSkins',ns)
 local D=ns.OneForAllTrace
 local f=obj('Frame',UIParent)
 function f:Refresh()self.paintSlots()end
-local slot=obj('Button',f);local edge=obj('Texture',slot)
-local card={border={pieces={edge}},fill={pieces={obj('Texture',slot)}}}
-D.Card(card,slot);slot.card=card;slot.slot=1;slot.slotName='HeadSlot';slot.q=2
-slot.icon=obj('Texture',slot)
+local left=obj('Frame',f)
+local slot,edge
+for id=1,19 do
+    local b=obj('Button',left);b.slot=id;b.slotName='InventorySlot'..id;b.q=2
+    b.card={border={pieces={}},fill={pieces={obj('Texture',b)}}}
+    for i=1,9 do b.card.border.pieces[i]=obj('Texture',b) end
+    b.icon=obj('Texture',b)
+    if id==1 then slot=b;edge=b.card.border.pieces[1]end
+end
+-- No constructor observer registration. Size readback is deliberately not
+-- exactly 38; enchant-like buttons lack slotName and must not be counted.
+local enchant=obj('Button',left);enchant.slot=1;enchant.card=slot.card
+local foreign=obj('Button',UIParent);foreign.slot=7;foreign.slotName='Foreign';foreign.card=slot.card
 ITEM_QUALITY_COLORS={[2]={r=.12,g=1,b=0}}
 function f.paintSlots()edge:SetVertexColor(.12,1,0,1)end
 D.Planner(f)
@@ -83,7 +94,7 @@ assert(hooks==0 and timers==0 and writes==0 and reads==0,'disabled trace perform
 local a,b,c=SlashCmdList.EUIADDONSKINS('refresh')
 assert(a=='native'and b==nil and c==3 and forwarded=='refresh','existing command changed')
 D.Command('start');assert(D.active and hooks>0)
-local bound=hooks;D.Planner(f);assert(hooks==bound,'duplicate bindings')
+local bound=hooks;local boundReads=reads;D.Planner(f);assert(hooks==bound and reads==boundReads,'duplicate bindings or discovery')
 f:Refresh();f:Show()
 -- Represent a later native callback replacing art/layer/alpha and hiding a
 -- parent; no diagnostic must repair it or issue extra writes.
@@ -99,7 +110,10 @@ local export=EUIAddonSkinsOFATraceExport
 local text
 for _,o in ipairs(objects)do if o.kind=='EditBox'then text=o.text end end
 assert(export and text:find('SNAPSHOT before',1,true)and text:find('SNAPSHOT after',1,true))
-for _,s in ipairs({'COMPARE before -> after','slot1.border1','SetTexture args=replacement','SetColorTexture args=1,1,1,0','SetColorTexture args=1,1,1,1','native-delay-redraw.lua:42','parentAlpha=0.5','layer=BACKGROUND,-1','quality=2','expected=0.12,1,0'})do
+for id=1,19 do
+    for i=1,4 do assert(text:find('slot'..id..'.border'..i,1,true),'missing actual slot edge')end
+end
+for _,s in ipairs({'COMPARE before -> after','slot1.border1','SetTexture args=replacement','SetColorTexture args=1,1,1,0','SetColorTexture args=1,1,1,1','OneForAll/UI/Armory.lua:852','SNAPSHOT before slots=19','SNAPSHOT after slots=19','VALID comparison: 19 equipment slots','parentAlpha=0.5','layer=BACKGROUND,-1','quality=2','expected=0.12,1,0'})do
     assert(text:find(s,1,true),'missing trace evidence '..s)
 end
 local stoppedReads=reads
@@ -112,4 +126,13 @@ D.Command('export')
 for _,o in ipairs(objects)do if o.kind=='EditBox'then text=o.text end end
 assert(text:find('events=1024',1,true)and text:find('snapshots=12',1,true),'log bounds failed')
 assert(not text:find('dropped=0 ',1,true),'overflow not reported')
+-- A failed/incomplete discovery must never export Changed entries=0 as if
+-- before/after were valid. This is the exact reporting failure in 21dd166.
+local emptyNS={}
+assert(loadfile('diagnostics/OneForAllTrace.lua'))('EUIAddonSkins',emptyNS)
+emptyNS.OneForAllTrace.Command('start')
+emptyNS.OneForAllTrace.Command('before');emptyNS.OneForAllTrace.Command('after')
+emptyNS.OneForAllTrace.Command('export')
+for _,o in ipairs(objects)do if o.kind=='EditBox'then text=o.text end end
+assert(text:find('INVALID comparison',1,true)and not text:find('Changed entries=0',1,true),'empty comparison reported as valid')
 print('PASS: OneForAll development trace: opt-in, bounded changes/stacks, before/after export, native state/returns, no polling or disabled observer reads')

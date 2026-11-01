@@ -114,8 +114,7 @@ Development documents, tests, sources and screenshots are excluded.
   protected. The earlier ownership walk rejected that whole ancestry and the
   soft-control proxy rejected implicitly protected controls. The addon-local
   guard now separates ownership from permission, permits implicit containers
-  outside combat and excludes explicit secure controls (or an ambiguous older
-  protected result). Public Button/Checkbox primitives are called directly.
+  outside combat and excludes explicit secure controls. Public Button/Checkbox primitives are called directly.
   No secure attributes, actions or shared-helper defaults change. Cosmetic
   alpha guards also defer during combat and recover on regen.
 - **Nested tab selection:** MainFrame.openBottom reanchors the RoundRect centre
@@ -158,6 +157,63 @@ upstream code with mocked APIs/providers, not a WoW client. Cold discovery and
 look changes remain explicit work; no new polling, H.Scan or warm traversal.
 Individually reverting implicit-ancestry handling, selection-fill suppression,
 native-knob suppression or caption repair fails its corresponding regression.
+
+## Item borders, selected rows and switches
+
+The next visual review exposed cases missed by the earlier RGB-only tests:
+
+- **Equipped borders:** native Card draws the fill one sublayer above its
+  border, inset by one pixel. Flattening it to SetAllPoints removed that inset
+  and let the fill cover the quality edges. Restore the inset on the reused
+  fill; no icon, slot or click geometry changes. Slot border tint follows the
+  existing `slot`/`q` fields, including Poor and selected slots, instead of
+  replacing quality with decorative selection gold. Cleared slots return to
+  the neutral native empty-slot treatment. Other item-card colours stay native.
+  Existing cards found during initial owned-window discovery also receive the
+  treatment; card setup is cached. Palette comparisons tolerate native float
+  readback when retaining selected/status colours and avoiding redundant paints.
+- **Mixed selected rows:** CardRow creates an additional HIGHLIGHT wash and
+  nine-sliced `rr_ring` via HoverEdge, separate from its fill and border. The
+  ring was still native while the selected card had an EUI accent. Suppress
+  that redundant ring on CardRow only and neutralize its existing wash. Reuse
+  the inset fill as a panel/accent blend and the existing bottom edge as the
+  sole accent indicator; keep other edges subdued. Hunter Pets, Reputation,
+  gear/recipe lists and other CardRow callers share this path. Quest and learned
+  status fills, quality/class colours, native actions and window opacity remain
+  authoritative. No new row textures are created.
+- **Remaining switches:** the earlier local guard required the second
+  IsProtected result to be exactly false. Nil also means non-explicit protection;
+  the expanded fixture propagates inheritance to child frames and regions and
+  exercises both results. Follow the explicit flag's truth value, consistent
+  with [Blizzard's region validation](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_AuraContainer/Blizzard_AuraContainerUtil.lua).
+  Secure actions remain excluded and all cosmetics defer in combat. Also
+  recognize late `pill_fill`/`knob` textures only on native `_ofaToggle` owners,
+  so a redraw cannot leave those regions behind the compact EUI square.
+
+Tests now assert fill/border draw order and inset, all eight equipped qualities
+through selection and clearing, item hover/art/click preservation, pre-existing
+cards, one selected-row accent, native gold-ring/wash removal, row recycling,
+status colours and accent changes. The prior build fails the inherited-nil
+fixture. Independently removing the fill inset, gold-ring suppression,
+inherited-nil handling, selected-slot quality preservation or late-knob
+suppression fails its focused regression. A separate local-source run exercises real QoL construction and all ten
+category selections, 56 switches, a native setting action and disabled/on/off
+transitions. With the extra QoL test panel registered, the real Settings fixture
+has 12 buttons, 15 switches, one slider and 18 reorder arrows (the extra mock
+panel adds a tab-visibility switch and two order arrows). This is not a claim
+about the player's installed tab count.
+
+Run the optional upstream workload above with this additional variable:
+
+```sh
+ONEFORALL_QOL=/path/to/OneForAll/UI/QoL.lua
+```
+
+Warm work retains the recorded zero new objects/hooks, hierarchy reads, font
+writes and skin geometry writes. This iteration preserves the accepted header,
+native tab glow, main backgrounds and layout. Actual rendering, hover layering,
+item refresh/empty transitions, input/taint safety and client performance still
+require in-game review; mock passes do not establish visual acceptance.
 
 ## Client limits and in-game review
 

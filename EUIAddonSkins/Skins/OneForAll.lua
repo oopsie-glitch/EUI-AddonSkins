@@ -26,8 +26,10 @@ end, function(S, module)
     H.Allowed = function(f)
         if not Object(f) then return false end
         if f.IsProtected then
-            local protected, explicit = f:IsProtected()
-            if protected and explicit ~= false then return false end
+            local _, explicit = f:IsProtected()
+            -- Both false and nil mean "not explicitly protected". In
+            -- particular, older clients use nil for inherited protection.
+            if explicit then return false end
         end
         return true
     end
@@ -68,7 +70,7 @@ end, function(S, module)
         return name and name:gsub("%.blp$", ""):gsub("%.tga$", "")
     end
     if GetFileIDFromPath then
-        for name in ("glow_line divider_plain divider_ornate talent_frame talent_glow tab_icons grip_resize grip_height icon_close icon_bug icon_chat chevron icon_arrow_down icon_back ring_gold ring_silver ring_plain frame_boss2 frame_badge gem_rim window_ring modern_frame window_frame corner_glow edge_fade line_cap btn_m_active rr_fill header_banner minimap_icon shade_lr sort_arrows"):gmatch("%S+") do
+        for name in ("glow_line divider_plain divider_ornate talent_frame talent_glow tab_icons grip_resize grip_height icon_close icon_bug icon_chat chevron icon_arrow_down icon_back ring_gold ring_silver ring_plain frame_boss2 frame_badge gem_rim window_ring modern_frame window_frame corner_glow edge_fade line_cap btn_m_active rr_fill rr_ring pill_fill knob header_banner minimap_icon shade_lr sort_arrows"):gmatch("%S+") do
             for _, suffix in ipairs({"", ".blp", ".tga"}) do
                 local id = GetFileIDFromPath(UI.ASSET_ROOT..name..suffix)
                 if id and id > 0 then assetIDs[id] = name end
@@ -147,6 +149,14 @@ end, function(S, module)
     end
     -- Reuse native colourable decoration, preserving its alpha/visibility and
     -- semantic state colours. Never change SkinC or the gameplay colour tables.
+    local function SameRGB(r, g, b, nr, ng, nb)
+        return math.abs(r-nr) < .00001 and math.abs(g-ng) < .00001 and math.abs(b-nb) < .00001
+    end
+    local function StatusFill(r, g, b)
+        return SameRGB(r, g, b, .035, .16, .055)
+            or SameRGB(r, g, b, .22, .17, .04)
+            or SameRGB(r, g, b, .05, .15, .07)
+    end
     local function Colour(t, role, r, g, b, a)
         if not H.Texture(t) then return end
         local d = colours[t]
@@ -158,24 +168,33 @@ end, function(S, module)
                 local cr, cg, cb, ca = d.r or 1, d.g or 1, d.b or 1, d.a or 1
                 if d.role == "accent" then cr, cg, cb = S.GetAccentColor()
                 elseif d.role == "selection" then cr, cg, cb = S.GetAccentColor(); ca = ca * .18
+                elseif d.role == "rowselection" then
+                    if not StatusFill(cr, cg, cb) then
+                        local ar, ag, ab = S.GetAccentColor()
+                        cr, cg, cb = S.GetPanelColor()
+                        cr, cg, cb = cr * .9 + ar * .1, cg * .9 + ag * .1, cb * .9 + ab * .1
+                    end
                 elseif d.role == "surface" then
                     -- Quest-chain done/in-log fills and learned pet ranks are
                     -- data, even when the in-log colour is itself gold.
-                    local status = (cr == .035 and cg == .16 and cb == .055)
-                        or (cr == .22 and cg == .17 and cb == .04)
-                        or (cr == .05 and cg == .15 and cb == .07)
-                    if not status then cr, cg, cb = S.GetPanelColor() end
+                    if not StatusFill(cr, cg, cb) then cr, cg, cb = S.GetPanelColor() end
                 elseif d.role == "line" then cr, cg, cb = .22, .22, .24
                 elseif d.role == "white" then cr, cg, cb = .8, .8, .82
                 elseif d.role == "border" then
                     -- Normal card chrome is neutral; a native quality/class/
                     -- quest-state colour supplied later remains authoritative.
                     local warm = not Quality(cr, cg, cb) and cr > cg and cg > cb and cb < .4
-                    if warm and cr > .7 then cr, cg, cb = S.GetAccentColor()
+                    local owner = t:GetParent()
+                    local quality = owner and owner.slot and owner.q ~= nil and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[owner.q]
+                    if quality then cr, cg, cb, ca = quality.r, quality.g, quality.b, 1
+                    elseif d.row and warm then
+                        if d.row.selected and d.row.edge == t then cr, cg, cb = S.GetAccentColor()
+                        else cr, cg, cb = .2, .2, .22 end
+                    elseif warm and cr > .7 then cr, cg, cb = S.GetAccentColor()
                     elseif warm then cr, cg, cb = .2, .2, .22 end
                 end
                 local vr, vg, vb, va = t:GetVertexColor()
-                if vr ~= cr or vg ~= cg or vb ~= cb or va ~= ca then t:SetVertexColor(cr, cg, cb, ca) end
+                if not SameRGB(vr, vg, vb, cr, cg, cb) or math.abs(va-ca) >= .00001 then t:SetVertexColor(cr, cg, cb, ca) end
                 d.painting = nil
             end
             H.Hook(t, "SetVertexColor", function(_, nr, ng, nb, na)
@@ -188,7 +207,7 @@ end, function(S, module)
         d.r, d.g, d.b, d.a = r or 1, g or 1, b or 1, a or 1
         d.paint()
     end
-    local function Pieces(rr, anchor, role)
+    local function Pieces(rr, anchor, role, inset)
         if type(rr) ~= "table" or type(rr.pieces) ~= "table" or flattened[rr] then return end
         flattened[rr] = true
         local p = rr.pieces
@@ -206,20 +225,63 @@ end, function(S, module)
         else
             local t = p[#p]
             t:SetTexture("Interface\\Buttons\\WHITE8X8"); t:SetTexCoord(0, 1, 0, 1)
-            t:ClearAllPoints(); t:SetAllPoints(anchor)
+            t:ClearAllPoints()
+            if inset then
+                t:SetPoint("TOPLEFT", anchor, "TOPLEFT", inset, -inset)
+                t:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", -inset, inset)
+            else t:SetAllPoints(anchor) end
             Colour(t, role, t:GetVertexColor())
             for _, other in ipairs(p) do if other ~= t then H.Fade(other) end end
         end
     end
-    local function Card(card, anchor)
-        if not card then return end
-        Pieces(card.fill, anchor, "surface"); Pieces(card.border, anchor, "border")
+    local cards = {}
+    local function Card(card, anchor, row)
+        if type(card) ~= "table" then return end
+        local state = cards[card]
+        if not state then state = {}; cards[card] = state end
+        if state.finished and (not row or state.row) then return end
+        local firstEdge = card.border and card.border.pieces and card.border.pieces[1]
+        local r, g, b
+        if row and firstEdge then r, g, b = firstEdge:GetVertexColor() end
+        -- Native fill is above the border (BACKGROUND sublayer + 1). Keep its
+        -- one-pixel inset, otherwise an opaque fill paints over quality edges.
+        Pieces(card.fill, anchor, "surface", 1); Pieces(card.border, anchor, "border")
+        state.finished = true
+        local selection
+        if row then
+            selection = {edge = card.border and card.border.pieces[2], selected = r and SameRGB(r, g, b, 1, .80, .34)}
+            state.row = selection
+            for _, t in ipairs(card.border and card.border.pieces or {}) do
+                if colours[t] then colours[t].row = selection; colours[t].paint() end
+            end
+            if selection.selected then
+                for _, t in ipairs(card.fill and card.fill.pieces or {}) do
+                    if colours[t] then colours[t].role = "rowselection"; colours[t].paint() end
+                end
+            end
+            -- CardRow adds its own gold hover wash and a nine-sliced ring,
+            -- separately from card.fill/card.border. Retain just the wash.
+            for _, t in ipairs(H.Regions(anchor)) do
+                if H.Texture(t) and t:GetDrawLayer() == "HIGHLIGHT" then
+                    if Asset(t) == "rr_ring" then H.Fade(t)
+                    elseif not t:GetTexture() then
+                        t:SetColorTexture(1, 1, 1, .06)
+                    end
+                end
+            end
+        end
         H.Hook(card, "SetSelected", function(_, selected)
             if not Ready() then return end
+            if selection then
+                selection.selected = selected and true or false
+                for _, t in ipairs(card.border and card.border.pieces or {}) do
+                    if colours[t] then colours[t].paint() end
+                end
+            end
             if card.fill and card.fill.pieces then
                 for _, t in ipairs(card.fill.pieces) do
                     local d = colours[t]
-                    if d then d.role = selected and "selection" or "surface"; d.paint() end
+                    if d then d.role = selected and "rowselection" or "surface"; d.paint() end
                 end
             end
         end)
@@ -227,6 +289,11 @@ end, function(S, module)
     local function Decorative(t)
         if not H.Texture(t) then return end
         local name = Asset(t)
+        local owner = t:GetParent()
+        if owner and owner._ofaToggle and (name == "pill_fill" or name == "knob") then
+            H.Fade(t) -- also covers native switch art added after first styling
+            return
+        end
         if not name or decorated[t] == name then return end
         decorated[t] = name
         if name == "glow_line" then
@@ -387,6 +454,9 @@ end, function(S, module)
     local function SkinNode(f)
         if not H.Allowed(f) then return end
         local d = State(f)
+        if type(f.card) == "table" and type(f.card.fill) == "table" and type(f.card.border) == "table" then
+            Card(f.card, f, type(f.card.SetSelected) == "function")
+        end
         if d.seen then return end
         d.seen = true
         local kind = f:GetObjectType()
@@ -565,7 +635,7 @@ end, function(S, module)
     Wrap(UI, "GlowLine", function(v) Decorative(v[1]) end)
     Wrap(UI, "Column", function(v) if H.Texture(v[1]) then v[1]:SetColorTexture(1, 1, 1, .55); Colour(v[1], "line") end end)
     Wrap(UI, "Card", function(v, owner, anchor) Card(v[1], anchor or owner); Queue(owner) end)
-    Wrap(UI, "CardRow", function(v, owner) Card(v[1], owner); Queue(owner) end)
+    Wrap(UI, "CardRow", function(v, owner) Card(v[1], owner, true); Queue(owner) end)
     Wrap(UI, "RoundRect", function(v, owner, anchor, layer, sub, c, inset, r, g, b, a, tex)
         if owner._ofaToggle then
             -- These regions belong to the switch, not its empty pill anchor.

@@ -36,7 +36,17 @@ local function object(kind,parent,name)
     function f:GetObjectType()return self.kind end
     function f:IsObjectType(k)return self.kind==k end
     function f:IsForbidden()return self.forbidden end
-    function f:IsProtected()return self.protected or self.implicit, self.protected and true or false end
+    function f:IsProtected()
+        if self.protected then return true,true end
+        local p=self
+        while p do
+            if p.implicit then
+                if client=='Retail' then return true,false else return true,nil end
+            end
+            p=p.parent
+        end
+        return false,nil
+    end
     function f:GetName()return self.name end
     function f:GetParent()return self.parent end
     function f:GetChildren()assert(self~=UIParent,'global traversal');count.reads=count.reads+1;return unpack(self.children)end
@@ -117,6 +127,11 @@ local function object(kind,parent,name)
     function f:SetJustifyV()end
     function f:SetShadowOffset()end
     function f:SetTextInsets(...)self.insets={...}end
+    function f:SetAutoFocus()end
+    function f:SetMaxLetters()end
+    function f:SetNumeric()end
+    function f:HasFocus()return false end
+    function f:ClearFocus()end
     function f:GetTextInsets()return 0,0,0,0 end
     function f:GetNormalTexture()return self.normal end
     function f:GetPushedTexture()return self.pushed end
@@ -131,6 +146,12 @@ local function object(kind,parent,name)
     function f:IsEnabled()return self.enabled end
     function f:Enable()self:SetEnabled(true)end
     function f:Disable()self:SetEnabled(false)end
+    function f:Click()
+        if not self.enabled then return end
+        if self.kind=='CheckButton' then self:SetChecked(not self:GetChecked())end
+        if self.scripts.OnClick then self.scripts.OnClick(self)end
+        if self.scripts.PostClick then self.scripts.PostClick(self)end
+    end
     function f:GetOrientation()return self.orientation end
     function f:SetOrientation(v)self.orientation=v end
     function f:SetScrollChild(v)self.scrollChild=v end
@@ -217,21 +238,30 @@ else
     function UI.RegisterPanel(spec)UI.panels[#UI.panels+1]=spec end
     function UI.RoundRect(owner,anchor,layer,sub,c,inset,r,g,b,a,tex)
         local v={pieces={}}
-        for i=1,9 do local t=owner:CreateTexture(nil,layer);t:SetTexture(UI.ASSET_ROOT..(tex or 'rr_fill'));v.pieces[i]=t end
+        for i=1,(tex=='rr_ring_w' and 8 or 9) do
+            local t=owner:CreateTexture(nil,layer);t:SetDrawLayer(layer,sub)
+            t:SetTexture(UI.ASSET_ROOT..(tex or 'rr_fill'));v.pieces[i]=t
+        end
         function v:SetColor(...)for _,t in ipairs(self.pieces)do t:SetVertexColor(...)end end
         function v:SetShown(on)for _,t in ipairs(self.pieces)do t:SetShown(on)end end
         v:SetColor(r,g,b,a or 1);return v
     end
-    function UI.Card(owner,anchor)
-        local v={fill=UI.RoundRect(owner,anchor,'BACKGROUND',0,4,1,.06,.06,.07,1),
-            border=UI.RoundRect(owner,anchor,'BORDER',0,4,0,.28,.25,.2,1,'rr_ring_w')}
+    function UI.Card(owner,anchor,c,border,fill,layer,sub)
+        local r,g,b,a=table.unpack(border or {.28,.25,.2,1})
+        local v={fill=UI.RoundRect(owner,anchor,layer or 'BACKGROUND',(sub or 0)+1,4,1,table.unpack(fill or {.06,.06,.07,1})),
+            border=UI.RoundRect(owner,anchor,layer or 'BACKGROUND',sub or 0,4,0,r,g,b,a,'rr_ring_w')}
         function v:SetFill(...)self.fill:SetColor(...)end
         function v:SetBorder(...)self.border:SetColor(...)end
         return v
     end
     function UI.CardRow(f)
         local c=UI.Card(f,f)
-        function c:SetSelected(on)self:SetBorder(on and 1 or .28,.8,.34,1);self:SetFill(.22,.155,.055,.98)end
+        local hi=f:CreateTexture(nil,'HIGHLIGHT');hi:SetColorTexture(.90,.66,.22,.07)
+        for i=1,9 do local t=f:CreateTexture(nil,'HIGHLIGHT');t:SetTexture(UI.ASSET_ROOT..'rr_ring')end
+        function c:SetSelected(on,nfill)
+            if on then self:SetBorder(1,.8,.34,1);self:SetFill(.22,.155,.055,.98)
+            else self:SetBorder(.28,.25,.2,.9);self:SetFill(table.unpack(nfill or {.06,.062,.074,.97}))end
+        end
         return c
     end
     function UI.GlowLine(f)
@@ -322,6 +352,21 @@ if settingsSource then
     for _,spec in ipairs(UI.panels)do if not before[spec] then actualSettings=spec end end
     actualSettings.key='sourceSettings'
 end
+local qolSource=os.getenv('ONEFORALL_QOL')
+local actualQoL
+if qolSource then
+    assert(source,'actual QoL requires actual Widgets')
+    local before={};for _,spec in ipairs(UI.panels)do before[spec]=true end
+    assert(loadfile(qolSource))('OneForAll',A)
+    for _,spec in ipairs(UI.panels)do if not before[spec] then actualQoL=spec end end
+    actualQoL.key='sourceQoL'
+end
+-- A window may already exist when EUI/the target integration becomes ready.
+local prebuilt=CreateFrame('Frame','OneForAllWeightEditor',UIParent)
+local preSlot=CreateFrame('Button',nil,prebuilt);preSlot.slot=2;preSlot.q=2
+preSlot.card=UI.Card(preSlot,preSlot,4,{.12,1,0,1},{.05,.05,.06,.95},'BACKGROUND',0)
+local preRow=CreateFrame('Button',nil,prebuilt);preRow.card=UI.CardRow(preRow);preRow.card:SetSelected(true)
+preRow.card:SetBorder(1,.8000000119,.3400000036,1) -- native float readback
 assert(loadfile('EUIAddonSkins/Skins/OneForAll.lua'))('EUIAddonSkins',ns)
 local m=assert(modules.OneForAll);assert(m.available())
 m.install(S,m);flush()
@@ -336,7 +381,7 @@ if mainSource then
 end
 assert(UI.banner.alpha==1 and UI.brandLogo.alpha==1 and UI.normalBg.alpha==0,'shell art ownership/opacity')
 for _,spec in ipairs(UI.panels)do
-    if spec~=actualSettings then
+    if spec~=actualSettings and spec~=actualQoL then
     -- RecipeBar's secure Craft action implicitly protects the window before
     -- later Professions/Settings controls are created. It must not stop them.
     if spec.key=='professions' then root.implicit=true end
@@ -379,6 +424,37 @@ if actualSettings then
     verify(settings)
     assert(buttons>=10 and checks>=10 and sliders==1 and arrows>=2 and labels>30,'incomplete Settings fixture')
     print('PASS: real Settings factory: '..buttons..' buttons, '..checks..' switches, '..sliders..' slider, '..arrows..' reorder arrows; profile action retained')
+end
+if actualQoL then
+    local options={{key='off',label='Off'}}
+    local values={}
+    local function no()return false end
+    local function empty()return {} end
+    local Q={Get=function(k)return values[k]end,Set=function(k,v)values[k]=v end,
+        LOGO_COLORS={},MM_DIR_OPTIONS=options,CHAT_HIDE_OPTIONS=options,QUALITY_OPTIONS=options,
+        WHO_OPTIONS=options,DUEL_OPTIONS=options,GetJunkItems=empty,GetNeverItems=empty,GetBuffReminders=empty,
+        GetCVarSwitch=no,GetCompareShift=no,IsLootFeedUnlocked=no}
+    A.QoL=Q
+    local qos=actualQoL.create(root);flush();qos:Show();flush()
+    local checks,navs={},{}
+    local function verify(f)
+        if f.kind=='CheckButton' then
+            checks[#checks+1]=f
+            for _,t in ipairs(f.regions)do if t.kind=='Texture' then assert(t.alpha==0,'real QoL switch art remains')end end
+        elseif f.kind=='Button' and f.key and f.count then navs[#navs+1]=f end
+        for _,child in ipairs(f.children)do verify(child)end
+    end
+    verify(qos)
+    for _,b in ipairs(navs)do b:Click();flush()end
+    assert(#navs==10 and #checks>40,'not all QoL categories exercised')
+    for _,cb in ipairs(checks)do
+        if cb.parent.name=='Farther camera zoom' then cb:Click();assert(values.cameraZoom==true,'native QoL setting action lost')end
+    end
+    for _,cb in ipairs(checks)do
+        cb:SetChecked(true);cb:Disable();cb:SetChecked(false);cb:Enable()
+        for _,t in ipairs(cb.regions)do if t.kind=='Texture' then assert(t.alpha==0,'QoL native switch reappeared after state change')end end
+    end
+    print('PASS: real QoL factory: '..#navs..' categories, '..#checks..' switches; native on/off/disabled artwork suppression')
 end
 local secure=CreateFrame('Button',nil,root);secure.protected=true
 secure._label=A.NewFS(secure,nil,'OVERLAY','GameFontNormal');secure._label:SetText('Secure Craft')
@@ -425,6 +501,64 @@ if mainSource or UI.testMainTab then
     assert(tested>0,'main tabs not exercised')
 end
 local p=pages.armory
+if source then
+    local lateKnob=p.check:CreateTexture(nil,'OVERLAY');A.SetTex(lateKnob,UI.ASSET_ROOT..'knob');flush()
+    assert(lateKnob.alpha==0,'late native switch knob escaped suppression')
+end
+-- Card fills have a higher sublayer than their edges. They must remain inset
+-- at full opacity; checking RGB alone misses a correctly tinted hidden border.
+local function visibleCard(card)
+    local fill=card.fill.pieces[#card.fill.pieces]
+    local edge=card.border.pieces[1]
+    assert(fill.layer==edge.layer and fill.sub>edge.sub,'fixture no longer models native card layering')
+    assert(not fill.all and #fill.points==2 and fill.points[1][4]==1 and fill.points[1][5]==-1
+        and fill.points[2][4]==-1 and fill.points[2][5]==1,'card fill covers rarity border')
+    for i=1,4 do assert(card.border.pieces[i].alpha>0,'quality edge faded')end
+end
+visibleCard(preSlot.card)
+visibleCard(preRow.card)
+local r,g,b=preRow.card.border.pieces[2]:GetVertexColor()
+assert(r==accent[1] and g==accent[2] and b==accent[3],'pre-existing row lost selected state')
+local slot=CreateFrame('Button',nil,root);slot:SetSize(38,38)
+slot.card=UI.Card(slot,slot,4,{.28,.25,.2,.9},{.05,.05,.06,.95},'BACKGROUND',0)
+slot.icon=slot:CreateTexture(nil,'ARTWORK');slot.icon:SetTexture('equipment-art');slot.icon:SetTexCoord(.07,.93,.07,.93)
+local hover=slot:CreateTexture(nil,'HIGHLIGHT');hover:SetTexture('Interface\\Buttons\\ButtonHilight-Square')
+slot.slot=1;local clicks=0;slot:SetScript('OnClick',function()clicks=clicks+1 end)
+flush();visibleCard(slot.card);assert(not slot.euiButton and hover.alpha==1,'item hover/control replaced')
+for q=0,7 do
+    slot.q=q
+    local c=ITEM_QUALITY_COLORS[q]
+    slot.card:SetBorder(c.r,c.g,c.b,1)
+    -- Native paintSlots uses decorative gold on selection. The item quality
+    -- remains authoritative, including Poor, and no second border is created.
+    slot.card:SetBorder(1,.82,.25,1)
+    for i=1,4 do
+        local r,g,b=slot.card.border.pieces[i]:GetVertexColor()
+        assert(r==c.r and g==c.g and b==c.b,'equipped quality lost on selection '..q)
+    end
+end
+slot.q=nil;slot.card:SetBorder(.28,.25,.20,.90)
+local r,g,b=slot.card.border.pieces[1]:GetVertexColor();assert(r==.2 and g==.2 and b==.22,'cleared slot kept stale quality')
+assert(slot.icon.path=='equipment-art' and slot.icon.uv[1]==.07 and slot.w==38 and slot.h==38,'equipment art/geometry changed')
+slot.scripts.OnClick(slot);assert(clicks==1,'equipment selection action lost')
+visibleCard(p.row.card)
+for _,t in ipairs(p.row.regions)do
+    if t.kind=='Texture' and t.layer=='HIGHLIGHT' then
+        if t.path==UI.ASSET_ROOT..'rr_ring' then assert(t.alpha==0,'native gold hover ring remains')
+        elseif t.base then assert(t.base[1]==1 and t.base[2]==1 and t.base[3]==1 and t.base[4]==.06,'native gold hover wash remains')end
+    end
+end
+p.row.card:SetSelected(true)
+local selectedFill=p.row.card.fill.pieces[#p.row.card.fill.pieces]
+local r,g,b,a=selectedFill:GetVertexColor()
+assert(math.abs(r-(.08*.9+accent[1]*.1))<.00001 and a>.5,'selected row is not one cohesive surface')
+for i=1,4 do
+    local r,g,b=p.row.card.border.pieces[i]:GetVertexColor()
+    if i==2 then assert(r==accent[1] and g==accent[2] and b==accent[3],'selected accent edge missing')
+    else assert(r==.2 and g==.2 and b==.22,'selected row has multiple accent borders')end
+end
+p.row.card:SetSelected(false)
+local r,g,b=p.row.card.border.pieces[2]:GetVertexColor();assert(r==.2 and g==.2 and b==.22,'recycled row retained accent')
 local foreign=CreateFrame('Frame','UnrelatedBlizzardWindow',UIParent)
 local foreignText=A.NewFS(foreign,nil,'OVERLAY','GameFontNormal');foreignText:SetTextColor(1,.82,.2)
 local foreignButton=UI.GoldButton(foreign,'Foreign',80,24)
@@ -441,11 +575,12 @@ for q=0,7 do
     local t=p.row.card.border.pieces[1];local r,g,b=t:GetVertexColor()
     assert(r==colour.r and g==colour.g and b==colour.b,'native rarity ring '..q)
 end
-p.row.card:SetFill(.035,.16,.055,.9)
+p.row.card:SetSelected(true);p.row.card:SetFill(.035,.16,.055,.9)
 local fill=p.row.card.fill.pieces[#p.row.card.fill.pieces]
 local fr,fg,fb=fill:GetVertexColor();assert(fr==.035 and fg==.16 and fb==.055,'quest completion fill lost')
 p.row.card:SetFill(.22,.17,.04,.92)
 local fr,fg,fb=fill:GetVertexColor();assert(fr==.22 and fg==.17 and fb==.04,'quest in-log fill lost')
+p.row.card:SetSelected(false)
 -- Owned popup discovery, dropdown recycling and independent removal state.
 local popup=CreateFrame('Frame','OneForAllProfilePopup',UIParent)
 UI.FramedPanel(popup)
@@ -495,6 +630,7 @@ assert(count.fonts==fw and count.objects==o and count.hooks==h and count.reads==
     'warm interaction counts: '..table.concat({count.objects-o,count.hooks-h,count.reads-reads,count.geometry-geo},','))
 accent={.9,.2,.3};face='changed-font';for _,fn in ipairs(looks)do fn()end;flush()
 local r,g,b=p.button.euiOfaSelection:GetVertexColor();assert(r==.9 and g==.2 and b==.3)
+local r,g,b=p.row.card.border.pieces[2]:GetVertexColor();assert(r==.9 and g==.2 and b==.3,'row indicator did not follow accent')
 assert(p.button._label.font==face)
 if mainSource then UI.SetWindowAlpha(.7)else UI.alpha=.7;UI.ApplyWindowAlpha()end;for _,t in ipairs(shells[root])do assert(t.alpha==.7)end
 UI.banner:SetAlpha(0);UI.brandLogo:SetAlpha(0);assert(UI.banner.alpha==1 and UI.brandLogo.alpha==1)

@@ -6,6 +6,7 @@ Run commands from the repository root. Python runners use Python 3 and the insta
 
 | Workload | Command | What it measures |
 | --- | --- | --- |
+| OneForAll adapter | `python3 scripts/package.py` | Source-shaped warm operation counts; optional supplied Widgets/MainFrame smoke run in [test notes](../docs/ONEFORALL_TEST.md) |
 | Atlas adapter | `python3 benchmarks/run_atlas.py --baseline 3b1a636` / `python3 benchmarks/run_atlas.py` | Five-trial host timing, Lua/C calls and allocation churn for cold setup, reopen, nested map/legend callbacks and closed addon loads; see [audit](../docs/ATLAS_PERFORMANCE.md) |
 | AllTheThings | `python3 benchmarks/run_att.py` | Warm native row/window interactions and skin object/hook/traversal counts |
 | Guild Roster Manager | `python3 benchmarks/run_grm.py` | Warm settings/tab interactions against a large owned tree |

@@ -30,6 +30,7 @@ EllesmereUI skins for World of Warcraft addons.
 - LiteMount
 - Myslot
 - Nova Instance Tracker
+- OneForAll (Forever; supplied Retail-loadable builds require in-game verification)
 - PallyPower
 - Pawn
 - Premade Groups Filter

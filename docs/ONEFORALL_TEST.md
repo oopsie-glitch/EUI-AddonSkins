@@ -215,6 +215,51 @@ native tab glow, main backgrounds and layout. Actual rendering, hover layering,
 item refresh/empty transitions, input/taint safety and client performance still
 require in-game review; mock passes do not establish visual acceptance.
 
+## First-show binding and native art removal
+
+The supplied GearPlanner constructs `b.card` before assigning `b.slot`, then
+populates `b.q` in `refreshSlots`. The previous cached discovery did not finish
+an item-specific binding after that metadata arrived; its reused edges also
+remained BACKGROUND regions with no protection against later alpha resets.
+Complete that binding before the seen-frame early return. The original four
+edges now render on OVERLAY above the item artwork and retain their region
+alpha through subsequent cosmetic passes. Quality still comes from native
+slot metadata, with neutral empty-slot handling and the same inset fill. No
+replacement border or changed icon/click geometry is introduced.
+
+For redundant artwork, alpha-only suppression left the original assets and
+solid fills in place. Confirmed native setters include toggle track/knob vertex
+paints and SetShown, Plate/Nine selected-state visibility, and makeButton's
+`_bg:SetColorTexture` in OnMouseDown/OnMouseUp. Empty only the already-classified
+decorative textures, including spare card slices, gold hover rings, button/tab
+plates, switch artwork and native Settings paging textures. Native references
+and state callbacks stay intact. Guard file-art reapplication through the one
+existing addon SetTex hook; only discarded solid-colour textures receive a
+SetColorTexture hook. This avoids two extra hooks per nine-slice piece. EUI
+fills, selected indicators, meaningful art and all input geometry are retained.
+Combat defers erasure, including pending solid-colour resets, until recovery.
+
+The optional source run now also accepts:
+
+```sh
+ONEFORALL_GEARPLANNER=/path/to/OneForAll/UI/GearPlanner.lua
+```
+
+It executes the real 19-slot factory and native Refresh -> Show sequence before
+any click, then checks foreground/visible quality edges, alpha reset, selection
+and reopen. Other regressions attempt native file/colour/visibility resets,
+exercise actual mouse-down/up handlers, and check secondary-tab native plates
+are empty while EUI surfaces remain. Existing Settings/QoL, item-colour, empty
+slot, hover, theme, combat and zero-warm-work assertions remain enabled.
+Removing asset erasure, foreground placement, completed slot binding, the
+native solid-colour reset guard or edge-alpha retention individually fails
+its corresponding regression.
+
+These source paths and regressions confirm the initialization and decorative
+state conflicts. They do not capture the exact final in-game rendering/hiding
+caller or prove visual acceptance. First-load visibility, overlapping layers
+and native interaction still need the owner's in-game review.
+
 ## Client limits and in-game review
 
 The supplied TOC declares interface 16001 (Forever). Its Retail-loadable

@@ -361,6 +361,20 @@ if qolSource then
     for _,spec in ipairs(UI.panels)do if not before[spec] then actualQoL=spec end end
     actualQoL.key='sourceQoL'
 end
+local gearSource=os.getenv('ONEFORALL_GEARPLANNER')
+if gearSource then
+    assert(source,'actual GearPlanner requires actual Widgets')
+    wipe=function(t)for k in pairs(t)do t[k]=nil end;return t end
+    UnitClass=function()return 'Warrior','WARRIOR',1 end
+    UnitName=function()return 'Test' end
+    UnitLevel=function()return 42 end
+    GetInventoryItemTexture=function(_,slot)if slot~=4 and slot~=19 then return 'equipped-'..slot end end
+    GetInventoryItemQuality=function(_,slot)if slot~=4 and slot~=19 then return (slot-1)%8 end end
+    GetInventoryItemID=function()return nil end
+    GetInventorySlotInfo=function()return 1,'empty-slot' end
+    assert(loadfile(gearSource))('OneForAll',A)
+    A.GearIndex=function()return {},{} end -- data provider, not the UI factory
+end
 -- A window may already exist when EUI/the target integration becomes ready.
 local prebuilt=CreateFrame('Frame','OneForAllWeightEditor',UIParent)
 local preSlot=CreateFrame('Button',nil,prebuilt);preSlot.slot=2;preSlot.q=2
@@ -394,6 +408,10 @@ for _,spec in ipairs(UI.panels)do
     p.check:Disable();assert(not p.check:IsEnabled())
     p.check:SetChecked(false);p.check:Enable();p.check:SetChecked(true)
     for _,t in ipairs(p.check.regions)do if t.kind=='Texture' then t:SetAlpha(1);assert(t.alpha==0,'switch art resurrected') end end
+    for _,t in ipairs(p.check.regions)do if t.kind=='Texture' then
+        A.SetTex(t,UI.ASSET_ROOT..'pill_fill');t:SetVertexColor(.62,.49,.27,1);t:SetShown(true);t:SetAlpha(1)
+        assert(t.path==nil and t.base==nil and t.alpha==0,'native switch asset/colour remains behind checkbox')
+    end end
     p.button:SetActive(true);assert(p.button.euiOfaSelection and p.button.euiOfaSelection:IsShown())
     assert(p.button._label:GetTextColor()==.91,'native active gold returned')
     end
@@ -463,6 +481,7 @@ for _,direction in ipairs({'<','>'})do
     local b=CreateFrame('Button',nil,root);b:SetSize(20,20)
     b:SetNormalTexture('Interface\\Buttons\\UI-SpellbookIcon-'..(direction=='<' and 'PrevPage' or 'NextPage')..'-Up')
     A.SkinBlizz(b);flush();assert(b.euiPageDirection==direction and b.w==20 and b.h==20,'settings reorder arrow missed')
+    assert(not b.normal.path and not b.normal.base,'native gold settings arrow retained')
 end
 if UI.SmallCaps then
     local b,label,sorts
@@ -501,6 +520,40 @@ if mainSource or UI.testMainTab then
     assert(tested>0,'main tabs not exercised')
 end
 local p=pages.armory
+if gearSource then
+    local planner=UI.CreateGearPlanner(root)
+    local slots={}
+    local function collect(f)
+        if type(f.slot)=='number' and f.slotName then slots[#slots+1]=f end
+        for _,child in ipairs(f.children)do collect(child)end
+    end
+    collect(planner);assert(#slots==19,'real GearPlanner slots not exercised')
+    planner:Refresh();planner:Show();flush() -- no click required for first-open art
+    local function checkSlots()
+        for _,slot in ipairs(slots)do
+            for i=1,4 do
+                local edge=slot.card.border.pieces[i]
+                assert(edge.layer=='OVERLAY' and edge.alpha>0,'first-open equipped border is not foreground/visible')
+                if slot.q~=nil then
+                    local c=ITEM_QUALITY_COLORS[slot.q];local r,g,b=edge:GetVertexColor()
+                    assert(math.abs(r-c.r)<.00001 and math.abs(g-c.g)<.00001 and math.abs(b-c.b)<.00001,'first-open quality wrong')
+                end
+                edge:SetAlpha(0);assert(edge.alpha>0,'later art pass faded equipped border')
+            end
+            assert(slot.icon.path==(slot.q~=nil and 'equipped-'..slot.slot or 'empty-slot'),'equipped/empty artwork changed')
+        end
+    end
+    checkSlots()
+    slots[3]:Click();flush();checkSlots()
+    planner:Hide();planner:Show();flush();checkSlots()
+    print('PASS: real GearPlanner: 19 slots, create/Refresh/first Show before click, later art reset, selection and reopen')
+end
+if UI.makeButton then
+    local b=UI.makeButton(root,'Native action',80,24)
+    b.scripts.OnMouseDown(b);b.scripts.OnMouseUp(b)
+    assert(not b._bg.path and not b._bg.base and b._bg.alpha==0,'mouse state recreated native brown button fill')
+    assert(b.euiButton.fill.base,'EUI button fill was removed with native art')
+end
 if source then
     local lateKnob=p.check:CreateTexture(nil,'OVERLAY');A.SetTex(lateKnob,UI.ASSET_ROOT..'knob');flush()
     assert(lateKnob.alpha==0,'late native switch knob escaped suppression')
@@ -510,10 +563,15 @@ end
 local function visibleCard(card)
     local fill=card.fill.pieces[#card.fill.pieces]
     local edge=card.border.pieces[1]
-    assert(fill.layer==edge.layer and fill.sub>edge.sub,'fixture no longer models native card layering')
+    if type(edge.parent.slot)=='number' then assert(edge.layer=='OVERLAY','item edge left behind first-open artwork')
+    else assert(fill.layer==edge.layer and fill.sub>edge.sub,'fixture no longer models native card layering')end
     assert(not fill.all and #fill.points==2 and fill.points[1][4]==1 and fill.points[1][5]==-1
         and fill.points[2][4]==-1 and fill.points[2][5]==1,'card fill covers rarity border')
-    for i=1,4 do assert(card.border.pieces[i].alpha>0,'quality edge faded')end
+    for i=1,4 do
+        local t=card.border.pieces[i]
+        if type(t.parent.slot)=='number' then t:SetAlpha(0)end
+        assert(t.alpha>0,'quality edge faded after initial art pass')
+    end
 end
 visibleCard(preSlot.card)
 visibleCard(preRow.card)
@@ -544,8 +602,11 @@ slot.scripts.OnClick(slot);assert(clicks==1,'equipment selection action lost')
 visibleCard(p.row.card)
 for _,t in ipairs(p.row.regions)do
     if t.kind=='Texture' and t.layer=='HIGHLIGHT' then
-        if t.path==UI.ASSET_ROOT..'rr_ring' then assert(t.alpha==0,'native gold hover ring remains')
-        elseif t.base then assert(t.base[1]==1 and t.base[2]==1 and t.base[3]==1 and t.base[4]==.06,'native gold hover wash remains')end
+        if t.base then assert(t.base[1]==1 and t.base[2]==1 and t.base[3]==1 and t.base[4]==.06,'native gold hover wash remains')
+        else
+            A.SetTex(t,UI.ASSET_ROOT..'rr_ring');t:SetAlpha(1)
+            assert(t.path==nil and t.alpha==0,'native gold hover ring can be restored')
+        end
     end
 end
 p.row.card:SetSelected(true)
@@ -613,6 +674,12 @@ slider:SetValue(.4);flush();assert(value==.4 and slider:GetValue()==.4 and slide
 assert(slider:GetThumbTexture():GetWidth()==(source and 24 or 30),'native drag geometry changed')
 p.button:Disable();assert(p.button._label:GetTextColor()==.45)
 p.button:Enable();assert(p.button._label:GetTextColor()==.91,'enabled label stayed disabled grey');p.button:SetActive(true)
+if p.button.SetLook then p.button:SetLook(false);p.button:SetLook(true)end
+for _,t in ipairs(p.button.regions)do
+    if t.kind=='Texture' and t~=p.button.euiOfaSelection and t~=p.button.euiButton.fill and t~=p.button.euiButton.hover and t~=p.button.icon then
+        assert(not t.path and not t.base,'secondary tab retained a native plate/glow')
+    end
+end
 -- Same-count replacements are observed through their constructor, not counts.
 local retired=UI.GoldButton(root,'retired',90,24);flush()
 local before=#root.children

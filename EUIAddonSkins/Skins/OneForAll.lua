@@ -42,15 +42,28 @@ end, function(S, module)
     local faded = {}
     H.Fade = function(t)
         if not H.Allowed(t) or not t.SetAlpha or not Ready() then return end
-        if t:GetAlpha() ~= 0 then t:SetAlpha(0) end
         if faded[t] then return end
-        local painting
-        local function Paint()
-            if painting or not Ready() or t:GetAlpha() == 0 then return end
-            painting = true; t:SetAlpha(0); painting = nil
+        local texture = t:GetObjectType() == "Texture"
+        local colourTexture = texture and not t:GetTexture()
+        local painting, clearPending
+        local function Paint(clearColour)
+            if clearColour then clearPending = true end
+            if painting or not Ready() then return end
+            painting = true
+            -- These are verified redundant decorative regions. Empty the
+            -- asset, not just its alpha: native state/opacity paints retain
+            -- their references but cannot reveal a second skin underneath.
+            if texture and (clearPending or t:GetTexture()) then t:SetTexture(nil) end
+            clearPending = nil
+            if t:GetAlpha() ~= 0 then t:SetAlpha(0) end
+            painting = nil
         end
         faded[t] = Paint
-        H.Hook(t, "SetAlpha", Paint)
+        H.Hook(t, "SetAlpha", function() Paint() end)
+        -- File assets are reapplied through the one existing addon SetTex
+        -- hook. Only native solid-colour regions need a per-region setter.
+        if colourTexture then H.Hook(t, "SetColorTexture", function() Paint(true) end) end
+        Paint(true)
     end
     local function Owned(f)
         local p = f
@@ -185,7 +198,14 @@ end, function(S, module)
                     -- quest-state colour supplied later remains authoritative.
                     local warm = not Quality(cr, cg, cb) and cr > cg and cg > cb and cb < .4
                     local owner = t:GetParent()
-                    local quality = owner and owner.slot and owner.q ~= nil and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[owner.q]
+                    local itemSlot = owner and type(owner.slot) == "number"
+                    local quality = itemSlot and owner.q ~= nil and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[owner.q]
+                    if itemSlot and not d.itemEdge then
+                        d.itemEdge = true
+                        t:SetDrawLayer("OVERLAY", 1)
+                        if t:GetAlpha() == 0 then t:SetAlpha(1) end
+                        Keep(t)
+                    end
                     if quality then cr, cg, cb, ca = quality.r, quality.g, quality.b, 1
                     elseif d.row and warm then
                         if d.row.selected and d.row.edge == t then cr, cg, cb = S.GetAccentColor()
@@ -456,6 +476,15 @@ end, function(S, module)
         local d = State(f)
         if type(f.card) == "table" and type(f.card.fill) == "table" and type(f.card.border) == "table" then
             Card(f.card, f, type(f.card.SetSelected) == "function")
+            -- Card is constructed before GearPlanner assigns slot/q. Finish
+            -- item-edge setup on completed discovery, even on a seen frame.
+            if type(f.slot) == "number" and not d.itemCard and f.card.border.pieces then
+                d.itemCard = true
+                for i = 1, 4 do
+                    local colour = colours[f.card.border.pieces[i]]
+                    if colour then colour.paint() end
+                end
+            end
         end
         if d.seen then return end
         d.seen = true
@@ -483,7 +512,12 @@ end, function(S, module)
             local t = f:GetNormalTexture()
             local path = t and (t.GetTextureFilePath and t:GetTextureFilePath() or t:GetTexture())
             local direction = pageTextures[type(path) == "string" and path:lower() or path]
-            if direction then S.PageButton(f, direction) end
+            if direction then
+                for _, getter in ipairs({"GetNormalTexture", "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture"}) do
+                    if f[getter] then local art = f[getter](f); if H.Texture(art) then H.Fade(art) end end
+                end
+                S.PageButton(f, direction)
+            end
         end
         if f.ScrollBar and H.Allowed(f.ScrollBar) then S.ScrollBar(f.ScrollBar) end
         for _, t in ipairs(H.Regions(f)) do
@@ -624,6 +658,7 @@ end, function(S, module)
     -- addon's own setter, validating the ID before reuse; data icon updates do
     -- not schedule discovery or styling.
     H.Hook(A, "SetTex", function(t, path)
+        if faded[t] then faded[t](true); return end
         if not Object(t) or not Owned(t) then return end
         local name = AssetName(path)
         assets[t] = name and {value=t:GetTexture(), name=name} or nil

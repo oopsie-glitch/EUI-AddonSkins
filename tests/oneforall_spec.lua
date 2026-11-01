@@ -7,6 +7,12 @@ for _,suffix in ipairs({'Frame','ProfilePopup','Confirm','BugReport','Discord','
 local timers, modules, looks, events = {}, {}, {}, {}
 local count = {objects=0,hooks=0,reads=0,geometry=0,fonts=0,scans=0,colours=0}
 local enabled, combat, accent, face = true, false, {.1,.7,.9}, 'eui-font'
+local numeric = os.getenv('ONEFORALL_NUMERIC_TEXTURES')
+local textureIDs, nextTextureID = {}, 1000
+GetFileIDFromPath=function(path)
+    if not textureIDs[path] then nextTextureID=nextTextureID+1;textureIDs[path]=nextTextureID end
+    return textureIDs[path]
+end
 local unpack = table.unpack
 local ns={IsEnabled=function()return enabled end}
 function ns.RegisterModule(id,_,available,install) modules[id]={available=available,install=install} end
@@ -30,7 +36,7 @@ local function object(kind,parent,name)
     function f:GetObjectType()return self.kind end
     function f:IsObjectType(k)return self.kind==k end
     function f:IsForbidden()return self.forbidden end
-    function f:IsProtected()return self.protected end
+    function f:IsProtected()return self.protected or self.implicit, self.protected and true or false end
     function f:GetName()return self.name end
     function f:GetParent()return self.parent end
     function f:GetChildren()assert(self~=UIParent,'global traversal');count.reads=count.reads+1;return unpack(self.children)end
@@ -49,7 +55,7 @@ local function object(kind,parent,name)
     function f:ClearAllPoints()count.geometry=count.geometry+1;self.points={};self.all=nil end
     function f:SetAllPoints(to)count.geometry=count.geometry+1;self.all=to or self.parent end
     function f:SetTexture(path)self.path=path;self.base=nil end
-    function f:GetTexture()return self.path end
+    function f:GetTexture()return numeric and self.path and GetFileIDFromPath(self.path) or self.path end
     function f:SetColorTexture(...)count.colours=count.colours+1;self.path=nil;self.base={...}end
     function f:SetVertexColor(r,g,b,a)count.colours=count.colours+1;self.vertex={r,g,b,a or 1}end
     function f:GetVertexColor()return unpack(self.vertex)end
@@ -105,7 +111,9 @@ local function object(kind,parent,name)
     function f:SetFontString(v)self.label=v end
     function f:GetFontString()return self.label end
     function f:GetStringWidth()return #self:GetText()*6 end
+    function f:GetStringHeight()return 14 end
     function f:SetJustifyH(v)self.justify=v end
+    function f:SetWordWrap(v)self.wordWrap=v end
     function f:SetJustifyV()end
     function f:SetShadowOffset()end
     function f:SetTextInsets(...)self.insets={...}end
@@ -125,6 +133,9 @@ local function object(kind,parent,name)
     function f:Disable()self:SetEnabled(false)end
     function f:GetOrientation()return self.orientation end
     function f:SetOrientation(v)self.orientation=v end
+    function f:SetScrollChild(v)self.scrollChild=v end
+    function f:GetVerticalScrollRange()return 0 end
+    function f:SetDisabledTexture(path)self.disabled=self.disabled or self:CreateTexture(nil,'ARTWORK');self.disabled:SetTexture(path)end
     function f:GetThumbTexture()return self.thumb end
     function f:SetThumbTexture(v)self.thumb=v end
     function f:SetMinMaxValues(lo,hi)self.lo,self.hi=lo,hi end
@@ -150,6 +161,7 @@ UIParent=object('Frame')
 CreateFrame=function(kind,name,parent,template)
     local f=object(kind,parent,name)
     if template=='UICheckButtonTemplate' then f.checkedTex=f:CreateTexture(nil,'OVERLAY') end
+    if template=='UIPanelScrollFrameTemplate' then f.ScrollBar=object('Slider',f);f.ScrollBar.orientation='VERTICAL' end
     if template=='BasicFrameTemplateWithInset' then
         f.TitleText=f:CreateFontString(nil,'OVERLAY','GameFontNormal')
         f.CloseButton=CreateFrame('Button',nil,f)
@@ -188,6 +200,7 @@ function S.Inset(f)strip(f)end
 function S.FadeNineSlice()end
 function S.EditBox(f)if not f.euiEdit then f.euiEdit=true;S.Button(f)end end
 function S.Checkbox(f)if not f.euiCheck then f.euiCheck=true;S.Button(f)end end
+function S.PageButton(f,direction)S.Button(f);f.euiPageDirection=direction end
 function S.ScrollBar(f)f.euiScroll=true end
 function S.SquareIcon()end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins',ns)
@@ -223,6 +236,16 @@ else
     end
     function UI.GlowLine(f)
         local t=f:CreateTexture(nil,'ARTWORK');t:SetTexture(UI.ASSET_ROOT..'glow_line');return t
+    end
+    function UI.SmallCaps(parent,text,big,small,color)
+        local holder=CreateFrame('Frame',nil,parent)
+        for part in text:gmatch('%a+')do
+            for _,str in ipairs({part:sub(1,1),part:sub(2):upper()})do
+                local t=A.NewFS(holder,nil,'OVERLAY','GameFontNormal');t:SetText(str)
+                t:SetTextColor(table.unpack(color));t:SetFont('native-font',small,'')
+            end
+        end
+        holder:SetSize(#text*6,big+2);return holder
     end
     function UI.GoldButton(parent,text,w,h,icon)
         local b=CreateFrame('Button',nil,parent);b:SetSize(w,h)
@@ -270,6 +293,15 @@ A.ToggleUI=function()
         local art=f:CreateTexture(nil,'BORDER');art:SetTexture(UI.ASSET_ROOT..'header_banner');UI.banner=art
         local logo=f:CreateTexture(nil,'ARTWORK');logo:SetTexture(UI.ASSET_ROOT..'minimap_icon');UI.brandLogo=logo
         UI.normalBg=f:CreateTexture(nil,'BACKGROUND');UI.normalBg:SetTexture(UI.ASSET_ROOT..'rr_fill')
+        local b=CreateFrame('Button',nil,f);b:SetSize(130,32)
+        local plate=UI.RoundRect(b,b,'BACKGROUND',0,8,0,.21,.15,.08,1)
+        -- MainFrame.openBottom changes the centre after RoundRect returns.
+        plate.pieces[9]:ClearAllPoints();plate.pieces[9]:SetPoint('TOPLEFT',b,'TOPLEFT',8,-8)
+        local glow=UI.GlowLine(b)
+        b._label=A.NewFS(b,nil,'OVERLAY','GameFontNormal');b._label:SetText('Armory')
+        function b:ContentWidth()return 130 end
+        function b:SetActive(on)plate:SetShown(on);glow:SetShown(on)end
+        UI.testMainTab=b
     end
     return 'native-toggle',nil,42
 end
@@ -279,6 +311,17 @@ if mainSource then
     A.Refresh=function()end
     assert(loadfile(mainSource))('OneForAll',A)
 end
+local settingsSource=os.getenv('ONEFORALL_SETTINGS')
+local actualSettings
+if settingsSource then
+    assert(source,'actual Settings requires actual Widgets')
+    -- Register the real completed factory, retaining the eight lightweight
+    -- pages for repeated-work counters. No target sources enter the package.
+    local before={};for _,spec in ipairs(UI.panels)do before[spec]=true end
+    assert(loadfile(settingsSource))('OneForAll',A)
+    for _,spec in ipairs(UI.panels)do if not before[spec] then actualSettings=spec end end
+    actualSettings.key='sourceSettings'
+end
 assert(loadfile('EUIAddonSkins/Skins/OneForAll.lua'))('EUIAddonSkins',ns)
 local m=assert(modules.OneForAll);assert(m.available())
 m.install(S,m);flush()
@@ -287,20 +330,100 @@ if not mainSource then assert(r=='native-toggle' and n==nil and last==42)end
 local root=UI.mainWindow
 if mainSource then
     for _,t in ipairs(root.regions)do
-        if t.GetTexture and t:GetTexture()==UI.ASSET_ROOT..'header_banner' then UI.banner=t end
-        if t.GetTexture and t:GetTexture()==UI.ASSET_ROOT..'rr_fill' then UI.normalBg=t end
+        if t.path==UI.ASSET_ROOT..'header_banner' then UI.banner=t end
+        if t.path==UI.ASSET_ROOT..'rr_fill' then UI.normalBg=t end
     end
 end
 assert(UI.banner.alpha==1 and UI.brandLogo.alpha==1 and UI.normalBg.alpha==0,'shell art ownership/opacity')
-for _,spec in ipairs(UI.panels)do local p=spec.create(root);flush()
+for _,spec in ipairs(UI.panels)do
+    if spec~=actualSettings then
+    -- RecipeBar's secure Craft action implicitly protects the window before
+    -- later Professions/Settings controls are created. It must not stop them.
+    if spec.key=='professions' then root.implicit=true end
+    local p=spec.create(root);flush()
     assert(p.button.euiButton and p.edit.euiEdit and p.check.w==42 and p.check.h==24)
     assert(p.art.alpha==1 and p.model.kind=='PlayerModel')
     local r,g,b=p.row.name:GetTextColor();assert(r==1 and g==.5 and b==0,'rarity text changed')
     p.check:SetChecked(true);assert(p.check:GetChecked())
+    for _,t in ipairs(p.check.regions)do if t.kind=='Texture' then assert(t.alpha==0,'native switch art overlaps EUI square') end end
+    p.check:Disable();assert(not p.check:IsEnabled())
+    p.check:SetChecked(false);p.check:Enable();p.check:SetChecked(true)
+    for _,t in ipairs(p.check.regions)do if t.kind=='Texture' then t:SetAlpha(1);assert(t.alpha==0,'switch art resurrected') end end
     p.button:SetActive(true);assert(p.button.euiOfaSelection and p.button.euiOfaSelection:IsShown())
     assert(p.button._label:GetTextColor()==.91,'native active gold returned')
+    end
 end
 flush()
+if actualSettings then
+    local active='Default';local actions=0
+    local noop=function()actions=actions+1 end
+    A.Profiles={Active=function()return active end,Names=function()return {'Default','Test'} end,
+        Switch=function(name)active=name end,New=noop,Copy=noop,Rename=noop,Delete=noop,Export=noop,Import=noop,
+        SendDialog=noop,SetReceive=noop,ReceiveEnabled=function()return true end}
+    local settings=actualSettings.create(root);flush();settings:Show();flush()
+    local buttons,checks,sliders,arrows,labels=0,0,0,0,0
+    local function verify(f)
+        if f.kind=='Button' and f._label then
+            assert(f.euiButton,'real Settings button missed');buttons=buttons+1
+            if f._label:GetText()=='New' then f.scripts.OnClick(f);assert(actions==1,'profile action lost')end
+        elseif f.kind=='CheckButton' then
+            checks=checks+1
+            for _,t in ipairs(f.regions)do if t.kind=='Texture' then assert(t.alpha==0,'Settings native switch visible')end end
+        elseif f.kind=='Slider' and f.orientation=='HORIZONTAL' then
+            sliders=sliders+1;assert(f.thumb.alpha==0,'Settings slider missed')
+        end
+        if f.euiPageDirection then arrows=arrows+1 end
+        for _,t in ipairs(f.regions)do if t.kind=='FontString' then assert(t.font==face,'real Settings font missed');labels=labels+1 end end
+        for _,child in ipairs(f.children)do verify(child)end
+    end
+    verify(settings)
+    assert(buttons>=10 and checks>=10 and sliders==1 and arrows>=2 and labels>30,'incomplete Settings fixture')
+    print('PASS: real Settings factory: '..buttons..' buttons, '..checks..' switches, '..sliders..' slider, '..arrows..' reorder arrows; profile action retained')
+end
+local secure=CreateFrame('Button',nil,root);secure.protected=true
+secure._label=A.NewFS(secure,nil,'OVERLAY','GameFontNormal');secure._label:SetText('Secure Craft')
+m.refresh();flush();assert(not secure.euiButton and secure._label.font=='native-font','explicit secure action styled')
+for _,direction in ipairs({'<','>'})do
+    local b=CreateFrame('Button',nil,root);b:SetSize(20,20)
+    b:SetNormalTexture('Interface\\Buttons\\UI-SpellbookIcon-'..(direction=='<' and 'PrevPage' or 'NextPage')..'-Up')
+    A.SkinBlizz(b);flush();assert(b.euiPageDirection==direction and b.w==20 and b.h==20,'settings reorder arrow missed')
+end
+if UI.SmallCaps then
+    local b,label,sorts
+    local spec={key='headerTest',create=function(parent)
+        local header=CreateFrame('Frame',nil,parent);header:SetSize(812,24)
+        b=CreateFrame('Button',nil,header);b:SetSize(50,22)
+        label=UI.SmallCaps(b,'Territory',12,9,{1,.82,.2})
+        label:SetPoint('LEFT',b,'CENTER',-30,0)
+        b.arrow=b:CreateTexture(nil,'OVERLAY');A.SetTex(b.arrow,UI.ASSET_ROOT..'sort_arrows');b.arrow:SetTexCoord(.25,.5,0,1)
+        sorts=0;b:SetScript('OnClick',function()sorts=sorts+1;b.arrow:SetTexCoord(.5,.75,0,1)end)
+        return header
+    end}
+    UI.RegisterPanel(spec);spec.create(root)
+    flush();assert(label.w<=34 and label.regions[1]:GetText()=='Territory','sort caption not bounded')
+    assert(label.regions[1].justify=='CENTER','native column alignment lost')
+    assert(b.arrow.w==8 and b.arrow.uv[1]==.25,'sort geometry or native state lost')
+    for i,t in ipairs(label.regions)do if i>1 then assert(t.alpha==0,'old small-caps segments remain')end end
+    b.scripts.OnClick(b);assert(sorts==1 and b.arrow.uv[1]==.5,'native sort action changed')
+end
+if mainSource or UI.testMainTab then
+    local tested=0
+    for _,b in ipairs(root.children)do
+        if b.ContentWidth and b.SetActive then
+            b:SetActive(true)
+            local glow
+            for _,t in ipairs(b.regions)do
+                if t.path==UI.ASSET_ROOT..'glow_line' then glow=t end
+                if t.kind=='Texture' and (t.base or t.path=='Interface\\Buttons\\WHITE8X8') and t.layer=='BACKGROUND' and not (b.euiButton and t==b.euiButton.fill) then
+                    assert(t.alpha==0,'nested tab selection plate remains')
+                end
+            end
+            assert(glow and glow.h==4 and glow.alpha>0 and glow:IsShown(),'native tab glow missing')
+            b:SetActive(false);assert(not glow:IsShown(),'inactive tab glow visible');tested=tested+1
+        end
+    end
+    assert(tested>0,'main tabs not exercised')
+end
 local p=pages.armory
 local foreign=CreateFrame('Frame','UnrelatedBlizzardWindow',UIParent)
 local foreignText=A.NewFS(foreign,nil,'OVERLAY','GameFontNormal');foreignText:SetTextColor(1,.82,.2)
@@ -354,7 +477,7 @@ local slider=UI.Slider(root,150,0,1,.1,function(v)value=v end)
 slider:SetValue(.4);flush();assert(value==.4 and slider:GetValue()==.4 and slider:GetThumbTexture().alpha==0)
 assert(slider:GetThumbTexture():GetWidth()==(source and 24 or 30),'native drag geometry changed')
 p.button:Disable();assert(p.button._label:GetTextColor()==.45)
-p.button:Enable();p.button:SetActive(true)
+p.button:Enable();assert(p.button._label:GetTextColor()==.91,'enabled label stayed disabled grey');p.button:SetActive(true)
 -- Same-count replacements are observed through their constructor, not counts.
 local retired=UI.GoldButton(root,'retired',90,24);flush()
 local before=#root.children

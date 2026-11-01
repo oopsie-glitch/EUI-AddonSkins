@@ -5,7 +5,6 @@ ns.RegisterModule("OneForAll", "OneForAll", function()
 end, function(S, module)
     local A, UI = _G.OneForAll, _G.OneForAll.UI
     local H = ns.CreateSkinHelper(S, module)
-    local soft = ns.CreateSoftSkin(S, module)
     local unpack = unpack or table.unpack
     local nodes, fonts, colours, kept, flattened, windows = {}, {}, {}, {}, {}, {}
     local pending, deferred, busy, depth = {}, {}, false, 0
@@ -17,16 +16,44 @@ end, function(S, module)
         windowNames["OneForAll"..suffix] = true
     end
     local Walk, Flush, Queue, Window
+    -- A secure Craft button implicitly protects its containing window. That
+    -- ancestry is still ours; only explicitly secure controls are excluded.
+    local function Object(f)
+        local kind = type(f)
+        return (kind == "table" or kind == "userdata") and type(f.GetObjectType) == "function"
+            and not (f.IsForbidden and f:IsForbidden())
+    end
+    H.Allowed = function(f)
+        if not Object(f) then return false end
+        if f.IsProtected then
+            local protected, explicit = f:IsProtected()
+            if protected and explicit ~= false then return false end
+        end
+        return true
+    end
     local layoutFont, layoutFlags
     local function Ready()
         if not ns.IsEnabled(module) then return false end
         if InCombatLockdown and InCombatLockdown() then busy = true; return false end
         return true
     end
+    local faded = {}
+    H.Fade = function(t)
+        if not H.Allowed(t) or not t.SetAlpha or not Ready() then return end
+        if t:GetAlpha() ~= 0 then t:SetAlpha(0) end
+        if faded[t] then return end
+        local painting
+        local function Paint()
+            if painting or not Ready() or t:GetAlpha() == 0 then return end
+            painting = true; t:SetAlpha(0); painting = nil
+        end
+        faded[t] = Paint
+        H.Hook(t, "SetAlpha", Paint)
+    end
     local function Owned(f)
         local p = f
         for _ = 1, 40 do
-            if not H.Allowed(p) or p == UIParent then return false end
+            if not Object(p) or p == UIParent then return false end
             local name = p.GetName and p:GetName()
             if excludedNames[name] then return false end
             if p == UI.mainWindow or windows[p] or trusted[p] or windowNames[name] then return true end
@@ -34,9 +61,28 @@ end, function(S, module)
         end
         return false
     end
+    local assets, decorated, assetIDs = {}, {}, {}
+    local function AssetName(path)
+        local name = type(path) == "string" and path:lower():gsub("/", "\\")
+            :match("\\oneforall\\assets\\([^\\]+)")
+        return name and name:gsub("%.blp$", ""):gsub("%.tga$", "")
+    end
+    if GetFileIDFromPath then
+        for name in ("glow_line divider_plain divider_ornate talent_frame talent_glow tab_icons grip_resize grip_height icon_close icon_bug icon_chat chevron icon_arrow_down icon_back ring_gold ring_silver ring_plain frame_boss2 frame_badge gem_rim window_ring modern_frame window_frame corner_glow edge_fade line_cap btn_m_active rr_fill header_banner minimap_icon shade_lr sort_arrows"):gmatch("%S+") do
+            for _, suffix in ipairs({"", ".blp", ".tga"}) do
+                local id = GetFileIDFromPath(UI.ASSET_ROOT..name..suffix)
+                if id and id > 0 then assetIDs[id] = name end
+            end
+        end
+    end
     local function Asset(t)
-        local path = t.GetTexture and t:GetTexture()
-        return type(path) == "string" and path:lower():gsub("/", "\\"):match("\\oneforall\\assets\\([^\\]+)")
+        local value = t.GetTexture and t:GetTexture()
+        local cached = assets[t]
+        if cached and cached.value == value then return cached.name end
+        local path = t.GetTextureFilePath and t:GetTextureFilePath() or value
+        local name = AssetName(path) or assetIDs[value]
+        if name then assets[t] = {value=value, name=name} end
+        return name
     end
     local function State(f)
         if not nodes[f] then nodes[f] = {} end
@@ -69,7 +115,13 @@ end, function(S, module)
                 -- Only decorative text loses the warm palette. Inline item,
                 -- class and status colour escapes and semantic fields stay native.
                 if d.control and d.control.IsEnabled and not d.control:IsEnabled() then
+                    if not d.disabled then d.enabledColour = {t:GetTextColor()}; d.disabled = true end
                     t:SetTextColor(.45, .45, .47)
+                elseif d.disabled then
+                    d.disabled = nil
+                    local c = d.enabledColour
+                    if c and Quality(c[1], c[2], c[3]) then t:SetTextColor(unpack(c))
+                    else t:SetTextColor(.91, .91, .93) end
                 elseif d.neutral and not Semantic(t) then
                     local r, g, b, a = t:GetTextColor()
                     if not Quality(r, g, b) and r > .7 and g > .35 and b < g * .95 then t:SetTextColor(.91, .91, .93, a) end
@@ -175,15 +227,15 @@ end, function(S, module)
     local function Decorative(t)
         if not H.Texture(t) then return end
         local name = Asset(t)
-        if not name then return end
-        name = name:gsub("%.tga$", "")
+        if not name or decorated[t] == name then return end
+        decorated[t] = name
         if name == "glow_line" then
             -- The native visibility remains the selected-state indicator.
-            t:SetColorTexture(1, 1, 1, 1)
+            t:SetDesaturated(true)
             Colour(t, "accent")
             local f = t:GetParent()
             t:ClearAllPoints(); t:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 1, 0)
-            t:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 0); t:SetHeight(1)
+            t:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 0); t:SetHeight(4)
         elseif name == "divider_plain" or name == "divider_ornate" then
             t:SetDesaturated(true); Colour(t, "line")
         elseif name == "talent_frame" then
@@ -220,11 +272,16 @@ end, function(S, module)
             local keys = {"icon", "Icon", "glyph", "check", "del", "euiOfaSelection", "euiOfaChevron"}
             -- Retain native state regions; all redundant plates/glows are faded.
             for _, t in ipairs(H.Regions(f)) do
-                if colours[t] and (colours[t].role == "accent" or colours[t].role == "selection") then
+                if colours[t] and colours[t].role == "accent" then
                     local key = "euiOfaKeep"..#keys; f[key] = t; keys[#keys+1] = key
                 end
             end
-            soft.Button(f, keys)
+            local keep = {}
+            for _, key in ipairs(keys) do if f[key] then keep[f[key]] = true end end
+            for _, t in ipairs(H.Regions(f)) do
+                if H.Texture(t) and not keep[t] then H.Fade(t) end
+            end
+            S.Button(f, keys)
             local label = f._label or f.text or (f.GetFontString and f:GetFontString())
             Font(label, true)
             if fonts[label] then
@@ -241,7 +298,7 @@ end, function(S, module)
         -- replaced with the accepted compact square, centred in the same space.
         for _, t in ipairs(H.Regions(f)) do if H.Texture(t) then H.Fade(t) end end
         local host = CreateFrame("Frame", nil, f); host:SetSize(22, 22); host:SetPoint("CENTER"); host:EnableMouse(false)
-        soft.Checkbox(host, {borderInset = 4, hover = .06})
+        S.Checkbox(host, {borderInset = 4, hover = .06})
         local mark = host:CreateTexture(nil, "OVERLAY"); mark:SetSize(8, 8); mark:SetPoint("CENTER")
         d.mark = mark
         d.paintCheck = function()
@@ -250,10 +307,69 @@ end, function(S, module)
             if d.r ~= r or d.g ~= g or d.b ~= b then mark:SetColorTexture(r, g, b, 1); d.r, d.g, d.b = r, g, b end
             local checked = f:GetChecked() and true or false
             if mark:IsShown() ~= checked then mark:SetShown(checked) end
+            local enabled = not f.IsEnabled or f:IsEnabled()
+            if not f._ofaToggle and d.enabled ~= enabled then host:SetAlpha(enabled and 1 or .4) end
+            d.enabled = enabled
         end
         for _, name in ipairs({"SetChecked", "SetEnabled", "Enable", "Disable", "Paint"}) do H.Hook(f, name, d.paintCheck) end
         H.Script(f, "PostClick", d.paintCheck)
         d.paintCheck()
+    end
+    local captions = {}
+    local function Caption(holder, text, size)
+        if not H.Allowed(holder) then return end
+        local label
+        for _, t in ipairs(H.Regions(holder)) do
+            if t:GetObjectType() == "FontString" then
+                if not label then label = t else H.Fade(t) end
+            end
+        end
+        if not label then return end
+        -- Native SmallCaps measures separately positioned letter runs. Reuse
+        -- its first run as one caption so EUI fonts cannot overrun those offsets.
+        label:SetText(text); S.Font(label); local path, flags = S.GetFont()
+        label:SetFont(path, size or 12, flags)
+        if label.SetWordWrap then label:SetWordWrap(false) end
+        label:ClearAllPoints(); label:SetPoint("LEFT", holder, "LEFT")
+        local function Measure()
+            if not Ready() then return end
+            local owner = holder:GetParent()
+            local width = label:GetStringWidth() or 1
+            if owner and owner:GetObjectType() == "Button" and owner:GetHeight() == 22
+                and owner:GetParent() and owner:GetParent():GetHeight() == 24 then
+                -- Dungeon/raid columns keep native widths, callbacks and UV
+                -- sort states. Bound text and arrow within their own cell.
+                local arrow = H.Texture(owner.arrow)
+                local d = State(holder)
+                if d.captionCenter == nil then
+                    local _, _, relative = holder:GetPoint()
+                    d.captionCenter = relative == "CENTER"
+                end
+                local pad = d.captionCenter and 2 or 10
+                width = math.max(1, owner:GetWidth() - pad - (arrow and 14 or 2))
+                holder:ClearAllPoints(); holder:SetPoint("LEFT", owner, "LEFT", pad, 0)
+                label:SetWidth(width)
+                label:SetJustifyH(d.captionCenter and "CENTER" or "LEFT")
+                if arrow then
+                    arrow:ClearAllPoints(); arrow:SetPoint("RIGHT", owner, "RIGHT", -2, 0); arrow:SetSize(8, 8)
+                    arrow:SetDesaturated(true); Colour(arrow, "white")
+                end
+            end
+            holder:SetWidth(math.max(1, width))
+        end
+        captions[holder] = Measure
+        State(holder).caption = Measure
+        -- Let the native caller finish centring/anchoring the holder first.
+        holder:SetWidth(math.max(1, label:GetStringWidth() or 1))
+    end
+    local pageTextures = {}
+    for direction, part in pairs({["<"]="PrevPage", [">"]="NextPage"}) do
+        local path = "Interface\\Buttons\\UI-SpellbookIcon-"..part.."-Up"
+        pageTextures[path:lower()] = direction
+        if GetFileIDFromPath then
+            local id = GetFileIDFromPath(path)
+            if id and id > 0 then pageTextures[id] = direction end
+        end
     end
     local function WindowArt(f, t)
         if not H.Texture(t) then return end
@@ -293,6 +409,11 @@ end, function(S, module)
         elseif kind == "Button" and (f._label or (f.check and f.del)) and not (f.slot or f.itemID or f.itemId) then
             if f.check and f.del then f.check:SetColorTexture(1, 1, 1, 1); Colour(f.check, "accent") end
             Button(f)
+        elseif kind == "Button" and f.GetNormalTexture then
+            local t = f:GetNormalTexture()
+            local path = t and (t.GetTextureFilePath and t:GetTextureFilePath() or t:GetTexture())
+            local direction = pageTextures[type(path) == "string" and path:lower() or path]
+            if direction then S.PageButton(f, direction) end
         end
         if f.ScrollBar and H.Allowed(f.ScrollBar) then S.ScrollBar(f.ScrollBar) end
         for _, t in ipairs(H.Regions(f)) do
@@ -321,6 +442,7 @@ end, function(S, module)
             end
         end
         for _, child in ipairs(H.Children(f)) do Walk(child, (level or 0)+1) end
+        if nodes[f] and nodes[f].caption then nodes[f].caption() end
     end
     Queue = function(f)
         if not H.Allowed(f) or not Owned(f) then return end
@@ -403,6 +525,7 @@ end, function(S, module)
         if type(original) ~= "function" then return end
         object[name] = function(...)
             local first = ...
+            if Object(first) and not H.Allowed(first) then return original(...) end
             -- Private anonymous dropdown/popup roots opt in at their own panel
             -- constructor. Other helper calls still need a known owned ancestor.
             if name == "FramedPanel" and H.Allowed(first) and first:GetParent() == UIParent
@@ -427,6 +550,14 @@ end, function(S, module)
         end
     end
     Wrap(A, "NewFS", function(v, owner) if v[1] then Queue(owner) end end, true)
+    -- GetTexture can return only a FileID on clients. Remember names at the
+    -- addon's own setter, validating the ID before reuse; data icon updates do
+    -- not schedule discovery or styling.
+    H.Hook(A, "SetTex", function(t, path)
+        if not Object(t) or not Owned(t) then return end
+        local name = AssetName(path)
+        assets[t] = name and {value=t:GetTexture(), name=name} or nil
+    end)
     Wrap(A, "SkinBlizz", function(v) if H.Allowed(v[1]) and not nodes[v[1]] then Queue(v[1]) end end, true)
     for _, name in ipairs({"GoldButton", "makeButton", "NavButton", "CloseButton", "SkinBlizzButton"}) do
         Wrap(UI, name, function(v) if H.Allowed(v[1]) then Queue(v[1]) end end)
@@ -436,7 +567,10 @@ end, function(S, module)
     Wrap(UI, "Card", function(v, owner, anchor) Card(v[1], anchor or owner); Queue(owner) end)
     Wrap(UI, "CardRow", function(v, owner) Card(v[1], owner); Queue(owner) end)
     Wrap(UI, "RoundRect", function(v, owner, anchor, layer, sub, c, inset, r, g, b, a, tex)
-        if layer == "HIGHLIGHT" then Pieces(v[1], anchor or owner, "selection")
+        if owner._ofaToggle then
+            -- These regions belong to the switch, not its empty pill anchor.
+            for _, t in ipairs(v[1].pieces or {}) do H.Fade(t) end
+        elseif layer == "HIGHLIGHT" then Pieces(v[1], anchor or owner, "selection")
         elseif not tex and r and r > .15 and r > g and g > b then Pieces(v[1], anchor or owner, "selection") end
         Queue(owner)
     end)
@@ -491,7 +625,8 @@ end, function(S, module)
         if H.Texture(t) then t:SetColorTexture(1, 1, 1, .35); Colour(t, "line") end
     end)
     Wrap(UI, "WindowFrame", function(_, deco) for _, t in ipairs(H.Regions(deco)) do if H.Texture(t) then H.Fade(t) end end end)
-    for _, name in ipairs({"NavHeader", "SectionTitle", "SmallCaps", "PageHeader", "CreateRecipeBrowser", "CreateGearPlanner"}) do
+    Wrap(UI, "SmallCaps", function(v, owner, text, big) Caption(v[1], text, big); Queue(owner) end)
+    for _, name in ipairs({"NavHeader", "SectionTitle", "PageHeader", "CreateRecipeBrowser", "CreateGearPlanner"}) do
         Wrap(UI, name, function(v, owner)
             if H.Allowed(v[1]) then Queue(v[1]) end
             Queue(owner)
@@ -536,8 +671,8 @@ end, function(S, module)
     end)
     if S.OnLooksChanged then S.OnLooksChanged(function()
         if not Ready() then return end
-        soft.RefreshSoftBorders()
         for _, d in pairs(fonts) do d.paint() end
+        for _, measure in pairs(captions) do measure() end
         for _, d in pairs(colours) do d.paint() end
         for _, d in pairs(nodes) do
             if d.paintCheck then d.paintCheck() end
@@ -551,6 +686,7 @@ end, function(S, module)
         for name in pairs(windowNames) do if H.Allowed(_G[name]) then Window(_G[name]) end end
         for f in pairs(windows) do Walk(f); if State(f).opacity then State(f).opacity() end end
         for t, alpha in pairs(kept) do if t:GetAlpha() ~= alpha then t:SetAlpha(alpha) end end
+        for _, paint in pairs(faded) do paint() end
         for _, d in pairs(colours) do d.paint() end
         for _, d in pairs(nodes) do if d.paintCheck then d.paintCheck() end end
         Flush()

@@ -29,7 +29,7 @@ GPL code or artwork is redistributed with this standalone adapter.
 | --- | --- |
 | Main window | Public Shell, native banner/logo preserved, native window opacity respected |
 | Armory, Dungeons & Raids, Professions, QoL, Talent Trees, Books, Pets, Settings | Completed lazy factories, shared navigation, cards, controls and fonts |
-| Navigation and mode buttons | Public filled Button/soft border treatment; native active art reused as a thin accent indicator |
+| Navigation and mode buttons | Public filled Button; native bottom glow reused for selected main tabs, thin accent indicator for mode buttons |
 | Cards and custom panels | Reuse native nine-slice regions as flat surfaces/thin edges; suppress redundant pieces, glows and gold window decoration |
 | Inputs and scrollbars | Public EditBox and ScrollBar; native text, caret, validation, scrolling and click areas |
 | Switches/checkboxes | Existing hit rectangle with a centred compact EUI square; checked, disabled and native callbacks retained |
@@ -40,7 +40,7 @@ GPL code or artwork is redistributed with this standalone adapter.
 The public Tab primitive mirrors text into a fixed-size centred label. It would
 conflict with OneForAll's composite icon/label positioning and ContentWidth
 layout. Use the public Button primitive with the original label and reuse the
-native active region as the underline. Dropdown selectors likewise keep their
+native bottom glow as the underline. Dropdown selectors likewise keep their
 native GoldButton click handlers rather than acquiring a second menu/opener.
 These are OneForAll-specific adaptations, not shared styling changes.
 
@@ -71,7 +71,7 @@ There is no H.Scan, global UI scan, polling, skin OnUpdate or repeating timer.
 Manual refresh and combat recovery are explicit discovery points. Theme/accent
 refresh repaints retained roles and fonts; native LayoutTabs recalculates text
 widths only when the font changes; no new art is created. Disabled and
-protected frames remain gated. Native background-opacity registration remains
+explicitly protected controls remain gated. Native background-opacity registration remains
 in place, with separate tracking for the public shell's new textures; late
 banner/logo/preview art survives engine restripping and combat recovery.
 
@@ -80,12 +80,14 @@ source-shaped fixture. It covers eight lazy factories, native returns/actions,
 all eight quality colours, status fills, art/model isolation, selection and
 clearing, same-count replacement, popup construction, disabled states, theme,
 opacity, combat recovery and warm work. An optional local-source run also uses
-the supplied actual Widgets.lua and MainFrame.lua; those files are not stored
+the supplied actual Widgets.lua, MainFrame.lua and Settings.lua; those files are not stored
 in the repository or player ZIP:
 
 ```sh
 ONEFORALL_WIDGETS=/path/to/OneForAll/UI/Widgets.lua \
 ONEFORALL_MAINFRAME=/path/to/OneForAll/UI/MainFrame.lua \
+ONEFORALL_SETTINGS=/path/to/OneForAll/UI/Settings.lua \
+ONEFORALL_NUMERIC_TEXTURES=1 \
 python3 tests/run_lua.py
 python3 scripts/package.py
 ```
@@ -104,6 +106,58 @@ Mutating either the rarity-colour guard or artwork protection fails its focused
 assertion. The final package validates 60 installation files in one EUIAddonSkins folder,
 43 deferred factories, consistent manifests/version and the exact MIT license.
 Development documents, tests, sources and screenshots are excluded.
+
+## Visual refinement: confirmed causes and fixes
+
+- **Unskinned late pages:** ProfessionRecipes constructs RecipeBar's explicit
+  SecureActionButtonTemplate Craft action. Its ancestors become implicitly
+  protected. The earlier ownership walk rejected that whole ancestry and the
+  soft-control proxy rejected implicitly protected controls. The addon-local
+  guard now separates ownership from permission, permits implicit containers
+  outside combat and excludes explicit secure controls (or an ambiguous older
+  protected result). Public Button/Checkbox primitives are called directly.
+  No secure attributes, actions or shared-helper defaults change. Cosmetic
+  alpha guards also defer during combat and recover on regen.
+- **Nested tab selection:** MainFrame.openBottom reanchors the RoundRect centre
+  after its constructor returns. Retaining that flattened active fill produced
+  an inset selected box. Discard the fill and suppress its native alpha resets;
+  reuse the original desaturated additive glow_line texture as a 4px bottom
+  strip tinted by the live accent. Native SetActive controls its visibility.
+- **Mixed switch layers:** toggleSkin owns its pill slices and knob on the
+  CheckButton, while its pill child is only an anchor. Suppress those exact
+  owned slices at construction and all native switch regions at completion.
+  Keep one compact EUI square, the original 42px click area, checked state,
+  callbacks and native disabled dimming. Re-enabling buttons restores readable
+  labels without requiring a subsequent selection change.
+- **Texture recognition:** GetTexture can expose a numeric FileID. Decorative
+  identification now accepts file paths/IDs, resolves the finite known asset
+  set once and records names through OneForAll's own SetTex with ID validation.
+  New data-icon updates do not queue discovery. This is a compatibility repair,
+  not evidence that every screenshot came from numeric texture IDs.
+- **Dungeons/raids typography:** SmallCaps assembles separately measured letter
+  runs. Changing their face without rebuilding those measurements leaves stale
+  positions. Reuse the first native FontString for one normal EUI caption and
+  fade its remaining runs. Bound column captions and 8px sort glyphs inside
+  existing cells; retain left/centred alignment, native widths, hover tooltips,
+  click handlers and ascending/descending/default atlas coordinates. Narrow
+  captions may truncate at some font/scale combinations; review in game.
+- **Settings/Professions:** Correct late-page discovery applies the existing
+  surfaces, inputs, buttons, fonts, private menus and slider treatment. Settings
+  reorder arrows use public PageButton. Real Settings factory coverage includes
+  12 buttons, 14 switches, one slider, 16 reorder arrows and a native profile
+  action. Profile import/export popups remain covered by owned construction.
+  Professions detail/reagent panel structure, backgrounds and all data/art
+  exclusions are unchanged.
+
+Regressions include implicitly protected roots, explicit secure exclusions,
+native switch alpha resurrection, selected-tab fill removal and glow visibility,
+bounded captions, sort actions/UVs, enabled-label recovery and numeric textures.
+The source-shaped warm workload retains the same zero skin object/hook/read/
+font/geometry counts as iteration 1. The actual Settings run uses supplied
+upstream code with mocked APIs/providers, not a WoW client. Cold discovery and
+look changes remain explicit work; no new polling, H.Scan or warm traversal.
+Individually reverting implicit-ancestry handling, selection-fill suppression,
+native-knob suppression or caption repair fails its corresponding regression.
 
 ## Client limits and in-game review
 

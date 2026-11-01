@@ -257,6 +257,8 @@ end, function(S, module)
     local cards = {}
     local function Card(card, anchor, row)
         if type(card) ~= "table" then return end
+        -- Only the explicitly built diagnostic ZIP supplies this observer.
+        if ns.OneForAllTrace then ns.OneForAllTrace.Card(card, anchor) end
         local state = cards[card]
         if not state then state = {}; cards[card] = state end
         if state.finished and (not row or state.row) then return end
@@ -731,7 +733,12 @@ end, function(S, module)
     end)
     Wrap(UI, "WindowFrame", function(_, deco) for _, t in ipairs(H.Regions(deco)) do if H.Texture(t) then H.Fade(t) end end end)
     Wrap(UI, "SmallCaps", function(v, owner, text, big) Caption(v[1], text, big); Queue(owner) end)
-    for _, name in ipairs({"NavHeader", "SectionTitle", "PageHeader", "CreateRecipeBrowser", "CreateGearPlanner"}) do
+    Wrap(UI, "CreateGearPlanner", function(v, owner)
+        if ns.OneForAllTrace then ns.OneForAllTrace.Planner(v[1]) end
+        if H.Allowed(v[1]) then Queue(v[1]) end
+        Queue(owner)
+    end)
+    for _, name in ipairs({"NavHeader", "SectionTitle", "PageHeader", "CreateRecipeBrowser"}) do
         Wrap(UI, name, function(v, owner)
             if H.Allowed(v[1]) then Queue(v[1]) end
             Queue(owner)

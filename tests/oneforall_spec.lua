@@ -381,6 +381,14 @@ local preSlot=CreateFrame('Button',nil,prebuilt);preSlot.slot=2;preSlot.q=2
 preSlot.card=UI.Card(preSlot,preSlot,4,{.12,1,0,1},{.05,.05,.06,.95},'BACKGROUND',0)
 local preRow=CreateFrame('Button',nil,prebuilt);preRow.card=UI.CardRow(preRow);preRow.card:SetSelected(true)
 preRow.card:SetBorder(1,.8000000119,.3400000036,1) -- native float readback
+local traceSource=os.getenv('ONEFORALL_TRACE')
+if traceSource then
+    SlashCmdList={EUIADDONSKINS=function()end}
+    debugstack=function()return 'source lifecycle test; not a client trace'end
+    assert(loadfile(traceSource))('EUIAddonSkins',ns)
+    assert(not ns.OneForAllTrace.active)
+    ns.OneForAllTrace.Command('start')
+end
 assert(loadfile('EUIAddonSkins/Skins/OneForAll.lua'))('EUIAddonSkins',ns)
 local m=assert(modules.OneForAll);assert(m.available())
 m.install(S,m);flush()
@@ -544,7 +552,9 @@ if gearSource then
         end
     end
     checkSlots()
+    if traceSource then ns.OneForAllTrace.Command('before') end
     slots[3]:Click();flush();checkSlots()
+    if traceSource then ns.OneForAllTrace.Command('after');ns.OneForAllTrace.Command('stop') end
     planner:Hide();planner:Show();flush();checkSlots()
     print('PASS: real GearPlanner: 19 slots, create/Refresh/first Show before click, later art reset, selection and reopen')
 end

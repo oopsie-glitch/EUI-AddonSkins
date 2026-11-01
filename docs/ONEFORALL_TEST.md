@@ -3,6 +3,11 @@
 Development branch: `skin/oneforall-eui`, based on released main `1e45cec`.
 Awaiting in-game review. No release metadata or shared helper defaults change.
 
+**Current blocker:** `76a3297` still fails first-open Gear Planner borders in
+game. See [temporary live trace instructions](ONEFORALL_TRACE.md). Previous
+passing source-shaped assertions did not reproduce that failure and do not
+establish a fix. The new diagnostic build preserves existing styling.
+
 ## Sources and identity
 
 - Supplied `OneForAll-6.0.1.zip`, SHA-256

@@ -2018,8 +2018,12 @@ S.GetPanelColor = guiStyle.previousPanelColor
 DBM_GUI_OptionsFrameHeaderText, DBM_GUI_OptionsFrameWebsite = nil, nil
 end
 -- AtlasLoot Continued: owned custom widgets and foreground/status art.
+for _, variant in ipairs({'Continued', 'Forever'}) do
+WOW_PROJECT_MAINLINE, WOW_PROJECT_CLASSIC = 1, 2
+-- Forever shares the modern/mainline project identity; no invented project ID.
+WOW_PROJECT_ID = variant == 'Forever' and WOW_PROJECT_MAINLINE or WOW_PROJECT_CLASSIC
 AtlasLoot = nil
-assert(loadfile('EUIAddonSkins/Skins/AtlasLootContinued.lua'))('EUIAddonSkins', ns)
+assert(loadfile(os.getenv('ATLASLOOT_SKIN_PATH') or 'EUIAddonSkins/Skins/AtlasLootContinued.lua'))('EUIAddonSkins', ns)
 assert(not modules.AtlasLootContinued.available())
 local atlasRoot = frame('Frame', 'AtlasLoot_GUI-Frame')
 atlasRoot:SetBackdrop({bgFile = 'native-fill', edgeFile = 'native-bevel', edgeSize = 16})
@@ -2028,6 +2032,16 @@ atlasRoot.CloseButton = frame('Button', nil, atlasRoot)
 local atlasGUI = {frame = atlasRoot, Toggle = function() return 'atlas-native' end,
     ItemFrame = {Refresh = function() return 'items-native' end}}
 AtlasLoot = {GUI = atlasGUI, Favourites = {GUI = {frame = frame()}}}
+local bisPhase, footerCheck, footer
+if variant == 'Forever' then
+    footer = frame('Frame', 'AtlasLoot_BiS_Footer', atlasRoot)
+    footer:SetBackdrop({bgFile='native-fill'})
+    footerCheck = frame('CheckButton', nil, footer)
+    bisPhase = frame('Frame', 'AtlasLoot_BiSPhaseDropdown', footer)
+    bisPhase.initialize = function() return 'native-phase-menu' end
+    bisPhase.label = bisPhase:CreateFontString(nil,'OVERLAY','GameFontNormal')
+    bisPhase.label:SetTextColor(0,1,0,1) -- meaningful native phase colour
+end
 local favourites = AtlasLoot.Favourites
 AtlasLoot.Favourites = nil
 AtlasLoot.Addons = {GetAddon = function(_, name) if name == 'Favourites' then return favourites end end}
@@ -2055,7 +2069,11 @@ dropdown.par = {Toggle = function()
     return 'popup-native'
 end, SetData = function() end, SetSelected = function() end}
 S.GetPanelColor = function() return 0.02, 0.02, 0.02, 0.9 end
+local atlasLooks, oldAtlasLooks = {}, S.OnLooksChanged
+S.OnLooksChanged=function(fn)atlasLooks[#atlasLooks+1]=fn end
 modules.AtlasLootContinued.install(S, modules.AtlasLootContinued); flush()
+S.OnLooksChanged=oldAtlasLooks
+if bisPhase and not auditBaseline then assert(bisPhase.dropdown and footerCheck.checkbox and bisPhase.label.textColor[2]==1 and bisPhase.initialize()=='native-phase-menu') end
 assert(atlasRoot.accent and not atlasRoot.shell and atlasRoot.backdrop.edgeSize == 1 and atlasRoot.color[4] == 0.9)
 assert(atlasRoot.CloseButton.close and favourites.GUI.frame.shell and logo.alpha == 1 and map.path == 'dungeon-map')
 atlasRoot:SetBackdropBorderColor(1, 1, 1, 1)
@@ -2080,7 +2098,30 @@ assert(atlasGUI.ItemFrame:Refresh() == 'items-native'); flush(); assert(late.che
 enabled = false; local untouched = frame('CheckButton', nil, atlasRoot)
 atlasGUI:Toggle(); flush(); assert(not untouched.checkbox)
 enabled = true
-print('PASS: AtlasLoot windows, synchronous pooled menus, selectors, colours/overlays/maps/models, dynamic controls and idempotence')
+combat=true
+local combatLate=frame('CheckButton',nil,atlasRoot)
+atlasGUI:Toggle();flush();assert(not combatLate.checkbox,'AtlasLoot styled during combat')
+combat=false;modules.AtlasLootContinued.refresh();flush();assert(combatLate.checkbox)
+selection:SetChecked(true);flush()
+local oldAccent=accent;accent=.85
+for _,fn in ipairs(atlasLooks)do fn()end;flush()
+assert(selection.euiAtlasSelection.color[1]==.85 and item.overlay.color[3]==.9,'theme changed semantic colour or missed selection')
+accent=oldAccent
+for _,fn in ipairs(atlasLooks)do fn()end;flush()
+local before=auditScans[atlasRoot] or 0
+local hook=atlasGUI.ItemFrame.Refresh
+local function regions(f)local n=#f.regions;for _,c in ipairs(f.children)do n=n+regions(c)end;return n end
+local count=regions(atlasRoot)
+for i=1,100 do atlasGUI.ItemFrame:Refresh()end
+flush()
+assert((auditScans[atlasRoot] or 0)-before==1 and regions(atlasRoot)==count and atlasGUI.ItemFrame.Refresh==hook,
+    'refresh burst duplicated scans/hooks/art')
+print('BENCH AtlasLoot '..variant..': 100 refresh callbacks -> 1 main-root scan; added regions=0; stable hook identity')
+local source=os.getenv(variant=='Forever' and 'ATLASLOOT_FOREVER_SOURCE' or 'ATLASLOOT_CONTINUED_SOURCE')
+if source then assert(loadfile('tests/atlasloot_source_fixture.lua'))()({source=source,gui=atlasGUI,root=atlasRoot,
+    module=modules.AtlasLootContinued,flush=flush,variant=variant}) end
+print('PASS: AtlasLoot '..variant..' windows, menus, selectors, semantic colours/art, dynamic controls, native footer and idempotence')
+end
 do
 -- GTFO: skin only its settings canvases; sound/gameplay methods stay untouched.
 GTFO = nil

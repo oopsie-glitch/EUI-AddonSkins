@@ -8,7 +8,7 @@ EllesmereUI skins for World of Warcraft addons.
 - Altoholic
 - Angrier World Quests
 - Atlas
-- AtlasLootClassic Continued
+- AtlasLootClassic Continued / AtlasLoot Forever (shared skin)
 - Attune
 - Auctionator
 - BtWQuests

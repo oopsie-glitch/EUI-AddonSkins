@@ -6,7 +6,7 @@ ns.skinCatalog = {
     {id = "Altoholic", label = "Altoholic", targets = {"Altoholic"}},
     {id = "AngrierWorldQuests", label = "Angrier World Quests", targets = {"AngrierWorldQuests"}},
     {id = "Atlas", label = "Atlas", targets = {"Atlas"}},
-    {id = "AtlasLootContinued", label = "AtlasLootClassic Continued", targets = {"AtlasLootContinued"}},
+    {id = "AtlasLootContinued", label = "AtlasLootClassic Continued", targets = {"AtlasLootContinued", "AtlasLootClassic"}},
     {id = "Attune", label = "Attune", targets = {"Attune"}},
     {id = "Auctionator", label = "Auctionator", targets = {"Auctionator"}},
     {id = "BtWQuests", label = "BtWQuests", targets = {"BtWQuests"}},

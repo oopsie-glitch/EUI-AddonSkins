@@ -1,6 +1,8 @@
 local ADDON, ns = ...
 local function DefineSkin()
 
+-- Both supplied forks export this same singleton and widget contract.
+-- They cannot coexist: loading both overwrites _G.AtlasLoot.
 local function GUI() return _G.AtlasLoot and _G.AtlasLoot.GUI end
 local function Favourites()
     local atlas = _G.AtlasLoot
@@ -42,6 +44,12 @@ Visit = function(C, f, kind, refresh)
         if f.SetBackdropColor and S.GetPanelColor then f:SetBackdropColor(S.GetPanelColor()) end
         ns.AttachAccent(S, f)
         if H.Allowed(f.CloseButton) then S.CloseButton(f.CloseButton) end
+        return true
+    end
+    -- Forever's BiS footer uses a Blizzard template, not the shared custom
+    -- dropdown. Its initializer and phase/status-coloured text stay native.
+    if kind == "Frame" and name == "AtlasLoot_BiSPhaseDropdown" and type(f.initialize) == "function" then
+        S.Dropdown(f)
         return true
     end
     if kind == "Slider" then

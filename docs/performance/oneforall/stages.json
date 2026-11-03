@@ -1,0 +1,275 @@
+{
+  "evidence": "Exploratory stage operation counts/allocation churn only. Timings omitted; final serial paired runs are authoritative. Host API mocks, not client C-call counts. Baseline 7676fdb; cumulative steps: colour guard order, native selection pre-state, data-icon early exit, empty-queue/Pack allocations.",
+  "Retail": {
+    "baseline": {
+      "gear_refresh": {
+        "skin_calls": 820.0,
+        "host_c_calls": 4428.0,
+        "lua_calls": 3644.0,
+        "vertex_reads": 28800.0,
+        "parent_reads": 29200.0,
+        "churn_kib": 19426.22,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 800.0,
+        "fonts": 0.0,
+        "profile": "(closure):236,Ready:147,Quality:146,SameRGB:144,paint:144,Semantic:2"
+      },
+      "list_40_refresh": {
+        "skin_calls": 2342.0,
+        "host_c_calls": 12919.0,
+        "lua_calls": 8938.0,
+        "vertex_reads": 80000.0,
+        "parent_reads": 64000.0,
+        "churn_kib": 45938.93,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "SameRGB:640,(closure):462,Ready:440,paint:400,Quality:320,StatusFill:80"
+      },
+      "closed_icon_update": {
+        "skin_calls": 9.0,
+        "host_c_calls": 22.0,
+        "lua_calls": 33.0,
+        "vertex_reads": 0.0,
+        "parent_reads": 800.0,
+        "churn_kib": 16.365,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "Object:6,(closure):1,AssetName:1,Owned:1"
+      },
+      "reopen": {
+        "skin_calls": 37.0,
+        "host_c_calls": 31.0,
+        "lua_calls": 78.0,
+        "vertex_reads": 0.0,
+        "parent_reads": 0.0,
+        "churn_kib": 106.93,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "Object:8,Ready:6,Allowed:4,Flush:4,Layout:4,(closure):3"
+      }
+    },
+    "colour": {
+      "gear_refresh": {
+        "skin_calls": 752.0,
+        "host_c_calls": 3540.0,
+        "lua_calls": 3576.0,
+        "vertex_reads": 28800.0,
+        "parent_reads": 29200.0,
+        "churn_kib": 19426.22,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 800.0,
+        "fonts": 0.0,
+        "profile": "(closure):236,Ready:147,SameRGB:144,paint:144,Quality:78,Semantic:2"
+      },
+      "list_40_refresh": {
+        "skin_calls": 2342.0,
+        "host_c_calls": 12919.0,
+        "lua_calls": 8938.0,
+        "vertex_reads": 80000.0,
+        "parent_reads": 64000.0,
+        "churn_kib": 45938.93,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "SameRGB:640,(closure):462,Ready:440,paint:400,Quality:320,StatusFill:80"
+      },
+      "closed_icon_update": {
+        "skin_calls": 9.0,
+        "host_c_calls": 22.0,
+        "lua_calls": 33.0,
+        "vertex_reads": 0.0,
+        "parent_reads": 800.0,
+        "churn_kib": 16.365,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "Object:6,(closure):1,AssetName:1,Owned:1"
+      },
+      "reopen": {
+        "skin_calls": 37.0,
+        "host_c_calls": 31.0,
+        "lua_calls": 78.0,
+        "vertex_reads": 0.0,
+        "parent_reads": 0.0,
+        "churn_kib": 106.93,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "Object:8,Ready:6,Allowed:4,Flush:4,Layout:4,(closure):3"
+      }
+    },
+    "rows": {
+      "gear_refresh": {
+        "skin_calls": 752.0,
+        "host_c_calls": 3540.0,
+        "lua_calls": 3576.0,
+        "vertex_reads": 28800.0,
+        "parent_reads": 29200.0,
+        "churn_kib": 19426.22,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 800.0,
+        "fonts": 0.0,
+        "profile": "(closure):236,Ready:147,SameRGB:144,paint:144,Quality:78,Semantic:2"
+      },
+      "list_40_refresh": {
+        "skin_calls": 1400.0,
+        "host_c_calls": 7535.0,
+        "lua_calls": 6814.0,
+        "vertex_reads": 40000.0,
+        "parent_reads": 32000.0,
+        "churn_kib": 44420.117,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "(closure):400,SameRGB:320,Ready:240,paint:200,Quality:160,SetSelected:40"
+      },
+      "closed_icon_update": {
+        "skin_calls": 9.0,
+        "host_c_calls": 22.0,
+        "lua_calls": 33.0,
+        "vertex_reads": 0.0,
+        "parent_reads": 800.0,
+        "churn_kib": 16.365,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "Object:6,(closure):1,AssetName:1,Owned:1"
+      },
+      "reopen": {
+        "skin_calls": 37.0,
+        "host_c_calls": 31.0,
+        "lua_calls": 78.0,
+        "vertex_reads": 0.0,
+        "parent_reads": 0.0,
+        "churn_kib": 106.93,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "Object:8,Ready:6,Allowed:4,Flush:4,Layout:4,(closure):3"
+      }
+    },
+    "icons": {
+      "gear_refresh": {
+        "skin_calls": 752.0,
+        "host_c_calls": 3540.0,
+        "lua_calls": 3576.0,
+        "vertex_reads": 28800.0,
+        "parent_reads": 29200.0,
+        "churn_kib": 19426.22,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 800.0,
+        "fonts": 0.0,
+        "profile": "(closure):236,Ready:147,SameRGB:144,paint:144,Quality:78,Semantic:2"
+      },
+      "list_40_refresh": {
+        "skin_calls": 1400.0,
+        "host_c_calls": 7535.0,
+        "lua_calls": 6814.0,
+        "vertex_reads": 40000.0,
+        "parent_reads": 32000.0,
+        "churn_kib": 44420.117,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "(closure):400,SameRGB:320,Ready:240,paint:200,Quality:160,SetSelected:40"
+      },
+      "closed_icon_update": {
+        "skin_calls": 2.0,
+        "host_c_calls": 10.0,
+        "lua_calls": 11.0,
+        "vertex_reads": 0.0,
+        "parent_reads": 0.0,
+        "churn_kib": 16.303,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "(closure):1,AssetName:1"
+      },
+      "reopen": {
+        "skin_calls": 37.0,
+        "host_c_calls": 31.0,
+        "lua_calls": 78.0,
+        "vertex_reads": 0.0,
+        "parent_reads": 0.0,
+        "churn_kib": 106.93,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "Object:8,Ready:6,Allowed:4,Flush:4,Layout:4,(closure):3"
+      }
+    },
+    "final": {
+      "gear_refresh": {
+        "skin_calls": 752.0,
+        "host_c_calls": 3540.0,
+        "lua_calls": 3576.0,
+        "vertex_reads": 28800.0,
+        "parent_reads": 29200.0,
+        "churn_kib": 19426.22,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 800.0,
+        "fonts": 0.0,
+        "profile": "(closure):236,Ready:147,SameRGB:144,paint:144,Quality:78,Semantic:2"
+      },
+      "list_40_refresh": {
+        "skin_calls": 1400.0,
+        "host_c_calls": 7535.0,
+        "lua_calls": 6814.0,
+        "vertex_reads": 40000.0,
+        "parent_reads": 32000.0,
+        "churn_kib": 44420.117,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "(closure):400,SameRGB:320,Ready:240,paint:200,Quality:160,SetSelected:40"
+      },
+      "closed_icon_update": {
+        "skin_calls": 2.0,
+        "host_c_calls": 10.0,
+        "lua_calls": 11.0,
+        "vertex_reads": 0.0,
+        "parent_reads": 0.0,
+        "churn_kib": 16.303,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "(closure):1,AssetName:1"
+      },
+      "reopen": {
+        "skin_calls": 33.0,
+        "host_c_calls": 27.0,
+        "lua_calls": 70.0,
+        "vertex_reads": 0.0,
+        "parent_reads": 0.0,
+        "churn_kib": 47.555,
+        "objects": 0.0,
+        "hooks": 0.0,
+        "geometry": 0.0,
+        "fonts": 0.0,
+        "profile": "Object:8,Ready:6,Allowed:4,Flush:4,(closure):3,Owned:2"
+      }
+    }
+  }
+}

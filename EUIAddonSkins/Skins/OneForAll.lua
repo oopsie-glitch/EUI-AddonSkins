@@ -1,0 +1,846 @@
+local ADDON, ns = ...
+local function DefineSkin()
+ns.RegisterModule("OneForAll", "OneForAll", function()
+    return _G.OneForAll and _G.OneForAll.UI
+end, function(S, module)
+    local A, UI = _G.OneForAll, _G.OneForAll.UI
+    local H = ns.CreateSkinHelper(S, module)
+    local unpack = unpack or table.unpack
+    local nodes, fonts, colours, kept, flattened, windows = {}, {}, {}, {}, {}, {}
+    local pending, deferred, busy, depth = {}, {}, false, 0
+    local windowNames, trusted = {}, {}
+    local excludedNames = {OneForAllMinimapCollectorBar=true, OneForAllMinimapCollector=true,
+        OneForAllBuffReminder=true, OneForAllLootFeed=true, OneForAllChatHideButton=true,
+        OneForAllDungeonMapKey=true}
+    for _, suffix in ipairs({"Frame", "Confirm", "BugReport", "Discord", "CraftList", "ProfilePopup", "QuestChain", "WeightEditor", "TrainerSpells", "TalentCode", "Welcome", "WhatsNew", "PreviewFrame", "QuestSharePopup", "CopyChat", "BagsFull", "NearbyAlert"}) do
+        windowNames["OneForAll"..suffix] = true
+    end
+    local Walk, Flush, Queue, Window
+    -- A secure Craft button implicitly protects its containing window. That
+    -- ancestry is still ours; only explicitly secure controls are excluded.
+    local function Object(f)
+        local kind = type(f)
+        return (kind == "table" or kind == "userdata") and type(f.GetObjectType) == "function"
+            and not (f.IsForbidden and f:IsForbidden())
+    end
+    H.Allowed = function(f)
+        if not Object(f) then return false end
+        if f.IsProtected then
+            local _, explicit = f:IsProtected()
+            -- Both false and nil mean "not explicitly protected". In
+            -- particular, older clients use nil for inherited protection.
+            if explicit then return false end
+        end
+        return true
+    end
+    local layoutFont, layoutFlags
+    local function Ready()
+        if not ns.IsEnabled(module) then return false end
+        if InCombatLockdown and InCombatLockdown() then busy = true; return false end
+        return true
+    end
+    local faded = {}
+    H.Fade = function(t)
+        if not H.Allowed(t) or not t.SetAlpha or not Ready() then return end
+        if faded[t] then return end
+        local texture = t:GetObjectType() == "Texture"
+        local colourTexture = texture and not t:GetTexture()
+        local painting, clearPending
+        local function Paint(clearColour)
+            if clearColour then clearPending = true end
+            if painting or not Ready() then return end
+            painting = true
+            -- These are verified redundant decorative regions. Empty the
+            -- asset, not just its alpha: native state/opacity paints retain
+            -- their references but cannot reveal a second skin underneath.
+            if texture and (clearPending or t:GetTexture()) then t:SetTexture(nil) end
+            clearPending = nil
+            if t:GetAlpha() ~= 0 then t:SetAlpha(0) end
+            painting = nil
+        end
+        faded[t] = Paint
+        H.Hook(t, "SetAlpha", function() Paint() end)
+        -- File assets are reapplied through the one existing addon SetTex
+        -- hook. Only native solid-colour regions need a per-region setter.
+        if colourTexture then H.Hook(t, "SetColorTexture", function() Paint(true) end) end
+        Paint(true)
+    end
+    local function Owned(f)
+        local p = f
+        for _ = 1, 40 do
+            if not Object(p) or p == UIParent then return false end
+            local name = p.GetName and p:GetName()
+            if excludedNames[name] then return false end
+            if p == UI.mainWindow or windows[p] or trusted[p] or windowNames[name] then return true end
+            p = p.GetParent and p:GetParent()
+        end
+        return false
+    end
+    local assets, decorated, assetIDs = {}, {}, {}
+    local function AssetName(path)
+        local name = type(path) == "string" and path:lower():gsub("/", "\\")
+            :match("\\oneforall\\assets\\([^\\]+)")
+        return name and name:gsub("%.blp$", ""):gsub("%.tga$", "")
+    end
+    if GetFileIDFromPath then
+        for name in ("glow_line divider_plain divider_ornate talent_frame talent_glow tab_icons grip_resize grip_height icon_close icon_bug icon_chat chevron icon_arrow_down icon_back ring_gold ring_silver ring_plain frame_boss2 frame_badge gem_rim window_ring modern_frame window_frame corner_glow edge_fade line_cap btn_m_active rr_fill rr_ring pill_fill knob header_banner minimap_icon shade_lr sort_arrows"):gmatch("%S+") do
+            for _, suffix in ipairs({"", ".blp", ".tga"}) do
+                local id = GetFileIDFromPath(UI.ASSET_ROOT..name..suffix)
+                if id and id > 0 then assetIDs[id] = name end
+            end
+        end
+    end
+    local function Asset(t)
+        local value = t.GetTexture and t:GetTexture()
+        local cached = assets[t]
+        if cached and cached.value == value then return cached.name end
+        local path = t.GetTextureFilePath and t:GetTextureFilePath() or value
+        local name = AssetName(path) or assetIDs[value]
+        if name then assets[t] = {value=value, name=name} end
+        return name
+    end
+    local function State(f)
+        if not nodes[f] then nodes[f] = {} end
+        return nodes[f]
+    end
+    local function Semantic(t)
+        local f = t.GetParent and t:GetParent()
+        return f and (t == f.rank or t == f.skill or t == f.tag or t == f.level or t == f.count
+            or t == f.status or t == f.name)
+    end
+    local function Quality(r, g, b)
+        for _, c in pairs(ITEM_QUALITY_COLORS or {}) do
+            if c.r and math.abs(c.r-r) < .00001 and math.abs(c.g-g) < .00001 and math.abs(c.b-b) < .00001 then return true end
+        end
+        for _, c in pairs(RAID_CLASS_COLORS or {}) do
+            if c.r and math.abs(c.r-r) < .00001 and math.abs(c.g-g) < .00001 and math.abs(c.b-b) < .00001 then return true end
+        end
+    end
+    local function Font(t, neutral)
+        if not H.Allowed(t) or t:GetObjectType() ~= "FontString" then return end
+        local d = fonts[t]
+        if not d then
+            d = {}; fonts[t] = d
+            d.paint = function()
+                if d.painting or not Ready() then return end
+                d.painting = true
+                local face, _, flags = t:GetFont()
+                local path, style = S.GetFont()
+                if face ~= path or (flags or "") ~= (style or "") then S.Font(t) end
+                -- Only decorative text loses the warm palette. Inline item,
+                -- class and status colour escapes and semantic fields stay native.
+                if d.control and d.control.IsEnabled and not d.control:IsEnabled() then
+                    if not d.disabled then d.enabledColour = {t:GetTextColor()}; d.disabled = true end
+                    t:SetTextColor(.45, .45, .47)
+                elseif d.disabled then
+                    d.disabled = nil
+                    local c = d.enabledColour
+                    if c and Quality(c[1], c[2], c[3]) then t:SetTextColor(unpack(c))
+                    else t:SetTextColor(.91, .91, .93) end
+                elseif d.neutral and not Semantic(t) then
+                    local r, g, b, a = t:GetTextColor()
+                    if r > .7 and g > .35 and b < g * .95 and not Quality(r, g, b) then t:SetTextColor(.91, .91, .93, a) end
+                end
+                d.painting = nil
+            end
+            H.Hook(t, "SetFont", d.paint); H.Hook(t, "SetTextColor", d.paint)
+        end
+        if neutral then d.neutral = true end
+        d.paint()
+    end
+    local function Keep(t)
+        if not H.Texture(t) or kept[t] then return end
+        local alpha = t:GetAlpha(); kept[t] = alpha
+        local painting
+        H.Hook(t, "SetAlpha", function(_, a)
+            if painting or not Ready() then return end
+            if a > 0 then alpha = a; kept[t] = a; return end
+            if a == alpha then return end
+            painting = true; t:SetAlpha(alpha); painting = nil
+        end)
+        t:SetAlpha(alpha)
+    end
+    -- Reuse native colourable decoration, preserving its alpha/visibility and
+    -- semantic state colours. Never change SkinC or the gameplay colour tables.
+    local function SameRGB(r, g, b, nr, ng, nb)
+        return math.abs(r-nr) < .00001 and math.abs(g-ng) < .00001 and math.abs(b-nb) < .00001
+    end
+    local function StatusFill(r, g, b)
+        return SameRGB(r, g, b, .035, .16, .055)
+            or SameRGB(r, g, b, .22, .17, .04)
+            or SameRGB(r, g, b, .05, .15, .07)
+    end
+    local function Colour(t, role, r, g, b, a)
+        if not H.Texture(t) then return end
+        local d = colours[t]
+        if not d then
+            d = {role = role}; colours[t] = d
+            d.paint = function()
+                if d.painting or not Ready() then return end
+                d.painting = true
+                local cr, cg, cb, ca = d.r or 1, d.g or 1, d.b or 1, d.a or 1
+                if d.role == "accent" then cr, cg, cb = S.GetAccentColor()
+                elseif d.role == "selection" then cr, cg, cb = S.GetAccentColor(); ca = ca * .18
+                elseif d.role == "rowselection" then
+                    if not StatusFill(cr, cg, cb) then
+                        local ar, ag, ab = S.GetAccentColor()
+                        cr, cg, cb = S.GetPanelColor()
+                        cr, cg, cb = cr * .9 + ar * .1, cg * .9 + ag * .1, cb * .9 + ab * .1
+                    end
+                elseif d.role == "surface" then
+                    -- Quest-chain done/in-log fills and learned pet ranks are
+                    -- data, even when the in-log colour is itself gold.
+                    if not StatusFill(cr, cg, cb) then cr, cg, cb = S.GetPanelColor() end
+                elseif d.role == "line" then cr, cg, cb = .22, .22, .24
+                elseif d.role == "white" then cr, cg, cb = .8, .8, .82
+                elseif d.role == "border" then
+                    -- Normal card chrome is neutral; a native quality/class/
+                    -- quest-state colour supplied later remains authoritative.
+                    local owner = t:GetParent()
+                    local itemSlot = owner and type(owner.slot) == "number"
+                    local quality = itemSlot and owner.q ~= nil and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[owner.q]
+                    local warm = not quality and cr > cg and cg > cb and cb < .4 and not Quality(cr, cg, cb)
+                    if itemSlot and not d.itemEdge then
+                        d.itemEdge = true
+                        t:SetDrawLayer("OVERLAY", 1)
+                        if t:GetAlpha() == 0 then t:SetAlpha(1) end
+                        Keep(t)
+                    end
+                    if quality then cr, cg, cb, ca = quality.r, quality.g, quality.b, 1
+                    elseif d.row and warm then
+                        if d.row.selected and d.row.edge == t then cr, cg, cb = S.GetAccentColor()
+                        else cr, cg, cb = .2, .2, .22 end
+                    elseif warm and cr > .7 then cr, cg, cb = S.GetAccentColor()
+                    elseif warm then cr, cg, cb = .2, .2, .22 end
+                end
+                local vr, vg, vb, va = t:GetVertexColor()
+                if not SameRGB(vr, vg, vb, cr, cg, cb) or math.abs(va-ca) >= .00001 then t:SetVertexColor(cr, cg, cb, ca) end
+                d.painting = nil
+            end
+            H.Hook(t, "SetVertexColor", function(_, nr, ng, nb, na)
+                if d.painting then return end
+                d.r, d.g, d.b, d.a = nr, ng, nb, na or 1
+                d.paint()
+            end)
+        end
+        d.role = role
+        d.r, d.g, d.b, d.a = r or 1, g or 1, b or 1, a or 1
+        d.paint()
+    end
+    local function Pieces(rr, anchor, role, inset)
+        if type(rr) ~= "table" or type(rr.pieces) ~= "table" or flattened[rr] then return end
+        flattened[rr] = true
+        local p = rr.pieces
+        if role == "border" then
+            -- Reuse four of the native nine-slice regions as thin straight edges.
+            for i, t in ipairs(p) do
+                if i <= 4 then
+                    t:SetTexture("Interface\\Buttons\\WHITE8X8"); t:SetTexCoord(0, 1, 0, 1); t:ClearAllPoints()
+                    local side = ({"TOP", "BOTTOM", "LEFT", "RIGHT"})[i]
+                    if i <= 2 then t:SetPoint(side.."LEFT", anchor, side.."LEFT"); t:SetPoint(side.."RIGHT", anchor, side.."RIGHT"); t:SetHeight(1)
+                    else t:SetPoint("TOP"..side, anchor, "TOP"..side); t:SetPoint("BOTTOM"..side, anchor, "BOTTOM"..side); t:SetWidth(1) end
+                    Colour(t, role, t:GetVertexColor())
+                else H.Fade(t) end
+            end
+        else
+            local t = p[#p]
+            t:SetTexture("Interface\\Buttons\\WHITE8X8"); t:SetTexCoord(0, 1, 0, 1)
+            t:ClearAllPoints()
+            if inset then
+                t:SetPoint("TOPLEFT", anchor, "TOPLEFT", inset, -inset)
+                t:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", -inset, inset)
+            else t:SetAllPoints(anchor) end
+            Colour(t, role, t:GetVertexColor())
+            for _, other in ipairs(p) do if other ~= t then H.Fade(other) end end
+        end
+    end
+    local cards = {}
+    local function Card(card, anchor, row)
+        if type(card) ~= "table" then return end
+        local state = cards[card]
+        if not state then state = {}; cards[card] = state end
+        if state.finished and (not row or state.row) then return end
+        local firstEdge = card.border and card.border.pieces and card.border.pieces[1]
+        local r, g, b
+        if row and firstEdge then r, g, b = firstEdge:GetVertexColor() end
+        -- Native fill is above the border (BACKGROUND sublayer + 1). Keep its
+        -- one-pixel inset, otherwise an opaque fill paints over quality edges.
+        Pieces(card.fill, anchor, "surface", 1); Pieces(card.border, anchor, "border")
+        state.finished = true
+        local selection
+        if row then
+            selection = {edge = card.border and card.border.pieces[2], selected = r and SameRGB(r, g, b, 1, .80, .34)}
+            state.row = selection
+            for _, t in ipairs(card.border and card.border.pieces or {}) do
+                if colours[t] then colours[t].row = selection; colours[t].paint() end
+            end
+            if selection.selected then
+                for _, t in ipairs(card.fill and card.fill.pieces or {}) do
+                    if colours[t] then colours[t].role = "rowselection"; colours[t].paint() end
+                end
+            end
+            -- CardRow adds its own gold hover wash and a nine-sliced ring,
+            -- separately from card.fill/card.border. Retain just the wash.
+            for _, t in ipairs(H.Regions(anchor)) do
+                if H.Texture(t) and t:GetDrawLayer() == "HIGHLIGHT" then
+                    if Asset(t) == "rr_ring" then H.Fade(t)
+                    elseif not t:GetTexture() then
+                        t:SetColorTexture(1, 1, 1, .06)
+                    end
+                end
+            end
+        end
+        local selectCard = card.SetSelected
+        if type(selectCard) == "function" then
+            card.SetSelected = function(self, selected, ...)
+                -- Native SetSelected immediately paints border and fill. Set
+                -- their cosmetic roles first so those existing setter hooks
+                -- paint the final state once, without a second post-paint pass.
+                if Ready() then
+                    if selection then selection.selected = selected and true or false end
+                    for _, t in ipairs(card.fill and card.fill.pieces or {}) do
+                        local d = colours[t]
+                        if d then d.role = selected and "rowselection" or "surface" end
+                    end
+                end
+                return selectCard(self, selected, ...)
+            end
+        end
+    end
+    local function Decorative(t)
+        if not H.Texture(t) then return end
+        local name = Asset(t)
+        local owner = t:GetParent()
+        if owner and owner._ofaToggle and (name == "pill_fill" or name == "knob") then
+            H.Fade(t) -- also covers native switch art added after first styling
+            return
+        end
+        if not name or decorated[t] == name then return end
+        decorated[t] = name
+        if name == "glow_line" then
+            -- The native visibility remains the selected-state indicator.
+            t:SetDesaturated(true)
+            Colour(t, "accent")
+            local f = t:GetParent()
+            t:ClearAllPoints(); t:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 1, 0)
+            t:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 0); t:SetHeight(4)
+        elseif name == "divider_plain" or name == "divider_ornate" then
+            t:SetDesaturated(true); Colour(t, "line")
+        elseif name == "talent_frame" then
+            t:SetTexture("Interface\\Common\\WhiteIconFrame")
+            Colour(t, "border", t:GetVertexColor())
+        elseif name == "talent_glow" then Colour(t, "accent", t:GetVertexColor())
+        elseif name == "tab_icons" or name == "grip_resize" or name == "grip_height"
+            or name == "icon_close" or name == "icon_bug" or name == "icon_chat"
+            or name == "chevron" or name == "icon_arrow_down" or name == "icon_back" then
+            -- Monochrome control glyphs, not map/faction/status illustrations.
+            Keep(t); t:SetDesaturated(true); Colour(t, "white")
+        elseif name == "ring_gold" or name == "ring_silver" or name == "ring_plain"
+            or name == "frame_boss2" or name == "frame_badge" or name == "gem_rim" then
+            t:SetDesaturated(true); Colour(t, "white")
+        elseif name == "window_ring" or name == "modern_frame" or name == "window_frame"
+            or name == "corner_glow" or name == "edge_fade" or name == "line_cap" then H.Fade(t) end
+    end
+    local function Button(f)
+        if not H.Allowed(f) then return end
+        local d = State(f)
+        if not d.button then
+            d.button = true
+            -- The public Tab primitive mirrors labels at a fixed size/centre;
+            -- retain this addon's icon/label layout and reuse its active plate
+            -- as the one-pixel indicator instead.
+            for _, t in ipairs(H.Regions(f)) do
+                if Asset(t) == "btn_m_active" and t:GetDrawLayer() ~= "HIGHLIGHT" and not f.euiOfaSelection then
+                    f.euiOfaSelection = t
+                    t:SetColorTexture(1, 1, 1, 1); t:ClearAllPoints()
+                    t:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 1, 0); t:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 0)
+                    t:SetHeight(1); t:SetDrawLayer("OVERLAY", 6); Colour(t, "accent")
+                end
+            end
+            local keys = {"icon", "Icon", "glyph", "check", "del", "euiOfaSelection", "euiOfaChevron"}
+            -- Retain native state regions; all redundant plates/glows are faded.
+            for _, t in ipairs(H.Regions(f)) do
+                if colours[t] and colours[t].role == "accent" then
+                    local key = "euiOfaKeep"..#keys; f[key] = t; keys[#keys+1] = key
+                end
+            end
+            local keep = {}
+            for _, key in ipairs(keys) do if f[key] then keep[f[key]] = true end end
+            for _, t in ipairs(H.Regions(f)) do
+                if H.Texture(t) and not keep[t] then H.Fade(t) end
+            end
+            S.Button(f, keys)
+            local label = f._label or f.text or (f.GetFontString and f:GetFontString())
+            Font(label, true)
+            if fonts[label] then
+                fonts[label].control = f
+                for _, method in ipairs({"SetEnabled", "Enable", "Disable"}) do H.Hook(f, method, fonts[label].paint) end
+            end
+        end
+    end
+    local function Check(f)
+        local d = State(f)
+        if d.check then return end
+        d.check = true
+        -- OneForAll's 42px switch hit box is kept. Only its visible art is
+        -- replaced with the accepted compact square, centred in the same space.
+        for _, t in ipairs(H.Regions(f)) do if H.Texture(t) then H.Fade(t) end end
+        local host = CreateFrame("Frame", nil, f); host:SetSize(22, 22); host:SetPoint("CENTER"); host:EnableMouse(false)
+        S.Checkbox(host, {borderInset = 4, hover = .06})
+        local mark = host:CreateTexture(nil, "OVERLAY"); mark:SetSize(8, 8); mark:SetPoint("CENTER")
+        d.mark = mark
+        d.paintCheck = function()
+            if not Ready() then return end
+            local r, g, b = S.GetAccentColor()
+            if d.r ~= r or d.g ~= g or d.b ~= b then mark:SetColorTexture(r, g, b, 1); d.r, d.g, d.b = r, g, b end
+            local checked = f:GetChecked() and true or false
+            if mark:IsShown() ~= checked then mark:SetShown(checked) end
+            local enabled = not f.IsEnabled or f:IsEnabled()
+            if not f._ofaToggle and d.enabled ~= enabled then host:SetAlpha(enabled and 1 or .4) end
+            d.enabled = enabled
+        end
+        for _, name in ipairs({"SetChecked", "SetEnabled", "Enable", "Disable", "Paint"}) do H.Hook(f, name, d.paintCheck) end
+        H.Script(f, "PostClick", d.paintCheck)
+        d.paintCheck()
+    end
+    local captions = {}
+    local function Caption(holder, text, size)
+        if not H.Allowed(holder) then return end
+        local label
+        for _, t in ipairs(H.Regions(holder)) do
+            if t:GetObjectType() == "FontString" then
+                if not label then label = t else H.Fade(t) end
+            end
+        end
+        if not label then return end
+        -- Native SmallCaps measures separately positioned letter runs. Reuse
+        -- its first run as one caption so EUI fonts cannot overrun those offsets.
+        label:SetText(text); S.Font(label); local path, flags = S.GetFont()
+        label:SetFont(path, size or 12, flags)
+        if label.SetWordWrap then label:SetWordWrap(false) end
+        label:ClearAllPoints(); label:SetPoint("LEFT", holder, "LEFT")
+        local function Measure()
+            if not Ready() then return end
+            local owner = holder:GetParent()
+            local width = label:GetStringWidth() or 1
+            if owner and owner:GetObjectType() == "Button" and owner:GetHeight() == 22
+                and owner:GetParent() and owner:GetParent():GetHeight() == 24 then
+                -- Dungeon/raid columns keep native widths, callbacks and UV
+                -- sort states. Bound text and arrow within their own cell.
+                local arrow = H.Texture(owner.arrow)
+                local d = State(holder)
+                if d.captionCenter == nil then
+                    local _, _, relative = holder:GetPoint()
+                    d.captionCenter = relative == "CENTER"
+                end
+                local pad = d.captionCenter and 2 or 10
+                width = math.max(1, owner:GetWidth() - pad - (arrow and 14 or 2))
+                holder:ClearAllPoints(); holder:SetPoint("LEFT", owner, "LEFT", pad, 0)
+                label:SetWidth(width)
+                label:SetJustifyH(d.captionCenter and "CENTER" or "LEFT")
+                if arrow then
+                    arrow:ClearAllPoints(); arrow:SetPoint("RIGHT", owner, "RIGHT", -2, 0); arrow:SetSize(8, 8)
+                    arrow:SetDesaturated(true); Colour(arrow, "white")
+                end
+            end
+            holder:SetWidth(math.max(1, width))
+        end
+        captions[holder] = Measure
+        State(holder).caption = Measure
+        -- Let the native caller finish centring/anchoring the holder first.
+        holder:SetWidth(math.max(1, label:GetStringWidth() or 1))
+    end
+    local pageTextures = {}
+    for direction, part in pairs({["<"]="PrevPage", [">"]="NextPage"}) do
+        local path = "Interface\\Buttons\\UI-SpellbookIcon-"..part.."-Up"
+        pageTextures[path:lower()] = direction
+        if GetFileIDFromPath then
+            local id = GetFileIDFromPath(path)
+            if id and id > 0 then pageTextures[id] = direction end
+        end
+    end
+    local function WindowArt(f, t)
+        if not H.Texture(t) then return end
+        local path = Asset(t)
+        local native = t:GetTexture()
+        if (path and (path:find("banner", 1, true) or path:find("logo", 1, true)
+                or path:find("preview_", 1, true) or path == "minimap_icon"
+                or (f == UI.mainWindow and path == "shade_lr")))
+            or t == UI.brandLogo or t == f.pic or t == f.icon or t == f.arrow
+            or (type(native) == "string" and (native:find("Interface\\Icons\\", 1, true)
+                or native:find("UI-Dialog-Icon-Alert", 1, true))) then
+            Keep(t)
+        end
+    end
+    local function SkinNode(f)
+        if not H.Allowed(f) then return end
+        local d = State(f)
+        if type(f.card) == "table" and type(f.card.fill) == "table" and type(f.card.border) == "table" then
+            Card(f.card, f, type(f.card.SetSelected) == "function")
+            -- Card is constructed before GearPlanner assigns slot/q. Finish
+            -- item-edge setup on completed discovery, even on a seen frame.
+            if type(f.slot) == "number" and not d.itemCard and f.card.border.pieces then
+                d.itemCard = true
+                for i = 1, 4 do
+                    local colour = colours[f.card.border.pieces[i]]
+                    if colour then colour.paint() end
+                end
+            end
+        end
+        if d.seen then return end
+        d.seen = true
+        local kind = f:GetObjectType()
+        if f == UI.mainWindow then
+            for _, t in ipairs(H.Regions(f)) do
+                if H.Texture(t) and not Asset(t) and t:GetHeight() == 1 and t:GetDrawLayer() ~= "BACKGROUND" then
+                    t:SetColorTexture(1, 1, 1, 1); Colour(t, "line")
+                end
+            end
+        end
+        if kind == "PlayerModel" or kind == "ModelScene" or kind == "GameTooltip" then return end
+        if kind == "CheckButton" then Check(f)
+        elseif kind == "EditBox" then
+            -- No padding/position writes: native numeric validation and layout
+            -- belong to OneForAll. EUI supplies the input surface and border.
+            S.EditBox(f)
+        elseif kind == "Slider" then
+            if f.GetOrientation and f:GetOrientation() == "VERTICAL" then S.ScrollBar(f)
+            elseif not d.grip then H.LegacySlider(f) end
+        elseif kind == "Button" and (f._label or (f.check and f.del)) and not (f.slot or f.itemID or f.itemId) then
+            if f.check and f.del then f.check:SetColorTexture(1, 1, 1, 1); Colour(f.check, "accent") end
+            Button(f)
+        elseif kind == "Button" and f.GetNormalTexture then
+            local t = f:GetNormalTexture()
+            local path = t and (t.GetTextureFilePath and t:GetTextureFilePath() or t:GetTexture())
+            local direction = pageTextures[type(path) == "string" and path:lower() or path]
+            if direction then
+                for _, getter in ipairs({"GetNormalTexture", "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture"}) do
+                    if f[getter] then local art = f[getter](f); if H.Texture(art) then H.Fade(art) end end
+                end
+                S.PageButton(f, direction)
+            end
+        end
+        if f.ScrollBar and H.Allowed(f.ScrollBar) then S.ScrollBar(f.ScrollBar) end
+        for _, t in ipairs(H.Regions(f)) do
+            if t:GetObjectType() == "FontString" then Font(t, true) else Decorative(t) end
+        end
+        -- Discovery happens only on new art/control construction. Warm shows,
+        -- scrolls and gameplay refreshes never traverse the known subtree.
+        H.Hook(f, "CreateTexture", function() Queue(f) end)
+        H.Hook(f, "CreateFontString", function() Queue(f) end)
+        -- Only flush newly constructed work after native interaction callbacks;
+        -- a warm click/show/scroll with no new objects does no tree walk.
+        for _, script in ipairs({"OnClick", "OnShow", "OnVerticalScroll"}) do
+            H.Script(f, script, function() if next(pending) then Flush() end end)
+        end
+    end
+    Walk = function(f, level)
+        if not H.Allowed(f) or (level or 0) > 24 then return end
+        local kind = f:GetObjectType()
+        if kind == "GameTooltip" or kind == "PlayerModel" or kind == "ModelScene" then return end
+        SkinNode(f)
+        for _, t in ipairs(H.Regions(f)) do
+            if t:GetObjectType() == "FontString" then Font(t, true)
+            else
+                if windows[f] then WindowArt(f, t) end
+                Decorative(t)
+            end
+        end
+        for _, child in ipairs(H.Children(f)) do Walk(child, (level or 0)+1) end
+        if nodes[f] and nodes[f].caption then nodes[f].caption() end
+    end
+    Queue = function(f)
+        if not H.Allowed(f) or not Owned(f) then return end
+        local kind = f:GetObjectType()
+        if kind == "FontString" then Font(f, true); return end
+        if kind == "Texture" then Decorative(f); return end
+        if not f.GetChildren or not f.GetRegions then return end
+        pending[f] = true
+        if depth > 0 then return end
+        H.Queue(module, function() Flush() end)
+    end
+    local function Layout()
+        if not UI.mainWindow or not UI.LayoutTabs then return end
+        local path, flags = S.GetFont()
+        if path ~= layoutFont or flags ~= layoutFlags then
+            layoutFont, layoutFlags = path, flags
+            UI.LayoutTabs() -- native ContentWidth spacing follows the new font
+        end
+    end
+    Flush = function()
+        if not Ready() then return end
+        if not next(pending) then return end
+        local work = pending; pending = {}
+        -- A completed ancestor covers child construction in the same burst.
+        for f in pairs(work) do
+            local p, covered = f.GetParent and f:GetParent(), false
+            for _ = 1, 40 do
+                if not p then break end
+                if work[p] then covered = true; break end
+                p = p.GetParent and p:GetParent()
+            end
+            if not covered then
+                if f.GetName and windowNames[f:GetName()] then Window(f) end
+                Walk(f)
+            end
+        end
+        Layout()
+    end
+    Window = function(f)
+        if not H.Allowed(f) or not Owned(f) or windows[f] then return end
+        windows[f] = true
+        local keep, before = {}, {}
+        for _, t in ipairs(H.Regions(f)) do
+            before[t] = true
+            WindowArt(f, t)
+            if kept[t] then keep[t] = kept[t] end
+        end
+        S.Shell(f, {noTopBar = true})
+        if f.SetBackdrop then f:SetBackdrop(nil) end
+        if f.NineSlice then S.FadeNineSlice(f.NineSlice) end
+        if f.Inset then S.Inset(f.Inset) end
+        if f ~= UI.mainWindow and H.Allowed(f.CloseButton) and f.CloseButton:IsShown() and S.CloseButton then S.CloseButton(f.CloseButton) end
+        for t, alpha in pairs(keep) do t:SetAlpha(alpha) end
+        -- Native opacity only affects shell textures, never labels or artwork.
+        local alpha = UI.GetWindowAlpha and UI.GetWindowAlpha() or 1
+        if f == UI.mainWindow then
+            local shell = {}
+            for _, t in ipairs(H.Regions(f)) do if H.Texture(t) and not before[t] and t:GetDrawLayer() == "BACKGROUND" then shell[#shell+1] = t end end
+            local function Opacity()
+                if not Ready() then return end
+                alpha = UI.GetWindowAlpha and UI.GetWindowAlpha() or 1
+                for _, t in ipairs(shell) do if t:GetAlpha() ~= alpha then t:SetAlpha(alpha) end end
+            end
+            for _, t in ipairs(shell) do
+                local painting
+                H.Hook(t, "SetAlpha", function(_, value)
+                    if painting or not Ready() or value == alpha then return end
+                    painting = true; t:SetAlpha(alpha); painting = nil
+                end)
+            end
+            State(f).opacity = Opacity
+            H.Hook(UI, "ApplyWindowAlpha", Opacity); Opacity()
+        end
+        Queue(f)
+    end
+    -- Return-preserving wrappers are scoped to OneForAll's own constructors.
+    -- Native functions run directly (never under pcall or secure post-hooks):
+    -- ShowNews/ShowWelcome are also passed to C_Timer and are left untouched.
+    local function Pack(...) return {n = select("#", ...), ...} end
+    local function Wrap(object, name, after, delayed)
+        local original = object[name]
+        if type(original) ~= "function" then return end
+        object[name] = function(...)
+            local first = ...
+            if Object(first) and not H.Allowed(first) then return original(...) end
+            -- Private anonymous dropdown/popup roots opt in at their own panel
+            -- constructor. Other helper calls still need a known owned ancestor.
+            if name == "FramedPanel" and H.Allowed(first) and first:GetParent() == UIParent
+                and not first:GetName() then trusted[first] = true end
+            if H.Allowed(first) and not Owned(first) then return original(...) end
+            if not Ready() then
+                local f = ...
+                if busy and H.Allowed(f) and f ~= UIParent then deferred[f] = true end
+                return original(...)
+            end
+            depth = depth + 1
+            local result = Pack(original(...))
+            H.Safe(after, result, ...)
+            depth = depth - 1
+            if depth == 0 then
+                if delayed then
+                    if next(pending) then H.Queue(module, function() Flush() end) end
+                else Flush() end
+            end
+            return unpack(result, 1, result.n)
+        end
+    end
+    Wrap(A, "NewFS", function(v, owner) if v[1] then Queue(owner) end end, true)
+    -- GetTexture can return only a FileID on clients. Remember names at the
+    -- addon's own setter, validating the ID before reuse; data icon updates do
+    -- not schedule discovery or styling.
+    H.Hook(A, "SetTex", function(t, path)
+        if faded[t] then faded[t](true); return end
+        local name = AssetName(path)
+        -- Data icons never need decorative classification/owner traversal.
+        -- Invalidate an earlier asset association without walking their UI.
+        if not name then if assets[t] then assets[t] = nil end; return end
+        if not Object(t) or not Owned(t) then return end
+        assets[t] = {value=t:GetTexture(), name=name}
+    end)
+    Wrap(A, "SkinBlizz", function(v) if H.Allowed(v[1]) and not nodes[v[1]] then Queue(v[1]) end end, true)
+    for _, name in ipairs({"GoldButton", "makeButton", "NavButton", "CloseButton", "SkinBlizzButton"}) do
+        Wrap(UI, name, function(v) if H.Allowed(v[1]) then Queue(v[1]) end end)
+    end
+    Wrap(UI, "GlowLine", function(v) Decorative(v[1]) end)
+    Wrap(UI, "Column", function(v) if H.Texture(v[1]) then v[1]:SetColorTexture(1, 1, 1, .55); Colour(v[1], "line") end end)
+    Wrap(UI, "Card", function(v, owner, anchor) Card(v[1], anchor or owner); Queue(owner) end)
+    Wrap(UI, "CardRow", function(v, owner) Card(v[1], owner, true); Queue(owner) end)
+    Wrap(UI, "RoundRect", function(v, owner, anchor, layer, sub, c, inset, r, g, b, a, tex)
+        if owner._ofaToggle then
+            -- These regions belong to the switch, not its empty pill anchor.
+            for _, t in ipairs(v[1].pieces or {}) do H.Fade(t) end
+        elseif layer == "HIGHLIGHT" then Pieces(v[1], anchor or owner, "selection")
+        elseif not tex and r and r > .15 and r > g and g > b then Pieces(v[1], anchor or owner, "selection") end
+        Queue(owner)
+    end)
+    Wrap(UI, "FramedPanel", function(_, f)
+        -- These panels can be talent canvases. Reuse only their decorative fill
+        -- instead of registering the canvas (which would fade later tree art).
+        local rr = {}
+        for _, t in ipairs(H.Regions(f)) do
+            if Asset(t) == "rr_fill" then rr[#rr+1] = t else Decorative(t) end
+        end
+        if #rr > 0 then Pieces({pieces = rr}, f, "surface") end
+        if f.GetParent and f:GetParent() == UIParent then Window(f) end
+        Queue(f)
+    end)
+    Wrap(UI, "Slider", function(v)
+        local f = v[1]
+        if not H.Allowed(f) then return end
+        local d = State(f)
+        local thumb = f.GetThumbTexture and H.Texture(f:GetThumbTexture())
+        if thumb and not d.grip then
+            d.grip = f:CreateTexture(nil, "OVERLAY")
+            d.grip:SetSize(8, 12); d.grip:SetPoint("CENTER", thumb, "CENTER")
+            d.grip:SetColorTexture(1, 1, 1, 1); Colour(d.grip, "accent")
+            H.Fade(thumb) -- retain the original 24px thumb drag rectangle
+        end
+        for _, child in ipairs(H.Children(f)) do
+            local fills = {}
+            for _, t in ipairs(H.Regions(child)) do
+                if Asset(t) == "rr_fill" then fills[#fills+1] = t
+                elseif H.Texture(t) and t:GetDrawLayer() == "ARTWORK" then
+                    t:SetColorTexture(1, 1, 1, .75); Colour(t, "accent")
+                else Decorative(t) end
+            end
+            if #fills > 0 then Pieces({pieces=fills}, child, "surface") end
+        end
+        Queue(f)
+    end)
+    Wrap(UI, "QuietHead", function(v, owner)
+        owner.euiOfaChevron = v[1]
+        Decorative(v[1]); Button(owner); Queue(owner)
+    end)
+    Wrap(UI, "ColumnHeader", function(v)
+        local f = v[1]
+        if not H.Allowed(f) then return end
+        for _, t in ipairs(H.Regions(f)) do
+            if H.Texture(t) then t:SetColorTexture(1, 1, 1, .35); Colour(t, "line") end
+        end
+        Queue(f)
+    end)
+    Wrap(UI, "QuietRow", function(v)
+        local t = v[1] and v[1].line
+        if H.Texture(t) then t:SetColorTexture(1, 1, 1, .35); Colour(t, "line") end
+    end)
+    Wrap(UI, "WindowFrame", function(_, deco) for _, t in ipairs(H.Regions(deco)) do if H.Texture(t) then H.Fade(t) end end end)
+    Wrap(UI, "SmallCaps", function(v, owner, text, big) Caption(v[1], text, big); Queue(owner) end)
+    local function GearQuality(f)
+        if not H.Allowed(f) or type(f.paintSlots) ~= "function" or State(f).gearQuality then return end
+        local slots = {}
+        -- GearPlanner's completed character panel owns the nineteen buttons.
+        -- Bind once, before Armory's first Show/Refresh; never walk on repaint.
+        for _, panel in ipairs(H.Children(f)) do
+            for _, b in ipairs(H.Children(panel)) do
+                if H.Allowed(b) and type(b.slot) == "number" and type(b.slotName) == "string"
+                    and type(b.card) == "table" and b.card.border then
+                    slots[#slots+1] = {button=b}
+                end
+            end
+        end
+        State(f).gearQuality = slots
+        local paint = f.paintSlots
+        f.paintSlots = function(...)
+            if Ready() and GetInventoryItemID then
+                for _, saved in ipairs(slots) do
+                    local b = saved.button
+                    local id = GetInventoryItemID("player", b.slot)
+                    if id ~= saved.id then saved.id, saved.quality = id, nil end
+                    if id then
+                        if b.q ~= nil then saved.quality = b.q
+                        elseif saved.quality ~= nil then b.q = saved.quality end
+                    end
+                end
+            end
+            -- refreshSlots unconditionally overwrites q, even when the quality
+            -- provider temporarily returns nil. Retain only a previously known
+            -- quality for this same item, before native selected/quality paint.
+            return paint(...)
+        end
+    end
+    Wrap(UI, "CreateGearPlanner", function(v, owner)
+        GearQuality(v[1])
+        if H.Allowed(v[1]) then Queue(v[1]) end
+        Queue(owner)
+    end)
+    for _, name in ipairs({"NavHeader", "SectionTitle", "PageHeader", "CreateRecipeBrowser"}) do
+        Wrap(UI, name, function(v, owner)
+            if H.Allowed(v[1]) then Queue(v[1]) end
+            Queue(owner)
+        end)
+    end
+    -- Panels are lazy; observe their completed factories, including ones
+    -- registered after installation. No UIParent/global scan is required.
+    local specs = {}
+    local function Panel(spec)
+        if type(spec) ~= "table" or specs[spec] or type(spec.create) ~= "function" then return end
+        specs[spec] = true
+        Wrap(spec, "create", function(v) Queue(v[1]) end)
+    end
+    for _, spec in ipairs(UI.panels or {}) do Panel(spec) end
+    H.Hook(UI, "RegisterPanel", function(spec) Panel(spec) end)
+    for _, name in ipairs({"ToggleUI", "OpenPanel", "SetWindowScale"}) do
+        Wrap(A, name, function() Window(UI.mainWindow); Flush() end)
+    end
+    for _, name in ipairs({"EnsurePanel", "OpenDropDown"}) do
+        Wrap(UI, name, function(v) if H.Allowed(v[1]) then Queue(v[1]) end end)
+    end
+    -- Known lazy secondary windows; inspect once on construction via FramedPanel
+    -- and once here for controls that existed before this skin was enabled.
+    for name in pairs(windowNames) do
+        local f = _G[name]
+        if H.Allowed(f) then Window(f) end
+    end
+    local events = CreateFrame("Frame")
+    events:RegisterEvent("PLAYER_REGEN_ENABLED")
+    events:SetScript("OnEvent", function()
+        if not busy then return end
+        busy = false
+        if Ready() then
+            local work = deferred; deferred = {}
+            for f in pairs(work) do
+                if H.Allowed(f) then
+                    if f:GetObjectType() == "Frame" and f:GetParent() == UIParent then Window(f) else Queue(f) end
+                end
+            end
+            module.refresh(); Flush()
+        end
+    end)
+    if S.OnLooksChanged then S.OnLooksChanged(function()
+        if not Ready() then return end
+        for _, d in pairs(fonts) do d.paint() end
+        for _, measure in pairs(captions) do measure() end
+        for _, d in pairs(colours) do d.paint() end
+        for _, d in pairs(nodes) do
+            if d.paintCheck then d.paintCheck() end
+            if d.opacity then d.opacity() end
+        end
+        Layout()
+    end) end
+    module.refresh = function()
+        if not Ready() then return end
+        Window(UI.mainWindow)
+        for name in pairs(windowNames) do if H.Allowed(_G[name]) then Window(_G[name]) end end
+        for f in pairs(windows) do Walk(f); if State(f).opacity then State(f).opacity() end end
+        for t, alpha in pairs(kept) do if t:GetAlpha() ~= alpha then t:SetAlpha(alpha) end end
+        for _, paint in pairs(faded) do paint() end
+        for _, d in pairs(colours) do d.paint() end
+        for _, d in pairs(nodes) do if d.paintCheck then d.paintCheck() end end
+        Layout() -- manual refresh still applies a font/layout change with no new UI
+        Flush()
+    end
+    Flush()
+end)
+end
+if ns.RegisterSkinDefinition then ns.RegisterSkinDefinition("OneForAll", DefineSkin) else DefineSkin() end

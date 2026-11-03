@@ -28,6 +28,7 @@ ns.skinCatalog = {
     {id = "LiteMount", label = "LiteMount", targets = {"LiteMount"}},
     {id = "Myslot", label = "Myslot", targets = {"Myslot"}},
     {id = "NovaInstanceTracker", label = "Nova Instance Tracker", targets = {"NovaInstanceTracker"}},
+    {id = "OneForAll", label = "OneForAll", targets = {"OneForAll"}},
     {id = "PallyPower", label = "PallyPower", targets = {"PallyPower"}},
     {id = "Pawn", label = "Pawn", targets = {"Pawn"}},
     {id = "PremadeGroupsFilter", label = "Premade Groups Filter", targets = {"PremadeGroupsFilter"}},

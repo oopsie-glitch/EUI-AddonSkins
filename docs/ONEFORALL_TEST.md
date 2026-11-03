@@ -1,0 +1,290 @@
+# OneForAll skin
+
+Development branch: `skin/oneforall-eui`, based on released main `1e45cec`.
+The owner approved the visual skin and confirmed the rarity fix in game at
+`7676fdb`. No release metadata or shared helper defaults change.
+
+**Gear Planner fix:** the live `98f3dc3` trace establishes that an
+initially valid quality is later overwritten by nil during native delayed
+refresh. Preserve it only for the same equipped item before native paint;
+see [evidence, fix and verification](ONEFORALL_QUALITY.md). Temporary diagnostics
+have been removed. See the [performance audit](ONEFORALL_PERFORMANCE.md) for
+the next candidate's measured changes and remaining in-game timing limits.
+
+## Sources and identity
+
+- Supplied `OneForAll-6.0.1.zip`, SHA-256
+  `7dbde14d2edeffd837285f70c409b05629018ba243096f4354805639efeec48c`.
+  Inspected Widgets, MainFrame, all eight panel implementations and their lazy
+  dialogs, plus TalentPlanner and the QoL/proximity window constructors.
+- Official [EllesmereUI skinning API](https://github.com/EllesmereGaming/EllesmereUI/blob/fc8d3c839af0950f8d6cd5195460ad58cdd760bd/SKINNING_API.md),
+  public API v3 at `fc8d3c839af0950f8d6cd5195460ad58cdd760bd`.
+- Reference integrations: ForeverCompanion's owned constructors, HomeBound's
+  data/art exclusions, Auctionator's compact checkbox visual hosts and Atlas's
+  native label/geometry preservation.
+
+OneForAll exposes `OneForAll.UI` and shared constructors. Its Widgets.lua states
+that the earlier selectable themes were removed in 5.7.3; only its gold theme
+remains. No EUI registration or native EUI theme exists in the supplied source.
+The older `ForeverCompanionAPI` belongs to the separate existing integration.
+Keep that integration and its target unchanged; OneForAll has its own loader
+entry, definition, setting and all-client TOC registration. No upstream source,
+GPL code or artwork is redistributed with this standalone adapter.
+
+## Coverage and visual decisions
+
+| Surface | Treatment |
+| --- | --- |
+| Main window | Public Shell, native banner/logo preserved, native window opacity respected |
+| Armory, Dungeons & Raids, Professions, QoL, Talent Trees, Books, Pets, Settings | Completed lazy factories, shared navigation, cards, controls and fonts |
+| Navigation and mode buttons | Public filled Button; native bottom glow reused for selected main tabs, thin accent indicator for mode buttons |
+| Cards and custom panels | Reuse native nine-slice regions as flat surfaces/thin edges; suppress redundant pieces, glows and gold window decoration |
+| Inputs and scrollbars | Public EditBox and ScrollBar; native text, caret, validation, scrolling and click areas |
+| Switches/checkboxes | Existing hit rectangle with a centred compact EUI square; checked, disabled and native callbacks retained |
+| Horizontal sliders | Original thumb drag rectangle retained; one small noninteractive grip, neutral track and accent fill |
+| Private dropdown | Native full-field opener, selection, delete indicator, owner/position and pooled menu callbacks retained; EUI rows and current-accent check |
+| Secondary windows | Crafting list, trainer spells, profiles/import, talent codes, quest chain, weights, confirmations, setup/news, bug/Discord copy dialogs, QoL previews, copy-chat/bags-full dialogs and nearby-book popup |
+
+The public Tab primitive mirrors text into a fixed-size centred label. It would
+conflict with OneForAll's composite icon/label positioning and ContentWidth
+layout. Use the public Button primitive with the original label and reuse the
+native bottom glow as the underline. Dropdown selectors likewise keep their
+native GoldButton click handlers rather than acquiring a second menu/opener.
+These are OneForAll-specific adaptations, not shared styling changes.
+
+Preserve map/dressing-room/talent illustrations, portraits, section emblems,
+status gems, inline colours, item-quality and class colours, talent ranks,
+quest completion/in-log fills, cooldowns and all meaningful markers. Only known
+decorative assets and colour roles are changed. No model/data canvas is skinned
+as a filled panel. Warning/delete markers keep their semantics. Private
+GameTooltip/scanner frames, protected action buttons, minimap/world-map tools,
+HUD gameplay elements and Blizzard windows modified by QoL stay with their
+native/Blizzard skin owners.
+
+## Lifecycle and performance
+
+Wrappers are limited to OneForAll's own UI factories and NewFS, plus its main
+window entry points. Native calls run directly and preserve arguments, receiver
+and nil-containing multiple returns. ShowNews and ShowWelcome are also handed
+to C_Timer by the addon; those functions are deliberately not hooked/replaced.
+No global frame factory, AceGUI factory, SkinC, saved preference, data action,
+combat attribute, gameplay callback or theme palette is replaced.
+
+Completed panel construction styles synchronously. Construction bursts queue
+only owned new subtrees and coalesce children under a pending ancestor. Known
+frames observe new texture/font creation; interaction hooks only flush pending
+construction, never rediscover an unchanged window. Same-count replacements
+are caught at construction rather than through child-count assumptions.
+There is no H.Scan, global UI scan, polling, skin OnUpdate or repeating timer.
+Manual refresh and combat recovery are explicit discovery points. Theme/accent
+refresh repaints retained roles and fonts; native LayoutTabs recalculates text
+widths only when the font changes; no new art is created. Disabled and
+explicitly protected controls remain gated. Native background-opacity registration remains
+in place, with separate tracking for the public shell's new textures; late
+banner/logo/preview art survives engine restripping and combat recovery.
+
+`tests/oneforall_spec.lua` runs Retail and Forever client identities with a
+source-shaped fixture. It covers eight lazy factories, native returns/actions,
+all eight quality colours, status fills, art/model isolation, selection and
+clearing, same-count replacement, popup construction, disabled states, theme,
+opacity, combat recovery and warm work. An optional local-source run also uses
+the supplied actual Widgets.lua, MainFrame.lua and Settings.lua; those files are not stored
+in the repository or player ZIP:
+
+```sh
+ONEFORALL_WIDGETS=/path/to/OneForAll/UI/Widgets.lua \
+ONEFORALL_MAINFRAME=/path/to/OneForAll/UI/MainFrame.lua \
+ONEFORALL_SETTINGS=/path/to/OneForAll/UI/Settings.lua \
+ONEFORALL_NUMERIC_TEXTURES=1 \
+python3 tests/run_lua.py
+python3 scripts/package.py
+```
+
+For each client identity, 1,000 warm reopen/selection/check cycles add zero UI
+objects/hooks, child/region discovery reads or font writes, and zero skin geometry writes.
+The actual widget run retains 2,000 native knob anchor writes from its original
+switch animation. Another 1,000 closed texture updates queue no skin work.
+These are deterministic mock operation counts, not client latency/FPS, memory
+retention or rendering measurements. Ownership is checked even when OneForAll calls a helper on an external frame;
+its minimap collector and gameplay HUD ancestors are explicitly excluded.
+The real panel data providers, server
+queries, graphics engine and secure execution are not simulated.
+
+Mutating either the rarity-colour guard or artwork protection fails its focused
+assertion. The final package validates 60 installation files in one EUIAddonSkins folder,
+43 deferred factories, consistent manifests/version and the exact MIT license.
+Development documents, tests, sources and screenshots are excluded.
+
+## Visual refinement: confirmed causes and fixes
+
+- **Unskinned late pages:** ProfessionRecipes constructs RecipeBar's explicit
+  SecureActionButtonTemplate Craft action. Its ancestors become implicitly
+  protected. The earlier ownership walk rejected that whole ancestry and the
+  soft-control proxy rejected implicitly protected controls. The addon-local
+  guard now separates ownership from permission, permits implicit containers
+  outside combat and excludes explicit secure controls. Public Button/Checkbox primitives are called directly.
+  No secure attributes, actions or shared-helper defaults change. Cosmetic
+  alpha guards also defer during combat and recover on regen.
+- **Nested tab selection:** MainFrame.openBottom reanchors the RoundRect centre
+  after its constructor returns. Retaining that flattened active fill produced
+  an inset selected box. Discard the fill and suppress its native alpha resets;
+  reuse the original desaturated additive glow_line texture as a 4px bottom
+  strip tinted by the live accent. Native SetActive controls its visibility.
+- **Mixed switch layers:** toggleSkin owns its pill slices and knob on the
+  CheckButton, while its pill child is only an anchor. Suppress those exact
+  owned slices at construction and all native switch regions at completion.
+  Keep one compact EUI square, the original 42px click area, checked state,
+  callbacks and native disabled dimming. Re-enabling buttons restores readable
+  labels without requiring a subsequent selection change.
+- **Texture recognition:** GetTexture can expose a numeric FileID. Decorative
+  identification now accepts file paths/IDs, resolves the finite known asset
+  set once and records names through OneForAll's own SetTex with ID validation.
+  New data-icon updates do not queue discovery. This is a compatibility repair,
+  not evidence that every screenshot came from numeric texture IDs.
+- **Dungeons/raids typography:** SmallCaps assembles separately measured letter
+  runs. Changing their face without rebuilding those measurements leaves stale
+  positions. Reuse the first native FontString for one normal EUI caption and
+  fade its remaining runs. Bound column captions and 8px sort glyphs inside
+  existing cells; retain left/centred alignment, native widths, hover tooltips,
+  click handlers and ascending/descending/default atlas coordinates. Narrow
+  captions may truncate at some font/scale combinations; review in game.
+- **Settings/Professions:** Correct late-page discovery applies the existing
+  surfaces, inputs, buttons, fonts, private menus and slider treatment. Settings
+  reorder arrows use public PageButton. Real Settings factory coverage includes
+  12 buttons, 14 switches, one slider, 16 reorder arrows and a native profile
+  action. Profile import/export popups remain covered by owned construction.
+  Professions detail/reagent panel structure, backgrounds and all data/art
+  exclusions are unchanged.
+
+Regressions include implicitly protected roots, explicit secure exclusions,
+native switch alpha resurrection, selected-tab fill removal and glow visibility,
+bounded captions, sort actions/UVs, enabled-label recovery and numeric textures.
+The source-shaped warm workload retains the same zero skin object/hook/read/
+font/geometry counts as iteration 1. The actual Settings run uses supplied
+upstream code with mocked APIs/providers, not a WoW client. Cold discovery and
+look changes remain explicit work; no new polling, H.Scan or warm traversal.
+Individually reverting implicit-ancestry handling, selection-fill suppression,
+native-knob suppression or caption repair fails its corresponding regression.
+
+## Item borders, selected rows and switches
+
+The next visual review exposed cases missed by the earlier RGB-only tests:
+
+- **Equipped borders:** native Card draws the fill one sublayer above its
+  border, inset by one pixel. Flattening it to SetAllPoints removed that inset
+  and let the fill cover the quality edges. Restore the inset on the reused
+  fill; no icon, slot or click geometry changes. Slot border tint follows the
+  existing `slot`/`q` fields, including Poor and selected slots, instead of
+  replacing quality with decorative selection gold. Cleared slots return to
+  the neutral native empty-slot treatment. Other item-card colours stay native.
+  Existing cards found during initial owned-window discovery also receive the
+  treatment; card setup is cached. Palette comparisons tolerate native float
+  readback when retaining selected/status colours and avoiding redundant paints.
+- **Mixed selected rows:** CardRow creates an additional HIGHLIGHT wash and
+  nine-sliced `rr_ring` via HoverEdge, separate from its fill and border. The
+  ring was still native while the selected card had an EUI accent. Suppress
+  that redundant ring on CardRow only and neutralize its existing wash. Reuse
+  the inset fill as a panel/accent blend and the existing bottom edge as the
+  sole accent indicator; keep other edges subdued. Hunter Pets, Reputation,
+  gear/recipe lists and other CardRow callers share this path. Quest and learned
+  status fills, quality/class colours, native actions and window opacity remain
+  authoritative. No new row textures are created.
+- **Remaining switches:** the earlier local guard required the second
+  IsProtected result to be exactly false. Nil also means non-explicit protection;
+  the expanded fixture propagates inheritance to child frames and regions and
+  exercises both results. Follow the explicit flag's truth value, consistent
+  with [Blizzard's region validation](https://github.com/Gethe/wow-ui-source/blob/live/Interface/AddOns/Blizzard_AuraContainer/Blizzard_AuraContainerUtil.lua).
+  Secure actions remain excluded and all cosmetics defer in combat. Also
+  recognize late `pill_fill`/`knob` textures only on native `_ofaToggle` owners,
+  so a redraw cannot leave those regions behind the compact EUI square.
+
+Tests now assert fill/border draw order and inset, all eight equipped qualities
+through selection and clearing, item hover/art/click preservation, pre-existing
+cards, one selected-row accent, native gold-ring/wash removal, row recycling,
+status colours and accent changes. The prior build fails the inherited-nil
+fixture. Independently removing the fill inset, gold-ring suppression,
+inherited-nil handling, selected-slot quality preservation or late-knob
+suppression fails its focused regression. A separate local-source run exercises real QoL construction and all ten
+category selections, 56 switches, a native setting action and disabled/on/off
+transitions. With the extra QoL test panel registered, the real Settings fixture
+has 12 buttons, 15 switches, one slider and 18 reorder arrows (the extra mock
+panel adds a tab-visibility switch and two order arrows). This is not a claim
+about the player's installed tab count.
+
+Run the optional upstream workload above with this additional variable:
+
+```sh
+ONEFORALL_QOL=/path/to/OneForAll/UI/QoL.lua
+```
+
+Warm work retains the recorded zero new objects/hooks, hierarchy reads, font
+writes and skin geometry writes. This iteration preserves the accepted header,
+native tab glow, main backgrounds and layout. Actual rendering, hover layering,
+item refresh/empty transitions, input/taint safety and client performance still
+require in-game review; mock passes do not establish visual acceptance.
+
+## First-show binding and native art removal
+
+The supplied GearPlanner constructs `b.card` before assigning `b.slot`, then
+populates `b.q` in `refreshSlots`. The previous cached discovery did not finish
+an item-specific binding after that metadata arrived; its reused edges also
+remained BACKGROUND regions with no protection against later alpha resets.
+Complete that binding before the seen-frame early return. The original four
+edges now render on OVERLAY above the item artwork and retain their region
+alpha through subsequent cosmetic passes. Quality still comes from native
+slot metadata, with neutral empty-slot handling and the same inset fill. No
+replacement border or changed icon/click geometry is introduced.
+
+For redundant artwork, alpha-only suppression left the original assets and
+solid fills in place. Confirmed native setters include toggle track/knob vertex
+paints and SetShown, Plate/Nine selected-state visibility, and makeButton's
+`_bg:SetColorTexture` in OnMouseDown/OnMouseUp. Empty only the already-classified
+decorative textures, including spare card slices, gold hover rings, button/tab
+plates, switch artwork and native Settings paging textures. Native references
+and state callbacks stay intact. Guard file-art reapplication through the one
+existing addon SetTex hook; only discarded solid-colour textures receive a
+SetColorTexture hook. This avoids two extra hooks per nine-slice piece. EUI
+fills, selected indicators, meaningful art and all input geometry are retained.
+Combat defers erasure, including pending solid-colour resets, until recovery.
+
+The optional source run now also accepts:
+
+```sh
+ONEFORALL_GEARPLANNER=/path/to/OneForAll/UI/GearPlanner.lua
+```
+
+It executes the real 19-slot factory and native Refresh -> Show sequence before
+any click, then checks foreground/visible quality edges, alpha reset, selection
+and reopen. Other regressions attempt native file/colour/visibility resets,
+exercise actual mouse-down/up handlers, and check secondary-tab native plates
+are empty while EUI surfaces remain. Existing Settings/QoL, item-colour, empty
+slot, hover, theme, combat and zero-warm-work assertions remain enabled.
+Removing asset erasure, foreground placement, completed slot binding, the
+native solid-colour reset guard or edge-alpha retention individually fails
+its corresponding regression.
+
+These source paths and regressions confirm the initialization and decorative
+state conflicts. They do not capture the exact final in-game rendering/hiding
+caller or prove visual acceptance. First-load visibility, overlapping layers
+and native interaction still need the owner's in-game review.
+
+## Client limits and in-game review
+
+See the [Forever source/activation audit and release gate](ONEFORALL_FOREVER.md).
+The supplied 6.0.1 tree matches official Forever source byte-for-byte; no
+Retail-specific adaptation was found in those files.
+
+The supplied TOC declares interface 16001 (Forever). Its Retail-loadable
+adaptations do not certify Retail gameplay features: talent planning, dungeon,
+item and profession data remain Forever-specific. The skin uses public UI APIs
+and guards optional exports/protected objects; it does not port the addon or
+change its TOC. Both mocked client identities pass, but separate client testing
+is still required.
+
+Review every section and its subpages, first-open/reopen and scrolling, class
+and rarity colours, talent availability/ranks/connections, dropdown selection
+and deletion, search/caret/focus, disabled controls, banner/logo/preview art,
+all secondary dialogs, scaling/height, opacity extremes and live accent/font
+changes. In-game visual acceptance, input/taint safety and long-session client
+performance remain unverified. Install this pack alongside OneForAll and EUI;
+the target addon itself is not included in the test ZIP.

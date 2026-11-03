@@ -5,7 +5,7 @@
 ## Author: Smarre
 ## X-License: MIT
 ## X-Wago-ID: aN0a2M6j
-## Version: 1.6.2
+## Version: 1.6.3
 ## Dependencies: EllesmereUI, EllesmereUIBlizzardSkin
 ## SavedVariables: EUIAddonSkinsDB
 
@@ -44,6 +44,7 @@ Skins\KiwiFarm.lua
 Skins\LiteMount.lua
 Skins\Myslot.lua
 Skins\NovaInstanceTracker.lua
+Skins\OneForAll.lua
 Skins\PallyPower.lua
 Skins\Pawn.lua
 Skins\PremadeGroupsFilter.lua

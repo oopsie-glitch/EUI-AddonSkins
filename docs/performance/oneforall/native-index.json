@@ -1,0 +1,59 @@
+{
+  "adapter": "native-index",
+  "trials": 5,
+  "source": "../oneforall-source/OneForAll",
+  "warmup": 0,
+  "iterations": "per workload n",
+  "latency_samples": 0,
+  "evidence": "Host Lua 5.4; mocked WoW APIs/EUI. Hook trampolines allocate return tables in mocks. Lua/host-C calls are not native client API C-call measurements. GC-stopped churn is not retained memory. Not in-game CPU/frame latency/FPS.",
+  "results": {
+    "Retail.native_data_load": {
+      "n": 1.0,
+      "ms": 14.22,
+      "churn_kib": 3982.036,
+      "retained_kib": 2485.613,
+      "gc_ms": 0.906
+    },
+    "Retail.native_index_cold": {
+      "n": 1.0,
+      "ms": 9.938,
+      "churn_kib": 6221.452,
+      "retained_kib": 2513.117,
+      "gc_ms": 2.404
+    },
+    "Retail.native_index_size": {
+      "items": 3191.0
+    },
+    "Retail.native_index_warm": {
+      "n": 10000.0,
+      "ms": 0.615,
+      "churn_kib": 0.0,
+      "retained_kib": -0.062,
+      "gc_ms": 0.923
+    },
+    "Forever.native_data_load": {
+      "n": 1.0,
+      "ms": 12.5,
+      "churn_kib": 3922.13,
+      "retained_kib": 2425.348,
+      "gc_ms": 0.887
+    },
+    "Forever.native_index_cold": {
+      "n": 1.0,
+      "ms": 8.247,
+      "churn_kib": 6221.452,
+      "retained_kib": 2513.117,
+      "gc_ms": 1.713
+    },
+    "Forever.native_index_size": {
+      "items": 3191.0
+    },
+    "Forever.native_index_warm": {
+      "n": 10000.0,
+      "ms": 0.639,
+      "churn_kib": 0.0,
+      "retained_kib": -0.062,
+      "gc_ms": 0.876
+    }
+  }
+}

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.3 — OneForAll
+
+- Added an EllesmereUI skin for OneForAll on WoW Forever, including Armory, Gear Planner, Settings and Quality of Life. Equipped items retain their rarity colours.
+
 ## 1.6.2 — Atlas and Auctionator Improvements
 
 - Added an Atlas skin for Retail and Forever, including map windows, selectors, search controls and settings while preserving map artwork and meaningful colours.

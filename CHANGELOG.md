@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.7.0 — OneForAll
+## 1.6.3 — OneForAll
 
 - Added an EllesmereUI skin for OneForAll on WoW Forever, including Armory, Gear Planner, Settings and Quality of Life. Equipped items retain their rarity colours.
 

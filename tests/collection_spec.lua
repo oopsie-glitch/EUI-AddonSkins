@@ -28,7 +28,7 @@ local function region(path, layer)
 end
 local function frame(kind)
     local f = {kind = kind or 'Frame', children = {}, regions = {}, hooks = {}}
-    function f:CreateTexture()
+    function f:CreateTexture(_, layer, _, sublevel)
         self.created = self.created or {}
         local t = {SetPoint = function(self, ...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end, ClearAllPoints = function(self) self.points = {} end, SetHeight = function() end, SetWidth = function(self, w) self.width = w end,
             SetColorTexture = function(self, ...) self.color = {...} end,
@@ -37,6 +37,7 @@ local function frame(kind)
             SetTexture = function(self, path) self.path = path end, SetVertexColor = function() end,
             SetHorizTile = function() end, SetVertTile = function() end,
             SetShown = function(self, shown) self.shown = shown end}
+        t.layer, t.sublevel = layer, sublevel
         self.created[#self.created + 1] = t
         return t
     end
@@ -217,12 +218,16 @@ registeredPanels[button] = true
 for host in pairs(registeredPanels) do
     for _, texture in ipairs(host.created or {}) do texture:SetAlpha(0) end
 end
-assert(guideArt.created[2].alpha > 0 and legacyArt.created[2].alpha > 0)
+for _, art in ipairs({legacyArt, guideArt}) do
+    assert(art.created[1].color[1] == 0.165 and art.created[2].alpha == 0.32)
+    assert(art.created[1].layer == "BACKGROUND" and art.created[1].sublevel == 1)
+    assert(art.created[2].layer == "BACKGROUND" and art.created[2].sublevel == 2)
+end
 local bandArt
 for host, parent in pairs(parents) do
     if registeredPanels[parent] and parents[parent] == band then bandArt = host end
 end
-assert(bandArt and bandArt.mouseEnabled == false and bandArt.created[2].alpha > 0)
+assert(bandArt and bandArt.mouseEnabled == false and bandArt.created[1].color[1] == 0.185 and bandArt.created[2].alpha == 0.28)
 assert(lastRim.texture.alpha ~= 0 and rings[window.frame].texture.alpha ~= 0)
 
 assert(#row.created == 1 and row.created[1].shown)
@@ -234,6 +239,9 @@ local bronze = RXP.v2:GetTheme()
 assert(bronze.borderColors.common[1] == 0.49)
 assert(bronze.backgroundColors.guideName[1] > bronze.backgroundColors.common[1])
 assert(step.borderColor[1] == 0.49 and RXP.colors.background[1] == 0.062)
+assert(math.abs(RXP.colors.bottomFrameBG[4] - 0.266) < 0.0001)
+assert(RXP.colors.bottomFrameHighlight[2] == 0.8 and RXP.colors.bottomFrameHighlight[4] == 1)
+assert(bronze.backgroundColors.common[4] == 0.95) -- V2 native row fill is unchanged.
 step:SetBackdropBorderColor(0.1, 0.8, 0.6, 1)
 assert(step.borderColor[2] == 0.8)
 step:SetBackdrop(guide.backdrop.edge)
@@ -243,6 +251,7 @@ modules.RXPGuides.refresh(); flush()
 assert(step.borderColor[1] == 0.055 and RXP.colors.background[1] == 0.03)
 assert(not lastRim.on and not row.created[1].shown and not v2Row.created[1].shown)
 assert(not legacyArt:IsShown() and not guideArt:IsShown())
+assert(RXP.colors.bottomFrameBG[4] == 0.95 and RXP.colors.bottomFrameHighlight[4] == 1)
 assert(step.borderColor[4] == 1 and guide.BottomFrame.borderColor[4] == 1)
 assert(guidePanel.rxpBorder:GetAlpha() == oldBorderAlpha and band.rxpBorder:GetAlpha() == bandBorderAlpha)
 activeLook = "forever"

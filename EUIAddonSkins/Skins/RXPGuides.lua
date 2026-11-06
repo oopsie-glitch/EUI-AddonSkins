@@ -501,18 +501,18 @@ end, function(S, module)
         local grain = art:CreateTexture(nil, "BACKGROUND", nil, 2)
         plate:SetAllPoints(art)
         grain:SetAllPoints(art)
-        local r, g, b = ForeverPanel(band)
-        if not band then r, g, b = 0.107, 0.077, 0.054 end
+        local r, g, b = 0.165, 0.115, 0.075
+        if band then r, g, b = 0.185, 0.126, 0.080 end
         plate:SetColorTexture(r, g, b, 1)
         if plate.SetGradient and CreateColor then
-            local shade = band and 0.54 or 0.63
+            local shade = band and 0.65 or 0.73
             plate:SetGradient("VERTICAL", CreateColor(r * shade, g * shade, b * shade, 1),
                 CreateColor(r, g, b, 1))
         end
         grain:SetTexture("Interface/Tooltips/UI-Tooltip-Background", "REPEAT", "REPEAT")
         grain:SetHorizTile(true); grain:SetVertTile(true)
-        grain:SetVertexColor(0.43, 0.34, 0.24, 1)
-        grain:SetAlpha(band and 0.16 or 0.24)
+        grain:SetVertexColor(0.56, 0.44, 0.32, 1)
+        grain:SetAlpha(band and 0.28 or 0.32)
         return grain
     end
 
@@ -603,7 +603,9 @@ end, function(S, module)
             out.edge.texCoords = {top = {0, 1, 0, 1}, bottom = {0, 1, 0, 1}, left = {0, 1, 0, 1}, right = {0, 1, 0, 1}}
         else
             out.background = {pr, pg, pb, pa}
-            out.bottomFrameBG = {pr, pg, pb, pa}
+            -- V1 uses this fill for idle and mouse-leave. Keep the row's
+            -- own alpha and hover palette while exposing the shared surface.
+            out.bottomFrameBG = {pr, pg, pb, forever and (pa or 1) * 0.28 or pa}
             out.bottomFrameHighlight = {r, g, b, 1}
             out.textColor = {0.9, 0.9, 0.92}
         end

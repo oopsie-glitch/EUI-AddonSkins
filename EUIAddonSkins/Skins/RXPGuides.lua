@@ -433,6 +433,47 @@ end, function(S, module)
             if cr ~= r or cg ~= g or cb ~= b then text:SetTextColor(r, g, b, ca) end
         end
     end
+    local function SkinPreferences()
+        return EUIAddonSkinsDB and EUIAddonSkinsDB.restedXP
+    end
+    local function BackgroundOverride()
+        local settings = SkinPreferences()
+        local value = settings and settings.opacity
+        if type(value) == "number" and value == value then return math.max(0, math.min(1, value)) end
+    end
+    local function SavePreference(key, value)
+        EUIAddonSkinsDB = EUIAddonSkinsDB or {}
+        EUIAddonSkinsDB.restedXP = EUIAddonSkinsDB.restedXP or {}
+        EUIAddonSkinsDB.restedXP[key] = value
+    end
+    local ForeverLook
+    local auxTitlePoints = setmetatable({}, {__mode = "k"})
+    local function SeatAuxiliaryTitle(f, title, text)
+        if not title.GetPoint or not title.SetHeight then return end
+        local saved = auxTitlePoints[title]
+        if ForeverLook() then
+            local point, relative, anchor, x, y = title:GetPoint(1)
+            if not saved and point then
+                saved = {height = title:GetHeight(), size = select(2, text:GetFont()), points = {}}
+                for i = 1, title:GetNumPoints() do saved.points[i] = {title:GetPoint(i)} end
+                auxTitlePoints[title] = saved
+            end
+            if point ~= "TOPLEFT" or relative ~= f or anchor ~= "TOPLEFT" or x ~= 5 or y ~= -1 then
+                title:ClearAllPoints()
+                title:SetPoint("TOPLEFT", f, "TOPLEFT", 5, -1)
+            end
+            if title:GetHeight() ~= 11 then title:SetHeight(11) end
+            local path, size, flags = text:GetFont()
+            if size and size > 10 then text:SetFont(path, 10, flags) end
+        elseif saved then
+            title:ClearAllPoints()
+            for _, point in ipairs(saved.points) do title:SetPoint((unpack or table.unpack)(point)) end
+            title:SetHeight(saved.height)
+            local path, size, flags = text:GetFont()
+            if saved.size and saved.size ~= size then text:SetFont(path, saved.size, flags) end
+            auxTitlePoints[title] = nil
+        end
+    end
     local WarmTitle
     local titleMetrics = setmetatable({}, {__mode = "k"})
     local function AuxiliaryTitle(f)
@@ -441,6 +482,7 @@ end, function(S, module)
         if not title or not text or not text.GetFont then return end
         local r, g, b = WarmTitle()
         Font(text, r, g, b)
+        SeatAuxiliaryTitle(f, title, text)
         -- RXP measured with its previous font. Clear a stale FontString width
         -- before measuring the new face, retaining the native localized text.
         if not text.GetStringWidth or not title.SetWidth then return end
@@ -467,8 +509,11 @@ end, function(S, module)
     end
     -- The public skin palette resolves only eui/modern. The whole-UI
     -- profile resolver also handles Forever profiles imported on Retail.
-    local function ForeverLook()
+    ForeverLook = function()
         local EUI = _G.EllesmereUI
+        local settings = SkinPreferences()
+        if settings and settings.style == "standard" then return false end
+        if settings and settings.style == "forever" then return EUI and EUI.IS_FOREVER == true or false end
         if not (EUI and EUI.ProfileWindowSkinLook and EUI.GetActiveProfileData) then return false end
         local db = _G.EllesmereUIDB
         return EUI.ProfileWindowSkinLook(EUI.GetActiveProfileData(), db and db.fonts) == "forever"
@@ -492,7 +537,7 @@ end, function(S, module)
     local function ForeverRim(host, parent)
         local EUI = _G.EllesmereUI
         if not (EUI.ForeverBorder and EUI.ForeverBorderSeat and EUI.ForeverBorderShown) then return end
-        local ring = EUI.ForeverBorder(host, "ARTWORK", 1)
+        local ring = EUI.ForeverBorder(host, "ARTWORK", 1, nil, "textured")
         if ring then EUI.ForeverBorderSeat(ring, parent or host, "TOPLEFT", 0, 0, 0, 0) end
         return ring
     end
@@ -525,7 +570,7 @@ end, function(S, module)
             end
         end
     end
-    local function ForeverSurface(art, band, title)
+    local function ForeverSurface(art, band, title, guideHeader)
         local plate = art:CreateTexture(nil, "BACKGROUND", nil, 1)
         local grain = art:CreateTexture(nil, "BACKGROUND", nil, 2)
         if title then
@@ -539,7 +584,7 @@ end, function(S, module)
         if band then r, g, b = 0.185, 0.126, 0.080 end
         plate:SetColorTexture(r, g, b, 1)
         if plate.SetGradient and CreateColor then
-            local shade = band and 0.65 or 0.73
+            local shade = band and (guideHeader and 0.73 or 0.65) or 0.73
             plate:SetGradient("VERTICAL", CreateColor(r * shade, g * shade, b * shade, 1),
                 CreateColor(r, g, b, 1))
         end
@@ -552,10 +597,11 @@ end, function(S, module)
 
     local function ForeverOpacity()
         -- Use the public house-panel alpha; normalize against EUI's 92% default.
-        return (select(4, S.GetPanelColor()) or 0.92) / 0.92
+        local override = BackgroundOverride()
+        return override and override / 0.70 or (select(4, S.GetPanelColor()) or 0.92) / 0.92
     end
     local function OverlayAlpha(target, base)
-        return base < 1 and math.max(0, target - base) / (1 - base) or 0
+        return base < 1 and math.max(0, math.min(1, target) - base) / (1 - base) or 0
     end
     local function TextureAlpha(texture, alpha)
         local current = texture:GetAlpha()
@@ -667,7 +713,7 @@ end, function(S, module)
             out.background = {pr, pg, pb, pa}
             -- V1 uses this fill for idle and mouse-leave. Keep the row's
             -- own alpha and hover palette while exposing the shared surface.
-            out.bottomFrameBG = {pr, pg, pb, forever and OverlayAlpha(0.70 * ForeverOpacity(), 0.66 * ForeverOpacity()) or pa}
+            out.bottomFrameBG = {pr, pg, pb, forever and OverlayAlpha(0.70 * ForeverOpacity(), math.min(pa or 1, 0.66 * ForeverOpacity())) or BackgroundOverride() or pa}
             out.bottomFrameHighlight = {r, g, b, 1}
             out.textColor = {0.9, 0.9, 0.92}
         end
@@ -718,16 +764,31 @@ end, function(S, module)
                         region:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
                     end
                 end
-                guideChecks[f] = true
+                guideChecks[f] = {}
             end
             for _, getter in ipairs({"GetNormalTexture", "GetPushedTexture", "GetHighlightTexture"}) do
                 if f[getter] then H.Fade(f[getter](f)) end
             end
+            local forever = ForeverLook()
+            local visual = guideChecks[f]
+            if forever and not visual.hover and f.CreateTexture then
+                local hover = f:CreateTexture(nil, "HIGHLIGHT")
+                SeatFill(hover, f, 1, 1, 1)
+                hover:SetColorTexture(0.88, 0.66, 0.39, 0.18)
+                visual.hover = hover
+            end
+            if visual.hover then visual.hover:SetShown(forever) end
             local r, g, b = S.GetAccentColor()
             for _, getter in ipairs({"GetCheckedTexture", "GetDisabledCheckedTexture"}) do
                 local texture = f[getter] and H.Texture(f[getter](f))
                 if texture then
-                    texture:SetColorTexture(r, g, b, 1)
+                    if forever then
+                        texture:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+                        if getter == "GetDisabledCheckedTexture" then texture:SetVertexColor(0.53, 0.48, 0.40, 1)
+                        else texture:SetVertexColor(0.91, 0.71, 0.43, 1) end
+                    else
+                        texture:SetColorTexture(r, g, b, 1)
+                    end
                     texture:ClearAllPoints(); texture:SetPoint("CENTER", f, "CENTER"); texture:SetSize(8, 8)
                 end
             end
@@ -789,11 +850,54 @@ end, function(S, module)
     local slimThumbs = {}
     local guideChrome = setmetatable({}, {__mode = "k"})
     local footerTint = setmetatable({}, {__mode = "k"})
+    local scrollArrows = setmetatable({}, {__mode = "k"})
+    local function ScrollArrow(button, up, forever, legacy)
+        if not H.Allowed(button) then return end
+        local state = scrollArrows[button]
+        if not state and forever then
+            local arrow = button:CreateTexture(nil, "OVERLAY")
+            arrow:SetTexture(up and "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-up3.png"
+                or "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
+            arrow:SetSize(12, 12)
+            arrow:SetPoint("CENTER", button, "CENTER")
+            arrow:SetVertexColor(0.88, 0.66, 0.39, 1)
+            state = {arrow = arrow, alpha = {}}
+            scrollArrows[button] = state
+            local function Reflect()
+                arrow:SetAlpha((not button.IsEnabled or button:IsEnabled()) and 1 or 0.45)
+            end
+            H.Script(button, "OnEnable", Reflect)
+            H.Script(button, "OnDisable", Reflect)
+            Reflect()
+        end
+        if not state or state.forever == forever then return end
+        state.forever = forever
+        state.arrow:SetShown(forever)
+        if forever then
+            if legacy then
+                for _, region in ipairs(H.Regions(button)) do
+                    local text = region.GetText and region:GetText()
+                    if text == (up and "^" or "v") then state.alpha[region] = region:GetAlpha() end
+                end
+            else
+                for _, texture in pairs({button.Normal, button.Pushed, button.Disabled}) do
+                    if texture and texture.GetAlpha then state.alpha[texture] = texture:GetAlpha() end
+                end
+            end
+            for texture in pairs(state.alpha) do texture:SetAlpha(0) end
+        else
+            for texture, alpha in pairs(state.alpha) do
+                if texture:GetAlpha() == 0 then texture:SetAlpha(alpha) end
+                state.alpha[texture] = nil
+            end
+        end
+    end
     local function LegacyChrome(f)
         if CombatLocked() or not f then return end
         local forever = ForeverLook()
         local header = f.GuideName
         if H.Allowed(header) then
+            if forever then Font(header.text) end
             if not guideChrome[header] and H.Allowed(f.BottomFrame) and header.ClearAllPoints then
                 guideChrome[header] = true
                 -- Native GuideName overlaps the scrolling content by nine units.
@@ -815,6 +919,9 @@ end, function(S, module)
         if H.Allowed(scroll) then
             local visual = slimThumbs[scroll]
             H.LegacySlider(scroll, visual and visual.fill)
+            local name = scroll.GetName and scroll:GetName()
+            ScrollArrow(scroll.ScrollUpButton or (name and _G[name .. "ScrollUpButton"]), true, forever, true)
+            ScrollArrow(scroll.ScrollDownButton or (name and _G[name .. "ScrollDownButton"]), false, forever, true)
             local thumb = scroll.GetThumbTexture and H.Texture(scroll:GetThumbTexture())
             if thumb then
                 if not visual then
@@ -843,6 +950,7 @@ end, function(S, module)
             if H.Allowed(f.Footer.icon) then H.Resize(f.Footer.icon, true) end
             local cog = f.Footer.cog
             local label = f.Footer.text
+            if forever then Font(label) end
             if H.Allowed(label) and label.GetTextColor then
                 if forever then
                     if not footerTint[label] then footerTint[label] = {label:GetTextColor()} end
@@ -900,6 +1008,7 @@ end, function(S, module)
             elseif addon.colors and addon.colors.background then opacity = addon.colors.background[4] or 1
             else opacity = select(4, S.GetPanelColor()) or 1 end
         end
+        if not entry.forever then opacity = BackgroundOverride() or opacity end
         local composition = entry.composition
         if composition then
             if composition:GetAlpha() ~= opacity then composition:SetAlpha(opacity) end
@@ -969,7 +1078,7 @@ end, function(S, module)
                 local art = ForeverArtHost(independent and f or entry.layer)
                 entry.art = art
                 local title = chrome == "auxTitle"
-                local grain, plate = ForeverSurface(art, band, title)
+                local grain, plate = ForeverSurface(art, band, title, chrome == "header")
                 if independent then entry.grain, entry.plate, entry.band = grain, plate, band end
                 entry.secondary = band or chrome == "badge"
                 if not entry.secondary then entry.rim = ForeverRim(art) end
@@ -1176,6 +1285,7 @@ end, function(S, module)
         local shell = forever and window and compositions[window.frame]
         local scale = shell and ForeverOpacity()
         local extra = scale and OverlayAlpha(0.70 * scale, math.min(shell:GetAlpha(), 0.66 * scale))
+            or (not forever and BackgroundOverride())
         for _, item in pairs(steps.items or {}) do
             local row = item.frame
             StepDivider(row, forever)
@@ -1189,6 +1299,11 @@ end, function(S, module)
             end
         end
     end
+    local function V2FooterFill(window, forever)
+        local alpha = BackgroundOverride()
+        local native = select(4, S.GetPanelColor()) or 1
+        NativeFillAlpha(window.footerBackground, forever and 0 or (alpha and native > 0 and math.min(1, alpha / native) or nil))
+    end
     local function Apply()
         if CombatLocked() then applyWaiting = true; return end
         applyWaiting = false
@@ -1198,6 +1313,7 @@ end, function(S, module)
         if legacy then
             LegacyChrome(legacy)
             for _, row in ipairs(legacy.ScrollChild and legacy.ScrollChild.framePool or {}) do
+                if forever then Font(row.text); Font(row.number and row.number.text) end
                 StepDivider(row, forever)
             end
             Scan(legacy)
@@ -1213,6 +1329,10 @@ end, function(S, module)
             for _, step in pairs(legacy.CurrentStepFrame and legacy.CurrentStepFrame.framePool or {}) do
                 TintBackdrop(step)
                 TintBackdrop(step.number)
+                if forever then
+                    Font(step.number and step.number.text)
+                    for _, element in pairs(step.elements or {}) do Font(element.text) end
+                end
                 -- The V1 pool also supplies independently positioned tip windows.
                 local detached = step.GetFrameStrata and step:GetFrameStrata() ~= legacy:GetFrameStrata()
                 ThemeShell(step, shell and not detached and "joined" or "body")
@@ -1233,12 +1353,17 @@ end, function(S, module)
             ThemeShell(window.guideNameFrame, "header", nil, shell)
             ThemeShell(window.guideStepsFrame, shell and "joined" or "body", shell)
             ThemeShell(window.footer, "footer", nil, shell)
-            NativeFillAlpha(window.footerBackground, forever and 0 or nil)
+            V2FooterFill(window, forever)
             ButtonRim(window.settingsButton, forever)
             ButtonRim(window.guideSelectButton, forever)
             ButtonRim(window.closebutton, forever)
             local steps = window.guideSteps
             if steps then
+                local bar = steps.scroll and steps.scroll.scrollbar
+                if bar then
+                    ScrollArrow(bar.ScrollUpButton, true, forever)
+                    ScrollArrow(bar.ScrollDownButton, false, forever)
+                end
                 H.Hook(steps, "SetRows", V2Dividers)
                 V2Dividers(steps)
             end
@@ -1253,6 +1378,7 @@ end, function(S, module)
             end)
             local r, g, b = WarmTitle()
             Font(window.title, r, g, b)
+            if forever then Font(window.subtitle); Font(window.footerText) end
             if window.closebutton and H.Allowed(window.closebutton) then S.CloseButton(window.closebutton) end
         end
         -- Active V2 steps are widgets kept outside the main guide window.
@@ -1321,8 +1447,8 @@ end, function(S, module)
     for _, name in ipairs({"CreateTargetFrame", "RenderTargetFrameBackground"}) do
         H.Hook(addon.targeting, name, QueueTargets)
     end
-    -- UpdateTargetFrame only changes native secure target rows and geometry.
-    -- It needs no skin scan: creation/visual/background hooks cover our work.
+    -- Native target updates may reset the title dimensions; never walk its secure rows.
+    H.Hook(addon.targeting, "UpdateTargetFrame", function() AuxiliaryTitle(TargetFrame()) end)
     local combatEvents = CreateFrame("Frame")
     combatEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
     combatEvents:SetScript("OnEvent", function()
@@ -1331,9 +1457,146 @@ end, function(S, module)
         if module.optionsWaiting then refreshOptions() end
         if arrowWaiting then ApplyArrow() end
     end)
+    local settingsRegistered
+    local settingsKey = "EUIAddonSkinsRestedXP"
+    local function SettingsChanged()
+        UpdateTheme()
+        if ns.RefreshPopupMenusNow then ns.RefreshPopupMenusNow() end
+    end
+    local function ResetSkinSettings()
+        if EUIAddonSkinsDB then EUIAddonSkinsDB.restedXP = nil end
+        SettingsChanged()
+        local registry = LibStub and LibStub("AceConfigRegistry-3.0", true)
+        if settingsRegistered and registry and registry.NotifyChange then registry:NotifyChange(settingsKey) end
+    end
+    local function ApplyOpacity()
+        if CombatLocked() then themeWaiting = true; return end
+        if not ns.IsEnabled(module) then return end
+        for frame, entry in pairs(themed) do
+            if not frame.IsForbidden or not frame:IsForbidden() then SyncShell(frame, entry) end
+        end
+        local colors = addon.colors
+        local fill = colors and colors.bottomFrameBG
+        if fill then
+            local old = fill[4]
+            local scale = ForeverOpacity()
+            fill[4] = ForeverLook() and OverlayAlpha(0.70 * scale, math.min(colors.background[4] or 1, 0.66 * scale))
+                or BackgroundOverride() or select(4, S.GetPanelColor())
+            local root = addon.RXPFrame or _G.RXPFrame
+            for _, row in ipairs(root and root.ScrollChild and root.ScrollChild.framePool or {}) do
+                if H.Allowed(row) and row.GetBackdropColor then
+                    local r, g, b, a = row:GetBackdropColor()
+                    if old and a and math.abs(a - old) < 0.004 and math.abs(a - fill[4]) >= 0.004
+                        and math.abs(r - fill[1]) < 0.004 and math.abs(g - fill[2]) < 0.004
+                        and math.abs(b - fill[3]) < 0.004 then
+                        row:SetBackdropColor(r, g, b, fill[4])
+                    end
+                end
+            end
+        end
+        local window = addon.v2 and addon.v2.state and addon.v2.state.guideWindow or _G.RXPV2GuideWindow
+        if window then
+            if window.guideSteps then V2Dividers(window.guideSteps) end
+            V2FooterFill(window, ForeverLook())
+        end
+    end
+    local function OpenOpacitySettings()
+        if CombatLocked() then return end
+        local registry = LibStub and LibStub("AceConfigRegistry-3.0", true)
+        local dialog = LibStub and LibStub("AceConfigDialog-3.0", true)
+        if not registry or not dialog then return end
+        if not settingsRegistered then
+            registry:RegisterOptionsTable(settingsKey, {
+                type = "group", name = "RestedXP — EUI AddonSkins", args = {
+                    opacity = {
+                        type = "range", name = "Background Opacity", order = 1,
+                        width = "full", min = 0, max = 100, step = 1, bigStep = 5,
+                        get = function()
+                            local alpha = BackgroundOverride()
+                            if alpha == nil then
+                                alpha = select(4, S.GetPanelColor()) or 0.92
+                                if ForeverLook() then alpha = alpha * 0.70 / 0.92 end
+                            end
+                            return math.floor(alpha * 100 + 0.5)
+                        end,
+                        set = function(_, value)
+                            if type(value) ~= "number" or value ~= value then return end
+                            SavePreference("opacity", math.max(0, math.min(100, value)) / 100)
+                            -- Coalesce slider changes and use the existing combat-safe refresh.
+                            H.Queue(settingsKey, ApplyOpacity)
+                        end,
+                    },
+                    reset = {type = "execute", name = "Reset Skin Settings", order = 2, func = ResetSkinSettings},
+                },
+            })
+            dialog:SetDefaultSize(settingsKey, 350, 150)
+            settingsRegistered = true
+        end
+        dialog:Open(settingsKey)
+    end
+    local function StyleChoice(label, value)
+        return {text = label, isNotRadio = false, checked = function()
+            local preferences = SkinPreferences()
+            return (preferences and preferences.style or "auto") == value
+        end, func = function()
+            SavePreference("style", value)
+            SettingsChanged()
+        end}
+    end
+    local settingsMenu = {
+        text = "EUI AddonSkins", notCheckable = true, hasArrow = true, padding = 28,
+        menuList = {
+            {text = "Style", notCheckable = true, isTitle = true},
+            StyleChoice("Automatic", "auto"),
+            StyleChoice("EUI Standard", "standard"),
+            StyleChoice("EUI Forever", "forever"),
+            {text = "Background Opacity…", notCheckable = true, func = OpenOpacitySettings},
+            {text = "Reset Skin Settings", notCheckable = true, func = ResetSkinSettings},
+        },
+    }
+    settingsMenu.menuList[4].disabled = not (_G.EllesmereUI and _G.EllesmereUI.IS_FOREVER)
+    local function PadMenu(menu, settingsIndex, pad)
+        local result
+        for i, item in ipairs(menu) do
+            local needsPadding = pad and item.hasArrow
+            if not result and (i == settingsIndex or needsPadding) then
+                result = {}
+                for j = 1, i - 1 do result[j] = menu[j] end
+            end
+            if result then
+                if i == settingsIndex then result[#result + 1] = settingsMenu end
+                if needsPadding then
+                    local copy = Copy(item)
+                    copy.padding = (item.padding or 0) + 28
+                    if type(item.menuList) == "table" then copy.menuList = PadMenu(item.menuList, nil, true) end
+                    item = copy
+                end
+                result[#result + 1] = item
+            end
+        end
+        return result or menu
+    end
+    if type(addon.ShowMenu) == "function" then
+        local showMenu = addon.ShowMenu
+        addon.ShowMenu = function(self, menu, ...)
+            if not CombatLocked() and ns.IsEnabled(module) and type(menu) == "table" then
+                local optionsText = _G.GAMEOPTIONS_MENU
+                local settingsIndex
+                if optionsText then
+                    for i, item in ipairs(menu) do
+                        if item.text == optionsText .. "..." then settingsIndex = i; break end
+                    end
+                end
+                local pad = ForeverLook()
+                if settingsIndex or pad then menu = PadMenu(menu, settingsIndex, pad) end
+            end
+            return showMenu(self, menu, ...)
+        end
+    end
     if ns.BindPopupOwner then
         local menuLook = {
             noAccent = true, chevrons = true, hoverAlpha = 0.38,
+            chevronColor = {0.88, 0.66, 0.39},
             hoverColor = {0.80, 0.56, 0.32},
             legacyShell = function(layer)
                 local grain, plate = ForeverSurface(layer, true)

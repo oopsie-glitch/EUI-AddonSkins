@@ -30,7 +30,7 @@ local function frame(kind)
     local f = {kind = kind or 'Frame', children = {}, regions = {}, hooks = {}}
     function f:CreateTexture(_, layer, _, sublevel)
         self.created = self.created or {}
-        local t = {SetPoint = function(self, ...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end, ClearAllPoints = function(self) self.points = {} end, SetHeight = function() end, SetWidth = function(self, w) self.width = w end,
+        local t = {SetPoint = function(self, ...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end, ClearAllPoints = function(self) self.points = {} end, SetHeight = function() end, SetSize = function(self, w, h) self.width, self.height = w, h end, SetWidth = function(self, w) self.width = w end,
             SetColorTexture = function(self, ...) self.color = {...} end,
             SetAllPoints = function(self, target) self.allPoints = target end,
             AddMaskTexture = function(self, mask) self.masks = self.masks or {}; table.insert(self.masks, mask) end,
@@ -57,6 +57,9 @@ local function frame(kind)
     function f:GetFrameLevel() return self.level or 4 end
     function f:GetFrameStrata() return self.strata or "BACKGROUND" end
     function f:GetHeight() return self.height or 24 end
+    function f:SetHeight(h) self.height = h end
+    function f:GetPoint(i) return table.unpack((self.points or {})[i or 1] or {}) end
+    function f:GetNumPoints() return #(self.points or {}) end
     function f:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end
     function f:ClearAllPoints() self.points = {} end
     function f:IsShown() return self.shown ~= false end
@@ -122,7 +125,11 @@ local secret, input = frame('EditBox'), frame('EditBox'); secret.protected = tru
 guide.children = {secret, input}
 local guideCreates, originalCalls, renders = 0, 0, 0
 local lazyTarget
+local shownMenu
+local savedOptionsText = GAMEOPTIONS_MENU
+GAMEOPTIONS_MENU = "Options"
 RXP = {targeting = {CreateTargetFrame = function(self) self.activeTargetFrame = lazyTarget end}, RXPFrame = guide, settings = {profile = {activeTheme = 'Custom', guideFontSize = 12}},
+    ShowMenu = function(_, menu, owner) shownMenu = menu; return owner, nil, 9 end,
     LoadActiveTheme = function() originalCalls = originalCalls + 1; return source, nil, 'tail' end,
     RenderFrame = function() renders = renders + 1; return nil, 'render-tail' end,
     v2 = {state = {}, GetTheme = function() return source2 end,
@@ -193,6 +200,21 @@ local bandBorderAlpha = band.rxpBorder:GetAlpha()
 local oldBorderAlpha = guidePanel.rxpBorder:GetAlpha()
 window.settingsButton = button
 window.guideSteps = {items = {}, SetRows = function(self, items) self.items = items end}
+local scrollButton = frame("Button")
+scrollButton.Normal = region("native", "ARTWORK")
+function scrollButton:IsEnabled() return not self.disabled end
+local scrollAction = function() return "native scroll" end
+scrollButton.click = scrollAction
+window.guideSteps.scroll = {scrollbar = {ScrollUpButton = scrollButton}}
+local checkbox = frame("CheckButton")
+local checked, disabledChecked = checkbox:CreateTexture(), checkbox:CreateTexture()
+checked.GetObjectType = function() return "Texture" end
+disabledChecked.GetObjectType = checked.GetObjectType
+checkbox.GetCheckedTexture = function() return checked end
+checkbox.GetDisabledCheckedTexture = function() return disabledChecked end
+local click = function() return "native check" end
+checkbox.click = click
+guide.children[#guide.children + 1] = checkbox
 local v2Row = frame()
 v2Row.rxpBackground = frame()
 v2Row.rxpBackground.textures = {{GetVertexColor = function() return 1, 1, 1, 0.95 end}}
@@ -218,6 +240,14 @@ Enum = {UITextureSliceMode = {Stretched = 0}}
 activeLook = "forever"
 modules.RXPGuides.refresh(); flush()
 assert(rimCalls == 3 and lastRim.on and parents[lastRim.host] == button)
+assert(checkbox.click == click and checkbox.click() == "native check")
+assert(checked.path:find("UI-CheckBox-Check", 1, true) and checked.width == 8 and checkbox.created[3].shown)
+assert(scrollButton.click == scrollAction and scrollButton.Normal:GetAlpha() == 0)
+local scrollIcon = scrollButton.created[1]
+assert(scrollIcon.path:find("eui-arrow-up3", 1, true) and scrollIcon.points[1][2] == scrollButton)
+scrollButton.disabled = true
+scrollButton.hooks.OnDisable()
+assert(scrollIcon:GetAlpha() == 0.45)
 assert(guidePanel.rxpBorder:GetAlpha() == 0 and band.rxpBorder:GetAlpha() == 0)
 assert(guide.BottomFrame.borderColor[4] == 0 and step.borderColor[4] == 0)
 local legacyArt, guideArt = rings[guide].host, rings[window.frame].host
@@ -292,6 +322,7 @@ modules.RXPGuides.refresh(); flush()
 assert(step.borderColor[1] == 0.055 and RXP.colors.background[1] == 0.03)
 assert(not lastRim.on and not row.created[1].shown and not v2Row.created[1].shown)
 assert(not legacyArt:IsShown() and not guideArt:IsShown())
+assert(not checkbox.created[3].shown and not scrollIcon.shown and scrollButton.Normal:GetAlpha() == 0.8)
 assert(v2Row.rxpBackground:GetAlpha() == 1 and window.footerBackground:GetAlpha() == 0.8)
 assert(RXP.colors.bottomFrameBG[4] == 0.95 and RXP.colors.bottomFrameHighlight[4] == 1)
 assert(step.borderColor[4] == 1 and guide.BottomFrame.borderColor[4] == 1)
@@ -310,8 +341,24 @@ step.strata = nil
 modules.RXPGuides.refresh(); flush()
 assert(rimCalls == 4 and not tipRing.host:IsShown() and step.borderColor[4] == 0)
 local auxTarget, auxItem = frame(), frame()
+local function label()
+    local text = frame("FontString")
+    text.font = {"RXP-font", 12, ""}
+    function text:GetFont() return table.unpack(self.font) end
+    function text:SetFont(...) self.font = {...} end
+    function text:GetTextColor() return 0.8, 0.7, 0.4, 1 end
+    function text:SetTextColor() end
+    return text
+end
+local oldFont = S.Font
+S.Font = function(text)
+    if text.SetFont then text:SetFont("EUI-font", select(2, text:GetFont()), "OUTLINE") end
+end
 for _, f in ipairs({auxTarget, auxItem}) do
     f.title = frame()
+    f.title.text = label()
+    f.title:SetPoint("TOPLEFT", f, "TOPLEFT", 5, 8)
+    f.title:SetHeight(19)
     f:SetBackdrop({edgeFile = 'old', bgFile = 'fill'})
     f.title:SetBackdrop({edgeFile = 'old', bgFile = 'fill'})
 end
@@ -328,12 +375,60 @@ for host, parent in pairs(parents) do
 end
 assert(#titleArt == 2)
 for _, f in ipairs({auxTarget, auxItem}) do
+    local _, _, _, _, y = f.title:GetPoint()
+    local path, size, flags = f.title.text:GetFont()
+    assert(y == -1 and f.title:GetHeight() == 11 and path == "EUI-font" and size == 10 and flags == "OUTLINE")
+end
+for _, f in ipairs({auxTarget, auxItem}) do
     assert(rings[f].host.created[1].allPoints == rings[f].host and #rings[f].host.created[1].masks == 1)
 end
+local oldDB, oldStub = EUIAddonSkinsDB, LibStub
+EUIAddonSkinsDB = {}
+local registry, dialog, opened = {}, {}
+function registry:RegisterOptionsTable(key, options) self[key] = options end
+function dialog:SetDefaultSize() end
+function dialog:Open(key) opened = registry[key] end
+LibStub = function(name, silent)
+    if name == "AceConfigRegistry-3.0" then return registry end
+    if name == "AceConfigDialog-3.0" then return dialog end
+    if oldStub then return oldStub(name, silent) end
+end
+local nativeAction = function() return "native" end
+local nativeMenu = {
+    {text = "Guide", hasArrow = true, menuList = {{text = "Nested", hasArrow = true, padding = 3}}},
+    {text = "Options...", func = nativeAction},
+}
+local owner = {}
+local a, b, c = RXP:ShowMenu(nativeMenu, owner)
+assert(a == owner and b == nil and c == 9)
+assert(shownMenu[1].padding == 28 and shownMenu[1].menuList[1].padding == 31 and nativeMenu[1].padding == nil)
+assert(shownMenu[2].text == "EUI AddonSkins" and shownMenu[3] == nativeMenu[2] and shownMenu[3].func() == "native")
+local choices = shownMenu[2].menuList
+assert(choices[2].checked())
+choices[3].func(); flush()
+assert(EUIAddonSkinsDB.restedXP.style == "standard" and not legacyArt:IsShown())
+assert(select(5, auxTarget.title:GetPoint()) == 8 and auxTarget.title:GetHeight() == 19)
+assert(select(2, auxTarget.title.text:GetFont()) == 12)
+activeLook = "eui"
+choices[4].func(); flush()
+assert(EUIAddonSkinsDB.restedXP.style == "forever" and legacyArt:IsShown())
+choices[5].func()
+assert(opened.args.opacity.get() == 72)
+local calls = originalCalls
+for i = 0, 20 do opened.args.opacity.set(nil, i) end
+flush()
+assert(EUIAddonSkinsDB.restedXP.opacity == 0.20 and opened.args.opacity.get() == 20)
+assert(originalCalls == calls, "opacity dragging reloaded the guide theme")
+assert(rings[guide].on and legacyArt:GetAlpha() == 1)
+choices[6].func(); flush()
+assert(not EUIAddonSkinsDB.restedXP and not legacyArt:IsShown())
+activeLook = "forever"
+EUIAddonSkinsDB, LibStub, GAMEOPTIONS_MENU = oldDB, oldStub, savedOptionsText
 EllesmereUI.IS_FOREVER = false
 modules.RXPGuides.refresh(); flush()
 for _, host in ipairs(titleArt) do assert(not host:IsShown()) end
 RXP.targeting.activeTargetFrame, RXP.activeItemFrame = nil, nil
+S.Font = oldFont
 assert(not legacyArt:IsShown() and not guideArt:IsShown())
 assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
 EllesmereUI = nil

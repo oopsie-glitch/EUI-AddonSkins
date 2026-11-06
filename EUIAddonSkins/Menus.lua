@@ -249,7 +249,7 @@ local function HeadingColor(r, text, heading, S)
         r.textColors[text], r.appliedTextColors[text] = nil, nil
     end
 end
-local function Chevron(r, button, native, owner)
+local function Chevron(r, button, native, owner, color)
     if not native or not native.IsShown or not button.CreateTexture then return end
     r.arrows = r.arrows or {}
     local arrow = r.arrows[native]
@@ -257,8 +257,14 @@ local function Chevron(r, button, native, owner)
         arrow = button:CreateTexture(nil, 'OVERLAY')
         arrow:SetTexture('Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-right.png')
         arrow:SetSize(10, 10); arrow:SetPoint('CENTER', native, 'CENTER')
-        arrow:SetVertexColor(0.75, 0.75, 0.78, 1)
         r.arrows[native] = arrow
+        r.arrowColors = r.arrowColors or {}
+    end
+    local tint = color or false
+    if r.arrowColors[arrow] ~= tint then
+        if color then arrow:SetVertexColor(color[1], color[2], color[3], 1)
+        else arrow:SetVertexColor(0.75, 0.75, 0.78, 1) end
+        r.arrowColors[arrow] = tint
     end
     -- LibDD hides its ExpandArrow BUTTON, leaving the normal texture's own
     -- shown flag true. Our replacement belongs to the row and must follow both.
@@ -418,7 +424,7 @@ local function Style(f, binding, owner)
             local arrowOwner = arrow
             if arrow and arrow.GetNormalTexture then arrow = arrow:GetNormalTexture() end
             local red, green, blue = S.GetAccentColor()
-            if options and options.chevrons then Chevron(r, button, arrow, arrowOwner)
+            if options and options.chevrons then Chevron(r, button, arrow, arrowOwner, options.chevronColor)
             else Tint(r, arrow, red, green, blue, 1) end
             local highlight = button.Highlight or (button.GetHighlightTexture and button:GetHighlightTexture())
             local hover = options and options.hoverColor

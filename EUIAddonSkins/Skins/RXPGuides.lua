@@ -500,13 +500,41 @@ end, function(S, module)
         texture:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -top)
         texture:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -x, bottom)
     end
-    local function ForeverSurface(art, band, top, bottom)
-        -- The slim ring's corners extend nine units inward from its outer edge.
-        -- Keep rectangular fills inside that cut rather than under its clear corners.
+    local function MaskFill(art, edge, first, second, third, step)
+        local mode = Enum and Enum.UITextureSliceMode and Enum.UITextureSliceMode.Stretched
+        if mode and art.CreateMaskTexture and first.AddMaskTexture then
+            local mask = art:CreateMaskTexture()
+            mask:SetTexture("Interface\\AddOns\\EUIAddonSkins\\Media\\RestedXPFill.tga",
+                "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            -- Fixed corners track the slim rim while the center stretches.
+            mask:SetTextureSliceMargins(8, 8, 8, 8)
+            mask:SetTextureSliceMode(mode)
+            mask:SetAllPoints(edge)
+            first:AddMaskTexture(mask)
+            second:AddMaskTexture(mask)
+            if third then third:AddMaskTexture(mask) end
+        else
+            -- Older clients without sliced masks retain a conservative inset.
+            first:ClearAllPoints()
+            second:ClearAllPoints()
+            SeatFill(first, art, 2, 9, 9)
+            SeatFill(second, art, 2, 9, 9)
+            if third then
+                third:ClearAllPoints()
+                SeatFill(third, step, 0, 3, 0)
+            end
+        end
+    end
+    local function ForeverSurface(art, band, title)
         local plate = art:CreateTexture(nil, "BACKGROUND", nil, 1)
         local grain = art:CreateTexture(nil, "BACKGROUND", nil, 2)
-        SeatFill(plate, art, 2, top or 9, bottom or 9)
-        SeatFill(grain, art, 2, top or 9, bottom or 9)
+        if title then
+            SeatFill(plate, art, 2, 3, 3)
+            SeatFill(grain, art, 2, 3, 3)
+        else
+            plate:SetAllPoints(art)
+            grain:SetAllPoints(art)
+        end
         local r, g, b = 0.165, 0.115, 0.075
         if band then r, g, b = 0.185, 0.126, 0.080 end
         plate:SetColorTexture(r, g, b, 1)
@@ -556,10 +584,11 @@ end, function(S, module)
             art.grain, art.plate = ForeverSurface(art, false)
             if currentStep then
                 local fill = art:CreateTexture(nil, "BACKGROUND", nil, 3)
-                SeatFill(fill, currentStep, 0, 3, 0)
+                fill:SetAllPoints(currentStep)
                 fill:SetColorTexture(0.165, 0.115, 0.075)
                 art.stepFill = fill
             end
+            MaskFill(art, art, art.plate, art.grain, art.stepFill, currentStep)
             local function AnchorTop()
                 if not ForeverLook() then return end
                 if CombatLocked() then refresh(); return end
@@ -894,7 +923,7 @@ end, function(S, module)
         local items = addon.activeItemFrame
         if f == target and items and items ~= f and themed[items] then SyncShell(items, themed[items]) end
     end
-    local function ThemeShell(f, chrome, composition, underlay, outerHeader)
+    local function ThemeShell(f, chrome, composition, underlay)
         if not f or not f.GetFrameLevel or (not chrome and not f.GetBackdrop and not f.rxpBackground) or CombatLocked()
             or (f.IsForbidden and f:IsForbidden()) then return end
         local entry = themed[f]
@@ -939,13 +968,13 @@ end, function(S, module)
                 local independent = band or chrome == "step" or chrome == "auxBody" or chrome == "body"
                 local art = ForeverArtHost(independent and f or entry.layer)
                 entry.art = art
-                local top = band and (outerHeader and 9 or (chrome == "auxTitle" and 3 or 0)) or 9
-                local bottom = band and (chrome == "footer" and 9 or (chrome == "auxTitle" and 3 or 0)) or 9
-                if chrome == "badge" then top, bottom = 0, 0 end
-                local grain, plate = ForeverSurface(art, band, top, bottom)
+                local title = chrome == "auxTitle"
+                local grain, plate = ForeverSurface(art, band, title)
                 if independent then entry.grain, entry.plate, entry.band = grain, plate, band end
                 entry.secondary = band or chrome == "badge"
                 if not entry.secondary then entry.rim = ForeverRim(art) end
+                local edge = underlay or (entry.rim and art)
+                if edge then MaskFill(art, edge, plate, grain) end
                 if chrome == "badge" then grain:SetAlpha(0.12) end
                 if band and chrome ~= "auxTitle" then
                     local divider = art:CreateTexture(nil, "BACKGROUND", nil, 3)
@@ -1201,7 +1230,7 @@ end, function(S, module)
             Scan(window.frame)
             local shell = ComposeGuide(window.frame, window.upperFrame or window.guideNameFrame, window.footer, nil, forever)
             ThemeShell(window.upperFrame, shell and "joined" or "body")
-            ThemeShell(window.guideNameFrame, "header", nil, shell, true)
+            ThemeShell(window.guideNameFrame, "header", nil, shell)
             ThemeShell(window.guideStepsFrame, shell and "joined" or "body", shell)
             ThemeShell(window.footer, "footer", nil, shell)
             NativeFillAlpha(window.footerBackground, forever and 0 or nil)
@@ -1307,7 +1336,8 @@ end, function(S, module)
             noAccent = true, chevrons = true, hoverAlpha = 0.38,
             hoverColor = {0.80, 0.56, 0.32},
             legacyShell = function(layer)
-                ForeverSurface(layer, true, 9, 9)
+                local grain, plate = ForeverSurface(layer, true)
+                MaskFill(layer, layer, plate, grain)
                 ForeverRim(layer)
             end,
         }

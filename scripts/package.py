@@ -29,6 +29,15 @@ arrow_header=(addon/'Media/NavigationChevronSmooth.tga').read_bytes()[:18]
 assert arrow_header[2]==2 and int.from_bytes(arrow_header[12:14],'little')==256
 assert int.from_bytes(arrow_header[14:16],'little')==256 and arrow_header[16]==32
 files=[toc]+[addon/p for p in runtime]+[addon/'LICENSE',addon/'Media/Icon.tga',addon/'Media/DBMMechanics.tga',addon/'Media/DBMRadar.tga',addon/'Media/NavigationChevronSmooth.tga']
+mask=addon/'Media/RestedXPFill.tga'
+data=mask.read_bytes()
+assert data[2]==2 and data[12:18]==bytes((17, 0, 17, 0, 32, 0x28))
+assert len(data)==18+17*17*4
+for y in range(17):
+    for x in range(17):
+        distance=min(x,16-x)+min(y,16-y)
+        assert data[18+(y*17+x)*4+3]==min(255,max(0,(distance-4)*128))
+files.append(mask)
 for flavor in ['Camelot','Mainline']:
     alias=addon/f'EUIAddonSkins_{flavor}.toc'
     assert alias.read_bytes()==toc.read_bytes(),f'Stale client manifest: {alias}'

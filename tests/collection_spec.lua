@@ -33,6 +33,7 @@ local function frame(kind)
         local t = {SetPoint = function(self, ...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end, ClearAllPoints = function(self) self.points = {} end, SetHeight = function() end, SetWidth = function(self, w) self.width = w end,
             SetColorTexture = function(self, ...) self.color = {...} end,
             SetAllPoints = function(self, target) self.allPoints = target end,
+            AddMaskTexture = function(self, mask) self.masks = self.masks or {}; table.insert(self.masks, mask) end,
             SetAlpha = function(self, a) self.alpha = a end,
             GetAlpha = function(self) return self.alpha or 1 end,
             SetTexture = function(self, path) self.path = path end, SetVertexColor = function() end,
@@ -41,6 +42,14 @@ local function frame(kind)
         t.layer, t.sublevel = layer, sublevel
         self.created[#self.created + 1] = t
         return t
+    end
+    function f:CreateMaskTexture()
+        return {
+            SetTexture = function(self, path, x, y) self.path, self.wrapX, self.wrapY = path, x, y end,
+            SetTextureSliceMargins = function(self, ...) self.margins = {...} end,
+            SetTextureSliceMode = function(self, mode) self.mode = mode end,
+            SetAllPoints = function(self, edge) self.edge = edge end,
+        }
     end
     function f:SetFrameLevel(level) self.level = level end
     function f:SetAlpha(alpha) self.alpha = alpha end
@@ -204,6 +213,8 @@ EllesmereUI = {
     end,
 }
 assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
+local savedEnum = Enum
+Enum = {UITextureSliceMode = {Stretched = 0}}
 activeLook = "forever"
 modules.RXPGuides.refresh(); flush()
 assert(rimCalls == 3 and lastRim.on and parents[lastRim.host] == button)
@@ -229,8 +240,11 @@ for _, art in ipairs({legacyArt, guideArt}) do
     assert(art.created[1].color[1] == 0.165)
     assert(math.abs(1 - (1 - plate) * (1 - grain) - 0.66 * 0.95 / 0.92) < 0.0001)
     for i = 1, 2 do
-        local points = art.created[i].points
-        assert(points[1][4] == 2 and points[1][5] == -9 and points[2][4] == -2 and points[2][5] == 9)
+        local fill = art.created[i]
+        assert(fill.allPoints == art and #fill.masks == 1)
+        local mask = fill.masks[1]
+        assert(mask.edge == art and mask.mode == 0 and table.concat(mask.margins, ",") == "8,8,8,8")
+        assert(mask.wrapX == "CLAMPTOBLACKADDITIVE" and mask.wrapY == "CLAMPTOBLACKADDITIVE")
     end
     assert(art.created[1].layer == "BACKGROUND" and art.created[1].sublevel == 1)
     assert(art.created[2].layer == "BACKGROUND" and art.created[2].sublevel == 2)
@@ -240,12 +254,13 @@ for host, parent in pairs(parents) do
     if parent == band and host.created and #host.created == 3 then bandArt = host end
 end
 assert(bandArt and bandArt.mouseEnabled == false and bandArt.created[1].color[1] == 0.185 and bandArt.created[2].alpha > 0)
+assert(bandArt.created[1].masks[1].edge == guideArt)
 assert(lastRim.texture.alpha ~= 0 and rings[window.frame].texture.alpha ~= 0)
 local base = 0.66 * 0.95 / 0.92
 local bandAlpha = 1 - (1 - base) * (1 - bandArt.created[1].alpha) * (1 - bandArt.created[2].alpha)
 assert(math.abs(bandAlpha - 0.80 * 0.95 / 0.92) < 0.0001)
 local stepFill = legacyArt.created[3]
-assert(stepFill.shown and stepFill.points[1][2] == guide.CurrentStepFrame and stepFill.points[1][5] == -3)
+assert(stepFill.shown and stepFill.allPoints == guide.CurrentStepFrame and stepFill.masks[1] == legacyArt.created[1].masks[1])
 local stepAlpha = 1 - (1 - base) * (1 - stepFill.alpha * legacyArt:GetAlpha())
 assert(math.abs(stepAlpha - 0.75 * 0.95 / 0.92) < 0.0001)
 guide.CurrentStepFrame:SetShown(false)
@@ -313,7 +328,7 @@ for host, parent in pairs(parents) do
 end
 assert(#titleArt == 2)
 for _, f in ipairs({auxTarget, auxItem}) do
-    assert(rings[f].host.created[1].points[1][5] == -9)
+    assert(rings[f].host.created[1].allPoints == rings[f].host and #rings[f].host.created[1].masks == 1)
 end
 EllesmereUI.IS_FOREVER = false
 modules.RXPGuides.refresh(); flush()
@@ -322,6 +337,7 @@ RXP.targeting.activeTargetFrame, RXP.activeItemFrame = nil, nil
 assert(not legacyArt:IsShown() and not guideArt:IsShown())
 assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
 EllesmereUI = nil
+Enum = savedEnum
 
 local target = frame(); target.protected = true; target.title = frame()
 target.title.text = {GetObjectType = function() return 'FontString' end}

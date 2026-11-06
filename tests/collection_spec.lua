@@ -34,10 +34,18 @@ local function frame(kind)
             SetColorTexture = function(self, ...) self.color = {...} end,
             SetAllPoints = function(self, target) self.allPoints = target end,
             AddMaskTexture = function(self, mask) self.masks = self.masks or {}; table.insert(self.masks, mask) end,
+            RemoveMaskTexture = function(self, mask)
+                assert(self.masks[1] == mask); table.remove(self.masks, 1)
+            end,
             SetAlpha = function(self, a) self.alpha = a end,
             GetAlpha = function(self) return self.alpha or 1 end,
+            SetGradient = function(self, _, lo, hi)
+                self.gradient = {{lo.r, lo.g, lo.b, lo.a}, {hi.r, hi.g, hi.b, hi.a}}
+                self.alpha = lo.a
+            end,
+            SetBlendMode = function(self, mode) self.blend = mode end,
             SetTexCoord = function(self, ...) self.coords = {...} end,
-            SetTexture = function(self, path) self.path = path end, SetVertexColor = function() end,
+            SetTexture = function(self, path) self.path = path end, SetVertexColor = function(self, r, g, b, a) self.tint = {r, g, b, a}; self.alpha = a end,
             SetHorizTile = function() end, SetVertTile = function() end,
             SetShown = function(self, shown) self.shown = shown end}
         t.layer, t.sublevel = layer, sublevel
@@ -83,6 +91,12 @@ local function frame(kind)
     function f:SetBackdropBorderColor(...) self.borderColor = {...} end
     function f:GetBackdropBorderColor() return table.unpack(self.borderColor or {1, 1, 1, 1}) end
     return f
+end
+local savedCreateColor = CreateColor
+CreateColor = function(r, g, b, a)
+    return {r = r, g = g, b = b, a = a, SetRGBA = function(self, nr, ng, nb, na)
+        self.r, self.g, self.b, self.a = nr, ng, nb, na
+    end}
 end
 local parents = {}
 local combat, combatEvents = false
@@ -182,6 +196,8 @@ local rimCalls, lastRim = 0
 local rings = {}
 local row = frame()
 function row:IsShown() return true end
+function row:SetBackdropColor(...) self.fill = {...} end
+function row:GetBackdropColor() return table.unpack(self.fill or {}) end
 guide.ScrollChild = {framePool = {row}}
 local button = frame("Button")
 local guidePanel = frame()
@@ -475,14 +491,47 @@ local function composite(...)
     return 1 - remaining
 end
 assert(math.abs(composite(legacyArt.created[1].alpha, legacyArt.created[2].alpha, stepFill.alpha) - 0.2) < 0.0001)
-for _, percent in ipairs({0, 100}) do
+local bodyRGB = {table.unpack(legacyArt.created[1].gradient[2])}
+local function bodyPixel(art, world, channel)
+    local plate, grain = art.created[1], art.created[2]
+    local function Over(value, color, alpha) return color * alpha + value * (1 - alpha) end
+    local body = Over(world, plate.color[channel] * plate.gradient[2][channel], plate.gradient[2][4])
+    return Over(body, grain.tint[channel], grain.tint[4])
+end
+opened.args.opacity.set(nil, 100); flush()
+local opaque = {}
+for channel = 1, 3 do opaque[channel] = bodyPixel(legacyArt, 0, channel) end
+for _, percent in ipairs({0, 25, 50, 75, 100}) do
+    if percent == 0 then row:SetBackdropColor(0.15, 0.1, 0.08, 1) end -- stale idle fill
+    if percent == 50 then row:SetBackdropColor(table.unpack(RXP.colors.bottomFrameHighlight)) end
+    if percent == 75 then row:SetBackdropColor(table.unpack(RXP.colors.bottomFrameBG)) end
     opened.args.opacity.set(nil, percent); flush()
+    assert(row.fill[4] == (percent == 50 and 1 or 0), "idle/hover backgrounds were conflated")
     local alpha = percent / 100
     assert(math.abs(composite(legacyArt.created[1].alpha, legacyArt.created[2].alpha) - alpha) < 0.0001)
     assert(legacyArt:GetAlpha() == 1 and guideArt:GetAlpha() == 1 and rings[guide].on)
     assert(guideArt.created[1].masks[1].edge == guideArt and bandArt.created[1].masks[1].edge == guideArt)
     assert(RXP.colors.bottomFrameBG[4] == 0 and v2Row.rxpBackground:GetAlpha() == 0)
+    local plate, grain = legacyArt.created[1], legacyArt.created[2]
+    assert(plate.blend == "BLEND" and plate.shown == (alpha > 0) and grain.shown == (alpha > 0))
+    assert(plate.gradient[1][4] == plate.gradient[2][4])
+    for channel = 1, 3 do
+        assert(plate.gradient[2][channel] == bodyRGB[channel])
+        for _, world in ipairs({0.1, 0.8}) do
+            local expected = world * (1 - alpha) + opaque[channel] * alpha
+            assert(math.abs(bodyPixel(legacyArt, world, channel) - expected) < 0.0001)
+            assert(math.abs(bodyPixel(guideArt, world, channel) - expected) < 0.0001)
+        end
+    end
+    local header = bandArt.created
+    assert(math.abs(composite(header[1].alpha, header[2].alpha) - alpha) < 0.0001)
     assert(titleArt[1].created[1]:GetAlpha() == alpha and window.footerBackground:GetAlpha() == 0)
+    if alpha > 0 and alpha < 1 then
+        assert(plate.points[1][2] == guide.GuideName and plate.points[1][3] == "BOTTOMLEFT")
+        assert(plate.points[2][2] == guide.Footer and plate.points[2][3] == "TOPRIGHT")
+        assert(math.abs(composite(legacyArt.upperPlate.alpha, legacyArt.upperGrain.alpha) - alpha) < 0.0001)
+        assert(legacyArt.upperPlate.masks[1] == plate.masks[1])
+    end
     assert(checkbox.click == click and scrollButton.click == scrollAction)
 end
 choices[6].func(); flush()
@@ -501,6 +550,7 @@ assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
 EllesmereUI = nil
 Enum = savedEnum
 C_Texture = savedTextureAPI
+CreateColor = savedCreateColor
 
 local target = frame(); target.protected = true; target.title = frame()
 target.title.text = {GetObjectType = function() return 'FontString' end}

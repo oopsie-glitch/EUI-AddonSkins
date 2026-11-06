@@ -610,6 +610,7 @@ end, function(S, module)
             first:AddMaskTexture(mask)
             second:AddMaskTexture(mask)
             if third then third:AddMaskTexture(mask) end
+            return mask
         else
             -- Older clients without sliced masks retain a conservative inset.
             first:ClearAllPoints()
@@ -633,6 +634,26 @@ end, function(S, module)
         texture:SetTexCoord(l + w * 64 / 300, l + w * 176 / 300, t + h * 9 / 40, t + h * 39 / 40)
         return true
     end
+    local surfacePaint = setmetatable({}, {__mode = "k"})
+    local function SetPaintAlpha(texture, alpha, shown)
+        local paint = surfacePaint[texture]
+        if paint.alpha ~= alpha or paint.gradientDirty then
+            paint.alpha, paint.gradientDirty = alpha, nil
+            if paint.low then
+                local lo, hi = paint.from or paint.shade, paint.to or 1
+                paint.low:SetRGBA(paint.r * lo, paint.g * lo, paint.b * lo, alpha)
+                paint.high:SetRGBA(paint.r * hi, paint.g * hi, paint.b * hi, alpha)
+                texture:SetGradient("VERTICAL", paint.low, paint.high)
+            else
+                texture:SetVertexColor(paint.r or 1, paint.g or 1, paint.b or 1, alpha)
+            end
+        end
+        shown = alpha > 0 and shown ~= false
+        if paint.shown ~= shown then
+            paint.shown = shown
+            texture:SetShown(shown)
+        end
+    end
     local function ForeverSurface(art, band, titleBody, guideHeader)
         local plate = art:CreateTexture(nil, "BACKGROUND", nil, 1)
         local grain = art:CreateTexture(nil, "BACKGROUND", nil, 2)
@@ -649,16 +670,21 @@ end, function(S, module)
         local r, g, b = 0.165, 0.115, 0.075
         if band then r, g, b = 0.185, 0.126, 0.080 end
         plate:SetColorTexture(r, g, b, 1)
+        local paint = {r = r, g = g, b = b}
+        surfacePaint[plate] = paint
         local meterArt = (guideHeader or titleBody) and MeterHeaderArt(plate)
         if not meterArt and plate.SetGradient and CreateColor then
-            local shade = band and (guideHeader and 0.73 or 0.65) or 0.73
-            plate:SetGradient("VERTICAL", CreateColor(r * shade, g * shade, b * shade, 1),
-                CreateColor(r, g, b, 1))
+            paint.shade = band and (guideHeader and 0.73 or 0.65) or 0.73
+            paint.low = CreateColor(r * paint.shade, g * paint.shade, b * paint.shade, 1)
+            paint.high = CreateColor(r, g, b, 1)
         end
         grain:SetTexture("Interface/Tooltips/UI-Tooltip-Background", "REPEAT", "REPEAT")
+        plate:SetBlendMode("BLEND")
+        grain:SetBlendMode("BLEND")
         grain:SetHorizTile(true); grain:SetVertTile(true)
         grain:SetVertexColor(0.56, 0.44, 0.32, 1)
-        grain:SetAlpha(band and 0.28 or 0.32)
+        surfacePaint[grain] = {r = 0.56, g = 0.44, b = 0.32}
+        if not paint.low then paint.r, paint.g, paint.b = nil, nil, nil end
         return grain, plate, meterArt
     end
 
@@ -670,8 +696,7 @@ end, function(S, module)
     local function SharedAlpha(opacity, scale)
         local override = BackgroundOverride()
         if override then
-            -- Reserve some alpha for the warmer bands and idle row treatment.
-            return override == 1 and 1 or override * (0.66 / 0.70)
+            return override
         end
         return math.min(opacity, 0.66 * scale)
     end
@@ -687,11 +712,12 @@ end, function(S, module)
             texture:SetAlpha(alpha)
         end
     end
-    local function SurfaceAlpha(plate, grain, target, parentAlpha, grainWeight)
-        -- Budget the grain and plate together using source-over alpha.
+    local function SurfaceAlpha(plate, grain, target, grainWeight, shown)
+        -- Keep the opaque material's relative RGB weights. Put opacity in
+        -- gradient stops / vertex colours as well as excluding zero-alpha draws.
         local grainAlpha = target * grainWeight
-        TextureAlpha(grain, parentAlpha > 0 and grainAlpha / parentAlpha or 0)
-        TextureAlpha(plate, parentAlpha > 0 and OverlayAlpha(target, grainAlpha) / parentAlpha or 0)
+        SetPaintAlpha(grain, grainAlpha, shown)
+        SetPaintAlpha(plate, OverlayAlpha(target, grainAlpha), shown)
     end
 
     local function CombatLocked()
@@ -710,16 +736,21 @@ end, function(S, module)
                 local fill = art:CreateTexture(nil, "BACKGROUND", nil, 3)
                 fill:SetAllPoints(currentStep)
                 fill:SetColorTexture(0.165, 0.115, 0.075)
+                fill:SetBlendMode("BLEND")
+                surfacePaint[fill] = {}
                 art.stepFill = fill
             end
-            MaskFill(art, art, art.plate, art.grain, art.stepFill, currentStep)
+            art.masked = MaskFill(art, art, art.plate, art.grain, art.stepFill, currentStep)
+            art.header, art.footer, art.currentStep = header, footer, currentStep
             local function AnchorTop()
                 if not ForeverLook() then return end
                 if CombatLocked() then refresh(); return end
                 local top = currentStep and currentStep:IsShown() and currentStep:GetHeight() > 0 and currentStep or header
                 if art.top == top then return end
                 art.top = top
-                if art.stepFill then art.stepFill:SetShown(top == currentStep) end
+                if art.stepFill then
+                    SetPaintAlpha(art.stepFill, surfacePaint[art.stepFill].alpha or 0, top == currentStep)
+                end
                 art:ClearAllPoints()
                 art:SetPoint("TOPLEFT", top, "TOPLEFT", -2, top == currentStep and 6 or 2)
                 art:SetPoint("BOTTOMRIGHT", footer, "BOTTOMRIGHT", 2, -2)
@@ -736,6 +767,54 @@ end, function(S, module)
             art:SetShown(forever)
             if forever then return art end
         end
+    end
+    local function MatchGradient(texture, art, lower, upper)
+        local paint = surfacePaint[texture]
+        if not (paint.low and art.GetBottom and art.GetTop) then return end
+        local bottom, top = art:GetBottom(), art:GetTop()
+        if not bottom or not top or top <= bottom then return end
+        local function Sample(y)
+            local fraction = math.max(0, math.min(1, (y - bottom) / (top - bottom)))
+            return paint.shade + (1 - paint.shade) * fraction
+        end
+        local from, to = Sample(lower or bottom), Sample(upper or top)
+        if paint.from == from and paint.to == to then return end
+        paint.from, paint.to, paint.gradientDirty = from, to, true
+        if paint.alpha then SetPaintAlpha(texture, paint.alpha) end
+    end
+    local function MatchGuideGradient(art)
+        if art.split and art.header.GetTop and art.header.GetBottom and art.footer.GetTop then
+            MatchGradient(art.plate, art, art.footer:GetTop(), art.header:GetBottom())
+            -- The upper strip runs from the title's top to the guide's top.
+            MatchGradient(art.upperPlate, art, art.header:GetTop(), nil)
+        else
+            MatchGradient(art.plate, art, nil, nil)
+        end
+    end
+    local function SeatGuideFill(art, split)
+        if (art.split == true) == split then return end
+        art.split = split
+        if split and not art.upperPlate then
+            art.upperGrain, art.upperPlate = ForeverSurface(art, false)
+            local mask = art.masked
+            art.upperGrain:AddMaskTexture(mask)
+            art.upperPlate:AddMaskTexture(mask)
+            H.Script(art, "OnSizeChanged", MatchGuideGradient)
+            for _, texture in ipairs({art.upperPlate, art.upperGrain}) do
+                texture:ClearAllPoints()
+                texture:SetPoint("TOPLEFT", art, "TOPLEFT")
+                texture:SetPoint("BOTTOMRIGHT", art.header, "TOPRIGHT", 2, 0)
+            end
+        end
+        for _, texture in ipairs({art.plate, art.grain}) do
+            texture:ClearAllPoints()
+            if split then
+                texture:SetPoint("TOPLEFT", art.header, "BOTTOMLEFT", -2, 0)
+                texture:SetPoint("BOTTOMRIGHT", art.footer, "TOPRIGHT", 2, 0)
+            elseif art.masked then texture:SetAllPoints(art)
+            else SeatFill(texture, art, 2, 9, 9) end
+        end
+        MatchGuideGradient(art)
     end
     local rims = setmetatable({}, {__mode = "k"})
     local function ButtonRim(button, forever)
@@ -1127,7 +1206,8 @@ end, function(S, module)
         end
         if f.rxpBackground then
             shown = not f.rxpBackground.IsShown or f.rxpBackground:IsShown()
-            f.rxpBackground:SetAlpha(0) -- native border/visibility still belongs to RXP
+            f.rxpBackground:SetAlpha(0)
+
         elseif f.GetBackdrop then
             local backdrop = f:GetBackdrop()
             shown = backdrop and backdrop.bgFile and true or false
@@ -1139,6 +1219,21 @@ end, function(S, module)
                     f:SetBackdropColor(0, 0, 0, 0)
                     entry.lock = false
                 end
+            end
+        end
+        local center = f.Center
+        if center and center.GetAlpha and center.SetAlpha then
+            if entry.forever then
+                if entry.centerAlpha == nil then
+                    entry.centerAlpha = center:GetAlpha()
+                    entry.centerShown = center.IsShown and center:IsShown()
+                end
+                TextureAlpha(center, 0)
+                if center.Hide then center:Hide() end
+            elseif entry.centerAlpha ~= nil then
+                TextureAlpha(center, entry.centerAlpha)
+                if entry.centerShown and center.Show then center:Show() end
+                entry.centerAlpha, entry.centerShown = nil, nil
             end
         end
         local opacity = entry.opacity
@@ -1154,23 +1249,81 @@ end, function(S, module)
         if composition then
             local scale = ForeverOpacity()
             local base = SharedAlpha(opacity, scale)
-            SurfaceAlpha(composition.plate, composition.grain, base, 1, 0.32)
+            local override = BackgroundOverride()
+            local split = composition.masked ~= nil and override ~= nil and override > 0 and override < 1
+            SeatGuideFill(composition, split)
+            SurfaceAlpha(composition.plate, composition.grain, base, 0.32)
+            if composition.upperPlate then
+                SurfaceAlpha(composition.upperPlate, composition.upperGrain, split and base or 0, 0.32)
+            end
             if composition.stepFill then
                 local extra = OverlayAlpha(SectionAlpha(0.75, scale), base)
-                TextureAlpha(composition.stepFill, extra)
+                SetPaintAlpha(composition.stepFill, extra, composition.top == composition.currentStep)
             end
         end
         if entry.forever and entry.plate and not entry.joinedBody then
             local scale = ForeverOpacity()
+            local override = BackgroundOverride()
+            local auxiliary = entry.titleBody and themed[entry.titleBody]
+            local auxMask = auxiliary and auxiliary.mask
+            local splitAux = auxMask and override and override > 0 and override < 1
             local base = entry.auxTitle and SectionAlpha(0.75, scale)
                 or entry.underlay and SharedAlpha(select(4, S.GetPanelColor()) or 1, scale) or 0
             local targetAlpha = SectionAlpha(entry.band and 0.80 or 0.75, scale)
-            local extra = base == 1 and targetAlpha == 1 and 1 or OverlayAlpha(targetAlpha, base)
-            SurfaceAlpha(entry.plate, entry.grain, extra, 1, entry.meterArt and 0 or entry.band and 0.28 or 0.32)
+            local split = entry.underlay and entry.underlay.masked and override and override > 0 and override < 1
+            local titleMask = splitAux and auxMask or nil
+            if entry.titleMask ~= titleMask then
+                if entry.titleMask then
+                    entry.plate:RemoveMaskTexture(entry.titleMask)
+                    entry.grain:RemoveMaskTexture(entry.titleMask)
+                end
+                if titleMask then
+                    entry.plate:AddMaskTexture(titleMask)
+                    entry.grain:AddMaskTexture(titleMask)
+                end
+                entry.titleMask = titleMask
+            end
+            if entry.auxTitle and (splitAux or entry.splitAux) and entry.splitAux ~= splitAux then
+                for _, texture in ipairs({entry.plate, entry.grain}) do
+                    texture:ClearAllPoints()
+                    texture:SetPoint("TOPLEFT", entry.titleBody, "TOPLEFT", splitAux and 0 or 8, splitAux and 0 or -3)
+                    texture:SetPoint("RIGHT", entry.titleBody, "RIGHT", splitAux and 0 or -8, 0)
+                    texture:SetPoint("BOTTOM", entry.art, "BOTTOM", 0, 0)
+                end
+            end
+            entry.splitAux = splitAux
+            if entry.auxBodyTitle and entry.mask then
+                local splitBody = override and override > 0 and override < 1
+                if entry.splitBody ~= splitBody then
+                    for _, texture in ipairs({entry.plate, entry.grain}) do
+                        texture:ClearAllPoints()
+                        if splitBody then
+                            texture:SetPoint("TOP", entry.auxBodyTitle, "BOTTOM", 0, 0)
+                            texture:SetPoint("LEFT", entry.art, "LEFT", 0, 0)
+                            texture:SetPoint("BOTTOMRIGHT", entry.art, "BOTTOMRIGHT")
+                        else texture:SetAllPoints(entry.art) end
+                    end
+                    entry.splitBody = splitBody
+                end
+            end
+            if (entry.split == true) ~= (split == true) then
+                for _, texture in ipairs({entry.plate, entry.grain}) do
+                    texture:ClearAllPoints()
+                    if split then
+                        texture:SetPoint("TOPLEFT", entry.art, "TOPLEFT", -2, 0)
+                        texture:SetPoint("BOTTOMRIGHT", entry.art, "BOTTOMRIGHT", 2, 0)
+                    else texture:SetAllPoints(entry.art) end
+                end
+            end
+            entry.split = split
+            local extra = (split or splitAux or base == 1) and targetAlpha or OverlayAlpha(targetAlpha, base)
+            SurfaceAlpha(entry.plate, entry.grain, extra, entry.meterArt and 0 or entry.band and 0.28 or 0.32)
             if entry.art:IsShown() ~= shown then entry.art:SetShown(shown) end
         end
         local alpha = shown and not (entry.forever and (entry.joinedBody or entry.plate)) and opacity or 0
         if entry.forever and entry.badge then alpha = 0 end
+        local showLayer = not (entry.forever and (entry.joinedBody or entry.plate or entry.badge))
+        if entry.layer:IsShown() ~= showLayer then entry.layer:SetShown(showLayer) end
         if not entry.layer.GetAlpha or entry.layer:GetAlpha() ~= alpha then entry.layer:SetAlpha(alpha) end
         local items = addon.activeItemFrame
         if f == target and items and items ~= f and themed[items] then SyncShell(items, themed[items]) end
@@ -1224,11 +1377,13 @@ end, function(S, module)
                 local title = chrome == "auxTitle"
                 local grain, plate, meterArt = ForeverSurface(art, band, titleBody, chrome == "header")
                 entry.grain, entry.plate, entry.band, entry.auxTitle = grain, plate, band, title
+                entry.titleBody = titleBody
+                if chrome == "auxBody" then entry.auxBodyTitle = f.title end
                 entry.meterArt = meterArt
                 entry.secondary = band
                 if not entry.secondary then entry.rim = ForeverRim(art) end
                 local edge = underlay or (entry.rim and art)
-                if edge then MaskFill(art, edge, plate, grain) end
+                if edge then entry.mask = MaskFill(art, edge, plate, grain) end
 
                 if band and not meterArt then
                     local divider = art:CreateTexture(nil, "BACKGROUND", nil, 3)
@@ -1451,6 +1606,8 @@ end, function(S, module)
         for _, item in pairs(steps.items or {}) do
             local row = item.frame
             StepDivider(row, forever)
+            NativeFillAlpha(row and row.rxpShadow, forever and 0 or nil)
+            NativeFillAlpha(item.numberFrame and item.numberFrame.rxpBackground, forever and 0 or nil)
             local fill = row and row.rxpBackground
             local texture = fill and fill.textures and fill.textures[1]
             if texture and texture.GetVertexColor and extra then
@@ -1642,6 +1799,7 @@ end, function(S, module)
         for frame, entry in pairs(themed) do
             if not frame.IsForbidden or not frame:IsForbidden() then SyncShell(frame, entry) end
         end
+        local forever = ForeverLook()
         local colors = addon.colors
         local fill = colors and colors.bottomFrameBG
         if fill then
@@ -1653,10 +1811,15 @@ end, function(S, module)
             for _, row in ipairs(root and root.ScrollChild and root.ScrollChild.framePool or {}) do
                 if H.Allowed(row) and row.GetBackdropColor then
                     local r, g, b, a = row:GetBackdropColor()
-                    if old and a and math.abs(a - old) < 0.004 and math.abs(a - fill[4]) >= 0.004
+                    local highlight = colors.bottomFrameHighlight
+                    local hovering = highlight and r == highlight[1] and g == highlight[2]
+                        and b == highlight[3] and a == highlight[4]
+                    if forever and a and not hovering and a ~= fill[4]
+                        or old and a and math.abs(a - old) < 0.004 and math.abs(a - fill[4]) >= 0.004
                         and math.abs(r - fill[1]) < 0.004 and math.abs(g - fill[2]) < 0.004
                         and math.abs(b - fill[3]) < 0.004 then
-                        row:SetBackdropColor(r, g, b, fill[4])
+                        if forever then row:SetBackdropColor(fill[1], fill[2], fill[3], fill[4])
+                        else row:SetBackdropColor(r, g, b, fill[4]) end
                     end
                 end
             end

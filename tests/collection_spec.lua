@@ -153,6 +153,12 @@ guidePanel.GetFrameLevel = function() return 4 end
 guidePanel.rxpBackground = region("fill", "BACKGROUND")
 guidePanel.rxpBorder = region("edge", "BORDER")
 window.guideStepsFrame = guidePanel
+local band = frame()
+band.GetFrameLevel = guidePanel.GetFrameLevel
+band.rxpBackground = region("fill", "BACKGROUND")
+band.rxpBorder = region("edge", "BORDER")
+window.guideNameFrame = band
+local bandBorderAlpha = band.rxpBorder:GetAlpha()
 local oldBorderAlpha = guidePanel.rxpBorder:GetAlpha()
 window.settingsButton = button
 window.guideSteps = {items = {}, SetRows = function(self, items) self.items = items end}
@@ -176,7 +182,7 @@ assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
 activeLook = "forever"
 modules.RXPGuides.refresh(); flush()
 assert(rimCalls == 2 and lastRim.on and lastRim.host == button)
-assert(guidePanel.rxpBorder:GetAlpha() == 0)
+assert(guidePanel.rxpBorder:GetAlpha() == 0 and band.rxpBorder:GetAlpha() == 0)
 assert(#row.created == 1 and row.created[1].shown)
 window.guideSteps:SetRows({{frame = v2Row}})
 assert(#v2Row.created == 1 and v2Row.created[1].shown)
@@ -185,7 +191,7 @@ assert(rimCalls == 2 and #row.created == 1 and #v2Row.created == 1)
 local bronze = RXP.v2:GetTheme()
 assert(bronze.borderColors.common[1] == 0.49)
 assert(bronze.backgroundColors.guideName[1] > bronze.backgroundColors.common[1])
-assert(step.borderColor[1] == 0.49 and RXP.colors.background[1] == 0.047)
+assert(step.borderColor[1] == 0.49 and RXP.colors.background[1] == 0.062)
 step:SetBackdropBorderColor(0.1, 0.8, 0.6, 1)
 assert(step.borderColor[2] == 0.8)
 step:SetBackdrop(guide.backdrop.edge)
@@ -194,7 +200,7 @@ activeLook = "eui"
 modules.RXPGuides.refresh(); flush()
 assert(step.borderColor[1] == 0.055 and RXP.colors.background[1] == 0.03)
 assert(not lastRim.on and not row.created[1].shown and not v2Row.created[1].shown)
-assert(guidePanel.rxpBorder:GetAlpha() == oldBorderAlpha)
+assert(guidePanel.rxpBorder:GetAlpha() == oldBorderAlpha and band.rxpBorder:GetAlpha() == bandBorderAlpha)
 activeLook = "forever"
 EllesmereUI.IS_FOREVER = false
 assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)

@@ -478,7 +478,7 @@ end, function(S, module)
     local bronzeR, bronzeG, bronzeB = 0.49, 0.33, 0.18
     local function ForeverPanel(header)
         if header then return 0.115, 0.082, 0.052 end
-        return 0.047, 0.038, 0.029
+        return 0.062, 0.052, 0.043
     end
     local function ForeverRim(host)
         local EUI = _G.EllesmereUI
@@ -519,7 +519,7 @@ end, function(S, module)
             if forever then
                 local hr, hg, hb = ForeverPanel(true)
                 out.backgroundColors.guideName = {hr, hg, hb, pa}
-                out.backgroundColors.scrollbar = {0.16, 0.11, 0.065, pa}
+                out.backgroundColors.scrollbar = {0.083, 0.065, 0.05, pa}
             end
             out.backgroundColors.activeStepCheckboxChecked = {r, g, b, 1}
             out.borderColors = Copy(source.borderColors)
@@ -622,7 +622,7 @@ end, function(S, module)
                 borderLocks[f] = true
                 if ForeverLook() then
                     local entry = themed[f]
-                    f:SetBackdropBorderColor(bronzeR, bronzeG, bronzeB, entry and entry.rim and 0 or 1)
+                    f:SetBackdropBorderColor(bronzeR, bronzeG, bronzeB, entry and (entry.rim or entry.secondary) and 0 or 1)
                 else f:SetBackdropBorderColor(0.055, 0.055, 0.055, 1) end
                 borderLocks[f] = false
             end
@@ -688,8 +688,6 @@ end, function(S, module)
         if H.Allowed(scroll) then
             local visual = slimThumbs[scroll]
             H.LegacySlider(scroll, visual and visual.fill)
-            ButtonRim(scroll.ScrollUpButton, forever)
-            ButtonRim(scroll.ScrollDownButton, forever)
             local thumb = scroll.GetThumbTexture and H.Texture(scroll:GetThumbTexture())
             if thumb then
                 if not visual then
@@ -706,20 +704,23 @@ end, function(S, module)
                 -- Retain the native thumb geometry and drag hit area.
                 H.Fade(thumb)
                 local r, g, b = S.GetAccentColor()
-                if forever then r, g, b = 0.68, 0.44, 0.22 end
-                visual.fill:SetColorTexture(r, g, b, 0.8)
+                if visual.forever ~= forever then
+                    visual.fill:SetWidth(forever and 3 or 4)
+                    visual.forever = forever
+                end
+                if forever then r, g, b = 0.56, 0.41, 0.27 end
+                visual.fill:SetColorTexture(r, g, b, forever and 0.72 or 0.8)
             end
         end
         if f.Footer then
             if H.Allowed(f.Footer.icon) then H.Resize(f.Footer.icon, true) end
             local cog = f.Footer.cog
-            ButtonRim(cog, forever)
             local label = f.Footer.text
             if H.Allowed(label) and label.GetTextColor then
                 if forever then
                     if not footerTint[label] then footerTint[label] = {label:GetTextColor()} end
                     local r, g, b = WarmTitle()
-                    label:SetTextColor(r, g, b, footerTint[label][4])
+                    label:SetTextColor(r * 0.88, g * 0.88, b * 0.88, footerTint[label][4])
                 elseif footerTint[label] then
                     label:SetTextColor(unpack(footerTint[label]))
                     footerTint[label] = nil
@@ -739,7 +740,7 @@ end, function(S, module)
         if CombatLocked() then return end
         local shown = true
         local border = f.rxpBorder
-        if entry.rim and border and border.GetAlpha and border.SetAlpha then
+        if (entry.rim or entry.secondary) and border and border.GetAlpha and border.SetAlpha then
             if entry.forever then
                 if entry.borderAlpha == nil then entry.borderAlpha = border:GetAlpha() end
                 if border:GetAlpha() ~= 0 then border:SetAlpha(0) end
@@ -815,16 +816,20 @@ end, function(S, module)
             if forever and not entry.plate then
                 local plate = entry.layer:CreateTexture(nil, "BACKGROUND", nil, 1)
                 plate:SetAllPoints(entry.layer)
-                plate:SetColorTexture(ForeverPanel(chrome == "header"))
+                local band = chrome == "header" or chrome == "footer"
+                plate:SetColorTexture(ForeverPanel(band))
                 local grain = entry.layer:CreateTexture(nil, "BACKGROUND", nil, 2)
                 grain:SetAllPoints(entry.layer)
                 grain:SetTexture("Interface/Tooltips/UI-Tooltip-Background", "REPEAT", "REPEAT")
                 grain:SetHorizTile(true); grain:SetVertTile(true)
                 grain:SetVertexColor(0.43, 0.34, 0.24, 1)
-                if chrome ~= "badge" then entry.rim = ForeverRim(entry.layer) end
-                if chrome == "header" and plate.SetGradient and CreateColor then
-                    plate:SetGradient("VERTICAL", CreateColor(0.13, 0.086, 0.045, 1),
-                        CreateColor(0.038, 0.029, 0.023, 1))
+                entry.secondary = band or chrome == "badge"
+                if not entry.secondary then entry.rim = ForeverRim(entry.layer) end
+                if plate.SetGradient and CreateColor then
+                    local r, g, b = ForeverPanel(band)
+                    local shade = band and 0.52 or 0.72
+                    plate:SetGradient("VERTICAL", CreateColor(r, g, b, 1),
+                        CreateColor(r * shade, g * shade, b * shade, 1))
                 end
                 entry.plate, entry.grain = plate, grain
                 if chrome == "header" then
@@ -832,17 +837,17 @@ end, function(S, module)
                     divider:SetPoint("BOTTOMLEFT", entry.layer, "BOTTOMLEFT", 1, 0)
                     divider:SetPoint("BOTTOMRIGHT", entry.layer, "BOTTOMRIGHT", -1, 0)
                     divider:SetHeight(1)
-                    divider:SetColorTexture(bronzeR, bronzeG, bronzeB, 0.7)
+                    divider:SetColorTexture(bronzeR, bronzeG, bronzeB, 0.38)
                     entry.divider = divider
                 end
             end
             if entry.plate and entry.forever ~= forever then
                 entry.plate:SetAlpha(forever and 1 or 0)
-                entry.grain:SetAlpha(forever and 0.12 or 0)
+                entry.grain:SetAlpha(forever and 0.18 or 0)
                 if entry.rim then _G.EllesmereUI.ForeverBorderShown(entry.rim, forever) end
                 if entry.divider then entry.divider:SetAlpha(forever and 1 or 0) end
                 entry.forever = forever
-                if entry.rim and f.GetBackdrop and f:GetBackdrop() then TintBackdrop(f) end
+                if (entry.rim or entry.secondary) and f.GetBackdrop and f:GetBackdrop() then TintBackdrop(f) end
             end
         end
         SyncShell(f, entry)
@@ -1034,7 +1039,7 @@ end, function(S, module)
             for _, key in ipairs({"BottomFrame", "GuideName", "Footer"}) do TintBackdrop(legacy[key]) end
             ThemeShell(legacy.BottomFrame, "body")
             ThemeShell(legacy.GuideName, "header")
-            ThemeShell(legacy.Footer, "header")
+            ThemeShell(legacy.Footer, "footer")
             ns.AttachAccent(S, legacy.GuideName)
             for _, step in pairs(legacy.CurrentStepFrame and legacy.CurrentStepFrame.framePool or {}) do
                 TintBackdrop(step)
@@ -1052,10 +1057,10 @@ end, function(S, module)
         if window then
             guideWindowSeen = window
             Scan(window.frame)
-            ThemeShell(window.upperFrame, "header")
+            ThemeShell(window.upperFrame, "body")
             ThemeShell(window.guideNameFrame, "header")
             ThemeShell(window.guideStepsFrame, "body")
-            ThemeShell(window.footer, "header")
+            ThemeShell(window.footer, "footer")
             ButtonRim(window.settingsButton, forever)
             ButtonRim(window.guideSelectButton, forever)
             ButtonRim(window.closebutton, forever)
@@ -1063,11 +1068,6 @@ end, function(S, module)
             if steps then
                 H.Hook(steps, "SetRows", V2Dividers)
                 V2Dividers(steps)
-            end
-            local scrollbar = steps and steps.scroll and steps.scroll.scrollbar
-            if scrollbar then
-                ButtonRim(scrollbar.ScrollUpButton, forever)
-                ButtonRim(scrollbar.ScrollDownButton, forever)
             end
             ns.AttachAccent(S, window.upperFrame or window.frame)
             H.Fade(window.banner)

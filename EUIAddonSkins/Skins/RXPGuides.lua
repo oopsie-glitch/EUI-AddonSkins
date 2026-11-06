@@ -480,19 +480,30 @@ end, function(S, module)
         if header then return 0.115, 0.082, 0.052 end
         return 0.062, 0.052, 0.043
     end
-    local function ForeverRim(host)
+    -- EUI can re-strip the direct regions of its registered panels/buttons.
+    -- Keep Forever art on an unregistered child at the same drawing level.
+    local function ForeverArtHost(parent)
+        local host = CreateFrame("Frame", nil, parent)
+        host:SetAllPoints(parent)
+        host:SetFrameLevel(parent:GetFrameLevel())
+        host:EnableMouse(false)
+        return host
+    end
+    local function ForeverRim(host, parent)
         local EUI = _G.EllesmereUI
         if not (EUI.ForeverBorder and EUI.ForeverBorderSeat and EUI.ForeverBorderShown) then return end
         local ring = EUI.ForeverBorder(host, "ARTWORK", 1)
-        if ring then EUI.ForeverBorderSeat(ring, host, "TOPLEFT", 0, 0, 0, 0) end
+        if ring then EUI.ForeverBorderSeat(ring, parent or host, "TOPLEFT", 0, 0, 0, 0) end
         return ring
     end
     local rims = setmetatable({}, {__mode = "k"})
     local function ButtonRim(button, forever)
         if not H.Allowed(button) then return end
         local ring = rims[button]
-        if not ring and forever then
-            ring = ForeverRim(button)
+        if not ring and forever and button.GetFrameLevel then
+            local EUI = _G.EllesmereUI
+            if not (EUI.ForeverBorder and EUI.ForeverBorderSeat and EUI.ForeverBorderShown) then return end
+            ring = ForeverRim(ForeverArtHost(button), button)
             rims[button] = ring
         end
         if ring and ring.on ~= forever then _G.EllesmereUI.ForeverBorderShown(ring, forever) end
@@ -814,17 +825,18 @@ end, function(S, module)
         if chrome then
             local forever = ForeverLook()
             if forever and not entry.plate then
-                local plate = entry.layer:CreateTexture(nil, "BACKGROUND", nil, 1)
+                local art = ForeverArtHost(entry.layer)
+                local plate = art:CreateTexture(nil, "BACKGROUND", nil, 1)
                 plate:SetAllPoints(entry.layer)
                 local band = chrome == "header" or chrome == "footer"
                 plate:SetColorTexture(ForeverPanel(band))
-                local grain = entry.layer:CreateTexture(nil, "BACKGROUND", nil, 2)
+                local grain = art:CreateTexture(nil, "BACKGROUND", nil, 2)
                 grain:SetAllPoints(entry.layer)
                 grain:SetTexture("Interface/Tooltips/UI-Tooltip-Background", "REPEAT", "REPEAT")
                 grain:SetHorizTile(true); grain:SetVertTile(true)
                 grain:SetVertexColor(0.43, 0.34, 0.24, 1)
                 entry.secondary = band or chrome == "badge"
-                if not entry.secondary then entry.rim = ForeverRim(entry.layer) end
+                if not entry.secondary then entry.rim = ForeverRim(art) end
                 if plate.SetGradient and CreateColor then
                     local r, g, b = ForeverPanel(band)
                     local shade = band and 0.52 or 0.72
@@ -833,7 +845,7 @@ end, function(S, module)
                 end
                 entry.plate, entry.grain = plate, grain
                 if chrome == "header" then
-                    local divider = entry.layer:CreateTexture(nil, "BACKGROUND", nil, 3)
+                    local divider = art:CreateTexture(nil, "BACKGROUND", nil, 3)
                     divider:SetPoint("BOTTOMLEFT", entry.layer, "BOTTOMLEFT", 1, 0)
                     divider:SetPoint("BOTTOMRIGHT", entry.layer, "BOTTOMRIGHT", -1, 0)
                     divider:SetHeight(1)

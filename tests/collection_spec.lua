@@ -56,10 +56,13 @@ local function frame(kind)
     function f:GetBackdropBorderColor() return table.unpack(self.borderColor or {1, 1, 1, 1}) end
     return f
 end
+local parents = {}
 local combat, combatEvents = false
 InCombatLockdown = function() return combat end
-CreateFrame = function()
+CreateFrame = function(_, _, parent)
     local f = frame()
+    parents[f] = parent
+    function f:GetFrameLevel() return self.level or 4 end
     function f:RegisterEvent(event) self.event = event; combatEvents = self end
     function f:SetScript(event, fn) self.hooks[event] = fn end
     return f
@@ -70,7 +73,8 @@ local S = {GetAccentColor = function() return 0.1, 0.8, 0.6 end,
     OnLooksChanged = function(fn) looks[#looks + 1] = fn end}
 local shells, edits = 0, 0
 function S.Shell(f, options) f.shellOptions = options; shells = shells + 1; for _, r in ipairs(f.regions) do r:SetAlpha(0) end end
-function S.Panel(f) for _, r in ipairs(f.regions) do r:SetAlpha(0) end end
+local registeredPanels = {}
+function S.Panel(f) registeredPanels[f] = true; for _, r in ipairs(f.regions) do r:SetAlpha(0) end end
 function S.EditBox(f) edits = edits + 1; assert(not f.protected) end
 for _, key in ipairs({'Font', 'Button', 'StateButtonLabel', 'Checkbox', 'Dropdown', 'ScrollBar', 'CloseButton', 'FadeNineSlice', 'PageButton'}) do S[key] = function(f) if key == 'CloseButton' then f.euiClose = true end end end
 for _, file in ipairs({'EUIAddonSkins/Accent.lua', 'EUIAddonSkins/Widgets.lua', 'EUIAddonSkins/Skins/ForeverDungeonJournal.lua', 'EUIAddonSkins/Skins/RXPGuides.lua'}) do
@@ -148,6 +152,7 @@ local row = frame()
 function row:IsShown() return true end
 guide.ScrollChild = {framePool = {row}}
 local button = frame("Button")
+function button:GetFrameLevel() return 4 end
 local guidePanel = frame()
 guidePanel.GetFrameLevel = function() return 4 end
 guidePanel.rxpBackground = region("fill", "BACKGROUND")
@@ -168,10 +173,10 @@ EllesmereUI = {
     IS_FOREVER = true,
     ForeverBorder = function(host)
         rimCalls = rimCalls + 1
-        lastRim = {on = true, host = host}
+        lastRim = {on = true, host = host, texture = host:CreateTexture()}
         return lastRim
     end,
-    ForeverBorderSeat = function(ring, host) assert(ring.host == host) end,
+    ForeverBorderSeat = function(ring, host) assert(ring.host == host or parents[ring.host] == host) end,
     ForeverBorderShown = function(ring, shown) ring.on = shown end,
     GetActiveProfileData = function() return {windowSkinLook = activeLook} end,
     ProfileWindowSkinLook = function(profile)
@@ -181,8 +186,21 @@ EllesmereUI = {
 assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
 activeLook = "forever"
 modules.RXPGuides.refresh(); flush()
-assert(rimCalls == 2 and lastRim.on and lastRim.host == button)
+assert(rimCalls == 2 and lastRim.on and parents[lastRim.host] == button)
 assert(guidePanel.rxpBorder:GetAlpha() == 0 and band.rxpBorder:GetAlpha() == 0)
+-- Simulate EUI's Restrip: it only fades direct textures of registered frames.
+local guideArt
+for host, parent in pairs(parents) do
+    if registeredPanels[parent] and parents[parent] == guidePanel then guideArt = host end
+end
+assert(guideArt and guideArt.mouseEnabled == false)
+registeredPanels[button] = true
+for host in pairs(registeredPanels) do
+    for _, texture in ipairs(host.created or {}) do texture:SetAlpha(0) end
+end
+assert(guideArt.created[1].alpha == 1 and guideArt.created[2].alpha > 0)
+assert(lastRim.texture.alpha ~= 0)
+
 assert(#row.created == 1 and row.created[1].shown)
 window.guideSteps:SetRows({{frame = v2Row}})
 assert(#v2Row.created == 1 and v2Row.created[1].shown)

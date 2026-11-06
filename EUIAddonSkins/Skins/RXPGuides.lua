@@ -513,7 +513,27 @@ end, function(S, module)
         grain:SetHorizTile(true); grain:SetVertTile(true)
         grain:SetVertexColor(0.56, 0.44, 0.32, 1)
         grain:SetAlpha(band and 0.28 or 0.32)
-        return grain
+        return grain, plate
+    end
+
+    local function ForeverOpacity()
+        -- Use the public house-panel alpha; normalize against EUI's 92% default.
+        return (select(4, S.GetPanelColor()) or 0.92) / 0.92
+    end
+    local function OverlayAlpha(target, base)
+        return base < 1 and math.max(0, target - base) / (1 - base) or 0
+    end
+    local function TextureAlpha(texture, alpha)
+        local current = texture:GetAlpha()
+        if alpha == 0 and current ~= 0 or math.abs(current - alpha) > 0.002 then
+            texture:SetAlpha(alpha)
+        end
+    end
+    local function SurfaceAlpha(plate, grain, target, parentAlpha, grainWeight)
+        -- Budget the grain and plate together using source-over alpha.
+        local grainAlpha = target * grainWeight
+        TextureAlpha(grain, parentAlpha > 0 and grainAlpha / parentAlpha or 0)
+        TextureAlpha(plate, parentAlpha > 0 and OverlayAlpha(target, grainAlpha) / parentAlpha or 0)
     end
 
     local function CombatLocked()
@@ -527,12 +547,20 @@ end, function(S, module)
             local EUI = _G.EllesmereUI
             if not (EUI.IS_FOREVER and EUI.ForeverBorder and EUI.ForeverBorderSeat and EUI.ForeverBorderShown) then return end
             art = ForeverArtHost(root)
+            art.grain, art.plate = ForeverSurface(art, false)
+            if currentStep then
+                local fill = art:CreateTexture(nil, "BACKGROUND", nil, 3)
+                fill:SetAllPoints(currentStep)
+                fill:SetColorTexture(0.165, 0.115, 0.075)
+                art.stepFill = fill
+            end
             local function AnchorTop()
                 if not ForeverLook() then return end
                 if CombatLocked() then refresh(); return end
                 local top = currentStep and currentStep:IsShown() and currentStep:GetHeight() > 0 and currentStep or header
                 if art.top == top then return end
                 art.top = top
+                if art.stepFill then art.stepFill:SetShown(top == currentStep) end
                 art:ClearAllPoints()
                 art:SetPoint("TOPLEFT", top, "TOPLEFT", -2, top == currentStep and 6 or 2)
                 art:SetPoint("BOTTOMRIGHT", footer, "BOTTOMRIGHT", 2, -2)
@@ -541,7 +569,6 @@ end, function(S, module)
             H.Script(currentStep, "OnShow", AnchorTop)
             H.Script(currentStep, "OnHide", AnchorTop)
             art.anchorTop = AnchorTop
-            ForeverSurface(art, false)
             ForeverRim(art)
             compositions[root] = art
         end
@@ -605,7 +632,7 @@ end, function(S, module)
             out.background = {pr, pg, pb, pa}
             -- V1 uses this fill for idle and mouse-leave. Keep the row's
             -- own alpha and hover palette while exposing the shared surface.
-            out.bottomFrameBG = {pr, pg, pb, forever and (pa or 1) * 0.28 or pa}
+            out.bottomFrameBG = {pr, pg, pb, forever and OverlayAlpha(0.80 * ForeverOpacity(), 0.76 * ForeverOpacity()) or pa}
             out.bottomFrameHighlight = {r, g, b, 1}
             out.textColor = {0.9, 0.9, 0.92}
         end
@@ -839,13 +866,29 @@ end, function(S, module)
             else opacity = select(4, S.GetPanelColor()) or 1 end
         end
         local composition = entry.composition
-        if composition and composition:GetAlpha() ~= opacity then composition:SetAlpha(opacity) end
-        local alpha = shown and not (entry.forever and entry.joinedBody) and opacity or 0
+        if composition then
+            if composition:GetAlpha() ~= opacity then composition:SetAlpha(opacity) end
+            local scale = ForeverOpacity()
+            local base = math.min(opacity, 0.76 * scale)
+            SurfaceAlpha(composition.plate, composition.grain, base, opacity, 0.32)
+            if composition.stepFill then
+                local extra = OverlayAlpha(0.85 * scale, base)
+                TextureAlpha(composition.stepFill, opacity > 0 and math.min(1, extra / opacity) or 0)
+            end
+        end
+        if entry.forever and entry.plate then
+            local scale = ForeverOpacity()
+            local base = entry.underlay and math.min(entry.underlay:GetAlpha(), 0.76 * scale) or 0
+            local targetAlpha = math.min(1, (entry.band and 0.90 or 0.85) * scale)
+            SurfaceAlpha(entry.plate, entry.grain, OverlayAlpha(targetAlpha, base), 1, entry.band and 0.28 or 0.32)
+            if entry.art:IsShown() ~= shown then entry.art:SetShown(shown) end
+        end
+        local alpha = shown and not (entry.forever and (entry.joinedBody or entry.plate)) and opacity or 0
         if not entry.layer.GetAlpha or entry.layer:GetAlpha() ~= alpha then entry.layer:SetAlpha(alpha) end
         local items = addon.activeItemFrame
         if f == target and items and items ~= f and themed[items] then SyncShell(items, themed[items]) end
     end
-    local function ThemeShell(f, chrome, composition)
+    local function ThemeShell(f, chrome, composition, underlay)
         if not f or not f.GetFrameLevel or (not chrome and not f.GetBackdrop and not f.rxpBackground) or CombatLocked()
             or (f.IsForbidden and f:IsForbidden()) then return end
         local entry = themed[f]
@@ -884,11 +927,14 @@ end, function(S, module)
             local roleChanged = entry.joinedBody ~= joinedBody
             entry.joinedBody = joinedBody
             entry.composition = composition
+            entry.underlay = underlay
             if forever and not entry.art and not joinedBody then
-                local art = ForeverArtHost(entry.layer)
-                entry.art = art
                 local band = chrome == "header" or chrome == "footer"
-                local grain = ForeverSurface(art, band)
+                local independent = band or chrome == "step"
+                local art = ForeverArtHost(independent and f or entry.layer)
+                entry.art = art
+                local grain, plate = ForeverSurface(art, band)
+                if independent then entry.grain, entry.plate, entry.band = grain, plate, band end
                 entry.secondary = band or chrome == "badge"
                 if not entry.secondary then entry.rim = ForeverRim(art) end
                 if chrome == "badge" then grain:SetAlpha(0.12) end
@@ -1074,10 +1120,36 @@ end, function(S, module)
         end
         if divider then divider:SetShown(forever) end
     end
+    local nativeFillAlpha = setmetatable({}, {__mode = "k"})
+    local function NativeFillAlpha(fill, alpha)
+        if not H.Allowed(fill) or not fill.GetAlpha or not fill.SetAlpha then return end
+        if alpha then
+            if nativeFillAlpha[fill] == nil then nativeFillAlpha[fill] = fill:GetAlpha() end
+            TextureAlpha(fill, nativeFillAlpha[fill] * alpha)
+        elseif nativeFillAlpha[fill] ~= nil then
+            TextureAlpha(fill, nativeFillAlpha[fill])
+            nativeFillAlpha[fill] = nil
+        end
+    end
     local function V2Dividers(steps)
         if CombatLocked() then applyWaiting = true; return end
         local forever = ForeverLook()
-        for _, item in pairs(steps.items or {}) do StepDivider(item.frame, forever) end
+        local window = addon.v2 and addon.v2.state and addon.v2.state.guideWindow or _G.RXPV2GuideWindow
+        local shell = forever and window and compositions[window.frame]
+        local scale = shell and ForeverOpacity()
+        local extra = scale and OverlayAlpha(0.80 * scale, math.min(shell:GetAlpha(), 0.76 * scale))
+        for _, item in pairs(steps.items or {}) do
+            local row = item.frame
+            StepDivider(row, forever)
+            local fill = row and row.rxpBackground
+            local texture = fill and fill.textures and fill.textures[1]
+            if texture and texture.GetVertexColor and extra then
+                local _, _, _, alpha = texture:GetVertexColor()
+                NativeFillAlpha(fill, alpha and alpha > 0 and math.min(1, extra / alpha) or nil)
+            else
+                NativeFillAlpha(fill, nil)
+            end
+        end
     end
     local function Apply()
         if CombatLocked() then applyWaiting = true; return end
@@ -1097,8 +1169,8 @@ end, function(S, module)
             local shell = ComposeGuide(legacy, legacy.GuideName, legacy.Footer, legacy.CurrentStepFrame, forever)
             ThemeShell(legacy.BottomFrame, shell and "joined" or "body", shell)
             ButtonRim(legacy.Footer and legacy.Footer.cog, shell ~= nil)
-            ThemeShell(legacy.GuideName, "header")
-            ThemeShell(legacy.Footer, "footer")
+            ThemeShell(legacy.GuideName, "header", nil, shell)
+            ThemeShell(legacy.Footer, "footer", nil, shell)
             ns.AttachAccent(S, legacy.GuideName)
             for _, step in pairs(legacy.CurrentStepFrame and legacy.CurrentStepFrame.framePool or {}) do
                 TintBackdrop(step)
@@ -1120,9 +1192,10 @@ end, function(S, module)
             Scan(window.frame)
             local shell = ComposeGuide(window.frame, window.upperFrame or window.guideNameFrame, window.footer, nil, forever)
             ThemeShell(window.upperFrame, shell and "joined" or "body")
-            ThemeShell(window.guideNameFrame, "header")
+            ThemeShell(window.guideNameFrame, "header", nil, shell)
             ThemeShell(window.guideStepsFrame, shell and "joined" or "body", shell)
-            ThemeShell(window.footer, "footer")
+            ThemeShell(window.footer, "footer", nil, shell)
+            NativeFillAlpha(window.footerBackground, forever and 0 or nil)
             ButtonRim(window.settingsButton, forever)
             ButtonRim(window.guideSelectButton, forever)
             ButtonRim(window.closebutton, forever)
@@ -1149,7 +1222,7 @@ end, function(S, module)
         for _, player in pairs(state and state.player or {}) do
             local active = player.activeStepFrame
             for _, child in pairs(active and active.children or {}) do
-                ThemeShell(child.card or child.frame, "body")
+                ThemeShell(child.card or child.frame, "step")
                 ThemeShell(child.title, "badge")
             end
         end

@@ -34,6 +34,7 @@ local function frame(kind)
             SetColorTexture = function(self, ...) self.color = {...} end,
             SetAllPoints = function(self, target) self.allPoints = target end,
             SetAlpha = function(self, a) self.alpha = a end,
+            GetAlpha = function(self) return self.alpha or 1 end,
             SetTexture = function(self, path) self.path = path end, SetVertexColor = function() end,
             SetHorizTile = function() end, SetVertTile = function() end,
             SetShown = function(self, shown) self.shown = shown end}
@@ -169,6 +170,7 @@ local button = frame("Button")
 local guidePanel = frame()
 guidePanel.GetFrameLevel = function() return 4 end
 guidePanel.rxpBackground = region("fill", "BACKGROUND")
+guidePanel.rxpBackground.textures = {{GetVertexColor = function() return 1, 1, 1, 0.95 end}}
 guidePanel.rxpBorder = region("edge", "BORDER")
 window.guideStepsFrame = guidePanel
 local band = frame()
@@ -177,11 +179,14 @@ band.rxpBackground = region("fill", "BACKGROUND")
 band.rxpBorder = region("edge", "BORDER")
 window.guideNameFrame = band
 window.footer = frame()
+window.footerBackground = region("footer", "BACKGROUND")
 local bandBorderAlpha = band.rxpBorder:GetAlpha()
 local oldBorderAlpha = guidePanel.rxpBorder:GetAlpha()
 window.settingsButton = button
 window.guideSteps = {items = {}, SetRows = function(self, items) self.items = items end}
 local v2Row = frame()
+v2Row.rxpBackground = frame()
+v2Row.rxpBackground.textures = {{GetVertexColor = function() return 1, 1, 1, 0.95 end}}
 function v2Row:IsShown() return true end
 EllesmereUI = {
     IS_FOREVER = true,
@@ -219,27 +224,44 @@ for host in pairs(registeredPanels) do
     for _, texture in ipairs(host.created or {}) do texture:SetAlpha(0) end
 end
 for _, art in ipairs({legacyArt, guideArt}) do
-    assert(art.created[1].color[1] == 0.165 and art.created[2].alpha == 0.32)
+    local alpha = art:GetAlpha()
+    local plate, grain = art.created[1].alpha * alpha, art.created[2].alpha * alpha
+    assert(art.created[1].color[1] == 0.165)
+    assert(math.abs(1 - (1 - plate) * (1 - grain) - 0.76 * 0.95 / 0.92) < 0.0001)
     assert(art.created[1].layer == "BACKGROUND" and art.created[1].sublevel == 1)
     assert(art.created[2].layer == "BACKGROUND" and art.created[2].sublevel == 2)
 end
 local bandArt
 for host, parent in pairs(parents) do
-    if registeredPanels[parent] and parents[parent] == band then bandArt = host end
+    if parent == band and host.created and #host.created == 3 then bandArt = host end
 end
-assert(bandArt and bandArt.mouseEnabled == false and bandArt.created[1].color[1] == 0.185 and bandArt.created[2].alpha == 0.28)
+assert(bandArt and bandArt.mouseEnabled == false and bandArt.created[1].color[1] == 0.185 and bandArt.created[2].alpha > 0)
 assert(lastRim.texture.alpha ~= 0 and rings[window.frame].texture.alpha ~= 0)
+local base = 0.76 * 0.95 / 0.92
+local bandAlpha = 1 - (1 - base) * (1 - bandArt.created[1].alpha) * (1 - bandArt.created[2].alpha)
+assert(math.abs(bandAlpha - 0.90 * 0.95 / 0.92) < 0.0001)
+local stepFill = legacyArt.created[3]
+assert(stepFill.shown and stepFill.allPoints == guide.CurrentStepFrame)
+local stepAlpha = 1 - (1 - base) * (1 - stepFill.alpha * legacyArt:GetAlpha())
+assert(math.abs(stepAlpha - 0.85 * 0.95 / 0.92) < 0.0001)
+guide.CurrentStepFrame:SetShown(false)
+assert(not stepFill.shown)
+guide.CurrentStepFrame:SetShown(true)
+assert(stepFill.shown)
 
 assert(#row.created == 1 and row.created[1].shown)
 window.guideSteps:SetRows({{frame = v2Row}})
 assert(#v2Row.created == 1 and v2Row.created[1].shown)
+local v2Fill = 0.95 * v2Row.rxpBackground:GetAlpha()
+assert(math.abs(1 - (1 - base) * (1 - v2Fill) - 0.80 * 0.95 / 0.92) < 0.0001)
+assert(v2Row:GetAlpha() == 1 and window.footerBackground:GetAlpha() == 0)
 modules.RXPGuides.refresh(); flush()
 assert(rimCalls == 3 and #row.created == 1 and #v2Row.created == 1)
 local bronze = RXP.v2:GetTheme()
 assert(bronze.borderColors.common[1] == 0.49)
 assert(bronze.backgroundColors.guideName[1] > bronze.backgroundColors.common[1])
 assert(step.borderColor[1] == 0.49 and RXP.colors.background[1] == 0.062)
-assert(math.abs(RXP.colors.bottomFrameBG[4] - 0.266) < 0.0001)
+assert(math.abs(1 - (1 - base) * (1 - RXP.colors.bottomFrameBG[4]) - 0.80 * 0.95 / 0.92) < 0.0001)
 assert(RXP.colors.bottomFrameHighlight[2] == 0.8 and RXP.colors.bottomFrameHighlight[4] == 1)
 assert(bronze.backgroundColors.common[4] == 0.95) -- V2 native row fill is unchanged.
 step:SetBackdropBorderColor(0.1, 0.8, 0.6, 1)
@@ -251,6 +273,7 @@ modules.RXPGuides.refresh(); flush()
 assert(step.borderColor[1] == 0.055 and RXP.colors.background[1] == 0.03)
 assert(not lastRim.on and not row.created[1].shown and not v2Row.created[1].shown)
 assert(not legacyArt:IsShown() and not guideArt:IsShown())
+assert(v2Row.rxpBackground:GetAlpha() == 1 and window.footerBackground:GetAlpha() == 0.8)
 assert(RXP.colors.bottomFrameBG[4] == 0.95 and RXP.colors.bottomFrameHighlight[4] == 1)
 assert(step.borderColor[4] == 1 and guide.BottomFrame.borderColor[4] == 1)
 assert(guidePanel.rxpBorder:GetAlpha() == oldBorderAlpha and band.rxpBorder:GetAlpha() == bandBorderAlpha)

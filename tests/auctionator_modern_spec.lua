@@ -159,6 +159,7 @@ end
 function S.SetTabSelection(f, v) f.selected = v end
 function S.EditBox(f, opts)
     if f.input then return end -- Public primitive is idempotent.
+    f.padInput = opts and opts.padInput
     f.input = (f.input or 0) + 1; f.soft = f.soft or (opts and opts.noBorder)
     -- Like the engine: strip template art, including unnamed coin textures.
     for _, region in ipairs(f.regions) do if region.kind == 'Texture' then region:SetAlpha(0) end end
@@ -602,6 +603,24 @@ local function Checkbox(parent)
  f.scripts.OnClick=function(self)self.checked=not self.checked;return 'native-click'end
  return f
 end
+-- Model a decorative border with independent click and motion flags.
+local checkboxSkin = S.Checkbox
+function S.Checkbox(f)
+    checkboxSkin(f)
+    local border = frame('Frame', f)
+    border.mouse = true
+    border.click = true
+    border.motion = true
+    function border:SetMouseClickEnabled(value) self.click = value end
+    function border:SetMouseMotionEnabled(value) self.motion = value end
+end
+local radioRow = frame('Frame', page)
+radioRow.isAuctionatorRadio = true
+local radio = Checkbox(radioRow)
+radioRow.RadioButton = radio
+radioRow.scripts.OnMouseUp = function() return radio.scripts.OnClick(radio) end
+local input = frame('EditBox', page)
+local anchorsBefore = input.points
 local option=Checkbox(page);local labelPoints=option.label.points
 local foreign=Checkbox(frame('Frame'))
 local secret=Checkbox(page);secret.protected=true
@@ -612,6 +631,23 @@ flush()
 assert(#option.children==1 and #foreign.children==0 and #secret.children==0)
 local visual=option.children[1]
 assert(visual.w==22 and visual.h==22 and visual.mouse==false and option.w==32 and option.h==32)
+assert(input.input and not input.padInput and input.points == anchorsBefore)
+assert(#radio.children == 1, 'settings radio has two skin owners')
+local function MouseTarget(f, insideSquare, motion)
+    for index = #f.children, 1, -1 do
+        if insideSquare then
+            local child = MouseTarget(f.children[index], true, motion)
+            if child then return child end
+        end
+    end
+    if f.mouse or (motion and f.motion) or (not motion and f.click) then return f end
+end
+option.mouse, radio.mouse, radioRow.mouse = true, true, true
+assert(MouseTarget(option, true) == option and MouseTarget(option, true, true) == option)
+assert(MouseTarget(radioRow, true) == radio and MouseTarget(radioRow, true, true) == radio)
+local labelTarget = MouseTarget(radioRow, false)
+assert(labelTarget == radioRow and labelTarget.scripts.OnMouseUp() == 'native-click' and not radio.checked)
+S.Checkbox = checkboxSkin
 assert(option.normal.alpha==0 and option.tick.alpha==0 and option.label.points==labelPoints)
 local mark
 for _,art in ipairs(visual.regions)do if art.w==8 and art.h==8 then mark=art end end

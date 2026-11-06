@@ -149,20 +149,30 @@ end, function(S, module)
     -- Settings use large native CheckButtons. Keep their hit/label geometry,
     -- but draw the compact square on a mouse-disabled child instead.
     local configChecks, checkArt = {}, {}
+    local function IsConfig(f)
+        for _ = 1, 16 do
+            if not H.Allowed(f) then return false end
+            local name = f.GetName and f:GetName()
+            if type(name) == "string" and name:match("^AuctionatorConfig.*Frame$") then return true end
+            f = f.GetParent and f:GetParent()
+        end
+        return false
+    end
+    local function PassThrough(f)
+        f:EnableMouse(false)
+        if f.SetMouseClickEnabled then f:SetMouseClickEnabled(false) end
+        if f.SetMouseMotionEnabled then f:SetMouseMotionEnabled(false) end
+        -- The checkbox API can create nested border frames. Only walk the
+        -- freshly created artwork subtree, never the native control's children.
+        for _, child in ipairs(H.Children(f)) do PassThrough(child) end
+    end
     local function ConfigCheckbox(f)
         if not configChecks[f] then
-            local parent = f
-            local owned = false
-            for _ = 1, 16 do
-                if not H.Allowed(parent) then break end
-                local name = parent.GetName and parent:GetName()
-                if type(name) == "string" and name:match("^AuctionatorConfig.*Frame$") then owned = true; break end
-                parent = parent.GetParent and parent:GetParent()
-            end
-            if not owned then return false end
+            if not IsConfig(f) then return false end
             local host = CreateFrame("Frame", nil, f)
-            host:SetSize(22, 22); host:SetPoint("CENTER", f, "CENTER"); host:EnableMouse(false)
+            host:SetSize(22, 22); host:SetPoint("CENTER", f, "CENTER")
             raw.Checkbox(host, {borderInset = 4, hover = 0.05})
+            PassThrough(host)
             local mark = host:CreateTexture(nil, "OVERLAY", nil, 2)
             mark:SetSize(8, 8); mark:SetPoint("CENTER", host, "CENTER")
             local hover = host:CreateTexture(nil, "OVERLAY", nil, 1)
@@ -748,10 +758,16 @@ end, function(S, module)
         if checkArt[f] then return true end
         local modern = Modern()
         if kind == "CheckButton" and ConfigCheckbox(f) then return true end
+        if kind == "EditBox" and IsConfig(f) then
+            -- The shared scan uses popup padding, which moves the input hit
+            -- rectangle away from the position set by the native canvas.
+            S.EditBox(f)
+            return true
+        end
         if kind == "Slider" then Scroll(f); return true end
         if headers[f] then return true end
         if modern and f.cells then Row(f); return true end
-        if f.isAuctionatorRadio and H.Allowed(f.RadioButton) then Radio(f.RadioButton) end
+        if f.isAuctionatorRadio and H.Allowed(f.RadioButton) and not IsConfig(f) then Radio(f.RadioButton) end
         local dropdown = H.Allowed(f.DropDown) and f.DropDown:GetObjectType()
         if dropdown == "Button" or dropdown == "DropdownButton" then Dropdown(f.DropDown) end
         if H.Allowed(f.ResetButton) and f.ResetButton:GetObjectType() == "Button" then Reset(f.ResetButton) end

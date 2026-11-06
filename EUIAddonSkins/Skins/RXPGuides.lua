@@ -211,7 +211,22 @@ local function OptionsSkin(S, H, module, addon, foreverLook)
         end
         if not grip.fill then grip.fill = grip:CreateTexture(nil, 'OVERLAY'); grip.fill:SetAllPoints(grip) end
         local r, g, b = S.GetAccentColor()
-        if d.opacityDialog and foreverLook() then r, g, b = 0.77, 0.58, 0.35 end
+        local forever = d.opacityDialog and foreverLook()
+        if forever then
+            r, g, b = 0.77, 0.58, 0.35
+            if not track.rxpBronze then
+                -- WindowEngine owns the matte track. Keep the tint on an
+                -- unregistered, mouse-inert child so refresh cannot strip it.
+                local art = CreateFrame('Frame', nil, track)
+                art:SetAllPoints(track); art:EnableMouse(false)
+                if art.SetMouseMotionEnabled then art:SetMouseMotionEnabled(false) end
+                local line = art:CreateTexture(nil, 'ARTWORK')
+                line:SetAllPoints(art)
+                line:SetColorTexture(0.49, 0.33, 0.18, 0.85)
+                track.rxpBronze = art
+            end
+        end
+        if track.rxpBronze then track.rxpBronze:SetShown(not not forever) end
         grip.fill:SetColorTexture(r, g, b, 0.85); grip:SetAlpha(1)
         local name = slider.GetName and slider:GetName()
         local up = slider.ScrollUpButton or (name and _G[name .. 'ScrollUpButton'])
@@ -684,7 +699,13 @@ end, function(S, module)
         grain:SetHorizTile(true); grain:SetVertTile(true)
         grain:SetVertexColor(0.56, 0.44, 0.32, 1)
         surfacePaint[grain] = {r = 0.56, g = 0.44, b = 0.32}
-        if not paint.low then paint.r, paint.g, paint.b = nil, nil, nil end
+        if meterArt then
+            -- Tame the atlas's bright lower ramp while retaining its bronze
+            -- divider. Tint RGB only so coverage still follows the slider.
+            paint.r, paint.g, paint.b = 0.62, 0.64, 0.68
+        elseif not paint.low then
+            paint.r, paint.g, paint.b = nil, nil, nil
+        end
         return grain, plate, meterArt
     end
 
@@ -1250,7 +1271,7 @@ end, function(S, module)
             local scale = ForeverOpacity()
             local base = SharedAlpha(opacity, scale)
             local override = BackgroundOverride()
-            local split = composition.masked ~= nil and override ~= nil and override > 0 and override < 1
+            local split = composition.masked ~= nil and override ~= nil and override > 0
             SeatGuideFill(composition, split)
             SurfaceAlpha(composition.plate, composition.grain, base, 0.32)
             if composition.upperPlate then
@@ -1266,11 +1287,11 @@ end, function(S, module)
             local override = BackgroundOverride()
             local auxiliary = entry.titleBody and themed[entry.titleBody]
             local auxMask = auxiliary and auxiliary.mask
-            local splitAux = auxMask and override and override > 0 and override < 1
+            local splitAux = auxMask and override and override > 0
             local base = entry.auxTitle and SectionAlpha(0.75, scale)
                 or entry.underlay and SharedAlpha(select(4, S.GetPanelColor()) or 1, scale) or 0
             local targetAlpha = SectionAlpha(entry.band and 0.80 or 0.75, scale)
-            local split = entry.underlay and entry.underlay.masked and override and override > 0 and override < 1
+            local split = entry.underlay and entry.underlay.masked and override and override > 0
             local titleMask = splitAux and auxMask or nil
             if entry.titleMask ~= titleMask then
                 if entry.titleMask then
@@ -1293,7 +1314,7 @@ end, function(S, module)
             end
             entry.splitAux = splitAux
             if entry.auxBodyTitle and entry.mask then
-                local splitBody = override and override > 0 and override < 1
+                local splitBody = override and override > 0
                 if entry.splitBody ~= splitBody then
                     for _, texture in ipairs({entry.plate, entry.grain}) do
                         texture:ClearAllPoints()
@@ -1306,16 +1327,6 @@ end, function(S, module)
                     entry.splitBody = splitBody
                 end
             end
-            if (entry.split == true) ~= (split == true) then
-                for _, texture in ipairs({entry.plate, entry.grain}) do
-                    texture:ClearAllPoints()
-                    if split then
-                        texture:SetPoint("TOPLEFT", entry.art, "TOPLEFT", -2, 0)
-                        texture:SetPoint("BOTTOMRIGHT", entry.art, "BOTTOMRIGHT", 2, 0)
-                    else texture:SetAllPoints(entry.art) end
-                end
-            end
-            entry.split = split
             local extra = (split or splitAux or base == 1) and targetAlpha or OverlayAlpha(targetAlpha, base)
             SurfaceAlpha(entry.plate, entry.grain, extra, entry.meterArt and 0 or entry.band and 0.28 or 0.32)
             if entry.art:IsShown() ~= shown then entry.art:SetShown(shown) end
@@ -1932,6 +1943,9 @@ end, function(S, module)
             hoverColor = {0.80, 0.56, 0.32},
             legacyShell = function(layer)
                 local grain, plate = ForeverSurface(layer, true)
+                -- Menus share a fixed, opaque dark material at every depth.
+                -- Initialize the gradient and grain independently of the guide.
+                SurfaceAlpha(plate, grain, 1, 0.28)
                 MaskFill(layer, layer, plate, grain)
                 ForeverRim(layer)
             end,

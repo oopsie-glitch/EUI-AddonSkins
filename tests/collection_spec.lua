@@ -1,7 +1,9 @@
 -- Integration regressions for optional, lazy targets and session-only RXP themes.
 local timers, errors, modules, looks = {}, {}, {}, {}
 local enabled = true
-local ns = {IsEnabled = function() return enabled end}
+local popupOptions
+local ns = {IsEnabled = function() return enabled end,
+    BindPopupOwner = function(_, _, _, options) popupOptions = options end, RefreshPopupMenus = function() end}
 function ns.RegisterModule(id, label, available, install)
     modules[id] = {available = available, install = install}
 end
@@ -67,6 +69,7 @@ local function frame(kind)
     function f:GetFrameStrata() return self.strata or "BACKGROUND" end
     function f:GetHeight() return self.height or 24 end
     function f:SetHeight(h) self.height = h end
+    function f:SetSize(w, h) self.width, self.height = w, h end
     function f:GetPoint(i) return table.unpack((self.points or {})[i or 1] or {}) end
     function f:GetNumPoints() return #(self.points or {}) end
     function f:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end
@@ -241,7 +244,7 @@ EllesmereUI = {
     ForeverBorder = function(host)
         rimCalls = rimCalls + 1
         lastRim = {on = true, host = host, texture = host:CreateTexture()}
-        rings[parents[host]] = lastRim
+        if parents[host] then rings[parents[host]] = lastRim end
         return lastRim
     end,
     ForeverBorderSeat = function(ring, host) assert(ring.host == host or parents[ring.host] == host) end,
@@ -431,6 +434,14 @@ local registry, dialog, opened = {}, {}
 function registry:RegisterOptionsTable(key, options) self[key] = options end
 function dialog:SetDefaultSize() end
 local opacityRoot = {type = "Frame", frame = frame()}
+local slider = frame("Slider")
+local thumb = region("native-thumb", "ARTWORK")
+function slider:GetThumbTexture() return thumb end
+function slider:GetOrientation() return "HORIZONTAL" end
+local nativeSetValue = function(self, value) self.value = value end
+slider.SetValue = nativeSetValue
+slider:EnableMouse(true)
+opacityRoot.children = {{type = "Slider", frame = frame(), slider = slider, parent = opacityRoot}}
 local close, status = frame("Button"), frame("Button")
 local closeClick = function() return "native dialog close" end
 close.obj, status.obj = opacityRoot, opacityRoot
@@ -479,6 +490,23 @@ for host, parent in pairs(parents) do
     if parent == opacityRoot.frame and host.rxpRim then dialogArt = host end
 end
 assert(dialogArt and dialogArt.mouseEnabled == false and dialogArt.rxpRim.host.mouseEnabled == false)
+local track
+for host, parent in pairs(parents) do
+    if parent == slider and host.rxpBronze then track = host end
+end
+assert(track and track:GetHeight() == 2 and track.rxpBronze.created[1].color[1] == 0.49)
+assert(track.mouseEnabled == false and track.rxpBronze.mouseEnabled == false and slider.mouseEnabled)
+assert(slider.SetValue == nativeSetValue)
+slider:SetValue(50)
+assert(slider.value == 50)
+local look = popupOptions.legacyLook()
+local menuLevels = {frame(), frame(), frame()}
+for _, level in ipairs(menuLevels) do
+    look.legacyShell(level)
+    local plate, grain = level.created[1], level.created[2]
+    assert(plate.gradient and plate.alpha == 1 and grain.alpha == 0.28 and plate.masks[1] == grain.masks[1])
+end
+assert(look.chevrons and look.chevronColor[1] == 0.88)
 local calls = originalCalls
 for i = 0, 20 do opened.args.opacity.set(nil, i) end
 flush()
@@ -501,7 +529,7 @@ end
 opened.args.opacity.set(nil, 100); flush()
 local opaque = {}
 for channel = 1, 3 do opaque[channel] = bodyPixel(legacyArt, 0, channel) end
-for _, percent in ipairs({0, 25, 50, 75, 100}) do
+for _, percent in ipairs({0, 25, 50, 75, 95, 100}) do
     if percent == 0 then row:SetBackdropColor(0.15, 0.1, 0.08, 1) end -- stale idle fill
     if percent == 50 then row:SetBackdropColor(table.unpack(RXP.colors.bottomFrameHighlight)) end
     if percent == 75 then row:SetBackdropColor(table.unpack(RXP.colors.bottomFrameBG)) end
@@ -526,7 +554,15 @@ for _, percent in ipairs({0, 25, 50, 75, 100}) do
     local header = bandArt.created
     assert(math.abs(composite(header[1].alpha, header[2].alpha) - alpha) < 0.0001)
     assert(titleArt[1].created[1]:GetAlpha() == alpha and window.footerBackground:GetAlpha() == 0)
-    if alpha > 0 and alpha < 1 then
+    for _, level in ipairs(menuLevels) do
+        assert(level.created[1].alpha == 1 and level.created[2].alpha == 0.28)
+    end
+    for _, art in ipairs(titleArt) do
+        local atlas = art.created[1]
+        assert(atlas.tint[1] == 0.62 and atlas.tint[4] == alpha)
+    end
+    assert(bandArt.created[1].allPoints == bandArt, "the title band must stay inset from the outer rim")
+    if alpha > 0 then
         assert(plate.points[1][2] == guide.GuideName and plate.points[1][3] == "BOTTOMLEFT")
         assert(plate.points[2][2] == guide.Footer and plate.points[2][3] == "TOPRIGHT")
         assert(math.abs(composite(legacyArt.upperPlate.alpha, legacyArt.upperGrain.alpha) - alpha) < 0.0001)
@@ -537,7 +573,9 @@ end
 choices[6].func(); flush()
 assert(not EUIAddonSkinsDB.restedXP and not legacyArt:IsShown())
 opacityRoot.frame:SetShown(false)
+opacityRoot.children[1].frame:SetShown(false) -- simulate inherited OnHide
 assert(status:GetBackdrop().bgFile == "native" and dialogArt:GetAlpha() == 0)
+assert(track:GetAlpha() == 0 and thumb:GetAlpha() == 0.8)
 activeLook = "forever"
 EUIAddonSkinsDB, LibStub, GAMEOPTIONS_MENU = oldDB, oldStub, savedOptionsText
 EllesmereUI.IS_FOREVER = false

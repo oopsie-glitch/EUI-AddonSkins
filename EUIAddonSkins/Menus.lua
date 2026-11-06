@@ -366,15 +366,19 @@ local function Style(f, binding, owner)
         f:HookScript("OnShow", function() ns.RefreshPopupMenusNow() end)
     end
     owner = owner or f.dropdown
-    if r.active and (r.binding ~= binding or r.owner ~= owner) then Restore(f) end
+    local options = binding.options
+    if options and options.legacyLook then options = options.legacyLook() end
+    if r.active and (r.binding ~= binding or r.owner ~= owner or r.options ~= options) then Restore(f) end
     if not r.active then
         r.alpha, r.fonts, r.colors = {}, {}, {}
         r.appliedFonts, r.appliedColors = {}, {}
         r.textColors, r.appliedTextColors = {}, {}
-        r.binding, r.owner, r.active = binding, owner, true
+        r.binding, r.owner, r.active, r.options = binding, owner, true, options
     end
     local S = binding.S
-    local layer = r.layers[binding.module]
+    local shell = options and options.legacyShell
+    local key = shell and options or binding.module
+    local layer = r.layers[key]
     if not layer then
         -- Style only our visual child. Never register the pooled native menu or
         -- its rows with EUI's persistent skin registry.
@@ -382,17 +386,17 @@ local function Style(f, binding, owner)
         layer:SetAllPoints(f)
         layer:SetFrameLevel(math.max(0, f:GetFrameLevel() - 1))
         layer:EnableMouse(false)
-        S.Shell(layer, {noTopBar = true})
-        if not (binding.options and binding.options.noAccent) then ns.AttachAccent(S, layer) end
+        if shell then shell(layer) else S.Shell(layer, {noTopBar = true}) end
+        if not (options and options.noAccent) then ns.AttachAccent(S, layer) end
         layer:SetAlpha(0)
-        r.layers[binding.module] = layer
+        r.layers[key] = layer
     end
     r.layer = layer
     layer:SetAlpha(1)
     local name = f.GetName and f:GetName() or ""
     Fade(r, f.Backdrop or _G[name .. "Backdrop"])
     Fade(r, f.MenuBackdrop or _G[name .. "MenuBackdrop"])
-    if f.GetOwnerRegion then Fade(r, f.NineSlice) end
+    if shell then Fade(r, f.rxpBackground); Fade(r, f.rxpBorder); Fade(r, f.rxpShadow) end
     -- Older dropdown implementations draw their border directly on the list.
     for _, region in ipairs({f:GetRegions()}) do
         if region.GetObjectType and region:GetObjectType() == "Texture" and region.GetDrawLayer then
@@ -404,8 +408,8 @@ local function Style(f, binding, owner)
         if Allowed(button) and button:GetObjectType() == "Button" then
             local text = button.GetFontString and button:GetFontString()
             Font(r, text, S)
-            if binding.options and binding.options.isHeading then
-                HeadingColor(r, text, binding.options.isHeading(button, text), S)
+            if options and options.isHeading then
+                HeadingColor(r, text, options.isHeading(button, text), S)
             end
             for _, region in ipairs({button:GetRegions()}) do
                 if region.GetObjectType and region:GetObjectType() == "FontString" then Font(r, region, S) end
@@ -414,18 +418,27 @@ local function Style(f, binding, owner)
             local arrowOwner = arrow
             if arrow and arrow.GetNormalTexture then arrow = arrow:GetNormalTexture() end
             local red, green, blue = S.GetAccentColor()
-            if binding.options and binding.options.chevrons then Chevron(r, button, arrow, arrowOwner)
+            if options and options.chevrons then Chevron(r, button, arrow, arrowOwner)
             else Tint(r, arrow, red, green, blue, 1) end
             local highlight = button.Highlight or (button.GetHighlightTexture and button:GetHighlightTexture())
-            Tint(r, highlight, 1, 1, 1, binding.options and binding.options.hoverAlpha or 0.1)
+            local hover = options and options.hoverColor
+            Tint(r, highlight, hover and hover[1] or 1, hover and hover[2] or 1, hover and hover[3] or 1,
+                options and options.hoverAlpha or 0.1)
+            if shell then
+                local icon = button.Icon or _G[(button.GetName and button:GetName() or "") .. "Icon"]
+                local path = icon and icon.GetTexture and icon:GetTexture()
+                if type(path) == "string" and path:lower():find("tooltipdivider", 1, true) then
+                    Tint(r, icon, 0.75, 0.53, 0.32, 0.8)
+                end
+            end
             local check, uncheck = button.Check, button.UnCheck
-            if binding.options and binding.options.chevrons then
+            if options and options.chevrons then
                 local buttonName = button.GetName and button:GetName()
                 check = check or buttonName and _G[buttonName .. 'Check']
                 uncheck = uncheck or buttonName and _G[buttonName .. 'UnCheck']
             end
-            Marker(r, button, check, true, S, binding.options)
-            Marker(r, button, uncheck, false, S, binding.options)
+            Marker(r, button, check, true, S, options)
+            Marker(r, button, uncheck, false, S, options)
             if not r.rowHooks[button] and button.HookScript then
                 r.rowHooks[button] = true
                 button:HookScript("OnClick", ns.RefreshPopupMenusNow)

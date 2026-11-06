@@ -227,7 +227,11 @@ for _, art in ipairs({legacyArt, guideArt}) do
     local alpha = art:GetAlpha()
     local plate, grain = art.created[1].alpha * alpha, art.created[2].alpha * alpha
     assert(art.created[1].color[1] == 0.165)
-    assert(math.abs(1 - (1 - plate) * (1 - grain) - 0.76 * 0.95 / 0.92) < 0.0001)
+    assert(math.abs(1 - (1 - plate) * (1 - grain) - 0.66 * 0.95 / 0.92) < 0.0001)
+    for i = 1, 2 do
+        local points = art.created[i].points
+        assert(points[1][4] == 2 and points[1][5] == -9 and points[2][4] == -2 and points[2][5] == 9)
+    end
     assert(art.created[1].layer == "BACKGROUND" and art.created[1].sublevel == 1)
     assert(art.created[2].layer == "BACKGROUND" and art.created[2].sublevel == 2)
 end
@@ -237,13 +241,13 @@ for host, parent in pairs(parents) do
 end
 assert(bandArt and bandArt.mouseEnabled == false and bandArt.created[1].color[1] == 0.185 and bandArt.created[2].alpha > 0)
 assert(lastRim.texture.alpha ~= 0 and rings[window.frame].texture.alpha ~= 0)
-local base = 0.76 * 0.95 / 0.92
+local base = 0.66 * 0.95 / 0.92
 local bandAlpha = 1 - (1 - base) * (1 - bandArt.created[1].alpha) * (1 - bandArt.created[2].alpha)
-assert(math.abs(bandAlpha - 0.90 * 0.95 / 0.92) < 0.0001)
+assert(math.abs(bandAlpha - 0.80 * 0.95 / 0.92) < 0.0001)
 local stepFill = legacyArt.created[3]
-assert(stepFill.shown and stepFill.allPoints == guide.CurrentStepFrame)
+assert(stepFill.shown and stepFill.points[1][2] == guide.CurrentStepFrame and stepFill.points[1][5] == -3)
 local stepAlpha = 1 - (1 - base) * (1 - stepFill.alpha * legacyArt:GetAlpha())
-assert(math.abs(stepAlpha - 0.85 * 0.95 / 0.92) < 0.0001)
+assert(math.abs(stepAlpha - 0.75 * 0.95 / 0.92) < 0.0001)
 guide.CurrentStepFrame:SetShown(false)
 assert(not stepFill.shown)
 guide.CurrentStepFrame:SetShown(true)
@@ -253,7 +257,7 @@ assert(#row.created == 1 and row.created[1].shown)
 window.guideSteps:SetRows({{frame = v2Row}})
 assert(#v2Row.created == 1 and v2Row.created[1].shown)
 local v2Fill = 0.95 * v2Row.rxpBackground:GetAlpha()
-assert(math.abs(1 - (1 - base) * (1 - v2Fill) - 0.80 * 0.95 / 0.92) < 0.0001)
+assert(math.abs(1 - (1 - base) * (1 - v2Fill) - 0.70 * 0.95 / 0.92) < 0.0001)
 assert(v2Row:GetAlpha() == 1 and window.footerBackground:GetAlpha() == 0)
 modules.RXPGuides.refresh(); flush()
 assert(rimCalls == 3 and #row.created == 1 and #v2Row.created == 1)
@@ -261,7 +265,7 @@ local bronze = RXP.v2:GetTheme()
 assert(bronze.borderColors.common[1] == 0.49)
 assert(bronze.backgroundColors.guideName[1] > bronze.backgroundColors.common[1])
 assert(step.borderColor[1] == 0.49 and RXP.colors.background[1] == 0.062)
-assert(math.abs(1 - (1 - base) * (1 - RXP.colors.bottomFrameBG[4]) - 0.80 * 0.95 / 0.92) < 0.0001)
+assert(math.abs(1 - (1 - base) * (1 - RXP.colors.bottomFrameBG[4]) - 0.70 * 0.95 / 0.92) < 0.0001)
 assert(RXP.colors.bottomFrameHighlight[2] == 0.8 and RXP.colors.bottomFrameHighlight[4] == 1)
 assert(bronze.backgroundColors.common[4] == 0.95) -- V2 native row fill is unchanged.
 step:SetBackdropBorderColor(0.1, 0.8, 0.6, 1)
@@ -290,8 +294,31 @@ assert(rimCalls == 4 and tipRing.host:IsShown() and tipRing.host.mouseEnabled ==
 step.strata = nil
 modules.RXPGuides.refresh(); flush()
 assert(rimCalls == 4 and not tipRing.host:IsShown() and step.borderColor[4] == 0)
+local auxTarget, auxItem = frame(), frame()
+for _, f in ipairs({auxTarget, auxItem}) do
+    f.title = frame()
+    f:SetBackdrop({edgeFile = 'old', bgFile = 'fill'})
+    f.title:SetBackdrop({edgeFile = 'old', bgFile = 'fill'})
+end
+RXP.targeting.activeTargetFrame, RXP.activeItemFrame = auxTarget, auxItem
+modules.RXPGuides.refresh(); flush()
+local titleArt = {}
+for host, parent in pairs(parents) do
+    if (parent == auxTarget.title or parent == auxItem.title) and host.created then
+        titleArt[#titleArt + 1] = host
+        assert(host.mouseEnabled == false and host.created[1].color[1] == 0.185)
+        assert(host.created[1].points[1][5] == -3 and host.created[1].points[2][5] == 3)
+        assert(host.created[1]:GetAlpha() < 1)
+    end
+end
+assert(#titleArt == 2)
+for _, f in ipairs({auxTarget, auxItem}) do
+    assert(rings[f].host.created[1].points[1][5] == -9)
+end
 EllesmereUI.IS_FOREVER = false
 modules.RXPGuides.refresh(); flush()
+for _, host in ipairs(titleArt) do assert(not host:IsShown()) end
+RXP.targeting.activeTargetFrame, RXP.activeItemFrame = nil, nil
 assert(not legacyArt:IsShown() and not guideArt:IsShown())
 assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
 EllesmereUI = nil

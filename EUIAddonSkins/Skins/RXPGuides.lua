@@ -496,11 +496,17 @@ end, function(S, module)
         if ring then EUI.ForeverBorderSeat(ring, parent or host, "TOPLEFT", 0, 0, 0, 0) end
         return ring
     end
-    local function ForeverSurface(art, band)
+    local function SeatFill(texture, frame, x, top, bottom)
+        texture:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -top)
+        texture:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -x, bottom)
+    end
+    local function ForeverSurface(art, band, top, bottom)
+        -- The slim ring's corners extend nine units inward from its outer edge.
+        -- Keep rectangular fills inside that cut rather than under its clear corners.
         local plate = art:CreateTexture(nil, "BACKGROUND", nil, 1)
         local grain = art:CreateTexture(nil, "BACKGROUND", nil, 2)
-        plate:SetAllPoints(art)
-        grain:SetAllPoints(art)
+        SeatFill(plate, art, 2, top or 9, bottom or 9)
+        SeatFill(grain, art, 2, top or 9, bottom or 9)
         local r, g, b = 0.165, 0.115, 0.075
         if band then r, g, b = 0.185, 0.126, 0.080 end
         plate:SetColorTexture(r, g, b, 1)
@@ -550,7 +556,7 @@ end, function(S, module)
             art.grain, art.plate = ForeverSurface(art, false)
             if currentStep then
                 local fill = art:CreateTexture(nil, "BACKGROUND", nil, 3)
-                fill:SetAllPoints(currentStep)
+                SeatFill(fill, currentStep, 0, 3, 0)
                 fill:SetColorTexture(0.165, 0.115, 0.075)
                 art.stepFill = fill
             end
@@ -632,7 +638,7 @@ end, function(S, module)
             out.background = {pr, pg, pb, pa}
             -- V1 uses this fill for idle and mouse-leave. Keep the row's
             -- own alpha and hover palette while exposing the shared surface.
-            out.bottomFrameBG = {pr, pg, pb, forever and OverlayAlpha(0.80 * ForeverOpacity(), 0.76 * ForeverOpacity()) or pa}
+            out.bottomFrameBG = {pr, pg, pb, forever and OverlayAlpha(0.70 * ForeverOpacity(), 0.66 * ForeverOpacity()) or pa}
             out.bottomFrameHighlight = {r, g, b, 1}
             out.textColor = {0.9, 0.9, 0.92}
         end
@@ -869,17 +875,17 @@ end, function(S, module)
         if composition then
             if composition:GetAlpha() ~= opacity then composition:SetAlpha(opacity) end
             local scale = ForeverOpacity()
-            local base = math.min(opacity, 0.76 * scale)
+            local base = math.min(opacity, 0.66 * scale)
             SurfaceAlpha(composition.plate, composition.grain, base, opacity, 0.32)
             if composition.stepFill then
-                local extra = OverlayAlpha(0.85 * scale, base)
+                local extra = OverlayAlpha(0.75 * scale, base)
                 TextureAlpha(composition.stepFill, opacity > 0 and math.min(1, extra / opacity) or 0)
             end
         end
-        if entry.forever and entry.plate then
+        if entry.forever and entry.plate and not entry.joinedBody then
             local scale = ForeverOpacity()
-            local base = entry.underlay and math.min(entry.underlay:GetAlpha(), 0.76 * scale) or 0
-            local targetAlpha = math.min(1, (entry.band and 0.90 or 0.85) * scale)
+            local base = entry.underlay and math.min(entry.underlay:GetAlpha(), 0.66 * scale) or 0
+            local targetAlpha = math.min(1, (entry.band and 0.80 or 0.75) * scale)
             SurfaceAlpha(entry.plate, entry.grain, OverlayAlpha(targetAlpha, base), 1, entry.band and 0.28 or 0.32)
             if entry.art:IsShown() ~= shown then entry.art:SetShown(shown) end
         end
@@ -888,7 +894,7 @@ end, function(S, module)
         local items = addon.activeItemFrame
         if f == target and items and items ~= f and themed[items] then SyncShell(items, themed[items]) end
     end
-    local function ThemeShell(f, chrome, composition, underlay)
+    local function ThemeShell(f, chrome, composition, underlay, outerHeader)
         if not f or not f.GetFrameLevel or (not chrome and not f.GetBackdrop and not f.rxpBackground) or CombatLocked()
             or (f.IsForbidden and f:IsForbidden()) then return end
         local entry = themed[f]
@@ -929,20 +935,23 @@ end, function(S, module)
             entry.composition = composition
             entry.underlay = underlay
             if forever and not entry.art and not joinedBody then
-                local band = chrome == "header" or chrome == "footer"
-                local independent = band or chrome == "step"
+                local band = chrome == "header" or chrome == "footer" or chrome == "auxTitle"
+                local independent = band or chrome == "step" or chrome == "auxBody" or chrome == "body"
                 local art = ForeverArtHost(independent and f or entry.layer)
                 entry.art = art
-                local grain, plate = ForeverSurface(art, band)
+                local top = band and (outerHeader and 9 or (chrome == "auxTitle" and 3 or 0)) or 9
+                local bottom = band and (chrome == "footer" and 9 or (chrome == "auxTitle" and 3 or 0)) or 9
+                if chrome == "badge" then top, bottom = 0, 0 end
+                local grain, plate = ForeverSurface(art, band, top, bottom)
                 if independent then entry.grain, entry.plate, entry.band = grain, plate, band end
                 entry.secondary = band or chrome == "badge"
                 if not entry.secondary then entry.rim = ForeverRim(art) end
                 if chrome == "badge" then grain:SetAlpha(0.12) end
-                if band then
+                if band and chrome ~= "auxTitle" then
                     local divider = art:CreateTexture(nil, "BACKGROUND", nil, 3)
                     local edge = chrome == "header" and "BOTTOM" or "TOP"
-                    divider:SetPoint(edge .. "LEFT", art, edge .. "LEFT", 1, 0)
-                    divider:SetPoint(edge .. "RIGHT", art, edge .. "RIGHT", -1, 0)
+                    divider:SetPoint(edge .. "LEFT", art, edge .. "LEFT", 2, 0)
+                    divider:SetPoint(edge .. "RIGHT", art, edge .. "RIGHT", -2, 0)
                     divider:SetHeight(1)
                     divider:SetColorTexture(bronzeR, bronzeG, bronzeB, chrome == "header" and 0.55 or 0.34)
                 end
@@ -973,8 +982,8 @@ end, function(S, module)
         end
         TintBackdrop(f)
         TintBackdrop(f.title)
-        ThemeShell(f, "body")
-        ThemeShell(f.title, "badge")
+        ThemeShell(f, "auxBody")
+        ThemeShell(f.title, "auxTitle")
         AuxiliaryTitle(f)
     end
     QueueTargets = function()
@@ -995,7 +1004,7 @@ end, function(S, module)
             H.Script(f, "OnShow", function() AuxiliaryTitle(f) end)
         end
         TintBackdrop(f); TintBackdrop(f.title)
-        ThemeShell(f, "body"); ThemeShell(f.title, "badge")
+        ThemeShell(f, "auxBody"); ThemeShell(f.title, "auxTitle")
         AuxiliaryTitle(f)
         -- Secure item-use buttons keep all attributes, dimensions and handlers.
         -- Crop only their existing icon textures, outside combat.
@@ -1137,7 +1146,7 @@ end, function(S, module)
         local window = addon.v2 and addon.v2.state and addon.v2.state.guideWindow or _G.RXPV2GuideWindow
         local shell = forever and window and compositions[window.frame]
         local scale = shell and ForeverOpacity()
-        local extra = scale and OverlayAlpha(0.80 * scale, math.min(shell:GetAlpha(), 0.76 * scale))
+        local extra = scale and OverlayAlpha(0.70 * scale, math.min(shell:GetAlpha(), 0.66 * scale))
         for _, item in pairs(steps.items or {}) do
             local row = item.frame
             StepDivider(row, forever)
@@ -1192,7 +1201,7 @@ end, function(S, module)
             Scan(window.frame)
             local shell = ComposeGuide(window.frame, window.upperFrame or window.guideNameFrame, window.footer, nil, forever)
             ThemeShell(window.upperFrame, shell and "joined" or "body")
-            ThemeShell(window.guideNameFrame, "header", nil, shell)
+            ThemeShell(window.guideNameFrame, "header", nil, shell, true)
             ThemeShell(window.guideStepsFrame, shell and "joined" or "body", shell)
             ThemeShell(window.footer, "footer", nil, shell)
             NativeFillAlpha(window.footerBackground, forever and 0 or nil)
@@ -1294,10 +1303,27 @@ end, function(S, module)
         if arrowWaiting then ApplyArrow() end
     end)
     if ns.BindPopupOwner then
+        local menuLook = {
+            noAccent = true, chevrons = true, hoverAlpha = 0.38,
+            hoverColor = {0.80, 0.56, 0.32},
+            legacyShell = function(layer)
+                ForeverSurface(layer, true, 9, 9)
+                ForeverRim(layer)
+            end,
+        }
+        local options = {legacyLook = function()
+            local EUI = _G.EllesmereUI
+            if ForeverLook() and EUI.IS_FOREVER and EUI.ForeverBorder and EUI.ForeverBorderSeat and EUI.ForeverBorderShown then
+                return menuLook
+            end
+        end}
         H.Hook(addon, "ShowMenu", function(_, _, owner)
-            ns.BindPopupOwner(S, module, owner or (addon.RXPFrame and addon.RXPFrame.MenuFrame))
+            ns.BindPopupOwner(S, module, owner or (addon.RXPFrame and addon.RXPFrame.MenuFrame), options)
         end)
-        if addon.RXPFrame then ns.BindPopupOwner(S, module, addon.RXPFrame.MenuFrame) end
+        H.Hook(addon.v2, "UpdateMenuTheme", function()
+            if ForeverLook() then ns.RefreshPopupMenusNow() end
+        end)
+        if addon.RXPFrame then ns.BindPopupOwner(S, module, addon.RXPFrame.MenuFrame, options) end
         if S.OnLooksChanged then S.OnLooksChanged(ns.RefreshPopupMenus) end
     end
     module.refresh = function() refreshOptions(); UpdateTheme() end

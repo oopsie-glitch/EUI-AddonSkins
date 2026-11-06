@@ -105,6 +105,27 @@ local a, b, c = ToggleDropDownMenu(); assert(a == 'native-original' and b == nil
 assert(DropDownList2.Backdrop.alpha == 0 and sub.regions[1].font[1] == 'eui-font', 'submenu exposed native style until timer')
 flush()
 assert(DropDownList2.Backdrop.alpha == 0 and sub.regions[1].font[1] == 'eui-font')
+-- A visual variant follows the owning menu through the submenu chain.
+local forever, shellsBuilt = true, 0
+local variant = {noAccent = true, hoverColor = {0.8, 0.56, 0.32}, hoverAlpha = 0.38,
+    legacyShell = function(host) host.forever = true; shellsBuilt = shellsBuilt + 1 end}
+local options = {legacyLook = function() return forever and variant or nil end}
+DropDownList2.rxpBackground = frame()
+local separator = region()
+separator.GetTexture = function() return "Interface/Common/UI-TooltipDivider-Transparent" end
+sub.Icon = separator
+sub.scripts.OnClick = function() return 'native nested selection' end
+ns.BindPopupOwner(S, module, owner, options)
+local foreverRoot = DropDownList1.children[#DropDownList1.children]
+local foreverSub = DropDownList2.children[#DropDownList2.children]
+assert(foreverRoot.forever and foreverSub.forever and not foreverSub.mouse and layer.alpha == 0)
+assert(DropDownList2.rxpBackground.alpha == 0 and highlight.color[1] == 0.8 and highlight.color[4] == 0.38)
+assert(sub.scripts.OnClick() == 'native nested selection' and separator.color[1] == 0.75)
+ToggleDropDownMenu(); assert(shellsBuilt == 2)
+forever = false
+ns.RefreshPopupMenusNow()
+assert(foreverRoot.alpha == 0 and foreverSub.alpha == 0 and layer.alpha == 1)
+assert(DropDownList2.rxpBackground.alpha == 1 and highlight.color[4] == 0.1 and separator.color[2] == 0.82)
 accent = 0.9; for _, fn in ipairs(looks) do fn() end; flush(); assert(arrow.color[1] == 0.9)
 DropDownList1:Hide(); DropDownList2:Hide()
 assert(layer.alpha == 0 and DropDownList1.MenuBackdrop.alpha == 1 and text.font[1] == 'native-font')

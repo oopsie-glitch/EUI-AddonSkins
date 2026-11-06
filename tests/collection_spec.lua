@@ -36,6 +36,7 @@ local function frame(kind)
             AddMaskTexture = function(self, mask) self.masks = self.masks or {}; table.insert(self.masks, mask) end,
             SetAlpha = function(self, a) self.alpha = a end,
             GetAlpha = function(self) return self.alpha or 1 end,
+            SetTexCoord = function(self, ...) self.coords = {...} end,
             SetTexture = function(self, path) self.path = path end, SetVertexColor = function() end,
             SetHorizTile = function() end, SetVertTile = function() end,
             SetShown = function(self, shown) self.shown = shown end}
@@ -340,6 +341,11 @@ assert(rimCalls == 4 and tipRing.host:IsShown() and tipRing.host.mouseEnabled ==
 step.strata = nil
 modules.RXPGuides.refresh(); flush()
 assert(rimCalls == 4 and not tipRing.host:IsShown() and step.borderColor[4] == 0)
+local savedTextureAPI = C_Texture
+C_Texture = {GetAtlasInfo = function(atlas)
+    assert(atlas == "ui-questtracker-primary-objective-header")
+    return {file = 12345, leftTexCoord = 0, rightTexCoord = 1, topTexCoord = 0, bottomTexCoord = 1}
+end}
 local auxTarget, auxItem = frame(), frame()
 local function label()
     local text = frame("FontString")
@@ -347,12 +353,23 @@ local function label()
     function text:GetFont() return table.unpack(self.font) end
     function text:SetFont(...) self.font = {...} end
     function text:GetTextColor() return 0.8, 0.7, 0.4, 1 end
-    function text:SetTextColor() end
+    function text:SetTextColor(...) self.tint = {...} end
+    function text:SetText(value) self.value = value end
+    function text:GetText() return self.value end
+    function text:SetJustifyH(value) self.justify = value end
     return text
 end
 local oldFont = S.Font
 S.Font = function(text)
     if text.SetFont then text:SetFont("EUI-font", select(2, text:GetFont()), "OUTLINE") end
+end
+local labels = {}
+guide.GuideName.text = label()
+guide.GuideName.text:SetText("The Barrens\nDungeon Guide")
+function guide.GuideName:CreateFontString()
+    local text = label()
+    labels[#labels + 1] = text
+    return text
 end
 for _, f in ipairs({auxTarget, auxItem}) do
     f.title = frame()
@@ -368,12 +385,22 @@ local titleArt = {}
 for host, parent in pairs(parents) do
     if (parent == auxTarget.title or parent == auxItem.title) and host.created then
         titleArt[#titleArt + 1] = host
-        assert(host.mouseEnabled == false and host.created[1].color[1] == 0.185)
-        assert(host.created[1].points[1][5] == -3 and host.created[1].points[2][5] == 3)
-        assert(host.created[1]:GetAlpha() < 1)
+        local fill = host.created[1]
+        assert(host.mouseEnabled == false and fill.path == 12345 and fill.coords[1] == 64 / 300)
+        assert(fill.points[1][4] == 8 and fill.points[1][5] == -3 and fill.points[2][4] == -8)
+        assert(fill.points[3][2] == host and fill.points[3][5] == 0)
+        assert(fill:GetAlpha() > 0 and fill:GetAlpha() < 1 and host.created[2]:GetAlpha() == 0)
     end
 end
 assert(#titleArt == 2)
+assert(#labels == 2 and guide.GuideName.text:GetAlpha() == 0)
+assert(labels[1]:GetText() == "The Barrens" and labels[2]:GetText() == "Dungeon Guide")
+assert(labels[1].justify == "LEFT" and labels[1].points[1][4] == 7)
+assert(select(2, labels[2]:GetFont()) == select(2, labels[1]:GetFont()) - 2)
+guide.GuideName.text:SetText("A single-line title")
+assert(guide.GuideName.text:GetAlpha() == 1 and not labels[1]:IsShown() and not labels[2]:IsShown())
+guide.GuideName.text:SetText("Shadowfang Keep\nDungeon Guide")
+assert(guide.GuideName.text:GetAlpha() == 0 and labels[1]:GetText() == "Shadowfang Keep")
 for _, f in ipairs({auxTarget, auxItem}) do
     local _, _, _, _, y = f.title:GetPoint()
     local path, size, flags = f.title.text:GetFont()
@@ -387,7 +414,22 @@ EUIAddonSkinsDB = {}
 local registry, dialog, opened = {}, {}
 function registry:RegisterOptionsTable(key, options) self[key] = options end
 function dialog:SetDefaultSize() end
-function dialog:Open(key) opened = registry[key] end
+local opacityRoot = {type = "Frame", frame = frame()}
+local close, status = frame("Button"), frame("Button")
+local closeClick = function() return "native dialog close" end
+close.obj, status.obj = opacityRoot, opacityRoot
+function close:GetScript(event) if event == "OnClick" then return closeClick end end
+function close:GetFontString() return label() end
+status:SetBackdrop({bgFile = "native"})
+opacityRoot.statustext = {GetParent = function() return status end}
+opacityRoot.frame.children = {close, status}
+function dialog:FeedGroup() end
+function dialog:Open(key)
+    opened = registry[key]
+    self.OpenFrames = {[key] = opacityRoot}
+    opacityRoot.userdata = {appName = key}
+    self:FeedGroup(key, opened, opacityRoot, opacityRoot)
+end
 LibStub = function(name, silent)
     if name == "AceConfigRegistry-3.0" then return registry end
     if name == "AceConfigDialog-3.0" then return dialog end
@@ -407,6 +449,7 @@ local choices = shownMenu[2].menuList
 assert(choices[2].checked())
 choices[3].func(); flush()
 assert(EUIAddonSkinsDB.restedXP.style == "standard" and not legacyArt:IsShown())
+assert(guide.GuideName.text:GetAlpha() == 1 and guide.GuideName.text.justify == "CENTER" and not labels[1]:IsShown())
 assert(select(5, auxTarget.title:GetPoint()) == 8 and auxTarget.title:GetHeight() == 19)
 assert(select(2, auxTarget.title.text:GetFont()) == 12)
 activeLook = "eui"
@@ -414,14 +457,38 @@ choices[4].func(); flush()
 assert(EUIAddonSkinsDB.restedXP.style == "forever" and legacyArt:IsShown())
 choices[5].func()
 assert(opened.args.opacity.get() == 72)
+assert(status:GetBackdrop() == nil and close:GetScript("OnClick") == closeClick)
+local dialogArt
+for host, parent in pairs(parents) do
+    if parent == opacityRoot.frame and host.rxpRim then dialogArt = host end
+end
+assert(dialogArt and dialogArt.mouseEnabled == false and dialogArt.rxpRim.host.mouseEnabled == false)
 local calls = originalCalls
 for i = 0, 20 do opened.args.opacity.set(nil, i) end
 flush()
 assert(EUIAddonSkinsDB.restedXP.opacity == 0.20 and opened.args.opacity.get() == 20)
 assert(originalCalls == calls, "opacity dragging reloaded the guide theme")
 assert(rings[guide].on and legacyArt:GetAlpha() == 1)
+local function composite(...)
+    local remaining = 1
+    for _, alpha in ipairs({...}) do remaining = remaining * (1 - alpha) end
+    return 1 - remaining
+end
+assert(math.abs(composite(legacyArt.created[1].alpha, legacyArt.created[2].alpha, stepFill.alpha) - 0.2) < 0.0001)
+for _, percent in ipairs({0, 100}) do
+    opened.args.opacity.set(nil, percent); flush()
+    local alpha = percent / 100
+    assert(math.abs(composite(legacyArt.created[1].alpha, legacyArt.created[2].alpha) - alpha) < 0.0001)
+    assert(legacyArt:GetAlpha() == 1 and guideArt:GetAlpha() == 1 and rings[guide].on)
+    assert(guideArt.created[1].masks[1].edge == guideArt and bandArt.created[1].masks[1].edge == guideArt)
+    assert(RXP.colors.bottomFrameBG[4] == 0 and v2Row.rxpBackground:GetAlpha() == 0)
+    assert(titleArt[1].created[1]:GetAlpha() == alpha and window.footerBackground:GetAlpha() == 0)
+    assert(checkbox.click == click and scrollButton.click == scrollAction)
+end
 choices[6].func(); flush()
 assert(not EUIAddonSkinsDB.restedXP and not legacyArt:IsShown())
+opacityRoot.frame:SetShown(false)
+assert(status:GetBackdrop().bgFile == "native" and dialogArt:GetAlpha() == 0)
 activeLook = "forever"
 EUIAddonSkinsDB, LibStub, GAMEOPTIONS_MENU = oldDB, oldStub, savedOptionsText
 EllesmereUI.IS_FOREVER = false
@@ -433,6 +500,7 @@ assert(not legacyArt:IsShown() and not guideArt:IsShown())
 assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
 EllesmereUI = nil
 Enum = savedEnum
+C_Texture = savedTextureAPI
 
 local target = frame(); target.protected = true; target.title = frame()
 target.title.text = {GetObjectType = function() return 'FontString' end}

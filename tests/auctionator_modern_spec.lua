@@ -923,3 +923,62 @@ do
     print('PASS: Auctionator preview-only legacy UV crop reset: full atlas region on first empty display, selected/cleared states and theme refresh; inventory coordinates and rarity/layout unchanged')
     print('PASS: Auctionator inventory-only EmptySlot fade: preview/rarity/selection/count/quest/cooldown/tier/layout preserved, pooled/native redraw/theme/warm refresh covered; stable socket alpha writes=0')
 end
+
+-- Extended Search generates a native root and ownerless category flyouts.
+do
+    local function description()
+        local d = {}
+        function d:AddInitializer(fn) assert(not self.initialize); self.initialize = fn end
+        return d
+    end
+    local first, nested = description(), description()
+    local tree = {first, nested}
+    MenuUtil = {TraverseMenu = function(root, visit)
+        for _, element in ipairs(root) do visit(element) end
+    end}
+    S.GetPanelColor = function() return .08, .09, .1, .4 end
+    local dialog = CreateFrame('Frame', 'AuctionatorShoppingTabItemFrame')
+    local selector = frame('Frame', dialog)
+    local launcher = frame('DropdownButton', selector)
+    selector.DropDown = launcher
+    function launcher:GetMenuDescription() return tree end
+    function launcher:GenerateMenu() return 'native generation' end
+    local clear = frame('Button', dialog)
+    clear.texture = clear:CreateTexture(nil, 'ARTWORK')
+    clear.texture:SetTexture('UI-GroupLoot-Pass-Up')
+    clear.SetClickCallback = function() end
+    clear.scripts.OnClick = function() return 'native reset' end
+    local exact = Checkbox(dialog)
+    local search = frame('EditBox', dialog)
+    modules.Auctionator.refresh(); flush()
+    assert(launcher.dropdown and first.initialize and nested.initialize)
+    assert(search.input and not search.padInput and #exact.children == 1)
+    assert(clear.texture.alpha == 1 and clear.scripts.OnClick() == 'native reset')
+
+    local function Open(element, owner, selected)
+        local menu = frame('Frame')
+        function menu:GetOwnerRegion() return owner end
+        local backdrop = menu:CreateTexture(nil, 'BACKGROUND')
+        local row = frame('Button', menu)
+        row.mouse = true
+        row.leftTexture1 = row:CreateTexture(nil, 'ARTWORK')
+        row.leftTexture2 = row:CreateTexture(nil, 'ARTWORK')
+        row.leftTexture2:SetShown(selected)
+        row.GetElementDescription = function() return element end
+        row.scripts.OnClick = function() return 'native filter' end
+        element.initialize(row, element, menu)
+        flush()
+        assert(backdrop.color[1] == .08 and backdrop.color[4] == 1)
+        assert(row.leftTexture2.shown == selected and row.leftTexture2.w == 7)
+        assert(#menu.children == 1 and MouseTarget(menu, true) == row)
+        assert(row.scripts.OnClick() == 'native filter')
+    end
+    Open(first, launcher, false)
+    Open(nested, nil, true)
+    local rebuilt = description()
+    tree = {rebuilt}
+    assert(launcher:GenerateMenu() == 'native generation')
+    Open(rebuilt, nil, true)
+    MenuUtil = nil
+    print('PASS: Auctionator Extended Search first open and regenerated ownerless flyouts, opaque backgrounds, native selection/hit targets, semantic reset and unpadded input')
+end

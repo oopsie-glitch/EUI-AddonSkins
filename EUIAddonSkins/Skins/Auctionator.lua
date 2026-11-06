@@ -149,20 +149,39 @@ end, function(S, module)
     -- Settings use large native CheckButtons. Keep their hit/label geometry,
     -- but draw the compact square on a mouse-disabled child instead.
     local configChecks, checkArt = {}, {}
+    local function IsConfig(f)
+        for _ = 1, 16 do
+            if not H.Allowed(f) then return false end
+            local name = f.GetName and f:GetName()
+            if type(name) == "string" and name:match("^AuctionatorConfig.*Frame$") then return true end
+            f = f.GetParent and f:GetParent()
+        end
+        return false
+    end
+    local function PassThrough(f)
+        f:EnableMouse(false)
+        if f.SetMouseClickEnabled then f:SetMouseClickEnabled(false) end
+        if f.SetMouseMotionEnabled then f:SetMouseMotionEnabled(false) end
+        -- The checkbox API can create nested border frames. Only walk the
+        -- freshly created artwork subtree, never the native control's children.
+        for _, child in ipairs(H.Children(f)) do PassThrough(child) end
+    end
+    local function InSearchDialog(f)
+        local dialog = _G.AuctionatorShoppingTabItemFrame
+        if not dialog then return false end
+        while H.Allowed(f) do
+            if f == dialog then return true end
+            f = f.GetParent and f:GetParent()
+        end
+        return false
+    end
     local function ConfigCheckbox(f)
         if not configChecks[f] then
-            local parent = f
-            local owned = false
-            for _ = 1, 16 do
-                if not H.Allowed(parent) then break end
-                local name = parent.GetName and parent:GetName()
-                if type(name) == "string" and name:match("^AuctionatorConfig.*Frame$") then owned = true; break end
-                parent = parent.GetParent and parent:GetParent()
-            end
-            if not owned then return false end
+            if not IsConfig(f) and not InSearchDialog(f) then return false end
             local host = CreateFrame("Frame", nil, f)
-            host:SetSize(22, 22); host:SetPoint("CENTER", f, "CENTER"); host:EnableMouse(false)
+            host:SetSize(22, 22); host:SetPoint("CENTER", f, "CENTER")
             raw.Checkbox(host, {borderInset = 4, hover = 0.05})
+            PassThrough(host)
             local mark = host:CreateTexture(nil, "OVERLAY", nil, 2)
             mark:SetSize(8, 8); mark:SetPoint("CENTER", host, "CENTER")
             local hover = host:CreateTexture(nil, "OVERLAY", nil, 1)
@@ -524,10 +543,62 @@ end, function(S, module)
     end
     -- Option widgets (search options, config) wrap their dropdown, whose arrow is a
     -- child button of its own, and a per-field reset button showing an icon texture.
+    local searchMenus = setmetatable({}, {__mode = "k"})
+    local menuElements = setmetatable({}, {__mode = "k"})
+    local function PaintSearchMenu(list)
+        local state = searchMenus[list]
+        searchMenus[list] = nil
+        if not state or not H.Allowed(list) or not list:IsShown() or Stock() or InCombatLockdown()
+            or state.row:GetElementDescription() ~= state.description then return end
+        local r, g, b = S.GetPanelColor()
+        -- Blizzard regenerates this backdrop on acquisition. Recolour the
+        -- existing region without adding a frame above the native rows.
+        for _, region in ipairs(H.Regions(list)) do
+            if H.Texture(region) and region:GetDrawLayer() == "BACKGROUND" then
+                region:SetColorTexture(r, g, b, 1)
+                region:SetAlpha(1)
+            end
+        end
+    end
+    local function BindSearchMenu(dropdown)
+        if not (dropdown.GetMenuDescription and MenuUtil and MenuUtil.TraverseMenu and S.GetPanelColor) then return end
+        local function Prepare()
+            local root = dropdown:GetMenuDescription()
+            if not root then return end
+            MenuUtil.TraverseMenu(root, function(element)
+                if menuElements[element] or not element.AddInitializer then return end
+                menuElements[element] = true
+                element:AddInitializer(function(row, description, list)
+                    if not ns.IsEnabled(module) or Stock() or InCombatLockdown() or not H.Allowed(list) then return end
+                    -- Flyouts have no owner region. The initializer belongs to
+                    -- this dropdown's description tree, at every nesting level.
+                    if row.GetElementDescription and not searchMenus[list] then
+                        searchMenus[list] = {row = row, description = description}
+                        H.Queue(list, function() PaintSearchMenu(list) end)
+                    end
+                    local enabled = not row.IsEnabled or row:IsEnabled()
+                    local arrow = H.Texture(row.arrow)
+                    if arrow and enabled then arrow:SetVertexColor(0.75, 0.75, 0.78, 1) end
+                    local box, mark = H.Texture(row.leftTexture1), H.Texture(row.leftTexture2)
+                    if box and mark then
+                        local r, g, b = S.GetAccentColor()
+                        if not enabled then r, g, b = 0.4, 0.4, 0.4 end
+                        box:SetColorTexture(0.15, 0.15, 0.16, 1)
+                        mark:SetColorTexture(r, g, b, 1)
+                        mark:SetSize(7, 7)
+                        mark:ClearAllPoints(); mark:SetPoint("CENTER", box, "CENTER")
+                    end
+                end)
+            end)
+        end
+        H.Hook(dropdown, "GenerateMenu", Prepare)
+        Prepare()
+    end
     local function Dropdown(dropdown)
         if widgets[dropdown] then return end
         widgets[dropdown] = true
         S.Dropdown(dropdown)
+        if InSearchDialog(dropdown) then BindSearchMenu(dropdown) end
         for _, child in ipairs(H.Children(dropdown)) do
             if H.Allowed(child) and child:GetObjectType() == "Button" then
                 for _, region in ipairs(H.Regions(child)) do if H.Texture(region) then H.Fade(region) end end
@@ -748,10 +819,16 @@ end, function(S, module)
         if checkArt[f] then return true end
         local modern = Modern()
         if kind == "CheckButton" and ConfigCheckbox(f) then return true end
+        if kind == "EditBox" and (IsConfig(f) or InSearchDialog(f)) then
+            -- The shared scan uses popup padding, which moves the input hit
+            -- rectangle away from the position set by the native canvas.
+            S.EditBox(f)
+            return true
+        end
         if kind == "Slider" then Scroll(f); return true end
         if headers[f] then return true end
         if modern and f.cells then Row(f); return true end
-        if f.isAuctionatorRadio and H.Allowed(f.RadioButton) then Radio(f.RadioButton) end
+        if f.isAuctionatorRadio and H.Allowed(f.RadioButton) and not IsConfig(f) and not InSearchDialog(f) then Radio(f.RadioButton) end
         local dropdown = H.Allowed(f.DropDown) and f.DropDown:GetObjectType()
         if dropdown == "Button" or dropdown == "DropdownButton" then Dropdown(f.DropDown) end
         if H.Allowed(f.ResetButton) and f.ResetButton:GetObjectType() == "Button" then Reset(f.ResetButton) end
@@ -764,6 +841,10 @@ end, function(S, module)
             if modern and IsRefresh(f) then Glyph(f); return true end
             local icon = H.Icon(f)
             if icon and (f.IconBorder or f.EmptySlot or f.IconSelectedHighlight) then Item(f, icon); return true end
+        end
+        if kind == "Button" and H.Texture(f.texture) and f.SetClickCallback and InSearchDialog(f) then
+            Reset(f)
+            return true
         end
         if modern then
             if f.GoldBox and f.SilverBox then Money(f) end
@@ -1011,6 +1092,7 @@ end, function(S, module)
     for _, entry in ipairs({
         {"AuctionatorTabContainerMixin", "OnLoad", "controls"},
         {"AuctionatorConfigFrameMixin", "OnLoad", "controls"},
+        {"AuctionatorShoppingItemMixin", "OnLoad", "dialog"},
         {"AuctionatorShoppingTabFrameMixin", "OnLoad", "content"},
         {"AuctionatorListExportFrameMixin", "OnLoad", "dialog"},
         {"AuctionatorListImportFrameMixin", "OnLoad", "dialog"},

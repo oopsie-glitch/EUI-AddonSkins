@@ -159,6 +159,7 @@ end
 function S.SetTabSelection(f, v) f.selected = v end
 function S.EditBox(f, opts)
     if f.input then return end -- Public primitive is idempotent.
+    f.padInput = opts and opts.padInput
     f.input = (f.input or 0) + 1; f.soft = f.soft or (opts and opts.noBorder)
     -- Like the engine: strip template art, including unnamed coin textures.
     for _, region in ipairs(f.regions) do if region.kind == 'Texture' then region:SetAlpha(0) end end
@@ -602,6 +603,24 @@ local function Checkbox(parent)
  f.scripts.OnClick=function(self)self.checked=not self.checked;return 'native-click'end
  return f
 end
+-- Model a decorative border with independent click and motion flags.
+local checkboxSkin = S.Checkbox
+function S.Checkbox(f)
+    checkboxSkin(f)
+    local border = frame('Frame', f)
+    border.mouse = true
+    border.click = true
+    border.motion = true
+    function border:SetMouseClickEnabled(value) self.click = value end
+    function border:SetMouseMotionEnabled(value) self.motion = value end
+end
+local radioRow = frame('Frame', page)
+radioRow.isAuctionatorRadio = true
+local radio = Checkbox(radioRow)
+radioRow.RadioButton = radio
+radioRow.scripts.OnMouseUp = function() return radio.scripts.OnClick(radio) end
+local input = frame('EditBox', page)
+local anchorsBefore = input.points
 local option=Checkbox(page);local labelPoints=option.label.points
 local foreign=Checkbox(frame('Frame'))
 local secret=Checkbox(page);secret.protected=true
@@ -612,6 +631,23 @@ flush()
 assert(#option.children==1 and #foreign.children==0 and #secret.children==0)
 local visual=option.children[1]
 assert(visual.w==22 and visual.h==22 and visual.mouse==false and option.w==32 and option.h==32)
+assert(input.input and not input.padInput and input.points == anchorsBefore)
+assert(#radio.children == 1, 'settings radio has two skin owners')
+local function MouseTarget(f, insideSquare, motion)
+    for index = #f.children, 1, -1 do
+        if insideSquare then
+            local child = MouseTarget(f.children[index], true, motion)
+            if child then return child end
+        end
+    end
+    if f.mouse or (motion and f.motion) or (not motion and f.click) then return f end
+end
+option.mouse, radio.mouse, radioRow.mouse = true, true, true
+assert(MouseTarget(option, true) == option and MouseTarget(option, true, true) == option)
+assert(MouseTarget(radioRow, true) == radio and MouseTarget(radioRow, true, true) == radio)
+local labelTarget = MouseTarget(radioRow, false)
+assert(labelTarget == radioRow and labelTarget.scripts.OnMouseUp() == 'native-click' and not radio.checked)
+S.Checkbox = checkboxSkin
 assert(option.normal.alpha==0 and option.tick.alpha==0 and option.label.points==labelPoints)
 local mark
 for _,art in ipairs(visual.regions)do if art.w==8 and art.h==8 then mark=art end end
@@ -886,4 +922,63 @@ do
     print('BENCH Auctionator selling mock: 1000 large plus 1000 inventory updates: new UI objects/hooks, hierarchy reads, geometry writes and queued refreshes=0')
     print('PASS: Auctionator preview-only legacy UV crop reset: full atlas region on first empty display, selected/cleared states and theme refresh; inventory coordinates and rarity/layout unchanged')
     print('PASS: Auctionator inventory-only EmptySlot fade: preview/rarity/selection/count/quest/cooldown/tier/layout preserved, pooled/native redraw/theme/warm refresh covered; stable socket alpha writes=0')
+end
+
+-- Extended Search generates a native root and ownerless category flyouts.
+do
+    local function description()
+        local d = {}
+        function d:AddInitializer(fn) assert(not self.initialize); self.initialize = fn end
+        return d
+    end
+    local first, nested = description(), description()
+    local tree = {first, nested}
+    MenuUtil = {TraverseMenu = function(root, visit)
+        for _, element in ipairs(root) do visit(element) end
+    end}
+    S.GetPanelColor = function() return .08, .09, .1, .4 end
+    local dialog = CreateFrame('Frame', 'AuctionatorShoppingTabItemFrame')
+    local selector = frame('Frame', dialog)
+    local launcher = frame('DropdownButton', selector)
+    selector.DropDown = launcher
+    function launcher:GetMenuDescription() return tree end
+    function launcher:GenerateMenu() return 'native generation' end
+    local clear = frame('Button', dialog)
+    clear.texture = clear:CreateTexture(nil, 'ARTWORK')
+    clear.texture:SetTexture('UI-GroupLoot-Pass-Up')
+    clear.SetClickCallback = function() end
+    clear.scripts.OnClick = function() return 'native reset' end
+    local exact = Checkbox(dialog)
+    local search = frame('EditBox', dialog)
+    modules.Auctionator.refresh(); flush()
+    assert(launcher.dropdown and first.initialize and nested.initialize)
+    assert(search.input and not search.padInput and #exact.children == 1)
+    assert(clear.texture.alpha == 1 and clear.scripts.OnClick() == 'native reset')
+
+    local function Open(element, owner, selected)
+        local menu = frame('Frame')
+        function menu:GetOwnerRegion() return owner end
+        local backdrop = menu:CreateTexture(nil, 'BACKGROUND')
+        local row = frame('Button', menu)
+        row.mouse = true
+        row.leftTexture1 = row:CreateTexture(nil, 'ARTWORK')
+        row.leftTexture2 = row:CreateTexture(nil, 'ARTWORK')
+        row.leftTexture2:SetShown(selected)
+        row.GetElementDescription = function() return element end
+        row.scripts.OnClick = function() return 'native filter' end
+        element.initialize(row, element, menu)
+        flush()
+        assert(backdrop.color[1] == .08 and backdrop.color[4] == 1)
+        assert(row.leftTexture2.shown == selected and row.leftTexture2.w == 7)
+        assert(#menu.children == 1 and MouseTarget(menu, true) == row)
+        assert(row.scripts.OnClick() == 'native filter')
+    end
+    Open(first, launcher, false)
+    Open(nested, nil, true)
+    local rebuilt = description()
+    tree = {rebuilt}
+    assert(launcher:GenerateMenu() == 'native generation')
+    Open(rebuilt, nil, true)
+    MenuUtil = nil
+    print('PASS: Auctionator Extended Search first open and regenerated ownerless flyouts, opaque backgrounds, native selection/hit targets, semantic reset and unpadded input')
 end

@@ -150,7 +150,7 @@ RXP = {targeting = {CreateTargetFrame = function(self) self.activeTargetFrame = 
     ShowMenu = function(_, menu, owner) shownMenu = menu; return owner, nil, 9 end,
     LoadActiveTheme = function() originalCalls = originalCalls + 1; return source, nil, 'tail' end,
     RenderFrame = function() renders = renders + 1; return nil, 'render-tail' end,
-    v2 = {state = {}, GetTheme = function() return source2 end,
+    v2 = {state = {}, UpdatePlayerActiveStepItem = function() return "native update" end, GetTheme = function() return source2 end,
         GetGuideWindow = function(self)
             guideCreates = guideCreates + 1
             local window = {frame = frame(), banner = region('v2-banner', 'ARTWORK'), UpdateTheme = function() end}
@@ -378,6 +378,39 @@ local function label()
     function text:SetJustifyH(value) self.justify = value end
     return text
 end
+local nativeAccept = "|TInterface/GossipFrame/AvailableQuestIcon:0|t"
+local nativeTurnin = "|TInterface/GossipFrame/ActiveQuestIcon:0|t"
+local nativeTalk = "|Tinterface/worldmap/chatbubble_64grey.blp:20|t"
+local nativeFlag = "|TInterface/WORLDSTATEFRAME/ColumnIcon-FlagCapture2:0|t"
+local statusIcons = "|TInterface/GossipFrame/DailyQuestIcon:0|t|T135421:0|t|A:questlegendary:12:12|a"
+local originalMarkers = nativeAccept .. nativeTurnin .. nativeTalk .. nativeFlag .. statusIcons .. "|cff00ff00NPC|r"
+row.text = label()
+row.text:SetText(originalMarkers)
+local activeIcon = label()
+activeIcon:SetText(nativeAccept)
+step.elements = {{icon = activeIcon}}
+local v2Icon = label()
+v2Icon:SetText(nativeTalk)
+local v2Text = label()
+v2Text:SetText(nativeFlag)
+local activeItem = {elementRows = {{icon = v2Icon, text = v2Text}}}
+local v2ListText = label()
+v2ListText:SetText(nativeTurnin)
+window.guideSteps:SetRows({{frame = v2Row, text = v2ListText}})
+RXP.v2.state.player = {Player = {activeStepFrame = {children = {activeItem}}}}
+assert(RXP.v2:UpdatePlayerActiveStepItem(activeItem) == "native update")
+local function CheckBronzeMarkers()
+    local text = row.text:GetText()
+    assert(text:find("AvailableQuestIcon:0:0:::::::::255:211:163", 1, true))
+    assert(text:find("ActiveQuestIcon:0:0:::::::::255:211:163", 1, true))
+    assert(text:find("chatbubble_64grey.blp:20:20:::::::::228:178:123", 1, true))
+    assert(text:find("RestedXPRouteFlag:0|t", 1, true))
+    assert(text:find(statusIcons .. "|cff00ff00NPC|r", 1, true))
+    assert(activeIcon:GetText():find("255:211:163|t", 1, true))
+    assert(v2ListText:GetText():find("255:211:163|t", 1, true))
+    assert(v2Icon:GetText():find("228:178:123|t", 1, true))
+    assert(v2Text:GetText():find("RestedXPRouteFlag:0|t", 1, true))
+end
 local oldFont = S.Font
 S.Font = function(text)
     if text.SetFont then text:SetFont("EUI-font", select(2, text:GetFont()), "OUTLINE") end
@@ -412,6 +445,11 @@ for host, parent in pairs(parents) do
     end
 end
 assert(#titleArt == 2)
+CheckBronzeMarkers()
+row.text:SetText(statusIcons)
+assert(row.text:GetText() == statusIcons)
+row.text:SetText(originalMarkers)
+CheckBronzeMarkers()
 assert(#labels == 2 and guide.GuideName.text:GetAlpha() == 0)
 assert(labels[1]:GetText() == "The Barrens" and labels[2]:GetText() == "Dungeon Guide")
 assert(labels[1].justify == "LEFT" and labels[1].points[1][4] == 7)
@@ -476,12 +514,15 @@ local choices = shownMenu[2].menuList
 assert(choices[2].checked())
 choices[3].func(); flush()
 assert(EUIAddonSkinsDB.restedXP.style == "standard" and not legacyArt:IsShown())
+assert(row.text:GetText() == originalMarkers and activeIcon:GetText() == nativeAccept)
+assert(v2ListText:GetText() == nativeTurnin and v2Icon:GetText() == nativeTalk and v2Text:GetText() == nativeFlag)
 assert(guide.GuideName.text:GetAlpha() == 1 and guide.GuideName.text.justify == "CENTER" and not labels[1]:IsShown())
 assert(select(5, auxTarget.title:GetPoint()) == 8 and auxTarget.title:GetHeight() == 19)
 assert(select(2, auxTarget.title.text:GetFont()) == 12)
 activeLook = "eui"
 choices[4].func(); flush()
 assert(EUIAddonSkinsDB.restedXP.style == "forever" and legacyArt:IsShown())
+CheckBronzeMarkers()
 choices[5].func()
 assert(opened.args.opacity.get() == 72)
 assert(status:GetBackdrop() == nil and close:GetScript("OnClick") == closeClick)

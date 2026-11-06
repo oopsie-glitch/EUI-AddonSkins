@@ -1606,6 +1606,64 @@ end, function(S, module)
             nativeFillAlpha[fill] = nil
         end
     end
+    -- Change only the display labels. RXP's shared icon table also feeds
+    -- tooltips, map markers and exported step data.
+    local markerTints = {
+        ["interface/gossipframe/availablequesticon"] = "255:211:163",
+        ["interface/gossipframe/activequesticon"] = "255:211:163",
+        ["interface/gossipframe/gossipgossipicon"] = "228:178:123",
+        ["interface/worldmap/chatbubble_64grey"] = "228:178:123",
+    }
+    local function BronzeMarkers(text)
+        if type(text) ~= "string" or not text:find("|T", 1, true) then return text end
+        return (text:gsub("|T([^:|]+):(%d+)|t", function(path, height)
+            local key = path:lower():gsub("\\", "/"):gsub("%.blp$", "")
+            if key == "interface/worldstateframe/columnicon-flagcapture2" then
+                return "|TInterface/AddOns/EUIAddonSkins/Media/RestedXPRouteFlag:" .. height .. "|t"
+            end
+            local tint = markerTints[key]
+            if not tint then return end
+            -- Explicit square width matches the omitted native width, even
+            -- when the authored height is a fixed pixel size instead of 0.
+            return "|T" .. path .. ":" .. height .. ":" .. height .. ":::::::::" .. tint .. "|t"
+        end))
+    end
+    local iconLabels = setmetatable({}, {__mode = "k"})
+    local function SkinIconLabel(label, forever)
+        if not H.Allowed(label) or not label.GetText or not label.SetText then return end
+        local state = iconLabels[label]
+        if not state then
+            if not forever then return end
+            state = {}
+            iconLabels[label] = state
+            H.Hook(label, "SetText", function(_, value)
+                if state.writing or not ForeverLook() then return end
+                if value ~= state.source then
+                    state.source, state.rendered = value, BronzeMarkers(value)
+                end
+                if state.rendered ~= value then
+                    state.writing = true
+                    label:SetText(state.rendered)
+                    state.writing = false
+                end
+            end)
+        end
+        local text = label:GetText()
+        if forever then
+            if text ~= state.rendered and text ~= state.source then
+                state.source, state.rendered = text, BronzeMarkers(text)
+            end
+            if text == state.source and state.rendered ~= text then label:SetText(text) end
+        elseif state.rendered ~= state.source and text == state.rendered then
+            label:SetText(state.source)
+        end
+    end
+    local function SkinActiveIcons(item, forever)
+        for _, row in ipairs(item.elementRows or {}) do
+            SkinIconLabel(row.icon, forever)
+            SkinIconLabel(row.text, forever)
+        end
+    end
     local function V2Dividers(steps)
         if CombatLocked() then applyWaiting = true; return end
         local forever = ForeverLook()
@@ -1616,6 +1674,7 @@ end, function(S, module)
             or (not forever and BackgroundOverride())
         for _, item in pairs(steps.items or {}) do
             local row = item.frame
+            SkinIconLabel(item.text, forever)
             StepDivider(row, forever)
             NativeFillAlpha(row and row.rxpShadow, forever and 0 or nil)
             NativeFillAlpha(item.numberFrame and item.numberFrame.rxpBackground, forever and 0 or nil)
@@ -1644,6 +1703,7 @@ end, function(S, module)
             LegacyChrome(legacy)
             for _, row in ipairs(legacy.ScrollChild and legacy.ScrollChild.framePool or {}) do
                 if forever then Font(row.text); Font(row.number and row.number.text) end
+                SkinIconLabel(row.text, forever)
                 StepDivider(row, forever)
             end
             Scan(legacy)
@@ -1661,7 +1721,11 @@ end, function(S, module)
                 TintBackdrop(step.number)
                 if forever then
                     Font(step.number and step.number.text)
-                    for _, element in pairs(step.elements or {}) do Font(element.text) end
+                end
+                for _, element in pairs(step.elements or {}) do
+                    if forever then Font(element.text) end
+                    SkinIconLabel(element.icon, forever)
+                    SkinIconLabel(element.text, forever)
                 end
                 -- The V1 pool also supplies independently positioned tip windows.
                 local detached = step.GetFrameStrata and step:GetFrameStrata() ~= legacy:GetFrameStrata()
@@ -1722,6 +1786,7 @@ end, function(S, module)
             for _, child in pairs(active and active.children or {}) do
                 ThemeShell(child.card or child.frame, "step")
                 ThemeShell(child.title, "badge")
+                SkinActiveIcons(child, forever)
             end
         end
         local party = state and state.activePartyStepFrame
@@ -1764,6 +1829,9 @@ end, function(S, module)
     H.Hook(addon.v2, "GetGuideWindow", function()
         local window = addon.v2.state and addon.v2.state.guideWindow or _G.RXPV2GuideWindow
         if window and window ~= guideWindowSeen then refresh() end
+    end)
+    H.Hook(addon.v2, "UpdatePlayerActiveStepItem", function(_, item)
+        if not CombatLocked() and ForeverLook() then SkinActiveIcons(item, true) end
     end)
     for _, name in ipairs({"UpdateGuideWindow", "UpdateActiveStepTheme"}) do H.Hook(addon.v2, name, refresh) end
     if addon.ui and addon.ui.v2 then

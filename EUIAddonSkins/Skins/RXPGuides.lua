@@ -496,6 +496,61 @@ end, function(S, module)
         if ring then EUI.ForeverBorderSeat(ring, parent or host, "TOPLEFT", 0, 0, 0, 0) end
         return ring
     end
+    local function ForeverSurface(art, band)
+        local plate = art:CreateTexture(nil, "BACKGROUND", nil, 1)
+        local grain = art:CreateTexture(nil, "BACKGROUND", nil, 2)
+        plate:SetAllPoints(art)
+        grain:SetAllPoints(art)
+        local r, g, b = ForeverPanel(band)
+        if not band then r, g, b = 0.107, 0.077, 0.054 end
+        plate:SetColorTexture(r, g, b, 1)
+        if plate.SetGradient and CreateColor then
+            local shade = band and 0.54 or 0.63
+            plate:SetGradient("VERTICAL", CreateColor(r * shade, g * shade, b * shade, 1),
+                CreateColor(r, g, b, 1))
+        end
+        grain:SetTexture("Interface/Tooltips/UI-Tooltip-Background", "REPEAT", "REPEAT")
+        grain:SetHorizTile(true); grain:SetVertTile(true)
+        grain:SetVertexColor(0.43, 0.34, 0.24, 1)
+        grain:SetAlpha(band and 0.16 or 0.24)
+        return grain
+    end
+
+    local function CombatLocked()
+        return InCombatLockdown and InCombatLockdown()
+    end
+    local compositions = setmetatable({}, {__mode = "k"})
+    local function ComposeGuide(root, header, footer, currentStep, forever)
+        local art = root and compositions[root]
+        if not art and forever and root and root.GetFrameLevel and header and footer
+            and not (root.IsForbidden and root:IsForbidden()) then
+            local EUI = _G.EllesmereUI
+            if not (EUI.IS_FOREVER and EUI.ForeverBorder and EUI.ForeverBorderSeat and EUI.ForeverBorderShown) then return end
+            art = ForeverArtHost(root)
+            local function AnchorTop()
+                if not ForeverLook() then return end
+                if CombatLocked() then refresh(); return end
+                local top = currentStep and currentStep:IsShown() and currentStep:GetHeight() > 0 and currentStep or header
+                if art.top == top then return end
+                art.top = top
+                art:ClearAllPoints()
+                art:SetPoint("TOPLEFT", top, "TOPLEFT", -2, top == currentStep and 6 or 2)
+                art:SetPoint("BOTTOMRIGHT", footer, "BOTTOMRIGHT", 2, -2)
+            end
+            AnchorTop()
+            H.Script(currentStep, "OnShow", AnchorTop)
+            H.Script(currentStep, "OnHide", AnchorTop)
+            art.anchorTop = AnchorTop
+            ForeverSurface(art, false)
+            ForeverRim(art)
+            compositions[root] = art
+        end
+        if art then
+            if forever then art.anchorTop() end
+            art:SetShown(forever)
+            if forever then return art end
+        end
+    end
     local rims = setmetatable({}, {__mode = "k"})
     local function ButtonRim(button, forever)
         if not H.Allowed(button) then return end
@@ -633,7 +688,7 @@ end, function(S, module)
                 borderLocks[f] = true
                 if ForeverLook() then
                     local entry = themed[f]
-                    f:SetBackdropBorderColor(bronzeR, bronzeG, bronzeB, entry and (entry.rim or entry.secondary) and 0 or 1)
+                    f:SetBackdropBorderColor(bronzeR, bronzeG, bronzeB, entry and (entry.rim or entry.secondary or entry.joinedBody) and 0 or 1)
                 else f:SetBackdropBorderColor(0.055, 0.055, 0.055, 1) end
                 borderLocks[f] = false
             end
@@ -666,9 +721,6 @@ end, function(S, module)
             scans[f] = apply
         end
         apply()
-    end
-    local function CombatLocked()
-        return InCombatLockdown and InCombatLockdown()
     end
     local slimThumbs = {}
     local guideChrome = setmetatable({}, {__mode = "k"})
@@ -751,7 +803,7 @@ end, function(S, module)
         if CombatLocked() then return end
         local shown = true
         local border = f.rxpBorder
-        if (entry.rim or entry.secondary) and border and border.GetAlpha and border.SetAlpha then
+        if (entry.rim or entry.secondary or entry.joinedBody or entry.borderAlpha ~= nil) and border and border.GetAlpha and border.SetAlpha then
             if entry.forever then
                 if entry.borderAlpha == nil then entry.borderAlpha = border:GetAlpha() end
                 if border:GetAlpha() ~= 0 then border:SetAlpha(0) end
@@ -784,12 +836,14 @@ end, function(S, module)
             elseif addon.colors and addon.colors.background then opacity = addon.colors.background[4] or 1
             else opacity = select(4, S.GetPanelColor()) or 1 end
         end
-        local alpha = shown and opacity or 0
+        local composition = entry.composition
+        if composition and composition:GetAlpha() ~= opacity then composition:SetAlpha(opacity) end
+        local alpha = shown and not (entry.forever and entry.joinedBody) and opacity or 0
         if not entry.layer.GetAlpha or entry.layer:GetAlpha() ~= alpha then entry.layer:SetAlpha(alpha) end
         local items = addon.activeItemFrame
         if f == target and items and items ~= f and themed[items] then SyncShell(items, themed[items]) end
     end
-    local function ThemeShell(f, chrome)
+    local function ThemeShell(f, chrome, composition)
         if not f or not f.GetFrameLevel or (not chrome and not f.GetBackdrop and not f.rxpBackground) or CombatLocked()
             or (f.IsForbidden and f:IsForbidden()) then return end
         local entry = themed[f]
@@ -824,42 +878,31 @@ end, function(S, module)
         end
         if chrome then
             local forever = ForeverLook()
-            if forever and not entry.plate then
+            local joinedBody = chrome == "joined"
+            local roleChanged = entry.joinedBody ~= joinedBody
+            entry.joinedBody = joinedBody
+            entry.composition = composition
+            if forever and not entry.art and not joinedBody then
                 local art = ForeverArtHost(entry.layer)
-                local plate = art:CreateTexture(nil, "BACKGROUND", nil, 1)
-                plate:SetAllPoints(entry.layer)
+                entry.art = art
                 local band = chrome == "header" or chrome == "footer"
-                plate:SetColorTexture(ForeverPanel(band))
-                local grain = art:CreateTexture(nil, "BACKGROUND", nil, 2)
-                grain:SetAllPoints(entry.layer)
-                grain:SetTexture("Interface/Tooltips/UI-Tooltip-Background", "REPEAT", "REPEAT")
-                grain:SetHorizTile(true); grain:SetVertTile(true)
-                grain:SetVertexColor(0.43, 0.34, 0.24, 1)
+                local grain = ForeverSurface(art, band)
                 entry.secondary = band or chrome == "badge"
                 if not entry.secondary then entry.rim = ForeverRim(art) end
-                if plate.SetGradient and CreateColor then
-                    local r, g, b = ForeverPanel(band)
-                    local shade = band and 0.52 or 0.72
-                    plate:SetGradient("VERTICAL", CreateColor(r, g, b, 1),
-                        CreateColor(r * shade, g * shade, b * shade, 1))
-                end
-                entry.plate, entry.grain = plate, grain
-                if chrome == "header" then
+                if chrome == "badge" then grain:SetAlpha(0.12) end
+                if band then
                     local divider = art:CreateTexture(nil, "BACKGROUND", nil, 3)
-                    divider:SetPoint("BOTTOMLEFT", entry.layer, "BOTTOMLEFT", 1, 0)
-                    divider:SetPoint("BOTTOMRIGHT", entry.layer, "BOTTOMRIGHT", -1, 0)
+                    local edge = chrome == "header" and "BOTTOM" or "TOP"
+                    divider:SetPoint(edge .. "LEFT", art, edge .. "LEFT", 1, 0)
+                    divider:SetPoint(edge .. "RIGHT", art, edge .. "RIGHT", -1, 0)
                     divider:SetHeight(1)
-                    divider:SetColorTexture(bronzeR, bronzeG, bronzeB, 0.38)
-                    entry.divider = divider
+                    divider:SetColorTexture(bronzeR, bronzeG, bronzeB, chrome == "header" and 0.55 or 0.34)
                 end
             end
-            if entry.plate and entry.forever ~= forever then
-                entry.plate:SetAlpha(forever and 1 or 0)
-                entry.grain:SetAlpha(forever and 0.18 or 0)
-                if entry.rim then _G.EllesmereUI.ForeverBorderShown(entry.rim, forever) end
-                if entry.divider then entry.divider:SetAlpha(forever and 1 or 0) end
+            if entry.forever ~= forever or roleChanged then
                 entry.forever = forever
-                if (entry.rim or entry.secondary) and f.GetBackdrop and f:GetBackdrop() then TintBackdrop(f) end
+                if entry.art then entry.art:SetShown(forever and not joinedBody) end
+                if (entry.art or joinedBody) and f.GetBackdrop and f:GetBackdrop() then TintBackdrop(f) end
             end
         end
         SyncShell(f, entry)
@@ -1049,14 +1092,18 @@ end, function(S, module)
             -- Secure children may make the guide root implicitly protected. Tint
             -- only the known visual containers, without entering action buttons.
             for _, key in ipairs({"BottomFrame", "GuideName", "Footer"}) do TintBackdrop(legacy[key]) end
-            ThemeShell(legacy.BottomFrame, "body")
+            local shell = ComposeGuide(legacy, legacy.GuideName, legacy.Footer, legacy.CurrentStepFrame, forever)
+            ThemeShell(legacy.BottomFrame, shell and "joined" or "body", shell)
+            ButtonRim(legacy.Footer and legacy.Footer.cog, shell ~= nil)
             ThemeShell(legacy.GuideName, "header")
             ThemeShell(legacy.Footer, "footer")
             ns.AttachAccent(S, legacy.GuideName)
             for _, step in pairs(legacy.CurrentStepFrame and legacy.CurrentStepFrame.framePool or {}) do
                 TintBackdrop(step)
                 TintBackdrop(step.number)
-                ThemeShell(step, "body")
+                -- The V1 pool also supplies independently positioned tip windows.
+                local detached = step.GetFrameStrata and step:GetFrameStrata() ~= legacy:GetFrameStrata()
+                ThemeShell(step, shell and not detached and "joined" or "body")
                 ThemeShell(step.number, "badge")
             end
             H.Hook(legacy, "UpdateVisuals", function() LegacyChrome(legacy); refresh() end)
@@ -1069,9 +1116,10 @@ end, function(S, module)
         if window then
             guideWindowSeen = window
             Scan(window.frame)
-            ThemeShell(window.upperFrame, "body")
+            local shell = ComposeGuide(window.frame, window.upperFrame or window.guideNameFrame, window.footer, nil, forever)
+            ThemeShell(window.upperFrame, shell and "joined" or "body")
             ThemeShell(window.guideNameFrame, "header")
-            ThemeShell(window.guideStepsFrame, "body")
+            ThemeShell(window.guideStepsFrame, shell and "joined" or "body", shell)
             ThemeShell(window.footer, "footer")
             ButtonRim(window.settingsButton, forever)
             ButtonRim(window.guideSelectButton, forever)

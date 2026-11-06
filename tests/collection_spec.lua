@@ -42,6 +42,19 @@ local function frame(kind)
     end
     function f:SetFrameLevel(level) self.level = level end
     function f:SetAlpha(alpha) self.alpha = alpha end
+    function f:GetAlpha() return self.alpha or 1 end
+    function f:GetFrameLevel() return self.level or 4 end
+    function f:GetFrameStrata() return self.strata or "BACKGROUND" end
+    function f:GetHeight() return self.height or 24 end
+    function f:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end
+    function f:ClearAllPoints() self.points = {} end
+    function f:IsShown() return self.shown ~= false end
+    function f:SetShown(shown)
+        if self:IsShown() == shown then return end
+        self.shown = shown
+        local callback = self.hooks[shown and "OnShow" or "OnHide"]
+        if callback then callback(self) end
+    end
     function f:SetAllPoints(target) self.allPoints = target end
     function f:EnableMouse(value) self.mouseEnabled = value end
     function f:GetObjectType() return self.kind end
@@ -62,7 +75,6 @@ InCombatLockdown = function() return combat end
 CreateFrame = function(_, _, parent)
     local f = frame()
     parents[f] = parent
-    function f:GetFrameLevel() return self.level or 4 end
     function f:RegisterEvent(event) self.event = event; combatEvents = self end
     function f:SetScript(event, fn) self.hooks[event] = fn end
     return f
@@ -90,11 +102,11 @@ guide.backdrop = {
     guideName = {edgeSize = 8, insets = {left = 4, right = 2, top = 2, bottom = 4}},
     bottom = {insets = {left = 4, right = 2, top = 2, bottom = 4}},
 }
-guide.GuideName = {bg = region('banner', 'BACKGROUND'), icon = region('logo', 'ARTWORK')}
+guide.GuideName = frame(); guide.GuideName.bg = region('banner', 'BACKGROUND'); guide.GuideName.icon = region('logo', 'ARTWORK')
 guide.BottomFrame = frame(); guide.BottomFrame:SetBackdrop({edgeFile = 'old'})
 local step = frame(); step.number = frame(); step:SetBackdrop({edgeFile = 'old'}); step.number:SetBackdrop({edgeFile = 'old'})
-guide.CurrentStepFrame = {framePool = {step}}
-guide.Footer = {bg = region('footer', 'BACKGROUND')}
+guide.CurrentStepFrame = frame(); guide.CurrentStepFrame.framePool = {step}
+guide.Footer = frame(); guide.Footer.bg = region('footer', 'BACKGROUND')
 local secret, input = frame('EditBox'), frame('EditBox'); secret.protected = true
 guide.children = {secret, input}
 local guideCreates, originalCalls, renders = 0, 0, 0
@@ -118,7 +130,7 @@ step:SetBackdropBorderColor(0.1, 0.8, 0.6, 1); assert(step.borderColor[2] == 0.8
 step:SetBackdropBorderColor(0.2, 0.2, 0.22, 1); assert(step.borderColor[1] == 0.055, 'neutral border must stay subdued')
 guide.protected = false
 assert(guideCreates == 0, 'skin must not create lazy guide windows')
-assert(edits == 1 and guide.GuideName.icon.alpha == 0.8, 'restricted controls and icons must survive')
+assert(edits == 1, 'protected controls must remain unstyled')
 assert(guide.GuideName.bg.alpha == 0, 'legacy banner remains visible')
 local theme, empty, tail = RXP:LoadActiveTheme()
 assert(theme ~= source and empty == nil and tail == 'tail', 'theme wrapper lost returns')
@@ -148,11 +160,11 @@ window.banner:SetAlpha(1); assert(window.banner.alpha == 0, 'banner alpha lock m
 -- selects the variant. Exercise the existing theme and layout refresh route.
 local activeLook = "eui"
 local rimCalls, lastRim = 0
+local rings = {}
 local row = frame()
 function row:IsShown() return true end
 guide.ScrollChild = {framePool = {row}}
 local button = frame("Button")
-function button:GetFrameLevel() return 4 end
 local guidePanel = frame()
 guidePanel.GetFrameLevel = function() return 4 end
 guidePanel.rxpBackground = region("fill", "BACKGROUND")
@@ -163,6 +175,7 @@ band.GetFrameLevel = guidePanel.GetFrameLevel
 band.rxpBackground = region("fill", "BACKGROUND")
 band.rxpBorder = region("edge", "BORDER")
 window.guideNameFrame = band
+window.footer = frame()
 local bandBorderAlpha = band.rxpBorder:GetAlpha()
 local oldBorderAlpha = guidePanel.rxpBorder:GetAlpha()
 window.settingsButton = button
@@ -174,6 +187,7 @@ EllesmereUI = {
     ForeverBorder = function(host)
         rimCalls = rimCalls + 1
         lastRim = {on = true, host = host, texture = host:CreateTexture()}
+        rings[parents[host]] = lastRim
         return lastRim
     end,
     ForeverBorderSeat = function(ring, host) assert(ring.host == host or parents[ring.host] == host) end,
@@ -186,26 +200,36 @@ EllesmereUI = {
 assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
 activeLook = "forever"
 modules.RXPGuides.refresh(); flush()
-assert(rimCalls == 2 and lastRim.on and parents[lastRim.host] == button)
+assert(rimCalls == 3 and lastRim.on and parents[lastRim.host] == button)
 assert(guidePanel.rxpBorder:GetAlpha() == 0 and band.rxpBorder:GetAlpha() == 0)
--- Simulate EUI's Restrip: it only fades direct textures of registered frames.
-local guideArt
-for host, parent in pairs(parents) do
-    if registeredPanels[parent] and parents[parent] == guidePanel then guideArt = host end
-end
-assert(guideArt and guideArt.mouseEnabled == false)
+assert(guide.BottomFrame.borderColor[4] == 0 and step.borderColor[4] == 0)
+local legacyArt, guideArt = rings[guide].host, rings[window.frame].host
+assert(legacyArt.points[1][2] == guide.CurrentStepFrame and legacyArt.points[2][2] == guide.Footer)
+assert(guideArt.points[1][2] == band and guideArt.points[2][2] == window.footer)
+guide.CurrentStepFrame:SetShown(false)
+assert(legacyArt.points[1][2] == guide.GuideName)
+guide.CurrentStepFrame:SetShown(true)
+assert(legacyArt.points[1][2] == guide.CurrentStepFrame)
+-- Simulate EUI's Restrip: only registered frames' direct textures are faded.
+assert(not registeredPanels[guideArt] and not registeredPanels[legacyArt])
+assert(guideArt.mouseEnabled == false and legacyArt.mouseEnabled == false)
 registeredPanels[button] = true
 for host in pairs(registeredPanels) do
     for _, texture in ipairs(host.created or {}) do texture:SetAlpha(0) end
 end
-assert(guideArt.created[1].alpha == 1 and guideArt.created[2].alpha > 0)
-assert(lastRim.texture.alpha ~= 0)
+assert(guideArt.created[2].alpha > 0 and legacyArt.created[2].alpha > 0)
+local bandArt
+for host, parent in pairs(parents) do
+    if registeredPanels[parent] and parents[parent] == band then bandArt = host end
+end
+assert(bandArt and bandArt.mouseEnabled == false and bandArt.created[2].alpha > 0)
+assert(lastRim.texture.alpha ~= 0 and rings[window.frame].texture.alpha ~= 0)
 
 assert(#row.created == 1 and row.created[1].shown)
 window.guideSteps:SetRows({{frame = v2Row}})
 assert(#v2Row.created == 1 and v2Row.created[1].shown)
 modules.RXPGuides.refresh(); flush()
-assert(rimCalls == 2 and #row.created == 1 and #v2Row.created == 1)
+assert(rimCalls == 3 and #row.created == 1 and #v2Row.created == 1)
 local bronze = RXP.v2:GetTheme()
 assert(bronze.borderColors.common[1] == 0.49)
 assert(bronze.backgroundColors.guideName[1] > bronze.backgroundColors.common[1])
@@ -218,9 +242,25 @@ activeLook = "eui"
 modules.RXPGuides.refresh(); flush()
 assert(step.borderColor[1] == 0.055 and RXP.colors.background[1] == 0.03)
 assert(not lastRim.on and not row.created[1].shown and not v2Row.created[1].shown)
+assert(not legacyArt:IsShown() and not guideArt:IsShown())
+assert(step.borderColor[4] == 1 and guide.BottomFrame.borderColor[4] == 1)
 assert(guidePanel.rxpBorder:GetAlpha() == oldBorderAlpha and band.rxpBorder:GetAlpha() == bandBorderAlpha)
 activeLook = "forever"
+modules.RXPGuides.refresh(); flush()
+assert(rimCalls == 3 and legacyArt:IsShown() and guideArt:IsShown())
+guide.CurrentStepFrame.height = 0
+modules.RXPGuides.refresh(); flush()
+assert(legacyArt.points[1][2] == guide.GuideName)
+step.strata = "MEDIUM"
+modules.RXPGuides.refresh(); flush()
+local tipRing = lastRim
+assert(rimCalls == 4 and tipRing.host:IsShown() and tipRing.host.mouseEnabled == false)
+step.strata = nil
+modules.RXPGuides.refresh(); flush()
+assert(rimCalls == 4 and not tipRing.host:IsShown() and step.borderColor[4] == 0)
 EllesmereUI.IS_FOREVER = false
+modules.RXPGuides.refresh(); flush()
+assert(not legacyArt:IsShown() and not guideArt:IsShown())
 assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
 EllesmereUI = nil
 

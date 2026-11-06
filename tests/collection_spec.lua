@@ -135,6 +135,35 @@ assert(source2.backgroundColors.common[1] == 1 and v2.mapPins == source2.mapPins
 local window = RXP.v2:GetGuideWindow(); flush()
 assert(window.banner.alpha == 0 and guideCreates == 1)
 window.banner:SetAlpha(1); assert(window.banner.alpha == 0, 'banner alpha lock missing')
+-- The whole-UI look, rather than the game client or the eui/modern palette,
+-- selects the variant. Exercise the existing theme and layout refresh route.
+local activeLook = "eui"
+EllesmereUI = {
+    IS_FOREVER = true,
+    GetActiveProfileData = function() return {windowSkinLook = activeLook} end,
+    ProfileWindowSkinLook = function(profile)
+        return EllesmereUI.IS_FOREVER and profile.windowSkinLook or "blizzard"
+    end,
+}
+assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
+activeLook = "forever"
+modules.RXPGuides.refresh(); flush()
+local bronze = RXP.v2:GetTheme()
+assert(bronze.borderColors.common[1] == 0.49)
+assert(bronze.backgroundColors.guideName[1] > bronze.backgroundColors.common[1])
+assert(step.borderColor[1] == 0.49 and RXP.colors.background[1] == 0.047)
+step:SetBackdropBorderColor(0.1, 0.8, 0.6, 1)
+assert(step.borderColor[2] == 0.8)
+step:SetBackdrop(guide.backdrop.edge)
+assert(step.borderColor[1] == 0.49)
+activeLook = "eui"
+modules.RXPGuides.refresh(); flush()
+assert(step.borderColor[1] == 0.055 and RXP.colors.background[1] == 0.03)
+activeLook = "forever"
+EllesmereUI.IS_FOREVER = false
+assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
+EllesmereUI = nil
+
 local target = frame(); target.protected = true; target.title = frame()
 target.title.text = {GetObjectType = function() return 'FontString' end}
 local action = frame('Button'); action.protected = true

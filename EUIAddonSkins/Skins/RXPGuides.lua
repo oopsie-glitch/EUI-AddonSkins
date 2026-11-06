@@ -464,12 +464,29 @@ end, function(S, module)
     local function Copy(t)
         local out = {}; for k, v in pairs(t or {}) do out[k] = v end; return out
     end
+    -- The public skin palette resolves only eui/modern. The whole-UI
+    -- profile resolver also handles Forever profiles imported on Retail.
+    local function ForeverLook()
+        local EUI = _G.EllesmereUI
+        if not (EUI and EUI.ProfileWindowSkinLook and EUI.GetActiveProfileData) then return false end
+        local db = _G.EllesmereUIDB
+        return EUI.ProfileWindowSkinLook(EUI.GetActiveProfileData(), db and db.fonts) == "forever"
+    end
+    -- Concept A's chrome palette. Semantic quest, completion and arrow
+    -- colours continue to come from their existing theme fields.
+    local bronzeR, bronzeG, bronzeB = 0.49, 0.33, 0.18
+    local function ForeverPanel(header)
+        if header then return 0.115, 0.082, 0.052 end
+        return 0.047, 0.038, 0.029
+    end
     local function Theme(source)
         if type(source) ~= "table" then return source end
         local out = copies[source]
         if not out then out = Copy(source); copies[source] = out end
         local r, g, b = S.GetAccentColor()
         local pr, pg, pb, pa = S.GetPanelColor()
+        local forever = ForeverLook()
+        if forever then pr, pg, pb = ForeverPanel(false) end
         out.font = S.GetFont()
         -- Session copies leave registered themes, saved choices and semantic colors intact.
         if source.backgroundColors then
@@ -477,10 +494,14 @@ end, function(S, module)
             for _, key in ipairs({"common", "guideName", "guideWindow", "scrollbar", "inactivePartyTab", "activeStepCheckbox"}) do
                 out.backgroundColors[key] = {pr, pg, pb, pa}
             end
+            if forever then
+                local hr, hg, hb = ForeverPanel(true)
+                out.backgroundColors.guideName = {hr, hg, hb, pa}
+            end
             out.backgroundColors.activeStepCheckboxChecked = {r, g, b, 1}
             out.borderColors = Copy(source.borderColors)
             for _, key in ipairs({"common", "commonEdge", "inactivePartyTab"}) do
-                out.borderColors[key] = {0.055, 0.055, 0.055, 1}
+                out.borderColors[key] = forever and {bronzeR, bronzeG, bronzeB, 1} or {0.055, 0.055, 0.055, 1}
             end
             out.borderColors.activeStepCheckboxChecked = {r, g, b, 1}
             out.textColor = Copy(source.textColor)
@@ -572,9 +593,12 @@ end, function(S, module)
                 if InCombatLockdown and InCombatLockdown() then if refresh then refresh() end; return end
                 if r == nil and f.GetBackdropBorderColor then r, g, b = f:GetBackdropBorderColor() end
                 -- Checked/status borders retain their semantic accent colour.
-                if r and g and b and (math.abs(r - g) > 0.04 or math.abs(r - b) > 0.04) then return end
+                local wasBronze = r and g and b and math.abs(r - bronzeR) < 0.002
+                    and math.abs(g - bronzeG) < 0.002 and math.abs(b - bronzeB) < 0.002
+                if not wasBronze and r and g and b and (math.abs(r - g) > 0.04 or math.abs(r - b) > 0.04) then return end
                 borderLocks[f] = true
-                f:SetBackdropBorderColor(0.055, 0.055, 0.055, 1)
+                if ForeverLook() then f:SetBackdropBorderColor(bronzeR, bronzeG, bronzeB, 1)
+                else f:SetBackdropBorderColor(0.055, 0.055, 0.055, 1) end
                 borderLocks[f] = false
             end
             if backdrop and backdrop.edgeFile then PaintBorder() end
@@ -663,7 +687,8 @@ end, function(S, module)
                 local icon = H.Texture(cog:GetNormalTexture())
                 if icon then
                     icon:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\cogs-3.png")
-                    icon:SetVertexColor(0.8, 0.8, 0.8, 1)
+                    if ForeverLook() then icon:SetVertexColor(0.79, 0.63, 0.42, 1)
+                    else icon:SetVertexColor(0.8, 0.8, 0.8, 1) end
                 end
             end
         end
@@ -700,7 +725,7 @@ end, function(S, module)
         local items = addon.activeItemFrame
         if f == target and items and items ~= f and themed[items] then SyncShell(items, themed[items]) end
     end
-    local function ThemeShell(f)
+    local function ThemeShell(f, chrome)
         if not f or not f.GetFrameLevel or (not f.GetBackdrop and not f.rxpBackground) or CombatLocked()
             or (f.IsForbidden and f:IsForbidden()) then return end
         local entry = themed[f]
@@ -729,6 +754,32 @@ end, function(S, module)
             H.Hook(f, "ClearBackdrop", function() SyncShell(f, entry) end)
             -- SetBackdrop already has the synchronous tint hook. Its callback
             -- below also handles removing/reinstating the native background.
+        end
+        if chrome then
+            local forever = ForeverLook()
+            if forever and not entry.plate then
+                local plate = entry.layer:CreateTexture(nil, "BACKGROUND", nil, 1)
+                plate:SetAllPoints(entry.layer)
+                plate:SetColorTexture(ForeverPanel(chrome == "header"))
+                local grain = entry.layer:CreateTexture(nil, "BACKGROUND", nil, 2)
+                grain:SetAllPoints(entry.layer)
+                grain:SetTexture("Interface/DialogFrame/UI-DialogBox-Background")
+                entry.plate, entry.grain = plate, grain
+                if chrome == "header" then
+                    local divider = entry.layer:CreateTexture(nil, "BACKGROUND", nil, 3)
+                    divider:SetPoint("BOTTOMLEFT", entry.layer, "BOTTOMLEFT", 1, 0)
+                    divider:SetPoint("BOTTOMRIGHT", entry.layer, "BOTTOMRIGHT", -1, 0)
+                    divider:SetHeight(1)
+                    divider:SetColorTexture(bronzeR, bronzeG, bronzeB, 0.7)
+                    entry.divider = divider
+                end
+            end
+            if entry.plate and entry.forever ~= forever then
+                entry.plate:SetAlpha(forever and 1 or 0)
+                entry.grain:SetAlpha(forever and 0.16 or 0)
+                if entry.divider then entry.divider:SetAlpha(forever and 1 or 0) end
+                entry.forever = forever
+            end
         end
         SyncShell(f, entry)
     end
@@ -895,15 +946,15 @@ end, function(S, module)
             -- Secure children may make the guide root implicitly protected. Tint
             -- only the known visual containers, without entering action buttons.
             for _, key in ipairs({"BottomFrame", "GuideName", "Footer"}) do TintBackdrop(legacy[key]) end
-            ThemeShell(legacy.BottomFrame)
-            ThemeShell(legacy.GuideName)
-            ThemeShell(legacy.Footer)
+            ThemeShell(legacy.BottomFrame, "body")
+            ThemeShell(legacy.GuideName, "header")
+            ThemeShell(legacy.Footer, "header")
             ns.AttachAccent(S, legacy.GuideName)
             for _, step in pairs(legacy.CurrentStepFrame and legacy.CurrentStepFrame.framePool or {}) do
                 TintBackdrop(step)
                 TintBackdrop(step.number)
-                ThemeShell(step)
-                ThemeShell(step.number)
+                ThemeShell(step, "body")
+                ThemeShell(step.number, "header")
             end
             H.Hook(legacy, "UpdateVisuals", function() LegacyChrome(legacy); refresh() end)
             H.Hook(legacy, "UpdateScrollBar", function() LegacyChrome(legacy) end)
@@ -915,7 +966,9 @@ end, function(S, module)
         if window then
             guideWindowSeen = window
             Scan(window.frame)
-            for _, key in ipairs({"upperFrame", "guideNameFrame", "guideStepsFrame"}) do ThemeShell(window[key]) end
+            ThemeShell(window.upperFrame, "header")
+            ThemeShell(window.guideNameFrame, "header")
+            ThemeShell(window.guideStepsFrame, "body")
             ns.AttachAccent(S, window.upperFrame or window.frame)
             H.Fade(window.banner)
             V2Chrome(window)
@@ -934,8 +987,8 @@ end, function(S, module)
         for _, player in pairs(state and state.player or {}) do
             local active = player.activeStepFrame
             for _, child in pairs(active and active.children or {}) do
-                ThemeShell(child.card or child.frame)
-                ThemeShell(child.title)
+                ThemeShell(child.card or child.frame, "body")
+                ThemeShell(child.title, "header")
             end
         end
         local party = state and state.activePartyStepFrame

@@ -433,12 +433,13 @@ end, function(S, module)
             if cr ~= r or cg ~= g or cb ~= b then text:SetTextColor(r, g, b, ca) end
         end
     end
+    local WarmTitle
     local titleMetrics = setmetatable({}, {__mode = "k"})
     local function AuxiliaryTitle(f)
         if InCombatLockdown and InCombatLockdown() then applyWaiting = true; return end
         local title, text = f and f.title, f and f.title and f.title.text
         if not title or not text or not text.GetFont then return end
-        local r, g, b = S.GetAccentColor()
+        local r, g, b = WarmTitle()
         Font(text, r, g, b)
         -- RXP measured with its previous font. Clear a stale FontString width
         -- before measuring the new face, retaining the native localized text.
@@ -479,6 +480,27 @@ end, function(S, module)
         if header then return 0.115, 0.082, 0.052 end
         return 0.047, 0.038, 0.029
     end
+    local function ForeverRim(host)
+        local EUI = _G.EllesmereUI
+        if not (EUI.ForeverBorder and EUI.ForeverBorderSeat and EUI.ForeverBorderShown) then return end
+        local ring = EUI.ForeverBorder(host, "ARTWORK", 1)
+        if ring then EUI.ForeverBorderSeat(ring, host, "TOPLEFT", 0, 0, 0, 0) end
+        return ring
+    end
+    local rims = setmetatable({}, {__mode = "k"})
+    local function ButtonRim(button, forever)
+        if not H.Allowed(button) then return end
+        local ring = rims[button]
+        if not ring and forever then
+            ring = ForeverRim(button)
+            rims[button] = ring
+        end
+        if ring and ring.on ~= forever then _G.EllesmereUI.ForeverBorderShown(ring, forever) end
+    end
+    WarmTitle = function()
+        if ForeverLook() then return 0.86, 0.73, 0.51 end
+        return S.GetAccentColor()
+    end
     local function Theme(source)
         if type(source) ~= "table" then return source end
         local out = copies[source]
@@ -497,6 +519,7 @@ end, function(S, module)
             if forever then
                 local hr, hg, hb = ForeverPanel(true)
                 out.backgroundColors.guideName = {hr, hg, hb, pa}
+                out.backgroundColors.scrollbar = {0.16, 0.11, 0.065, pa}
             end
             out.backgroundColors.activeStepCheckboxChecked = {r, g, b, 1}
             out.borderColors = Copy(source.borderColors)
@@ -597,7 +620,9 @@ end, function(S, module)
                     and math.abs(g - bronzeG) < 0.002 and math.abs(b - bronzeB) < 0.002
                 if not wasBronze and r and g and b and (math.abs(r - g) > 0.04 or math.abs(r - b) > 0.04) then return end
                 borderLocks[f] = true
-                if ForeverLook() then f:SetBackdropBorderColor(bronzeR, bronzeG, bronzeB, 1)
+                if ForeverLook() then
+                    local entry = themed[f]
+                    f:SetBackdropBorderColor(bronzeR, bronzeG, bronzeB, entry and entry.rim and 0 or 1)
                 else f:SetBackdropBorderColor(0.055, 0.055, 0.055, 1) end
                 borderLocks[f] = false
             end
@@ -636,8 +661,10 @@ end, function(S, module)
     end
     local slimThumbs = {}
     local guideChrome = setmetatable({}, {__mode = "k"})
+    local footerTint = setmetatable({}, {__mode = "k"})
     local function LegacyChrome(f)
         if CombatLocked() or not f then return end
+        local forever = ForeverLook()
         local header = f.GuideName
         if H.Allowed(header) then
             if not guideChrome[header] and H.Allowed(f.BottomFrame) and header.ClearAllPoints then
@@ -661,6 +688,8 @@ end, function(S, module)
         if H.Allowed(scroll) then
             local visual = slimThumbs[scroll]
             H.LegacySlider(scroll, visual and visual.fill)
+            ButtonRim(scroll.ScrollUpButton, forever)
+            ButtonRim(scroll.ScrollDownButton, forever)
             local thumb = scroll.GetThumbTexture and H.Texture(scroll:GetThumbTexture())
             if thumb then
                 if not visual then
@@ -677,17 +706,30 @@ end, function(S, module)
                 -- Retain the native thumb geometry and drag hit area.
                 H.Fade(thumb)
                 local r, g, b = S.GetAccentColor()
+                if forever then r, g, b = 0.68, 0.44, 0.22 end
                 visual.fill:SetColorTexture(r, g, b, 0.8)
             end
         end
         if f.Footer then
             if H.Allowed(f.Footer.icon) then H.Resize(f.Footer.icon, true) end
             local cog = f.Footer.cog
+            ButtonRim(cog, forever)
+            local label = f.Footer.text
+            if H.Allowed(label) and label.GetTextColor then
+                if forever then
+                    if not footerTint[label] then footerTint[label] = {label:GetTextColor()} end
+                    local r, g, b = WarmTitle()
+                    label:SetTextColor(r, g, b, footerTint[label][4])
+                elseif footerTint[label] then
+                    label:SetTextColor(unpack(footerTint[label]))
+                    footerTint[label] = nil
+                end
+            end
             if H.Allowed(cog) and cog.GetNormalTexture then
                 local icon = H.Texture(cog:GetNormalTexture())
                 if icon then
                     icon:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\cogs-3.png")
-                    if ForeverLook() then icon:SetVertexColor(0.79, 0.63, 0.42, 1)
+                    if forever then icon:SetVertexColor(0.79, 0.63, 0.42, 1)
                     else icon:SetVertexColor(0.8, 0.8, 0.8, 1) end
                 end
             end
@@ -696,6 +738,16 @@ end, function(S, module)
     SyncShell = function(f, entry)
         if CombatLocked() then return end
         local shown = true
+        local border = f.rxpBorder
+        if entry.rim and border and border.GetAlpha and border.SetAlpha then
+            if entry.forever then
+                if entry.borderAlpha == nil then entry.borderAlpha = border:GetAlpha() end
+                if border:GetAlpha() ~= 0 then border:SetAlpha(0) end
+            elseif entry.borderAlpha ~= nil then
+                border:SetAlpha(entry.borderAlpha)
+                entry.borderAlpha = nil
+            end
+        end
         if f.rxpBackground then
             shown = not f.rxpBackground.IsShown or f.rxpBackground:IsShown()
             f.rxpBackground:SetAlpha(0) -- native border/visibility still belongs to RXP
@@ -726,16 +778,19 @@ end, function(S, module)
         if f == target and items and items ~= f and themed[items] then SyncShell(items, themed[items]) end
     end
     local function ThemeShell(f, chrome)
-        if not f or not f.GetFrameLevel or (not f.GetBackdrop and not f.rxpBackground) or CombatLocked()
+        if not f or not f.GetFrameLevel or (not chrome and not f.GetBackdrop and not f.rxpBackground) or CombatLocked()
             or (f.IsForbidden and f:IsForbidden()) then return end
         local entry = themed[f]
         if not entry then
+            if not f.GetBackdrop and not f.rxpBackground and not ForeverLook() then return end
             -- Own flat background-only child: leave icon and guide regions native.
             local layer = CreateFrame("Frame", nil, f)
             layer:SetAllPoints(f)
             layer:SetFrameLevel(f:GetFrameLevel())
             layer:EnableMouse(false)
-            S.Panel(layer, {noBorder = true, inset = false})
+            if f.GetBackdrop or f.rxpBackground then
+                S.Panel(layer, {noBorder = true, inset = false})
+            end
             entry = {layer = layer, opacity = 1}
             local fill = f.rxpBackground and f.rxpBackground.textures and f.rxpBackground.textures[1]
             if fill and fill.GetVertexColor then
@@ -763,7 +818,14 @@ end, function(S, module)
                 plate:SetColorTexture(ForeverPanel(chrome == "header"))
                 local grain = entry.layer:CreateTexture(nil, "BACKGROUND", nil, 2)
                 grain:SetAllPoints(entry.layer)
-                grain:SetTexture("Interface/DialogFrame/UI-DialogBox-Background")
+                grain:SetTexture("Interface/Tooltips/UI-Tooltip-Background", "REPEAT", "REPEAT")
+                grain:SetHorizTile(true); grain:SetVertTile(true)
+                grain:SetVertexColor(0.43, 0.34, 0.24, 1)
+                if chrome ~= "badge" then entry.rim = ForeverRim(entry.layer) end
+                if chrome == "header" and plate.SetGradient and CreateColor then
+                    plate:SetGradient("VERTICAL", CreateColor(0.13, 0.086, 0.045, 1),
+                        CreateColor(0.038, 0.029, 0.023, 1))
+                end
                 entry.plate, entry.grain = plate, grain
                 if chrome == "header" then
                     local divider = entry.layer:CreateTexture(nil, "BACKGROUND", nil, 3)
@@ -776,9 +838,11 @@ end, function(S, module)
             end
             if entry.plate and entry.forever ~= forever then
                 entry.plate:SetAlpha(forever and 1 or 0)
-                entry.grain:SetAlpha(forever and 0.16 or 0)
+                entry.grain:SetAlpha(forever and 0.12 or 0)
+                if entry.rim then _G.EllesmereUI.ForeverBorderShown(entry.rim, forever) end
                 if entry.divider then entry.divider:SetAlpha(forever and 1 or 0) end
                 entry.forever = forever
+                if entry.rim and f.GetBackdrop and f:GetBackdrop() then TintBackdrop(f) end
             end
         end
         SyncShell(f, entry)
@@ -801,8 +865,8 @@ end, function(S, module)
         end
         TintBackdrop(f)
         TintBackdrop(f.title)
-        ThemeShell(f)
-        ThemeShell(f.title)
+        ThemeShell(f, "body")
+        ThemeShell(f.title, "badge")
         AuxiliaryTitle(f)
     end
     QueueTargets = function()
@@ -823,7 +887,7 @@ end, function(S, module)
             H.Script(f, "OnShow", function() AuxiliaryTitle(f) end)
         end
         TintBackdrop(f); TintBackdrop(f.title)
-        ThemeShell(f); ThemeShell(f.title)
+        ThemeShell(f, "body"); ThemeShell(f.title, "badge")
         AuxiliaryTitle(f)
         -- Secure item-use buttons keep all attributes, dimensions and handlers.
         -- Crop only their existing icon textures, outside combat.
@@ -935,13 +999,35 @@ end, function(S, module)
             if window.subtitle and window.subtitle.SetJustifyH then window.subtitle:SetJustifyH("CENTER") end
         end
     end
+    local rowDividers = setmetatable({}, {__mode = "k"})
+    local function StepDivider(row, forever)
+        local divider = rowDividers[row]
+        if forever and not divider and H.Allowed(row) and row:IsShown() then
+            divider = row:CreateTexture(nil, "BACKGROUND", nil, 2)
+            divider:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 5, 0)
+            divider:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -5, 0)
+            divider:SetHeight(1)
+            divider:SetColorTexture(bronzeR, bronzeG, bronzeB, 0.48)
+            rowDividers[row] = divider
+        end
+        if divider then divider:SetShown(forever) end
+    end
+    local function V2Dividers(steps)
+        if CombatLocked() then applyWaiting = true; return end
+        local forever = ForeverLook()
+        for _, item in pairs(steps.items or {}) do StepDivider(item.frame, forever) end
+    end
     local function Apply()
         if CombatLocked() then applyWaiting = true; return end
         applyWaiting = false
         Wrap(addon.v2, "GetTheme")
+        local forever = ForeverLook()
         local legacy = addon.RXPFrame or _G.RXPFrame
         if legacy then
             LegacyChrome(legacy)
+            for _, row in ipairs(legacy.ScrollChild and legacy.ScrollChild.framePool or {}) do
+                StepDivider(row, forever)
+            end
             Scan(legacy)
             -- Secure children may make the guide root implicitly protected. Tint
             -- only the known visual containers, without entering action buttons.
@@ -954,7 +1040,7 @@ end, function(S, module)
                 TintBackdrop(step)
                 TintBackdrop(step.number)
                 ThemeShell(step, "body")
-                ThemeShell(step.number, "header")
+                ThemeShell(step.number, "badge")
             end
             H.Hook(legacy, "UpdateVisuals", function() LegacyChrome(legacy); refresh() end)
             H.Hook(legacy, "UpdateScrollBar", function() LegacyChrome(legacy) end)
@@ -969,6 +1055,20 @@ end, function(S, module)
             ThemeShell(window.upperFrame, "header")
             ThemeShell(window.guideNameFrame, "header")
             ThemeShell(window.guideStepsFrame, "body")
+            ThemeShell(window.footer, "header")
+            ButtonRim(window.settingsButton, forever)
+            ButtonRim(window.guideSelectButton, forever)
+            ButtonRim(window.closebutton, forever)
+            local steps = window.guideSteps
+            if steps then
+                H.Hook(steps, "SetRows", V2Dividers)
+                V2Dividers(steps)
+            end
+            local scrollbar = steps and steps.scroll and steps.scroll.scrollbar
+            if scrollbar then
+                ButtonRim(scrollbar.ScrollUpButton, forever)
+                ButtonRim(scrollbar.ScrollDownButton, forever)
+            end
             ns.AttachAccent(S, window.upperFrame or window.frame)
             H.Fade(window.banner)
             V2Chrome(window)
@@ -978,7 +1078,7 @@ end, function(S, module)
             H.Hook(window, "RefreshLayout", function()
                 H.Queue(window.frame, function() V2Chrome(window); Scan(window.frame) end)
             end)
-            local r, g, b = S.GetAccentColor()
+            local r, g, b = WarmTitle()
             Font(window.title, r, g, b)
             if window.closebutton and H.Allowed(window.closebutton) then S.CloseButton(window.closebutton) end
         end
@@ -988,7 +1088,7 @@ end, function(S, module)
             local active = player.activeStepFrame
             for _, child in pairs(active and active.children or {}) do
                 ThemeShell(child.card or child.frame, "body")
-                ThemeShell(child.title, "header")
+                ThemeShell(child.title, "badge")
             end
         end
         local party = state and state.activePartyStepFrame

@@ -33,10 +33,15 @@ local function frame(kind)
         local t = {SetPoint = function(self, ...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end, ClearAllPoints = function(self) self.points = {} end, SetHeight = function() end, SetWidth = function(self, w) self.width = w end,
             SetColorTexture = function(self, ...) self.color = {...} end,
             SetAllPoints = function(self, target) self.allPoints = target end,
-            SetAlpha = function(self, a) self.alpha = a end}
+            SetAlpha = function(self, a) self.alpha = a end,
+            SetTexture = function(self, path) self.path = path end, SetVertexColor = function() end,
+            SetHorizTile = function() end, SetVertTile = function() end,
+            SetShown = function(self, shown) self.shown = shown end}
         self.created[#self.created + 1] = t
         return t
     end
+    function f:SetFrameLevel(level) self.level = level end
+    function f:SetAlpha(alpha) self.alpha = alpha end
     function f:SetAllPoints(target) self.allPoints = target end
     function f:EnableMouse(value) self.mouseEnabled = value end
     function f:GetObjectType() return self.kind end
@@ -138,8 +143,30 @@ window.banner:SetAlpha(1); assert(window.banner.alpha == 0, 'banner alpha lock m
 -- The whole-UI look, rather than the game client or the eui/modern palette,
 -- selects the variant. Exercise the existing theme and layout refresh route.
 local activeLook = "eui"
+local rimCalls, lastRim = 0
+local row = frame()
+function row:IsShown() return true end
+guide.ScrollChild = {framePool = {row}}
+local button = frame("Button")
+local guidePanel = frame()
+guidePanel.GetFrameLevel = function() return 4 end
+guidePanel.rxpBackground = region("fill", "BACKGROUND")
+guidePanel.rxpBorder = region("edge", "BORDER")
+window.guideStepsFrame = guidePanel
+local oldBorderAlpha = guidePanel.rxpBorder:GetAlpha()
+window.settingsButton = button
+window.guideSteps = {items = {}, SetRows = function(self, items) self.items = items end}
+local v2Row = frame()
+function v2Row:IsShown() return true end
 EllesmereUI = {
     IS_FOREVER = true,
+    ForeverBorder = function(host)
+        rimCalls = rimCalls + 1
+        lastRim = {on = true, host = host}
+        return lastRim
+    end,
+    ForeverBorderSeat = function(ring, host) assert(ring.host == host) end,
+    ForeverBorderShown = function(ring, shown) ring.on = shown end,
     GetActiveProfileData = function() return {windowSkinLook = activeLook} end,
     ProfileWindowSkinLook = function(profile)
         return EllesmereUI.IS_FOREVER and profile.windowSkinLook or "blizzard"
@@ -148,6 +175,13 @@ EllesmereUI = {
 assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
 activeLook = "forever"
 modules.RXPGuides.refresh(); flush()
+assert(rimCalls == 2 and lastRim.on and lastRim.host == button)
+assert(guidePanel.rxpBorder:GetAlpha() == 0)
+assert(#row.created == 1 and row.created[1].shown)
+window.guideSteps:SetRows({{frame = v2Row}})
+assert(#v2Row.created == 1 and v2Row.created[1].shown)
+modules.RXPGuides.refresh(); flush()
+assert(rimCalls == 2 and #row.created == 1 and #v2Row.created == 1)
 local bronze = RXP.v2:GetTheme()
 assert(bronze.borderColors.common[1] == 0.49)
 assert(bronze.backgroundColors.guideName[1] > bronze.backgroundColors.common[1])
@@ -159,6 +193,8 @@ assert(step.borderColor[1] == 0.49)
 activeLook = "eui"
 modules.RXPGuides.refresh(); flush()
 assert(step.borderColor[1] == 0.055 and RXP.colors.background[1] == 0.03)
+assert(not lastRim.on and not row.created[1].shown and not v2Row.created[1].shown)
+assert(guidePanel.rxpBorder:GetAlpha() == oldBorderAlpha)
 activeLook = "forever"
 EllesmereUI.IS_FOREVER = false
 assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)

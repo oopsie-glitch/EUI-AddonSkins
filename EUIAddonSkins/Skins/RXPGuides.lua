@@ -638,15 +638,17 @@ end, function(S, module)
             end
         end
     end
-    local function MeterHeaderArt(texture)
+    local function MeterHeaderArt(texture, legacyHeader)
         local atlas = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("ui-questtracker-primary-objective-header")
         local file = atlas and (atlas.file or atlas.filename)
         if not file then return false end
         local l, t = atlas.leftTexCoord, atlas.topTexCoord
         local w, h = atlas.rightTexCoord - l, atlas.bottomTexCoord - t
-        -- Same crop as EUI_DamageMeters_Style.lua, without borrowing its private namespace.
+        -- The damage meter crop includes a lower rail and its shadow.
+        -- V1 has no separate rail height, so trim the last shadow texel.
+        local bottom = legacyHeader and 38 or 39
         texture:SetTexture(file)
-        texture:SetTexCoord(l + w * 64 / 300, l + w * 176 / 300, t + h * 9 / 40, t + h * 39 / 40)
+        texture:SetTexCoord(l + w * 64 / 300, l + w * 176 / 300, t + h * 9 / 40, t + h * bottom / 40)
         return true
     end
     local surfacePaint = setmetatable({}, {__mode = "k"})
@@ -669,7 +671,7 @@ end, function(S, module)
             texture:SetShown(shown)
         end
     end
-    local function ForeverSurface(art, band, titleBody, guideHeader)
+    local function ForeverSurface(art, band, titleBody, guideHeader, legacyHeader)
         local plate = art:CreateTexture(nil, "BACKGROUND", nil, 1)
         local grain = art:CreateTexture(nil, "BACKGROUND", nil, 2)
         if titleBody then
@@ -687,7 +689,7 @@ end, function(S, module)
         plate:SetColorTexture(r, g, b, 1)
         local paint = {r = r, g = g, b = b}
         surfacePaint[plate] = paint
-        local meterArt = (guideHeader or titleBody) and MeterHeaderArt(plate)
+        local meterArt = (guideHeader or titleBody) and MeterHeaderArt(plate, legacyHeader)
         if not meterArt and plate.SetGradient and CreateColor then
             paint.shade = band and (guideHeader and 0.73 or 0.65) or 0.73
             paint.low = CreateColor(r * paint.shade, g * paint.shade, b * paint.shade, 1)
@@ -1329,6 +1331,7 @@ end, function(S, module)
             end
             local extra = (split or splitAux or base == 1) and targetAlpha or OverlayAlpha(targetAlpha, base)
             SurfaceAlpha(entry.plate, entry.grain, extra, entry.meterArt and 0 or entry.band and 0.28 or 0.32)
+            if entry.topRule then TextureAlpha(entry.topRule, 0.72 * targetAlpha) end
             if entry.art:IsShown() ~= shown then entry.art:SetShown(shown) end
         end
         local alpha = shown and not (entry.forever and (entry.joinedBody or entry.plate)) and opacity or 0
@@ -1383,11 +1386,13 @@ end, function(S, module)
             entry.badge = chrome == "badge"
             if entry.badge then entry.secondary = true end
             if forever and not entry.art and not joinedBody and not entry.badge then
-                local band = chrome == "header" or chrome == "footer" or chrome == "auxTitle"
+                local legacyHeader = chrome == "legacyHeader"
+                local header = legacyHeader or chrome == "header"
+                local band = header or chrome == "footer" or chrome == "auxTitle"
                 local art = ForeverArtHost(f)
                 entry.art = art
                 local title = chrome == "auxTitle"
-                local grain, plate, meterArt = ForeverSurface(art, band, titleBody, chrome == "header")
+                local grain, plate, meterArt = ForeverSurface(art, band, titleBody, header, legacyHeader)
                 entry.grain, entry.plate, entry.band, entry.auxTitle = grain, plate, band, title
                 entry.titleBody = titleBody
                 if chrome == "auxBody" then entry.auxBodyTitle = f.title end
@@ -1397,6 +1402,22 @@ end, function(S, module)
                 local edge = underlay or (entry.rim and art)
                 if edge then entry.mask = MaskFill(art, edge, plate, grain) end
 
+                if legacyHeader then
+                    -- The meter uses its outer rim as the upper rail. The
+                    -- V1 title is internal, so it needs a separate top rule.
+                    local EUI = _G.EllesmereUI
+                    local rule = EUI.ForeverBorderDivider and EUI.ForeverBorderDivider(art, "BACKGROUND", 3)
+                    if rule then
+                        rule:SetHeight(3)
+                    else
+                        rule = art:CreateTexture(nil, "BACKGROUND", nil, 3)
+                        rule:SetColorTexture(bronzeR, bronzeG, bronzeB, 1)
+                        rule:SetHeight(1)
+                    end
+                    rule:SetPoint("TOPLEFT", art, "TOPLEFT", 2, 0)
+                    rule:SetPoint("TOPRIGHT", art, "TOPRIGHT", -2, 0)
+                    entry.topRule = rule
+                end
                 if band and not meterArt then
                     local divider = art:CreateTexture(nil, "BACKGROUND", nil, 3)
                     local edge = chrome == "footer" and "TOP" or "BOTTOM"
@@ -1408,7 +1429,7 @@ end, function(S, module)
                         divider:SetPoint("BOTTOMLEFT", plate, "BOTTOMLEFT")
                         divider:SetPoint("BOTTOMRIGHT", plate, "BOTTOMRIGHT")
                     end
-                    divider:SetColorTexture(bronzeR, bronzeG, bronzeB, chrome == "header" and 0.55 or 0.34)
+                    divider:SetColorTexture(bronzeR, bronzeG, bronzeB, header and 0.55 or 0.34)
                 end
             end
             if entry.forever ~= forever or roleChanged then
@@ -1749,7 +1770,7 @@ end, function(S, module)
             local shell = ComposeGuide(legacy, legacy.GuideName, legacy.Footer, legacy.CurrentStepFrame, forever)
             ThemeShell(legacy.BottomFrame, shell and "joined" or "body", shell)
             ButtonRim(legacy.Footer and legacy.Footer.cog, shell ~= nil)
-            ThemeShell(legacy.GuideName, "header", nil, shell)
+            ThemeShell(legacy.GuideName, "legacyHeader", nil, shell)
             ThemeShell(legacy.Footer, "footer", nil, shell)
             ns.AttachAccent(S, legacy.GuideName)
             for _, step in pairs(legacy.CurrentStepFrame and legacy.CurrentStepFrame.framePool or {}) do

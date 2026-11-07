@@ -32,7 +32,7 @@ local function frame(kind)
     local f = {kind = kind or 'Frame', children = {}, regions = {}, hooks = {}}
     function f:CreateTexture(_, layer, _, sublevel)
         self.created = self.created or {}
-        local t = {SetPoint = function(self, ...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end, ClearAllPoints = function(self) self.points = {} end, SetHeight = function() end, SetSize = function(self, w, h) self.width, self.height = w, h end, SetWidth = function(self, w) self.width = w end,
+        local t = {SetPoint = function(self, ...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end, ClearAllPoints = function(self) self.points = {} end, SetHeight = function(self, h) self.height = h end, SetSize = function(self, w, h) self.width, self.height = w, h end, SetWidth = function(self, w) self.width = w end,
             SetColorTexture = function(self, ...) self.color = {...} end,
             SetAllPoints = function(self, target) self.allPoints = target end,
             AddMaskTexture = function(self, mask) self.masks = self.masks or {}; table.insert(self.masks, mask) end,
@@ -255,12 +255,27 @@ EllesmereUI = {
     end,
     ForeverBorderSeat = function(ring, host) assert(ring.host == host or parents[ring.host] == host) end,
     ForeverBorderShown = function(ring, shown) ring.on = shown end,
+    ForeverBorderDivider = function(host, layer, sub)
+        local texture = host:CreateTexture(nil, layer, nil, sub)
+        texture:SetTexture("forever-rule")
+        return texture
+    end,
     GetActiveProfileData = function() return {windowSkinLook = activeLook} end,
     ProfileWindowSkinLook = function(profile)
         return EllesmereUI.IS_FOREVER and profile.windowSkinLook or "blizzard"
     end,
 }
 assert(RXP.v2:GetTheme().borderColors.common[1] == 0.055)
+local savedTextureAPI = C_Texture
+local firstAtlas = true
+C_Texture = {GetAtlasInfo = function()
+    -- Only the V1 header takes the atlas for this fixture. V2 still tests
+    -- the fallback branch below.
+    if not firstAtlas then return end
+    firstAtlas = false
+    return {file = 12345, leftTexCoord = 0, rightTexCoord = 1, topTexCoord = 0, bottomTexCoord = 1}
+end}
+guide.GuideName:SetBackdrop({bgFile = "white"})
 local savedEnum = Enum
 Enum = {UITextureSliceMode = {Stretched = 0}}
 activeLook = "forever"
@@ -305,10 +320,17 @@ for _, art in ipairs({legacyArt, guideArt}) do
     assert(art.created[1].layer == "BACKGROUND" and art.created[1].sublevel == 1)
     assert(art.created[2].layer == "BACKGROUND" and art.created[2].sublevel == 2)
 end
-local bandArt
+local bandArt, legacyHeaderArt
 for host, parent in pairs(parents) do
     if parent == band and host.created and #host.created == 3 then bandArt = host end
+    if parent == guide.GuideName and host.created and #host.created == 3 then legacyHeaderArt = host end
 end
+local topRule = assert(legacyHeaderArt and legacyHeaderArt.created[3])
+assert(legacyHeaderArt.created[1].coords[4] == 38 / 40 and topRule.path == "forever-rule")
+assert(topRule.height == 3 and topRule.points[1][1] == "TOPLEFT" and topRule.points[2][1] == "TOPRIGHT")
+assert(topRule.points[1][2] == legacyHeaderArt and topRule.points[2][2] == legacyHeaderArt)
+assert(legacyHeaderArt.mouseEnabled == false and not registeredPanels[legacyHeaderArt])
+assert(topRule:GetAlpha() > 0 and topRule:GetAlpha() < 0.72)
 assert(bandArt and bandArt.mouseEnabled == false and bandArt.created[1].color[1] == 0.185 and bandArt.created[2].alpha > 0)
 assert(bandArt.created[1].masks[1].edge == guideArt)
 assert(lastRim.texture.alpha ~= 0 and rings[window.frame].texture.alpha ~= 0)
@@ -347,7 +369,7 @@ activeLook = "eui"
 modules.RXPGuides.refresh(); flush()
 assert(step.borderColor[1] == 0.055 and RXP.colors.background[1] == 0.03)
 assert(not lastRim.on and not row.created[1].shown and not v2Row.created[1].shown)
-assert(not legacyArt:IsShown() and not guideArt:IsShown())
+assert(not legacyArt:IsShown() and not guideArt:IsShown() and not legacyHeaderArt:IsShown())
 assert(not checkbox.created[3].shown and not scrollIcon.shown and scrollButton.Normal:GetAlpha() == 0.8)
 assert(v2Row.rxpBackground:GetAlpha() == 1 and window.footerBackground:GetAlpha() == 0.8)
 assert(RXP.colors.bottomFrameBG[4] == 0.95 and RXP.colors.bottomFrameHighlight[4] == 1)
@@ -366,7 +388,6 @@ assert(rimCalls == 4 and tipRing.host:IsShown() and tipRing.host.mouseEnabled ==
 step.strata = nil
 modules.RXPGuides.refresh(); flush()
 assert(rimCalls == 4 and not tipRing.host:IsShown() and step.borderColor[4] == 0)
-local savedTextureAPI = C_Texture
 C_Texture = {GetAtlasInfo = function(atlas)
     assert(atlas == "ui-questtracker-primary-objective-header")
     return {file = 12345, leftTexCoord = 0, rightTexCoord = 1, topTexCoord = 0, bottomTexCoord = 1}
@@ -598,6 +619,8 @@ for _, percent in ipairs({0, 25, 50, 75, 95, 100}) do
     opened.args.opacity.set(nil, percent); flush()
     assert(row.fill[4] == (percent == 50 and 1 or 0), "idle/hover backgrounds were conflated")
     local alpha = percent / 100
+    assert(math.abs(topRule:GetAlpha() - 0.72 * alpha) < 0.0001)
+    assert(legacyHeaderArt.created[3] == topRule and #legacyHeaderArt.created == 3)
     assert(math.abs(composite(legacyArt.created[1].alpha, legacyArt.created[2].alpha) - alpha) < 0.0001)
     assert(legacyArt:GetAlpha() == 1 and guideArt:GetAlpha() == 1 and rings[guide].on)
     assert(guideArt.created[1].masks[1].edge == guideArt and bandArt.created[1].masks[1].edge == guideArt)

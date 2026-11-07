@@ -1213,7 +1213,7 @@ end, function(S, module)
         end
     end
     SyncShell = function(f, entry)
-        if CombatLocked() then return end
+        if entry.suspended or CombatLocked() then return end
         local shown = true
         local border = f.rxpBorder
         if (entry.rim or entry.secondary or entry.joinedBody or entry.borderAlpha ~= nil) and border and border.GetAlpha and border.SetAlpha then
@@ -1372,6 +1372,7 @@ end, function(S, module)
             -- SetBackdrop already has the synchronous tint hook. Its callback
             -- below also handles removing/reinstating the native background.
         end
+        entry.suspended = nil
         if chrome then
             local forever = ForeverLook()
             local joinedBody = chrome == "joined"
@@ -1702,13 +1703,39 @@ end, function(S, module)
         local native = select(4, S.GetPanelColor()) or 1
         NativeFillAlpha(window.footerBackground, forever and 0 or (alpha and native > 0 and math.min(1, alpha / native) or nil))
     end
+    local function HideLegacyGuideArt(legacy)
+        if not legacy then return end
+        -- RXP keeps this root shown to drive V2 visibility, and the legacy
+        -- cog is parented to the root even though it anchors to the footer.
+        ComposeGuide(legacy, nil, nil, nil, false)
+        ButtonRim(legacy.Footer and legacy.Footer.cog, false)
+    end
+    local function HideV2GuideArt(window)
+        if not window then return end
+        ComposeGuide(window.frame, nil, nil, nil, false)
+        ButtonRim(window.settingsButton, false)
+        ButtonRim(window.guideSelectButton, false)
+        ButtonRim(window.closebutton, false)
+        for _, panel in pairs({window.upperFrame, window.guideNameFrame, window.guideStepsFrame, window.footer}) do
+            local entry = themed[panel]
+            if entry and not entry.suspended then
+                entry.suspended = true
+                entry.layer:SetShown(false)
+                if entry.art then entry.art:SetShown(false) end
+            end
+        end
+    end
     local function Apply()
         if CombatLocked() then applyWaiting = true; return end
         applyWaiting = false
         Wrap(addon.v2, "GetTheme")
         local forever = ForeverLook()
         local legacy = addon.RXPFrame or _G.RXPFrame
-        if legacy then
+        local hasMode = addon.v2 and type(addon.v2.IsGuideWindowEnabled) == "function"
+        local v2Enabled = hasMode and addon.v2:IsGuideWindowEnabled()
+        if v2Enabled then
+            HideLegacyGuideArt(legacy)
+        elseif legacy then
             LegacyChrome(legacy)
             for _, row in ipairs(legacy.ScrollChild and legacy.ScrollChild.framePool or {}) do
                 if forever then Font(row.text); Font(row.number and row.number.text) end
@@ -1748,8 +1775,11 @@ end, function(S, module)
         end
         -- Inspect only existing widgets; GetGuideWindow would create one eagerly.
         local window = addon.v2 and addon.v2.state and addon.v2.state.guideWindow or _G.RXPV2GuideWindow
-        if window then
-            guideWindowSeen = window
+        if guideWindowSeen ~= window then HideV2GuideArt(guideWindowSeen) end
+        guideWindowSeen = window
+        if hasMode and not v2Enabled then
+            HideV2GuideArt(window)
+        elseif window then
             Scan(window.frame)
             local shell = ComposeGuide(window.frame, window.upperFrame or window.guideNameFrame, window.footer, nil, forever)
             ThemeShell(window.upperFrame, shell and "joined" or "body")
@@ -1838,6 +1868,10 @@ end, function(S, module)
     H.Hook(addon.v2, "GetGuideWindow", function()
         local window = addon.v2.state and addon.v2.state.guideWindow or _G.RXPV2GuideWindow
         if window and window ~= guideWindowSeen then refresh() end
+    end)
+    H.Hook(addon.v2, "DisableLegacyGuideWindow", function()
+        if not CombatLocked() then HideLegacyGuideArt(addon.RXPFrame or _G.RXPFrame) end
+        refresh()
     end)
     H.Hook(addon.v2, "UpdatePlayerActiveStepItem", function(_, item)
         if not CombatLocked() and ForeverLook() then SkinActiveIcons(item, true) end

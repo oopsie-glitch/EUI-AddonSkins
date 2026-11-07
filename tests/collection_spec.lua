@@ -150,7 +150,13 @@ RXP = {targeting = {CreateTargetFrame = function(self) self.activeTargetFrame = 
     ShowMenu = function(_, menu, owner) shownMenu = menu; return owner, nil, 9 end,
     LoadActiveTheme = function() originalCalls = originalCalls + 1; return source, nil, 'tail' end,
     RenderFrame = function() renders = renders + 1; return nil, 'render-tail' end,
-    v2 = {state = {}, UpdatePlayerActiveStepItem = function() return "native update" end, GetTheme = function() return source2 end,
+    LoadGuide = function(_, key) return key end,
+    v2 = {state = {}, DisableLegacyGuideWindow = function()
+            for _, panel in ipairs({guide.BottomFrame, guide.GuideName, guide.Footer, guide.CurrentStepFrame}) do
+                panel:SetShown(false)
+            end
+        end,
+        UpdatePlayerActiveStepItem = function() return "native update" end, GetTheme = function() return source2 end,
         GetGuideWindow = function(self)
             guideCreates = guideCreates + 1
             local window = {frame = frame(), banner = region('v2-banner', 'ARTWORK'), UpdateTheme = function() end}
@@ -633,6 +639,81 @@ opacityRoot.children[1].frame:SetShown(false) -- simulate inherited OnHide
 assert(status:GetBackdrop().bgFile == "native" and dialogArt:GetAlpha() == 0)
 assert(track:GetAlpha() == 0 and thumb:GetAlpha() == 0.8)
 activeLook = "forever"
+-- V2 keeps the V1 root and root-owned cog alive while hiding the native
+-- panels. Reproduce the two pieces of chrome shown in the live screenshot.
+local v2Mode = false
+function RXP.v2:IsGuideWindowEnabled() return v2Mode end
+local cog = frame("Button")
+guide.Footer.cog = cog
+parents[cog] = guide
+modules.RXPGuides.refresh(); flush()
+assert(legacyArt:IsShown() and rings[cog].on and not guideArt:IsShown())
+local function Visible(f)
+    return f:IsShown() and (not parents[f] or Visible(parents[f]))
+end
+assert(Visible(legacyArt) and Visible(rings[cog].host))
+v2Mode = true
+RXP.v2:DisableLegacyGuideWindow()
+assert(guide:IsShown() and cog:IsShown() and not guide.Footer:IsShown())
+assert(not Visible(legacyArt) and not rings[cog].on, "legacy root-owned art survived V2 takeover")
+flush()
+assert(Visible(guideArt) and rings[button].on)
+assert(not Visible(legacyArt) and not rings[cog].on, "refresh resurrected legacy chrome")
+
+-- Geometry is solved from the live V2 header/footer anchors, without a
+-- reposition callback. Simulate translation plus a resize of that owner.
+parents[band], parents[window.footer], parents[button] = window.frame, window.frame, window.frame
+local function GuideArtBounds()
+    local _, top, _, dx, dy = guideArt:GetPoint(1)
+    local _, bottom, _, dx2, dy2 = guideArt:GetPoint(2)
+    assert(parents[guideArt] == window.frame and parents[top] == window.frame and parents[bottom] == window.frame)
+    local owner = parents[guideArt]
+    return owner.x + dx, owner.y + owner.height + dy, owner.x + owner.width + dx2, owner.y + dy2
+end
+window.frame.x, window.frame.y = 20, 30
+window.frame:SetSize(200, 350)
+local left, top, right, bottom = GuideArtBounds()
+assert(left == 18 and top == 382 and right == 222 and bottom == 28)
+window.frame.x, window.frame.y = 50, 60
+window.frame:SetSize(240, 420)
+left, top, right, bottom = GuideArtBounds()
+assert(left == 48 and top == 482 and right == 292 and bottom == 58)
+window.frame:SetShown(false)
+assert(not Visible(guideArt) and not Visible(rings[button].host))
+assert(RXP:LoadGuide("closed-guide") == "closed-guide"); flush()
+assert(not Visible(guideArt) and not legacyArt:IsShown())
+window.frame:SetShown(true)
+assert(Visible(guideArt) and not Visible(legacyArt))
+activeLook = "eui"
+modules.RXPGuides.refresh(); flush()
+assert(not guideArt:IsShown() and not legacyArt:IsShown())
+activeLook = "forever"
+modules.RXPGuides.refresh(); flush()
+assert(Visible(guideArt) and not legacyArt:IsShown() and not rings[cog].on)
+
+-- A fresh legacy root with V2 already selected models the /reload setup.
+local coldLegacy = frame()
+coldLegacy.Footer, coldLegacy.GuideName = frame(), frame()
+coldLegacy.Footer.cog = frame("Button")
+RXP.RXPFrame = coldLegacy
+modules.RXPGuides.refresh(); flush()
+assert(not rings[coldLegacy] and not rings[coldLegacy.Footer.cog])
+RXP.RXPFrame = guide
+
+-- V2 releases its widget by hiding the owning frame. A newly acquired
+-- guide gets its own shell; refresh retires the previous composition.
+window.frame:SetShown(false)
+RXP.v2.state.guideWindow = {frame = frame(), guideNameFrame = frame(), footer = frame()}
+local replacement = RXP.v2.state.guideWindow
+assert(RXP:LoadGuide("replacement-guide") == "replacement-guide"); flush()
+assert(not guideArt:IsShown() and not bandArt:IsShown() and Visible(rings[replacement.frame].host))
+v2Mode = false
+for _, panel in ipairs({guide.BottomFrame, guide.GuideName, guide.Footer, guide.CurrentStepFrame}) do
+    panel:SetShown(true)
+end
+modules.RXPGuides.refresh(); flush()
+assert(Visible(legacyArt) and rings[cog].on and not rings[replacement.frame].host:IsShown())
+RXP.v2.state.guideWindow = window
 EUIAddonSkinsDB, LibStub, GAMEOPTIONS_MENU = oldDB, oldStub, savedOptionsText
 EllesmereUI.IS_FOREVER = false
 modules.RXPGuides.refresh(); flush()

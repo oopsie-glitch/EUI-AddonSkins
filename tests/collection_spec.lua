@@ -258,6 +258,7 @@ EllesmereUI = {
     ForeverBorderDivider = function(host, layer, sub)
         local texture = host:CreateTexture(nil, layer, nil, sub)
         texture:SetTexture("forever-rule")
+        texture:SetHeight(6)
         return texture
     end,
     GetActiveProfileData = function() return {windowSkinLook = activeLook} end,
@@ -323,14 +324,17 @@ end
 local bandArt, legacyHeaderArt
 for host, parent in pairs(parents) do
     if parent == band and host.created and #host.created == 3 then bandArt = host end
-    if parent == guide.GuideName and host.created and #host.created == 3 then legacyHeaderArt = host end
+    if parent == guide.GuideName and host.created and #host.created == 4 then legacyHeaderArt = host end
 end
 local topRule = assert(legacyHeaderArt and legacyHeaderArt.created[3])
-assert(legacyHeaderArt.created[1].coords[4] == 38 / 40 and topRule.path == "forever-rule")
-assert(topRule.height == 3 and topRule.points[1][1] == "TOPLEFT" and topRule.points[2][1] == "TOPRIGHT")
+local bottomRule = legacyHeaderArt.created[4]
+assert(legacyHeaderArt.created[1].coords[4] == 33 / 40 and topRule.path == "forever-rule")
+assert(topRule.height == 6 and topRule.points[1][1] == "TOPLEFT" and topRule.points[2][1] == "TOPRIGHT")
 assert(topRule.points[1][2] == legacyHeaderArt and topRule.points[2][2] == legacyHeaderArt)
 assert(legacyHeaderArt.mouseEnabled == false and not registeredPanels[legacyHeaderArt])
-assert(topRule:GetAlpha() > 0 and topRule:GetAlpha() < 0.72)
+assert(topRule:GetAlpha() == bottomRule:GetAlpha() and topRule:GetAlpha() > 0)
+assert(topRule.masks[1] == legacyHeaderArt.created[1].masks[1] and bottomRule.masks[1] == topRule.masks[1])
+assert(topRule.sublevel > legacyHeaderArt.created[1].sublevel and bottomRule.sublevel == topRule.sublevel)
 assert(bandArt and bandArt.mouseEnabled == false and bandArt.created[1].color[1] == 0.185 and bandArt.created[2].alpha > 0)
 assert(bandArt.created[1].masks[1].edge == guideArt)
 assert(lastRim.texture.alpha ~= 0 and rings[window.frame].texture.alpha ~= 0)
@@ -612,6 +616,27 @@ end
 opened.args.opacity.set(nil, 100); flush()
 local opaque = {}
 for channel = 1, 3 do opaque[channel] = bodyPixel(legacyArt, 0, channel) end
+local function CheckLegacyHeaderSeam()
+    local header, body = guide.GuideName, guide.BottomFrame
+    assert(legacyHeaderArt.allPoints == header and bottomRule.height == 1)
+    for _, fill in ipairs({legacyHeaderArt.created[1], legacyHeaderArt.created[2]}) do
+        assert(fill.allPoints == legacyHeaderArt)
+    end
+    for _, texture in ipairs({legacyArt.created[1], legacyArt.created[2]}) do
+        local point = texture.points[1]
+        assert(point[1] == "TOPLEFT" and point[2] == header and point[3] == "BOTTOMLEFT" and point[5] == 0)
+    end
+    for i, side in ipairs({"LEFT", "RIGHT"}) do
+        local point, rail = header.points[i], bottomRule.points[i]
+        assert(point[1] == "BOTTOM" .. side and point[2] == body and point[3] == "TOP" .. side and point[5] == 0)
+        assert(rail[1] == point[1] and rail[2] == legacyHeaderArt and rail[3] == point[1] and rail[5] == 0)
+        assert(rail[4] == (i == 1 and 2 or -2))
+    end
+end
+CheckLegacyHeaderSeam()
+guide.BottomFrame:SetSize(350, 600)
+assert(RXP:LoadGuide("resized-legacy-guide") == "resized-legacy-guide"); flush()
+CheckLegacyHeaderSeam()
 for _, percent in ipairs({0, 25, 50, 75, 95, 100}) do
     if percent == 0 then row:SetBackdropColor(0.15, 0.1, 0.08, 1) end -- stale idle fill
     if percent == 50 then row:SetBackdropColor(table.unpack(RXP.colors.bottomFrameHighlight)) end
@@ -619,8 +644,8 @@ for _, percent in ipairs({0, 25, 50, 75, 95, 100}) do
     opened.args.opacity.set(nil, percent); flush()
     assert(row.fill[4] == (percent == 50 and 1 or 0), "idle/hover backgrounds were conflated")
     local alpha = percent / 100
-    assert(math.abs(topRule:GetAlpha() - 0.72 * alpha) < 0.0001)
-    assert(legacyHeaderArt.created[3] == topRule and #legacyHeaderArt.created == 3)
+    assert(math.abs(topRule:GetAlpha() - alpha) < 0.0001 and bottomRule:GetAlpha() == topRule:GetAlpha())
+    assert(legacyHeaderArt.created[3] == topRule and legacyHeaderArt.created[4] == bottomRule and #legacyHeaderArt.created == 4)
     assert(math.abs(composite(legacyArt.created[1].alpha, legacyArt.created[2].alpha) - alpha) < 0.0001)
     assert(legacyArt:GetAlpha() == 1 and guideArt:GetAlpha() == 1 and rings[guide].on)
     assert(guideArt.created[1].masks[1].edge == guideArt and bandArt.created[1].masks[1].edge == guideArt)

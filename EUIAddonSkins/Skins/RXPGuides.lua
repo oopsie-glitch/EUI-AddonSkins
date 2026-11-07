@@ -612,7 +612,7 @@ end, function(S, module)
         texture:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -top)
         texture:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -x, bottom)
     end
-    local function MaskFill(art, edge, first, second, third, step)
+    local function MaskFill(art, edge, first, second, third, step, bottomInset)
         local mode = Enum and Enum.UITextureSliceMode and Enum.UITextureSliceMode.Stretched
         if mode and art.CreateMaskTexture and first.AddMaskTexture then
             local mask = art:CreateMaskTexture()
@@ -630,8 +630,8 @@ end, function(S, module)
             -- Older clients without sliced masks retain a conservative inset.
             first:ClearAllPoints()
             second:ClearAllPoints()
-            SeatFill(first, art, 2, 9, 9)
-            SeatFill(second, art, 2, 9, 9)
+            SeatFill(first, art, 2, 9, bottomInset or 9)
+            SeatFill(second, art, 2, 9, bottomInset or 9)
             if third then
                 third:ClearAllPoints()
                 SeatFill(third, step, 0, 3, 0)
@@ -644,9 +644,9 @@ end, function(S, module)
         if not file then return false end
         local l, t = atlas.leftTexCoord, atlas.topTexCoord
         local w, h = atlas.rightTexCoord - l, atlas.bottomTexCoord - t
-        -- The damage meter crop includes a lower rail and its shadow.
-        -- V1 has no separate rail height, so trim the last shadow texel.
-        local bottom = legacyHeader and 38 or 39
+        -- The meter reserves extra height for the last six rows (rail and
+        -- shadow). V1 uses the 24-row band and seats its divider at the seam.
+        local bottom = legacyHeader and 33 or 39
         texture:SetTexture(file)
         texture:SetTexCoord(l + w * 64 / 300, l + w * 176 / 300, t + h * 9 / 40, t + h * bottom / 40)
         return true
@@ -702,8 +702,8 @@ end, function(S, module)
         grain:SetVertexColor(0.56, 0.44, 0.32, 1)
         surfacePaint[grain] = {r = 0.56, g = 0.44, b = 0.32}
         if meterArt then
-            -- Tame the atlas's bright lower ramp while retaining its bronze
-            -- divider. Tint RGB only so coverage still follows the slider.
+            -- Tame the atlas's bright lower ramp. Tint RGB only so coverage
+            -- still follows the slider.
             paint.r, paint.g, paint.b = 0.62, 0.64, 0.68
         elseif not paint.low then
             paint.r, paint.g, paint.b = nil, nil, nil
@@ -1331,7 +1331,10 @@ end, function(S, module)
             end
             local extra = (split or splitAux or base == 1) and targetAlpha or OverlayAlpha(targetAlpha, base)
             SurfaceAlpha(entry.plate, entry.grain, extra, entry.meterArt and 0 or entry.band and 0.28 or 0.32)
-            if entry.topRule then TextureAlpha(entry.topRule, 0.72 * targetAlpha) end
+            if entry.topRule then
+                TextureAlpha(entry.topRule, targetAlpha)
+                TextureAlpha(entry.bottomRule, targetAlpha)
+            end
             if entry.art:IsShown() ~= shown then entry.art:SetShown(shown) end
         end
         local alpha = shown and not (entry.forever and (entry.joinedBody or entry.plate)) and opacity or 0
@@ -1400,25 +1403,24 @@ end, function(S, module)
                 entry.secondary = band
                 if not entry.secondary then entry.rim = ForeverRim(art) end
                 local edge = underlay or (entry.rim and art)
-                if edge then entry.mask = MaskFill(art, edge, plate, grain) end
+                if edge then entry.mask = MaskFill(art, edge, plate, grain, nil, nil, legacyHeader and 0 or nil) end
 
                 if legacyHeader then
                     -- The meter uses its outer rim as the upper rail. The
                     -- V1 title is internal, so it needs a separate top rule.
                     local EUI = _G.EllesmereUI
                     local rule = EUI.ForeverBorderDivider and EUI.ForeverBorderDivider(art, "BACKGROUND", 3)
-                    if rule then
-                        rule:SetHeight(3)
-                    else
+                    if not rule then
                         rule = art:CreateTexture(nil, "BACKGROUND", nil, 3)
                         rule:SetColorTexture(bronzeR, bronzeG, bronzeB, 1)
                         rule:SetHeight(1)
                     end
                     rule:SetPoint("TOPLEFT", art, "TOPLEFT", 2, 0)
                     rule:SetPoint("TOPRIGHT", art, "TOPRIGHT", -2, 0)
+                    if entry.mask then rule:AddMaskTexture(entry.mask) end
                     entry.topRule = rule
                 end
-                if band and not meterArt then
+                if band and (legacyHeader or not meterArt) then
                     local divider = art:CreateTexture(nil, "BACKGROUND", nil, 3)
                     local edge = chrome == "footer" and "TOP" or "BOTTOM"
                     divider:SetPoint(edge .. "LEFT", art, edge .. "LEFT", 2, 0)
@@ -1430,6 +1432,10 @@ end, function(S, module)
                         divider:SetPoint("BOTTOMRIGHT", plate, "BOTTOMRIGHT")
                     end
                     divider:SetColorTexture(bronzeR, bronzeG, bronzeB, header and 0.55 or 0.34)
+                    if legacyHeader then
+                        if entry.mask then divider:AddMaskTexture(entry.mask) end
+                        entry.bottomRule = divider
+                    end
                 end
             end
             if entry.forever ~= forever or roleChanged then

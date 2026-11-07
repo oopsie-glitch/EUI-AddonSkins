@@ -47,6 +47,9 @@ local function frame(kind)
             end,
             SetBlendMode = function(self, mode) self.blend = mode end,
             SetTexCoord = function(self, ...) self.coords = {...} end,
+            GetTexCoord = function(self) return table.unpack(self.coords) end,
+            GetHeight = function(self) return self.height end,
+            GetTexture = function(self) return self.path end,
             SetTexture = function(self, path) self.path = path end, SetVertexColor = function(self, r, g, b, a) self.tint = {r, g, b, a}; self.alpha = a end,
             SetHorizTile = function() end, SetVertTile = function() end,
             SetShown = function(self, shown) self.shown = shown end}
@@ -135,6 +138,7 @@ guide.backdrop = {
     bottom = {insets = {left = 4, right = 2, top = 2, bottom = 4}},
 }
 guide.GuideName = frame(); guide.GuideName.bg = region('banner', 'BACKGROUND'); guide.GuideName.icon = region('logo', 'ARTWORK')
+guide.GuideName:SetHeight(35)
 guide.BottomFrame = frame(); guide.BottomFrame:SetBackdrop({edgeFile = 'old'})
 local step = frame(); step.number = frame(); step:SetBackdrop({edgeFile = 'old'}); step.number:SetBackdrop({edgeFile = 'old'})
 guide.CurrentStepFrame = frame(); guide.CurrentStepFrame.framePool = {step}
@@ -238,22 +242,56 @@ checked.GetObjectType = function() return "Texture" end
 disabledChecked.GetObjectType = checked.GetObjectType
 checkbox.GetCheckedTexture = function() return checked end
 checkbox.GetDisabledCheckedTexture = function() return disabledChecked end
-local click = function() return "native check" end
+local element = {button = checkbox}
+function checkbox:GetParent() return element end
+function element:GetLeft() return 100 end
+function element:GetRight() return self.right or 350 end
+function element:GetEffectiveScale() return 0.8 end
+local click = function(self)
+    if self.mouseEnabled then
+        self.checked = not self.checked
+        element.skip = self.checked -- RestedXP PostClick copies GetChecked() to element.skip.
+    end
+    return "native check"
+end
 checkbox.click = click
+checkbox:EnableMouse(true)
+step.elements = {element}
 guide.children[#guide.children + 1] = checkbox
+local up, down = frame("Button"), frame("Button")
+local position = 5
+for _, arrow in ipairs({up, down}) do
+    arrow:SetSize(20, 20)
+    arrow.regions = {region("original-arrow", "ARTWORK")}
+    arrow.IsEnabled = scrollButton.IsEnabled
+    function arrow:Click()
+        if self:IsEnabled() then position = position + (self == up and -1 or 1) end
+    end
+end
+local legacyBar = frame("Slider")
+legacyBar.ScrollUpButton, legacyBar.ScrollDownButton = up, down
+guide.ScrollFrame = {ScrollBar = legacyBar}
 local v2Row = frame()
 v2Row.rxpBackground = frame()
 v2Row.rxpBackground.textures = {{GetVertexColor = function() return 1, 1, 1, 0.95 end}}
 function v2Row:IsShown() return true end
 EllesmereUI = {
     IS_FOREVER = true,
-    ForeverBorder = function(host)
+    ForeverBorder = function(host, _, _, _, kind)
+        assert(kind == "textured")
         rimCalls = rimCalls + 1
-        lastRim = {on = true, host = host, texture = host:CreateTexture()}
+        local edge = host:CreateTexture()
+        edge:SetTexture("live-forever-rim")
+        edge:SetTexCoord(0.1, 0.2, 0.3, 0.4)
+        edge:SetHeight(6)
+        lastRim = {on = true, host = host, texture = edge, [5] = edge}
         if parents[host] then rings[parents[host]] = lastRim end
         return lastRim
     end,
-    ForeverBorderSeat = function(ring, host) assert(ring.host == host or parents[ring.host] == host) end,
+    ForeverBorderSeat = function(ring, host, _, ...)
+        assert(ring.host == host or parents[ring.host] == host)
+        ring.insets = {...}
+    end,
     ForeverBorderShown = function(ring, shown) ring.on = shown end,
     ForeverBorderDivider = function(host, layer, sub)
         local texture = host:CreateTexture(nil, layer, nil, sub)
@@ -281,9 +319,50 @@ local savedEnum = Enum
 Enum = {UITextureSliceMode = {Stretched = 0}}
 activeLook = "forever"
 modules.RXPGuides.refresh(); flush()
-assert(rimCalls == 3 and lastRim.on and parents[lastRim.host] == button)
-assert(checkbox.click == click and checkbox.click() == "native check")
+assert(rimCalls == 5 and lastRim.on and parents[lastRim.host] == button)
+assert(checkbox.click == click and checkbox:click() == "native check" and element.skip)
+checkbox:click(); assert(element.skip == false and checkbox.mouseEnabled)
 assert(checked.path:find("UI-CheckBox-Check", 1, true) and checked.width == 8 and checkbox.created[3].shown)
+local skipBorder = checkbox.created[4]
+assert(#checkbox.created == 7 and skipBorder.shown and skipBorder.height == 1 and skipBorder.points[1][2] == checkbox)
+local oldTooltip, oldUIParent = GameTooltip, UIParent
+GameTooltip = frame()
+function GameTooltip:GetOwner() return self.owner end
+function GameTooltip:GetWidth() return 90 end
+function GameTooltip:GetEffectiveScale() return 1 end
+UIParent = {GetRight = function() return 750 end, GetEffectiveScale = function() return 1 end}
+GameTooltip.owner = checkbox
+checkbox.hooks.OnEnter(checkbox)
+assert(GameTooltip.points[1][1] == "LEFT" and GameTooltip.points[1][2] == element and GameTooltip.owner == checkbox)
+element.right = 890
+checkbox.hooks.OnEnter(checkbox)
+assert(GameTooltip.points[1][1] == "RIGHT" and GameTooltip.points[1][3] == "LEFT")
+GameTooltip, UIParent = oldTooltip, oldUIParent
+local upHost, downHost = rings[up].host, rings[down].host
+for _, arrow in ipairs({up, down}) do
+    local host = rings[arrow].host
+    local glyph, fill = host.created[1], host.created[3]
+    assert(host.allPoints == arrow and not host.mouseEnabled and not registeredPanels[host])
+    assert(table.concat(rings[arrow].insets, ",") == "3,-3,-3,3" and arrow.width == 20)
+    assert(glyph.path:find(arrow == up and "eui-arrow-up3" or "eui-arrow-down3", 1, true))
+    assert(arrow.regions[1]:GetAlpha() == 0 and fill.color[1] == 0.06)
+    arrow.hooks.OnEnter()
+    assert(fill.color[1] == 0.12)
+    arrow.hooks.OnMouseDown()
+    assert(fill.color[1] == 0.035)
+    arrow.hooks.OnMouseUp()
+    assert(fill.color[1] == 0.12)
+    arrow:Click()
+    arrow.disabled = true; arrow.hooks.OnDisable()
+    assert(host:GetAlpha() == 0.65 and glyph:GetAlpha() == 0.45)
+    local prior = position
+    arrow:Click()
+    assert(position == prior)
+    arrow.hooks.OnLeave()
+    arrow.disabled = false; arrow.hooks.OnEnable()
+    assert(host:GetAlpha() == 1 and glyph:GetAlpha() == 1)
+end
+assert(position == 5)
 assert(scrollButton.click == scrollAction and scrollButton.Normal:GetAlpha() == 0)
 local scrollIcon = scrollButton.created[1]
 assert(scrollIcon.path:find("eui-arrow-up3", 1, true) and scrollIcon.points[1][2] == scrollButton)
@@ -328,9 +407,15 @@ for host, parent in pairs(parents) do
 end
 local topRule = assert(legacyHeaderArt and legacyHeaderArt.created[3])
 local bottomRule = legacyHeaderArt.created[4]
-assert(legacyHeaderArt.created[1].coords[4] == 33 / 40 and topRule.path == "forever-rule")
+assert(legacyHeaderArt.created[1].coords[4] == 33 / 40 and topRule.path == rings[guide][5].path)
+assert(table.concat(topRule.coords, ",") == table.concat(rings[guide][5].coords, ","))
 assert(topRule.height == 6 and topRule.points[1][1] == "TOPLEFT" and topRule.points[2][1] == "TOPRIGHT")
 assert(topRule.points[1][2] == legacyHeaderArt and topRule.points[2][2] == legacyHeaderArt)
+for _, point in ipairs(topRule.points) do assert(point[4] == 0 and point[5] == 2) end
+guide.CurrentStepFrame:SetShown(false)
+assert(not topRule.shown, "the upper separator must yield to the outer rim")
+guide.CurrentStepFrame:SetShown(true)
+assert(topRule.shown)
 assert(legacyHeaderArt.mouseEnabled == false and not registeredPanels[legacyHeaderArt])
 assert(topRule:GetAlpha() == bottomRule:GetAlpha() and topRule:GetAlpha() > 0)
 assert(topRule.masks[1] == legacyHeaderArt.created[1].masks[1] and bottomRule.masks[1] == topRule.masks[1])
@@ -357,7 +442,7 @@ local v2Fill = 0.95 * v2Row.rxpBackground:GetAlpha()
 assert(math.abs(1 - (1 - base) * (1 - v2Fill) - 0.70 * 0.95 / 0.92) < 0.0001)
 assert(v2Row:GetAlpha() == 1 and window.footerBackground:GetAlpha() == 0)
 modules.RXPGuides.refresh(); flush()
-assert(rimCalls == 3 and #row.created == 1 and #v2Row.created == 1)
+assert(rimCalls == 5 and #row.created == 1 and #v2Row.created == 1)
 local bronze = RXP.v2:GetTheme()
 assert(bronze.borderColors.common[1] == 0.49)
 assert(bronze.backgroundColors.guideName[1] > bronze.backgroundColors.common[1])
@@ -374,6 +459,8 @@ modules.RXPGuides.refresh(); flush()
 assert(step.borderColor[1] == 0.055 and RXP.colors.background[1] == 0.03)
 assert(not lastRim.on and not row.created[1].shown and not v2Row.created[1].shown)
 assert(not legacyArt:IsShown() and not guideArt:IsShown() and not legacyHeaderArt:IsShown())
+assert(not skipBorder.shown and not upHost:IsShown() and not downHost:IsShown())
+assert(up.regions[1]:GetAlpha() == 0.8 and down.regions[1]:GetAlpha() == 0.8)
 assert(not checkbox.created[3].shown and not scrollIcon.shown and scrollButton.Normal:GetAlpha() == 0.8)
 assert(v2Row.rxpBackground:GetAlpha() == 1 and window.footerBackground:GetAlpha() == 0.8)
 assert(RXP.colors.bottomFrameBG[4] == 0.95 and RXP.colors.bottomFrameHighlight[4] == 1)
@@ -381,17 +468,18 @@ assert(step.borderColor[4] == 1 and guide.BottomFrame.borderColor[4] == 1)
 assert(guidePanel.rxpBorder:GetAlpha() == oldBorderAlpha and band.rxpBorder:GetAlpha() == bandBorderAlpha)
 activeLook = "forever"
 modules.RXPGuides.refresh(); flush()
-assert(rimCalls == 3 and legacyArt:IsShown() and guideArt:IsShown())
+assert(rimCalls == 5 and legacyArt:IsShown() and guideArt:IsShown())
+assert(skipBorder.shown and upHost:IsShown() and downHost:IsShown())
 guide.CurrentStepFrame.height = 0
 modules.RXPGuides.refresh(); flush()
 assert(legacyArt.points[1][2] == guide.GuideName)
 step.strata = "MEDIUM"
 modules.RXPGuides.refresh(); flush()
 local tipRing = lastRim
-assert(rimCalls == 4 and tipRing.host:IsShown() and tipRing.host.mouseEnabled == false)
+assert(rimCalls == 6 and tipRing.host:IsShown() and tipRing.host.mouseEnabled == false)
 step.strata = nil
 modules.RXPGuides.refresh(); flush()
-assert(rimCalls == 4 and not tipRing.host:IsShown() and step.borderColor[4] == 0)
+assert(rimCalls == 6 and not tipRing.host:IsShown() and step.borderColor[4] == 0)
 C_Texture = {GetAtlasInfo = function(atlas)
     assert(atlas == "ui-questtracker-primary-objective-header")
     return {file = 12345, leftTexCoord = 0, rightTexCoord = 1, topTexCoord = 0, bottomTexCoord = 1}
@@ -419,7 +507,7 @@ row.text = label()
 row.text:SetText(originalMarkers)
 local activeIcon = label()
 activeIcon:SetText(nativeAccept)
-step.elements = {{icon = activeIcon}}
+element.icon = activeIcon
 local v2Icon = label()
 v2Icon:SetText(nativeTalk)
 local v2Text = label()
@@ -632,10 +720,25 @@ local function CheckLegacyHeaderSeam()
         assert(rail[1] == point[1] and rail[2] == legacyHeaderArt and rail[3] == point[1] and rail[5] == 0)
         assert(rail[4] == (i == 1 and 2 or -2))
     end
+    local title = labels[1]
+    local upperEdge = topRule.points[1][5] - topRule.height
+    local titleTop = title.points[1][5]
+    local textBottom = titleTop - select(2, title:GetFont()) + labels[2].points[1][5] - select(2, labels[2]:GetFont())
+    local xInset = legacyArt.points[1][4]
+    for _, scale in ipairs({0.65, 0.85, 1}) do
+        local function Pixel(value) return math.floor(value * scale + 0.5) end
+        assert(Pixel(upperEdge) > Pixel(titleTop) and Pixel(textBottom) >= Pixel(-header:GetHeight() + bottomRule.height))
+        -- The composition starts two units outside the header. The new rail
+        -- ends exactly where each two-unit side rim turns inward.
+        assert(Pixel(xInset + 2) == Pixel(topRule.points[1][4]))
+        assert(Pixel(-xInset - 2) == Pixel(topRule.points[2][4]))
+    end
 end
 CheckLegacyHeaderSeam()
 guide.BottomFrame:SetSize(350, 600)
+guide.GuideName.text:SetFont("EUI-font", 18, "OUTLINE")
 assert(RXP:LoadGuide("resized-legacy-guide") == "resized-legacy-guide"); flush()
+assert(select(2, labels[1]:GetFont()) == 14)
 CheckLegacyHeaderSeam()
 for _, percent in ipairs({0, 25, 50, 75, 95, 100}) do
     if percent == 0 then row:SetBackdropColor(0.15, 0.1, 0.08, 1) end -- stale idle fill

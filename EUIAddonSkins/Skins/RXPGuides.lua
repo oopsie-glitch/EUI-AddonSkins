@@ -601,11 +601,12 @@ end, function(S, module)
         if host.SetMouseMotionEnabled then host:SetMouseMotionEnabled(false) end
         return host
     end
-    local function ForeverRim(host, parent)
+    local function ForeverRim(host, parent, inset)
         local EUI = _G.EllesmereUI
         if not (EUI.ForeverBorder and EUI.ForeverBorderSeat and EUI.ForeverBorderShown) then return end
         local ring = EUI.ForeverBorder(host, "ARTWORK", 1, nil, "textured")
-        if ring then EUI.ForeverBorderSeat(ring, parent or host, "TOPLEFT", 0, 0, 0, 0) end
+        inset = inset or 0
+        if ring then EUI.ForeverBorderSeat(ring, parent or host, "TOPLEFT", inset, -inset, -inset, inset) end
         return ring
     end
     local function SeatFill(texture, frame, x, top, bottom)
@@ -774,6 +775,7 @@ end, function(S, module)
                 if art.stepFill then
                     SetPaintAlpha(art.stepFill, surfacePaint[art.stepFill].alpha or 0, top == currentStep)
                 end
+                if art.headerRule then art.headerRule:SetShown(top ~= header) end
                 art:ClearAllPoints()
                 art:SetPoint("TOPLEFT", top, "TOPLEFT", -2, top == currentStep and 6 or 2)
                 art:SetPoint("BOTTOMRIGHT", footer, "BOTTOMRIGHT", 2, -2)
@@ -782,7 +784,7 @@ end, function(S, module)
             H.Script(currentStep, "OnShow", AnchorTop)
             H.Script(currentStep, "OnHide", AnchorTop)
             art.anchorTop = AnchorTop
-            ForeverRim(art)
+            art.rim = ForeverRim(art)
             compositions[root] = art
         end
         if art then
@@ -1022,6 +1024,52 @@ end, function(S, module)
             end)
         end
     end
+    local function LegacySkipCheck(button, forever)
+        if not H.Allowed(button) then return end
+        local visual = guideChecks[button]
+        if not visual then
+            if not forever then return end
+            TintBackdrop(button)
+            visual = guideChecks[button]
+            if not visual then return end
+        end
+        if forever and not visual.skipBorder then
+            local lines = {}
+            for _, edge in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+                local line = button:CreateTexture(nil, "BORDER", nil, 2)
+                if edge == "TOP" or edge == "BOTTOM" then
+                    line:SetPoint(edge .. "LEFT", button, edge .. "LEFT")
+                    line:SetPoint(edge .. "RIGHT", button, edge .. "RIGHT")
+                    line:SetHeight(1)
+                else
+                    line:SetPoint("TOP" .. edge, button, "TOP" .. edge, 0, -1)
+                    line:SetPoint("BOTTOM" .. edge, button, "BOTTOM" .. edge, 0, 1)
+                    line:SetWidth(1)
+                end
+                line:SetColorTexture(0.65, 0.46, 0.28, 0.85)
+                lines[#lines + 1] = line
+            end
+            visual.skipBorder = lines
+            H.Script(button, "OnEnter", function(self)
+                if not ForeverLook() then return end
+                local tip, screen = _G.GameTooltip, _G.UIParent
+                local row = self:GetParent()
+                if not (tip and screen and row and row.GetRight and row.GetLeft and row.GetEffectiveScale
+                    and not (tip.IsForbidden and tip:IsForbidden()) and tip:GetOwner() == self) then return end
+                local right, left, screenRight = row:GetRight(), row:GetLeft(), screen:GetRight()
+                if not (right and left and screenRight) then return end
+                local rowScale = row:GetEffectiveScale()
+                local room = screenRight * screen:GetEffectiveScale() - right * rowScale
+                local openRight = room >= (tip:GetWidth() + 8) * tip:GetEffectiveScale() or room >= left * rowScale
+                tip:ClearAllPoints()
+                tip:SetPoint(openRight and "LEFT" or "RIGHT", row, openRight and "RIGHT" or "LEFT", openRight and 8 or -8, 0)
+            end)
+        end
+        if visual.skipBorder and visual.skipShown ~= forever then
+            visual.skipShown = forever
+            for _, line in ipairs(visual.skipBorder) do line:SetShown(forever) end
+        end
+    end
     local scans = setmetatable({}, {__mode = "k"})
     local function Scan(f)
         if not H.Allowed(f) then return end
@@ -1045,29 +1093,48 @@ end, function(S, module)
         if not H.Allowed(button) then return end
         local state = scrollArrows[button]
         if not state and forever then
-            local arrow = button:CreateTexture(nil, "OVERLAY")
+            local host = legacy and ForeverArtHost(button)
+            local arrow = (host or button):CreateTexture(nil, "OVERLAY")
             arrow:SetTexture(up and "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-up3.png"
                 or "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
             arrow:SetSize(12, 12)
             arrow:SetPoint("CENTER", button, "CENTER")
             arrow:SetVertexColor(0.88, 0.66, 0.39, 1)
-            state = {arrow = arrow, alpha = {}}
+            state = {arrow = arrow, alpha = {}, host = host}
             scrollArrows[button] = state
+            local fill
+            if host then
+                ForeverRim(host, nil, 3)
+                fill = host:CreateTexture(nil, "BACKGROUND")
+                SeatFill(fill, host, 5, 5, 5)
+            end
             local function Reflect()
-                arrow:SetAlpha((not button.IsEnabled or button:IsEnabled()) and 1 or 0.45)
+                local enabled = not button.IsEnabled or button:IsEnabled()
+                arrow:SetAlpha(enabled and 1 or 0.45)
+                if host then
+                    host:SetAlpha(enabled and 1 or 0.65)
+                    local shade = enabled and (state.pressed and 0.035 or state.hover and 0.12) or 0.06
+                    fill:SetColorTexture(shade, shade, shade + 0.005, 0.92)
+                end
             end
             H.Script(button, "OnEnable", Reflect)
             H.Script(button, "OnDisable", Reflect)
+            if host then
+                H.Script(button, "OnEnter", function() state.hover = true; Reflect() end)
+                H.Script(button, "OnLeave", function() state.hover, state.pressed = nil, nil; Reflect() end)
+                H.Script(button, "OnMouseDown", function() state.pressed = true; Reflect() end)
+                H.Script(button, "OnMouseUp", function() state.pressed = nil; Reflect() end)
+            end
             Reflect()
         end
         if not state or state.forever == forever then return end
         state.forever = forever
         state.arrow:SetShown(forever)
+        if state.host then state.host:SetShown(forever) end
         if forever then
             if legacy then
                 for _, region in ipairs(H.Regions(button)) do
-                    local text = region.GetText and region:GetText()
-                    if text == (up and "^" or "v") then state.alpha[region] = region:GetAlpha() end
+                    if state.alpha[region] == nil then state.alpha[region] = region:GetAlpha() end
                 end
             else
                 for _, texture in pairs({button.Normal, button.Pushed, button.Disabled}) do
@@ -1090,9 +1157,12 @@ end, function(S, module)
         if not title and forever then
             local primary = header:CreateFontString(nil, "OVERLAY")
             local secondary = header:CreateFontString(nil, "OVERLAY")
-            for _, label in ipairs({primary, secondary}) do label:SetJustifyH("LEFT") end
-            primary:SetPoint("TOPLEFT", header, "TOPLEFT", 7, -5)
-            primary:SetPoint("TOPRIGHT", header, "TOPRIGHT", -7, -5)
+            for _, label in ipairs({primary, secondary}) do
+                label:SetJustifyH("LEFT")
+                if label.SetMaxLines then label:SetMaxLines(1) end
+            end
+            primary:SetPoint("TOPLEFT", header, "TOPLEFT", 7, -7)
+            primary:SetPoint("TOPRIGHT", header, "TOPRIGHT", -7, -7)
             secondary:SetPoint("TOPLEFT", primary, "BOTTOMLEFT", 0, -1)
             secondary:SetPoint("TOPRIGHT", primary, "BOTTOMRIGHT", 0, -1)
             primary:SetTextColor(1, 0.82, 0)
@@ -1115,6 +1185,8 @@ end, function(S, module)
         if split then
             if title.alpha == nil then title.alpha = text:GetAlpha(); text:SetAlpha(0) end
             local path, size, flags = text:GetFont()
+            -- Leave room for the upper bevel, line spacing and lower rule.
+            if size then size = math.min(size, math.max(8, math.floor((header:GetHeight() - 7) / 2))) end
             if path and size and (title.path ~= path or title.size ~= size or title.flags ~= flags) then
                 title.path, title.size, title.flags = path, size, flags
                 title.primary:SetFont(path, size, flags)
@@ -1406,18 +1478,30 @@ end, function(S, module)
                 if edge then entry.mask = MaskFill(art, edge, plate, grain, nil, nil, legacyHeader and 0 or nil) end
 
                 if legacyHeader then
-                    -- The meter uses its outer rim as the upper rail. The
-                    -- V1 title is internal, so it needs a separate top rule.
+                    -- Use the outer rim's exact edge art, including its fallback.
                     local EUI = _G.EllesmereUI
-                    local rule = EUI.ForeverBorderDivider and EUI.ForeverBorderDivider(art, "BACKGROUND", 3)
+                    local edgeArt = underlay and underlay.rim and underlay.rim[5]
+                    local rule
+                    if edgeArt then
+                        rule = art:CreateTexture(nil, "BACKGROUND", nil, 3)
+                        rule:SetTexture(edgeArt:GetTexture())
+                        rule:SetTexCoord(edgeArt:GetTexCoord())
+                        rule:SetHeight(edgeArt:GetHeight())
+                    elseif EUI.ForeverBorderDivider then
+                        rule = EUI.ForeverBorderDivider(art, "BACKGROUND", 3)
+                    end
                     if not rule then
                         rule = art:CreateTexture(nil, "BACKGROUND", nil, 3)
                         rule:SetColorTexture(bronzeR, bronzeG, bronzeB, 1)
                         rule:SetHeight(1)
                     end
-                    rule:SetPoint("TOPLEFT", art, "TOPLEFT", 2, 0)
-                    rule:SetPoint("TOPRIGHT", art, "TOPRIGHT", -2, 0)
+                    rule:SetPoint("TOPLEFT", art, "TOPLEFT", 0, 2)
+                    rule:SetPoint("TOPRIGHT", art, "TOPRIGHT", 0, 2)
                     if entry.mask then rule:AddMaskTexture(entry.mask) end
+                    if underlay then
+                        underlay.headerRule = rule
+                        rule:SetShown(underlay.top ~= f)
+                    end
                     entry.topRule = rule
                 end
                 if band and (legacyHeader or not meterArt) then
@@ -1786,6 +1870,7 @@ end, function(S, module)
                     Font(step.number and step.number.text)
                 end
                 for _, element in pairs(step.elements or {}) do
+                    LegacySkipCheck(element.button, forever)
                     if forever then Font(element.text) end
                     SkinIconLabel(element.icon, forever)
                     SkinIconLabel(element.text, forever)

@@ -38,12 +38,13 @@ for y in range(17):
         distance=min(x,16-x)+min(y,16-y)
         assert data[18+(y*17+x)*4+3]==min(255,max(0,(distance-4)*128))
 files.append(mask)
-flag=addon/'Media/RestedXPRouteFlag.tga'
-data=flag.read_bytes()
-assert data[2]==2 and data[12:17]==bytes((32, 0, 32, 0, 32))
-assert data[17] & 0x0f == 8
-assert {0,255} <= set(data[21:18+32*32*4:4])
-files.append(flag)
+for name in ('RestedXPRouteFlag', 'RestedXPQuestAccept', 'RestedXPQuestTurnIn', 'RestedXPTalk'):
+    icon=addon/f'Media/{name}.tga'
+    data=icon.read_bytes()
+    assert data[2]==2 and data[12:17]==bytes((32, 0, 32, 0, 32))
+    assert data[17] & 0x0f == 8
+    assert len(data) >= 18+32*32*4 and {0,255} <= set(data[21:18+32*32*4:4])
+    files.append(icon)
 for flavor in ['Camelot','Mainline']:
     alias=addon/f'EUIAddonSkins_{flavor}.toc'
     assert alias.read_bytes()==toc.read_bytes(),f'Stale client manifest: {alias}'

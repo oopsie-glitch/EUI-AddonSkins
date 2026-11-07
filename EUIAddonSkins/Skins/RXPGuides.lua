@@ -1608,24 +1608,33 @@ end, function(S, module)
     end
     -- Change only the display labels. RXP's shared icon table also feeds
     -- tooltips, map markers and exported step data.
-    local markerTints = {
-        ["interface/gossipframe/availablequesticon"] = "255:211:163",
-        ["interface/gossipframe/activequesticon"] = "255:211:163",
-        ["interface/gossipframe/gossipgossipicon"] = "228:178:123",
-        ["interface/worldmap/chatbubble_64grey"] = "228:178:123",
+    local markerFiles = {
+        ["interface/gossipframe/availablequesticon"] = "RestedXPQuestAccept",
+        ["interface/gossipframe/activequesticon"] = "RestedXPQuestTurnIn",
+        ["interface/gossipframe/gossipgossipicon"] = "RestedXPTalk",
+        ["interface/worldmap/chatbubble_64grey"] = "RestedXPTalk",
+        ["interface/worldstateframe/columnicon-flagcapture2"] = "RestedXPRouteFlag",
+        -- Blizzard FileDataIDs for the same assets. These are exact aliases,
+        -- never a generic substitution for item or spell FileDataIDs.
+        ["132049"] = "RestedXPQuestAccept",
+        ["132048"] = "RestedXPQuestTurnIn",
+        ["132053"] = "RestedXPTalk",
+        ["308474"] = "RestedXPTalk",
+        ["137205"] = "RestedXPRouteFlag",
     }
     local function BronzeMarkers(text)
         if type(text) ~= "string" or not text:find("|T", 1, true) then return text end
-        return (text:gsub("|T([^:|]+):(%d+)|t", function(path, height)
-            local key = path:lower():gsub("\\", "/"):gsub("%.blp$", "")
-            if key == "interface/worldstateframe/columnicon-flagcapture2" then
-                return "|TInterface/AddOns/EUIAddonSkins/Media/RestedXPRouteFlag:" .. height .. "|t"
+        return (text:gsub("(|+)T([^:|]+)(:[^|]*)|t", function(pipes, path, geometry)
+            -- A paired pipe is literal text. Preserve explicit crops and
+            -- authored vertex colours as well as all unknown/atlas tags.
+            if #pipes % 2 == 0 or not geometry:match("^:%d+[:%d%.%-]*$") then return end
+            local _, fields = geometry:gsub(":", "")
+            if fields > 4 then return end
+            local key = path:lower():gsub("\\", "/"):gsub("%.blp$", ""):gsub("%.tga$", "")
+            local file = markerFiles[key]
+            if file then
+                return pipes .. "TInterface/AddOns/EUIAddonSkins/Media/" .. file .. geometry .. "|t"
             end
-            local tint = markerTints[key]
-            if not tint then return end
-            -- Explicit square width matches the omitted native width, even
-            -- when the authored height is a fixed pixel size instead of 0.
-            return "|T" .. path .. ":" .. height .. ":" .. height .. ":::::::::" .. tint .. "|t"
         end))
     end
     local iconLabels = setmetatable({}, {__mode = "k"})

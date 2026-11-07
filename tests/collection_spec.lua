@@ -401,14 +401,14 @@ RXP.v2.state.player = {Player = {activeStepFrame = {children = {activeItem}}}}
 assert(RXP.v2:UpdatePlayerActiveStepItem(activeItem) == "native update")
 local function CheckBronzeMarkers()
     local text = row.text:GetText()
-    assert(text:find("AvailableQuestIcon:0:0:::::::::255:211:163", 1, true))
-    assert(text:find("ActiveQuestIcon:0:0:::::::::255:211:163", 1, true))
-    assert(text:find("chatbubble_64grey.blp:20:20:::::::::228:178:123", 1, true))
+    assert(text:find("RestedXPQuestAccept:0|t", 1, true))
+    assert(text:find("RestedXPQuestTurnIn:0|t", 1, true))
+    assert(text:find("RestedXPTalk:20|t", 1, true))
     assert(text:find("RestedXPRouteFlag:0|t", 1, true))
     assert(text:find(statusIcons .. "|cff00ff00NPC|r", 1, true))
-    assert(activeIcon:GetText():find("255:211:163|t", 1, true))
-    assert(v2ListText:GetText():find("255:211:163|t", 1, true))
-    assert(v2Icon:GetText():find("228:178:123|t", 1, true))
+    assert(activeIcon:GetText():find("RestedXPQuestAccept:0|t", 1, true))
+    assert(v2ListText:GetText():find("RestedXPQuestTurnIn:0|t", 1, true))
+    assert(v2Icon:GetText():find("RestedXPTalk:20|t", 1, true))
     assert(v2Text:GetText():find("RestedXPRouteFlag:0|t", 1, true))
 end
 local oldFont = S.Font
@@ -448,6 +448,21 @@ assert(#titleArt == 2)
 CheckBronzeMarkers()
 row.text:SetText(statusIcons)
 assert(row.text:GetText() == statusIcons)
+local media = "|TInterface/AddOns/EUIAddonSkins/Media/"
+local sizedFlag = "|T137205:0:1.25:-2:1|t"
+local explicitTalk = "|T308474:16:16::1|t"
+local untouched = "||T137205:0|t|T137205:0:0:0:0:32:32:0:32:0:32|t"
+local wrapped = sizedFlag .. "Run to Durnholde Keep\n" .. explicitTalk .. "Talk to Ott" .. untouched
+local expected = media .. "RestedXPRouteFlag:0:1.25:-2:1|tRun to Durnholde Keep\n"
+    .. media .. "RestedXPTalk:16:16::1|tTalk to Ott" .. untouched
+row.text:SetText(wrapped)
+assert(row.text:GetText() == expected)
+row.text:SetText(wrapped)
+assert(row.text:GetText() == expected)
+v2Icon:SetText("|T132053:0|t")
+assert(v2Icon:GetText() == media .. "RestedXPTalk:0|t")
+v2Icon:SetText(nativeTalk)
+
 row.text:SetText(originalMarkers)
 CheckBronzeMarkers()
 assert(#labels == 2 and guide.GuideName.text:GetAlpha() == 0)

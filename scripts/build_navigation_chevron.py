@@ -1,6 +1,6 @@
 """Render original straight-edged navigation artwork. Dev-only: Pillow."""
 from pathlib import Path
-from math import hypot
+from math import hypot, sin
 from PIL import Image
 
 SIZE = 256
@@ -52,8 +52,36 @@ def coverage(distance, width):
     return round(255 * t*t*(3-2*t))
 
 
+BRONZE = (
+    (0.00, (117, 69, 43)),
+    (0.17, (249, 215, 164)),
+    (0.32, (225, 167, 107)),
+    (0.55, (161, 95, 55)),
+    (0.78, (181, 115, 66)),
+    (1.00, (93, 53, 33)),
+)
+
+
+def metal_face(x, y, white):
+    rim = (34, 21, 15)
+    if not white:
+        return rim
+    # A narrow light bevel above a recessed copper face. Reflective streaks
+    # run along the arms at different intensities, under the same edge light.
+    across = y - (9 + abs(x - 15) * 10.5 / 11)
+    depth = max(0, min(1, across / (inner_peak - 9)))
+    grain = 4 * sin(across * 23 + sin(x * 0.7)) + 4 * sin(x * 1.9 + across * 2)
+    reflection = 12 * sin(x * 0.53 + across * 2.2) + 6 * sin(x * 1.16 - across * 3)
+    light = grain + reflection - (12 if x > 15 else 0)
+    for (start, near), (end, far) in zip(BRONZE, BRONZE[1:]):
+        if depth <= end:
+            weight = (depth - start) / (end - start)
+            return tuple(min(255, round(edge + (a + (b - a) * weight + light - edge) * white / 255))
+                         for edge, a, b in zip(rim, near, far))
+
+
 outer = offset_polygon(POINTS, OUTLINE)
-pixels = []
+pixels, bronze_pixels = [], []
 for y in range(SIZE):
     for x in range(SIZE):
         px, py = (x+0.5)*30/SIZE, (y+0.5)*30/SIZE
@@ -61,7 +89,10 @@ for y in range(SIZE):
         white = coverage(signed_distance(px, py, POINTS), INNER_FEATHER) if alpha else 0
         # Accent tint affects only the interior. Opaque outline remains black.
         pixels.append((white, white, white, alpha))
+        bronze_pixels.append((*metal_face(px, py, white), alpha))
 image = Image.new("RGBA", (SIZE, SIZE))
 image.putdata(pixels)
 root = Path(__file__).resolve().parents[1]
 image.save(root / "EUIAddonSkins/Media/NavigationChevronSmooth.tga")
+image.putdata(bronze_pixels)
+image.save(root / "EUIAddonSkins/Media/NavigationChevronBronze.tga")

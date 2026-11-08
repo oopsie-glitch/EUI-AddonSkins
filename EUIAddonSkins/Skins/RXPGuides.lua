@@ -1225,11 +1225,11 @@ end, function(S, module)
         end
     end
     local scrollArrows = setmetatable({}, {__mode = "k"})
-    local function ScrollArrow(button, up, forever, legacy)
+    local function ScrollArrow(button, up, forever, legacy, framed)
         if not H.Allowed(button) then return end
         local state = scrollArrows[button]
         if not state and forever then
-            local host = legacy and ForeverArtHost(button)
+            local host = (legacy or framed) and ForeverArtHost(button)
             local arrow = (host or button):CreateTexture(nil, "OVERLAY")
             arrow:SetTexture(up and "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-up3.png"
                 or "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
@@ -1273,7 +1273,7 @@ end, function(S, module)
                     if state.alpha[region] == nil then state.alpha[region] = region:GetAlpha() end
                 end
             else
-                for _, texture in pairs({button.Normal, button.Pushed, button.Disabled}) do
+                for _, texture in pairs({button.Normal, button.Pushed, button.Disabled, framed and button.Highlight}) do
                     if texture and texture.GetAlpha then state.alpha[texture] = texture:GetAlpha() end
                 end
             end
@@ -1593,12 +1593,20 @@ end, function(S, module)
             if entry.badge then entry.secondary = true end
             if forever and not entry.art and not joinedBody and not entry.badge then
                 local legacyHeader = chrome == "legacyHeader"
-                local header = legacyHeader or chrome == "header"
+                local v2Header = chrome == "header"
+                local header = legacyHeader or v2Header
                 local band = header or chrome == "footer" or chrome == "auxTitle"
                 local art = ForeverArtHost(f)
+                if v2Header then
+                    -- Native upperFrame reserves a one-unit header inset. Meet
+                    -- the guide surface at its bottom without moving the title.
+                    art:ClearAllPoints()
+                    art:SetPoint("TOPLEFT", f, "TOPLEFT")
+                    art:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, -1)
+                end
                 entry.art = art
                 local title = chrome == "auxTitle"
-                local grain, plate, meterArt = ForeverSurface(art, band, titleBody, header, legacyHeader)
+                local grain, plate, meterArt = ForeverSurface(art, band, titleBody, header, header)
                 entry.grain, entry.plate, entry.band, entry.auxTitle = grain, plate, band, title
                 entry.titleBody = titleBody
                 if chrome == "auxBody" then entry.auxBodyTitle = f.title end
@@ -1635,14 +1643,14 @@ end, function(S, module)
                     end
                     entry.topRule = rule
                 end
-                if band and (legacyHeader or (not title and not meterArt)) then
+                if band and (header or (not title and not meterArt)) then
                     local divider = art:CreateTexture(nil, "BACKGROUND", nil, 3)
                     local edge = chrome == "footer" and "TOP" or "BOTTOM"
                     divider:SetPoint(edge .. "LEFT", art, edge .. "LEFT", 2, 0)
                     divider:SetPoint(edge .. "RIGHT", art, edge .. "RIGHT", -2, 0)
                     divider:SetHeight(1)
                     divider:SetColorTexture(bronzeR, bronzeG, bronzeB, header and 0.55 or 0.34)
-                    if legacyHeader then
+                    if header then
                         if entry.mask then divider:AddMaskTexture(entry.mask) end
                         entry.bottomRule = divider
                     end
@@ -1795,7 +1803,7 @@ end, function(S, module)
     end
     ns.RXPSettingsChanged = ApplyArrow
     H.Hook(addon, "SetupArrow", ApplyArrow)
-    local guideWindowSeen
+    local guideWindowSeen, guideStepsSeen
     local function V2Chrome(window)
         if not window then return end
         if CombatLocked() then applyWaiting = true; return end
@@ -1918,6 +1926,76 @@ end, function(S, module)
             SkinIconLabel(row.text, forever)
         end
     end
+    local function IsV2Row(item)
+        return item and item.type == "RXPV2GuideStepsItem"
+    end
+    local rowLayout = setmetatable({}, {__mode = "k"})
+    local function RestoreV2Wrap(item, state)
+        if state.wrap ~= nil then
+            item.text:SetNonSpaceWrap(state.wrap)
+            state.wrap = nil
+        end
+    end
+    local function BindV2Height(item)
+        local state = rowLayout[item]
+        if state then
+            local pending = state.pending
+            state.pending = nil
+            return pending
+        end
+        local text, row, badge = item.text, item.frame, item.numberFrame
+        if not H.Allowed(text) or not H.Allowed(row) or not badge
+            or not (item.UpdateHeight and text.GetHeight and text.SetWidth and row.GetWidth and row.GetParent and badge.GetWidth) then return end
+        local native = item.UpdateHeight
+        state = {}
+        rowLayout[item] = state
+        item.UpdateHeight = function(self, ...)
+            if not ns.IsEnabled(module) then return native(self, ...) end
+            if CombatLocked() then
+                state.pending, applyWaiting = true, true
+                return native(self, ...)
+            end
+            if not ForeverLook() then
+                RestoreV2Wrap(self, state)
+                return native(self, ...)
+            end
+            -- The row's two anchors can still reflect its old width while
+            -- SetRows runs. Use the scroll viewport and its native 2px insets.
+            local content = row:GetParent()
+            local viewport = content and content.GetParent and content:GetParent()
+            local width = viewport and viewport.GetWidth and viewport:GetWidth()
+            width = width and width > 4 and width - 4 or row:GetWidth()
+            local available = width - badge:GetWidth() - 8
+            if available <= 0 then return native(self, ...) end
+            if state.wrap == nil and text.CanNonSpaceWrap and text.SetNonSpaceWrap then
+                state.wrap = not not text:CanNonSpaceWrap()
+                if not state.wrap then text:SetNonSpaceWrap(true) end
+            end
+            text:SetWidth(available)
+            -- With its width set and height unconstrained, the label's
+            -- region height includes soft wrapping as well as hard breaks.
+            local height = text:GetHeight()
+            if not height or height <= 0 then return native(self, ...) end
+            row:SetHeight(math.max(math.ceil(height) + 9, 30))
+        end
+        return true
+    end
+    local function PaintV2Badge(item, forever)
+        -- The native row creates its shadow after its backdrop and before
+        -- the badge backdrop. Only the badge callback sees a new shadow.
+        NativeFillAlpha(item.frame.rxpShadow, forever and 0 or nil)
+        local badge = item.numberFrame
+        if not badge then return end
+        NativeFillAlpha(badge.rxpBackground, forever and 0 or nil)
+        NativeFillAlpha(badge.rxpBorder, forever and 0 or nil)
+    end
+    local function PaintV2Row(item, forever)
+        local row = item.frame
+        StepDivider(row, forever)
+        NativeFillAlpha(row.rxpBackground, forever and 0 or nil)
+        NativeFillAlpha(row.rxpBorder, forever and 0 or nil)
+        SkinIconLabel(item.text, forever)
+    end
     local function V2Dividers(steps)
         if CombatLocked() then applyWaiting = true; return end
         local forever = ForeverLook()
@@ -1926,21 +2004,103 @@ end, function(S, module)
         local scale = shell and ForeverOpacity()
         local extra = scale and OverlayAlpha(SectionAlpha(0.70, scale), SharedAlpha(select(4, S.GetPanelColor()) or 1, scale))
             or (not forever and BackgroundOverride())
+        local reflow
         for _, item in pairs(steps.items or {}) do
-            local row = item.frame
-            SkinIconLabel(item.text, forever)
-            StepDivider(row, forever)
-            NativeFillAlpha(row and row.rxpShadow, forever and 0 or nil)
-            NativeFillAlpha(item.numberFrame and item.numberFrame.rxpBackground, forever and 0 or nil)
-            local fill = row and row.rxpBackground
-            local texture = fill and fill.textures and fill.textures[1]
-            if texture and texture.GetVertexColor and extra then
-                local _, _, _, alpha = texture:GetVertexColor()
-                NativeFillAlpha(fill, alpha and alpha > 0 and math.min(1, extra / alpha) or nil)
+            if IsV2Row(item) then
+                if forever and BindV2Height(item) then reflow = true end
+                PaintV2Row(item, forever)
+                PaintV2Badge(item, forever)
             else
-                NativeFillAlpha(fill, nil)
+                local row = item.frame
+                SkinIconLabel(item.text, forever)
+                StepDivider(row, forever)
+                NativeFillAlpha(row and row.rxpShadow, forever and 0 or nil)
+                NativeFillAlpha(item.numberFrame and item.numberFrame.rxpBackground, forever and 0 or nil)
+                local fill = row and row.rxpBackground
+                local texture = fill and fill.textures and fill.textures[1]
+                if texture and texture.GetVertexColor and extra then
+                    local _, _, _, alpha = texture:GetVertexColor()
+                    NativeFillAlpha(fill, alpha and alpha > 0 and math.min(1, extra / alpha) or nil)
+                else
+                    NativeFillAlpha(fill, nil)
+                end
             end
         end
+        if reflow and steps.rows then steps:SetRows(steps.rows, true) end
+    end
+    local function NativeV2List(window)
+        local steps = window and window.guideSteps
+        return steps and steps.type == "RXPV2GuideSteps" and addon.ui and addon.ui.v2
+            and type(addon.ui.v2.ApplyFrameBackdrop) == "function"
+    end
+    local v2ThumbTint = {0.68, 0.50, 0.32, 1}
+    local v2ThumbColors = setmetatable({}, {__mode = "k"})
+    local v2ScrollbarOwners = setmetatable({}, {__mode = "k"})
+    local function V2Scrollbar(window, forever)
+        local scroll = window.guideSteps and window.guideSteps.scroll
+        local bar = scroll and scroll.scrollbar
+        if not bar then return end
+        local framed = NativeV2List(window)
+        ScrollArrow(bar.ScrollUpButton, true, forever, false, framed)
+        ScrollArrow(bar.ScrollDownButton, false, forever, false, framed)
+        if not framed then return end
+        NativeFillAlpha(scroll.scrollbg, forever and 0 or nil)
+        local thumb = H.Texture(bar.ThumbTexture)
+        if not thumb or not thumb.GetVertexColor then return end
+        local r, g, b, a = thumb:GetVertexColor()
+        local tinted = CheckTintMatches(v2ThumbTint, r, g, b, a)
+        if forever and not tinted then
+            v2ThumbColors[thumb] = {r, g, b, a}
+            thumb:SetVertexColor(unpack(v2ThumbTint))
+        elseif not forever and v2ThumbColors[thumb] then
+            if tinted then thumb:SetVertexColor(unpack(v2ThumbColors[thumb])) end
+            v2ThumbColors[thumb] = nil
+        end
+    end
+    local function RefreshV2Scrollbar(scroll)
+        local window = v2ScrollbarOwners[scroll]
+        if window and not CombatLocked() then
+            local shell = compositions[window.frame]
+            V2Scrollbar(window, shell and shell:IsShown() and ForeverLook() or false)
+        end
+    end
+    local v2Marks = setmetatable({}, {__mode = "k"})
+    local v2FooterColors = setmetatable({}, {__mode = "k"})
+    local function TintV2Texture(texture, tint)
+        if not H.Texture(texture) or not texture.GetVertexColor then return end
+        local native = v2Marks[texture]
+        if tint then
+            local r, g, b, a = texture:GetVertexColor()
+            if not native then v2Marks[texture] = {r, g, b, a} end
+            if not CheckTintMatches(tint, r, g, b, a) then texture:SetVertexColor(unpack(tint)) end
+        elseif native then
+            texture:SetVertexColor(unpack(native))
+            v2Marks[texture] = nil
+        end
+    end
+    local v2CheckFill = {0.115, 0.082, 0.052, 0.92}
+    local v2CheckBorder = {bronzeR, bronzeG, bronzeB, 1}
+    local function V2Checkbox(button, forever)
+        if not H.Allowed(button) or not button.rxpCheckShort or not button.rxpCheckLong then return end
+        local enabled = not button.IsEnabled or button:IsEnabled()
+        local tint = forever and (enabled and copperCheck or disabledCheck)
+        TintV2Texture(button.rxpCheckShort, tint)
+        TintV2Texture(button.rxpCheckLong, tint)
+        -- Native UpdateElementCheckbox writes the fill and rim each time.
+        -- In Standard that native write is already the desired restoration.
+        if not forever then return end
+        local background, border = button.rxpBackground, button.rxpBorder
+        if background and background.textures then background.textures[1]:SetVertexColor(unpack(v2CheckFill)) end
+        for _, edge in ipairs(border and border.textures or {}) do edge:SetVertexColor(unpack(v2CheckBorder)) end
+    end
+    local function V2Active(item, forever)
+        local card = item.card or item.frame
+        local shell, badge = themed[card], themed[item.title]
+        if not shell or shell.forever ~= forever then ThemeShell(card, "step") end
+        if not badge or badge.forever ~= forever then ThemeShell(item.title, "badge") end
+        NativeFillAlpha(card and card.rxpShadow, forever and 0 or nil)
+        if forever then Font(item.titletext, 0.86, 0.73, 0.51) end
+        SkinActiveIcons(item, forever)
     end
     local function V2FooterFill(window, forever)
         local alpha = BackgroundOverride()
@@ -1960,6 +2120,7 @@ end, function(S, module)
         ButtonRim(window.settingsButton, false)
         ButtonRim(window.guideSelectButton, false)
         ButtonRim(window.closebutton, false)
+        if NativeV2List(window) then V2Scrollbar(window, false) end
         for _, panel in pairs({window.upperFrame, window.guideNameFrame, window.guideStepsFrame, window.footer}) do
             local entry = themed[panel]
             if entry and not entry.suspended then
@@ -2077,7 +2238,7 @@ end, function(S, module)
         -- Inspect only existing widgets; GetGuideWindow would create one eagerly.
         local window = addon.v2 and addon.v2.state and addon.v2.state.guideWindow or _G.RXPV2GuideWindow
         if guideWindowSeen ~= window then HideV2GuideArt(guideWindowSeen) end
-        guideWindowSeen = window
+        guideWindowSeen, guideStepsSeen = window, window and window.guideSteps
         if hasMode and not v2Enabled then
             HideV2GuideArt(window)
         elseif window then
@@ -2096,12 +2257,15 @@ end, function(S, module)
             ButtonRim(window.closebutton, forever)
             local steps = window.guideSteps
             if steps then
-                local bar = steps.scroll and steps.scroll.scrollbar
-                if bar then
-                    ScrollArrow(bar.ScrollUpButton, true, forever)
-                    ScrollArrow(bar.ScrollDownButton, false, forever)
+                V2Scrollbar(window, forever)
+                if NativeV2List(window) then
+                    if steps.scroll and v2ScrollbarOwners[steps.scroll] ~= window then
+                        v2ScrollbarOwners[steps.scroll] = window
+                        H.Hook(steps.scroll, "RefreshVisuals", RefreshV2Scrollbar)
+                    end
+                else
+                    H.Hook(steps, "SetRows", V2Dividers)
                 end
-                H.Hook(steps, "SetRows", V2Dividers)
                 V2Dividers(steps)
             end
             ns.AttachAccent(S, window.upperFrame or window.frame)
@@ -2116,7 +2280,23 @@ end, function(S, module)
             local r, g, b = WarmTitle()
             if forever then r, g, b = 1, 0.82, 0 end
             Font(window.title, r, g, b)
-            if forever then Font(window.subtitle); Font(window.footerText) end
+            if forever then
+                Font(window.subtitle)
+                local footer = window.footerText
+                if H.Allowed(footer) and footer.GetTextColor and not v2FooterColors[footer] then
+                    v2FooterColors[footer] = {footer:GetTextColor()}
+                end
+                Font(footer, 0.76, 0.64, 0.45)
+            elseif window.footerText and v2FooterColors[window.footerText] then
+                window.footerText:SetTextColor(unpack(v2FooterColors[window.footerText]))
+                v2FooterColors[window.footerText] = nil
+            end
+            if NativeV2List(window) and H.Allowed(window.sizer) then
+                local tint = forever and copperCheck
+                local sizer = window.sizer
+                if sizer.GetNormalTexture then TintV2Texture(sizer:GetNormalTexture(), tint) end
+                if sizer.GetHighlightTexture then TintV2Texture(sizer:GetHighlightTexture(), tint) end
+            end
             if window.closebutton and H.Allowed(window.closebutton) then S.CloseButton(window.closebutton) end
         end
         -- Active V2 steps are widgets kept outside the main guide window.
@@ -2124,9 +2304,7 @@ end, function(S, module)
         for _, player in pairs(state and state.player or {}) do
             local active = player.activeStepFrame
             for _, child in pairs(active and active.children or {}) do
-                ThemeShell(child.card or child.frame, "step")
-                ThemeShell(child.title, "badge")
-                SkinActiveIcons(child, forever)
+                V2Active(child, forever)
             end
         end
         local party = state and state.activePartyStepFrame
@@ -2182,9 +2360,16 @@ end, function(S, module)
     Wrap(addon, "LoadActiveTheme", true)
     Wrap(addon.v2, "GetTheme")
     for _, name in ipairs({"RenderFrame", "LoadGuide"}) do H.Hook(addon, name, refresh) end
+    local function ReadyV2Snapshot()
+        local v2 = addon.v2
+        local window = v2 and v2.state and v2.state.guideWindow
+        return window and window == guideWindowSeen and window.guideSteps == guideStepsSeen and NativeV2List(window)
+            and compositions[window.frame] and compositions[window.frame]:IsShown()
+            and v2.IsGuideWindowEnabled and v2:IsGuideWindowEnabled() and ForeverLook()
+    end
     H.Hook(addon, "SetStep", function()
         if ReadyLegacySteps() then H.Queue(module, ApplyQueued)
-        else refresh() end
+        elseif not ReadyV2Snapshot() then refresh() end
         PrepareLegacySteps()
     end)
     H.Hook(addon.v2, "GetGuideWindow", function()
@@ -2196,12 +2381,40 @@ end, function(S, module)
         refresh()
     end)
     H.Hook(addon.v2, "UpdatePlayerActiveStepItem", function(_, item)
-        if not CombatLocked() and ForeverLook() then SkinActiveIcons(item, true) end
+        if CombatLocked() then applyWaiting = true; return end
+        if ForeverLook() then V2Active(item, true) end
     end)
-    for _, name in ipairs({"UpdateGuideWindow", "UpdateActiveStepTheme"}) do H.Hook(addon.v2, name, refresh) end
+    H.Hook(addon.v2, "UpdateGuideWindow", function()
+        if not ReadyV2Snapshot() then refresh() end
+    end)
+    H.Hook(addon.v2, "UpdateActiveStepTheme", refresh)
+    H.Hook(addon.v2, "UpdatePartyActiveStepItem", function(_, item)
+        if CombatLocked() then applyWaiting = true; return end
+        if ForeverLook() then V2Active(item, true) end
+    end)
     if addon.ui and addon.ui.v2 then
         H.Hook(addon.ui.v2, "CreateGuideImporter", refresh)
         H.Hook(addon.ui.v2, "ApplyFrameBackdrop", function(_, f, edge, background)
+            local forever = ForeverLook()
+            local item = f.obj
+            if not IsV2Row(item) and f.GetParent then
+                local parent = f:GetParent()
+                item = parent and parent.obj
+            end
+            if IsV2Row(item) and (f == item.frame or f == item.numberFrame) then
+                if CombatLocked() then applyWaiting = true; return end
+                if f == item.frame then
+                    if forever and not rowLayout[item] then BindV2Height(item) end
+                    PaintV2Row(item, forever)
+                else
+                    PaintV2Badge(item, forever)
+                end
+                if forever then return end
+            elseif f.rxpCheckShort then
+                if CombatLocked() then themeWaiting = true; return end
+                V2Checkbox(f, forever)
+                if forever then return end
+            end
             local entry = themed[f]
             if entry then entry.opacity = background and background[4] or 1; SyncShell(f, entry)
             else refresh() end -- one coalesced discovery for newly constructed controls
@@ -2270,8 +2483,8 @@ end, function(S, module)
         end
         local window = addon.v2 and addon.v2.state and addon.v2.state.guideWindow or _G.RXPV2GuideWindow
         if window then
-            if window.guideSteps then V2Dividers(window.guideSteps) end
-            V2FooterFill(window, ForeverLook())
+            if window.guideSteps and (not forever or not NativeV2List(window)) then V2Dividers(window.guideSteps) end
+            V2FooterFill(window, forever)
         end
     end
     local function OpenOpacitySettings()

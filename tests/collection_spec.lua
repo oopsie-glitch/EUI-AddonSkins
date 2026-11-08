@@ -198,6 +198,20 @@ RXP = {targeting = {CreateTargetFrame = function(self) self.activeTargetFrame = 
             local window = {frame = frame(), banner = region('v2-banner', 'ARTWORK'), UpdateTheme = function() end}
             self.state.guideWindow = window; return window
         end}}
+RXP.ui = {v2 = {}}
+function RXP.ui.v2:ApplyFrameBackdrop(owner, _, background, border)
+    if not owner.rxpBackground then
+        owner.rxpBackground = frame()
+        owner.rxpBackground.textures = {owner.rxpBackground:CreateTexture()}
+    end
+    if not owner.rxpBorder then
+        owner.rxpBorder = frame()
+        owner.rxpBorder.textures = {}
+        for i = 1, 4 do owner.rxpBorder.textures[i] = owner.rxpBorder:CreateTexture() end
+    end
+    owner.rxpBackground.textures[1]:SetVertexColor(table.unpack(background))
+    for _, edge in ipairs(owner.rxpBorder.textures) do edge:SetVertexColor(table.unpack(border)) end
+end
 if benchmark == "rxp-benchmark" then
     return {addon = RXP, module = modules.RXPGuides, api = S, frame = frame, flush = flush,
         guide = guide, step = step, errors = errors, definitionMS = definitionMS, menu = function() return shownMenu end}
@@ -566,6 +580,7 @@ assert(topRule.masks[1] == legacyHeaderArt.created[1].masks[1] and bottomRule.ma
 assert(topRule.sublevel > legacyHeaderArt.created[1].sublevel and bottomRule.sublevel == topRule.sublevel)
 assert(bandArt and bandArt.mouseEnabled == false and bandArt.created[1].color[1] == 0.185 and bandArt.created[2].alpha > 0)
 assert(bandArt.created[1].masks[1].edge == guideArt)
+assert(bandArt.points[2][2] == band and bandArt.points[2][5] == -1, "V2 header fill misses the shared surface seam")
 assert(lastRim.texture.alpha ~= 0 and rings[window.frame].texture.alpha ~= 0)
 local base = 0.66 * 0.95 / 0.92
 local bandAlpha = 1 - (1 - base) * (1 - bandArt.created[1].alpha) * (1 - bandArt.created[2].alpha)
@@ -1084,6 +1099,120 @@ end
 modules.RXPGuides.refresh(); flush()
 assert(Visible(legacyArt) and rings[cog].on and not rings[replacement.frame].host:IsShown())
 RXP.v2.state.guideWindow = window
+-- RestedXP v4.11.34 measures on SetRows, after SetRow applies native
+-- backdrops. The two FontString height APIs deliberately differ here.
+do
+    local viewport = frame("ScrollFrame")
+    viewport.width = 190
+    function viewport:GetWidth() return self.width end
+    local content, poolRow, badge = frame(), frame("Button"), frame()
+    function content:GetParent() return viewport end
+    function poolRow:GetParent() return content end
+    function poolRow:GetWidth() return 250 end -- previous width during resize
+    function badge:GetParent() return poolRow end
+    function badge:GetWidth() return self.width end
+    badge.width = 22
+    local text = label()
+    function text:SetWidth(width) self.width = width end
+    function text:CanNonSpaceWrap() return self.nonSpaceWrap end
+    function text:SetNonSpaceWrap(wrap) self.nonSpaceWrap = wrap end
+    function text:GetHeight() return math.ceil(390 / self.width) * 14 end
+    local item = {type = "RXPV2GuideStepsItem", frame = poolRow, text = text, numberFrame = badge}
+    poolRow.obj = item
+    function item:UpdateHeight()
+        self.text:SetWidth(self.frame:GetWidth() - self.numberFrame:GetWidth() - 8)
+        self.frame:SetHeight(30) -- native GetStringHeight model, hard lines only
+    end
+    local steps = {type = "RXPV2GuideSteps", items = {}, scroll = {scrollframe = viewport}, rows = {{index = 39}}}
+    local bronze = {0.49, 0.33, 0.18, 1}
+    local fill = {0.1, 0.08, 0.05, 0.95}
+    local function NativeRow()
+        RXP.ui.v2:ApplyFrameBackdrop(poolRow, {}, fill, bronze)
+        poolRow.rxpShadow = poolRow.rxpShadow or frame()
+        RXP.ui.v2:ApplyFrameBackdrop(badge, {}, fill, bronze)
+    end
+    function steps:SetRows(rows)
+        self.rows = rows
+        self.items[1] = rows[1] and item or nil
+        poolRow:SetShown(rows[1] ~= nil)
+        if not rows[1] then return end
+        poolRow:SetAlpha(rows[1].complete and 0.5 or 1)
+        text:SetText(nativeTurnin .. " A long wrapped objective")
+        NativeRow()
+        item:UpdateHeight()
+        self.rowsHeight = poolRow:GetHeight() + 8
+    end
+    local bar = {ScrollUpButton = frame("Button"), ThumbTexture = region("knob", "ARTWORK")}
+    steps.scroll.scrollbar, steps.scroll.scrollbg = bar, region("track", "BACKGROUND")
+    local arrow = bar.ScrollUpButton
+    parents[arrow] = window.frame
+    arrow.Normal, arrow.Highlight = region("up", "ARTWORK"), region("up-hover", "HIGHLIGHT")
+    function arrow:IsEnabled() return not self.disabled end
+    arrow.click = scrollAction
+    bar.ThumbTexture.GetVertexColor = function(self) return table.unpack(self.tint or {1, 1, 1, 1}) end
+    bar.ThumbTexture.SetVertexColor = function(self, ...) self.tint = {...} end
+    function steps.scroll:RefreshVisuals() bar.ThumbTexture:SetVertexColor(1, 1, 1, 1) end
+    window.guideSteps = steps
+    v2Mode = true
+    RXP.v2:DisableLegacyGuideWindow(); flush()
+    window.frame:SetShown(true)
+    steps:SetRows(steps.rows)
+    assert(text.width == 156 and poolRow:GetHeight() == 51 and steps.rowsHeight == 59)
+    assert(text.nonSpaceWrap and text:GetText():find("RestedXPQuestTurnIn", 1, true))
+    assert(poolRow.rxpBorder:GetAlpha() == 0 and badge.rxpBorder:GetAlpha() == 0 and poolRow.rxpBackground:GetAlpha() == 0)
+    assert(poolRow.rxpShadow:GetAlpha() == 0, "shadow allocated between native row and badge escaped styling")
+    assert(Visible(rings[arrow].host) and not rings[arrow].host.mouseEnabled and arrow.click == scrollAction)
+    assert(bar.ThumbTexture.tint[1] == 0.68 and steps.scroll.scrollbg:GetAlpha() == 0)
+    arrow.disabled = true; arrow.hooks.OnDisable()
+    assert(rings[arrow].host:GetAlpha() == 0.65 and arrow.click == scrollAction)
+    assert(not Visible(legacyArt) and Visible(guideArt))
+    local count = #poolRow.created
+    viewport.width, badge.width = 330, 30
+    steps:SetRows({{index = 1234, complete = true}})
+    assert(text.width == 288 and poolRow:GetHeight() == 37 and poolRow:GetAlpha() == 0.5)
+    combat = true
+    steps:SetRows(steps.rows); flush()
+    assert(poolRow:GetHeight() == 30)
+    combat = false
+    combatEvents.hooks.OnEvent(); flush()
+    assert(poolRow:GetHeight() == 37 and poolRow:GetAlpha() == 0.5)
+    steps:SetRows({})
+    assert(not poolRow:IsShown())
+    steps:SetRows({{index = 18}})
+    assert(#poolRow.created == count and poolRow:GetAlpha() == 1)
+    local action = frame("CheckButton")
+    action.rxpCheckShort = action:CreateTexture()
+    action.rxpCheckLong = action:CreateTexture()
+    action.rxpCheckShort.GetObjectType = checked.GetObjectType
+    action.rxpCheckLong.GetObjectType = checked.GetObjectType
+    action.click = click
+    action:SetShown(true)
+    local function PaintNativeCheck() RXP.ui.v2:ApplyFrameBackdrop(action, {}, {1, 0, 0, 1}, {1, 0, 0, 1}) end
+    PaintNativeCheck()
+    assert(action.rxpCheckShort.tint[1] == 0.91 and action.click == click)
+    assert(action.rxpBackground.textures[1].tint[1] == 0.115)
+    activeLook = "eui"
+    modules.RXPGuides.refresh(); flush()
+    steps:SetRows(steps.rows); PaintNativeCheck(); steps.scroll:RefreshVisuals(); flush()
+    assert(poolRow.rxpBorder:GetAlpha() == 1 and badge.rxpBorder:GetAlpha() == 1 and poolRow.rxpShadow:GetAlpha() == 1)
+    assert(not text.nonSpaceWrap and text.width == 212 and poolRow:GetHeight() == 30)
+    assert(action.rxpCheckShort.tint[1] == 1 and action.rxpBackground.textures[1].tint[1] == 1)
+    assert(not rings[arrow].host:IsShown() and steps.scroll.scrollbg:GetAlpha() == 0.8)
+    activeLook = "forever"
+    modules.RXPGuides.refresh(); flush()
+    steps:SetRows(steps.rows)
+    assert(poolRow.rxpBorder:GetAlpha() == 0 and text.width == 288)
+    EUIAddonSkinsDB = {restedXP = {opacity = 0}}
+    modules.RXPGuides.refresh(); flush()
+    assert(poolRow.rxpBackground:GetAlpha() == 0 and guideArt.plate:GetAlpha() == 0 and poolRow:GetAlpha() == 1)
+    EUIAddonSkinsDB.restedXP.opacity = 1
+    modules.RXPGuides.refresh(); flush()
+    assert(poolRow.rxpBackground:GetAlpha() == 0 and guideArt.plate:GetAlpha() > 0)
+    window.frame:SetShown(false)
+    assert(not Visible(guideArt) and not Visible(rings[arrow].host))
+    window.frame:SetShown(true)
+    v2Mode = false
+end
 EUIAddonSkinsDB, LibStub, GAMEOPTIONS_MENU = oldDB, oldStub, savedOptionsText
 EllesmereUI.IS_FOREVER = false
 modules.RXPGuides.refresh(); flush()

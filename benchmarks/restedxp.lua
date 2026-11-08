@@ -96,15 +96,62 @@ end
 local function MakeV2()
     local window = {frame = frame(), upperFrame = Backdrop(frame()), guideNameFrame = Backdrop(frame()),
         guideStepsFrame = Backdrop(frame()), footer = Backdrop(frame())}
-    window.frame.children = {window.upperFrame, window.guideNameFrame, window.guideStepsFrame, window.footer}
-    local rows = {}
-    for i = 1, 36 do
-        rows[i] = {frame = frame(), text = Label(marker .. " Accept a quest")}
-        window.guideStepsFrame.children[i] = rows[i].frame
+    local viewport, content = frame("ScrollFrame"), frame()
+    viewport.width = 242
+    function viewport:GetWidth() return self.width end
+    function content:GetParent() return viewport end
+    window.frame.children = {window.upperFrame, window.guideNameFrame, window.guideStepsFrame, window.footer, viewport}
+    viewport.children = {content}
+    local steps = {type = "RXPV2GuideSteps", rows = {}, items = {}, scroll = {scrollframe = viewport}}
+    window.guideSteps = steps
+    local backdrop = addon.ui.v2
+    local edge, fill, rim = {}, {0.06, 0.05, 0.04, 0.95}, {0.49, 0.33, 0.18, 1}
+    local function MakeItem(index)
+        local row, badge = frame("Button"), frame()
+        local item = {type = "RXPV2GuideStepsItem", frame = row, text = Label(""), numberFrame = badge}
+        content.children[index], row.children[1], row.obj = row, badge, item
+        function row:GetParent() return content end
+        function row:GetWidth() return viewport.width - 4 end
+        function badge:GetParent() return row end
+        function badge:GetWidth() return 20 end
+        function item.text:SetWidth(width) self.width = width end
+        function item.text:GetHeight() return math.ceil(#self.text / math.max(1, self.width / 7)) * 14 end
+        function item:UpdateHeight()
+            self.text:SetWidth(self.frame:GetWidth() - self.numberFrame:GetWidth() - 8)
+            self.frame:SetHeight(30)
+        end
+        return item
     end
-    window.guideSteps = {items = rows, SetRows = function(self, items) self.items = items end}
-    window.UpdateTheme = function(self) self.guideSteps:SetRows(rows) end
+    for i = 1, 36 do steps.rows[i] = marker .. " A long quest objective with a lengthy description " .. i end
+    function steps:SetRows(rows, force)
+        force = force or self.rowsWidth ~= viewport.width
+        self.rowsWidth = viewport.width
+        local height = 0
+        for i, value in ipairs(rows) do
+            local item = self.items[i]
+            local new = not item
+            if new then
+                item = MakeItem(i)
+                self.items[i] = item
+            end
+            local changed = value ~= item.value
+            if changed or force then item.value = value; item.text:SetText(value) end
+            if new or force then
+                backdrop:ApplyFrameBackdrop(item.frame, edge, fill, rim)
+                if new then item.frame.rxpShadow = frame() end
+                backdrop:ApplyFrameBackdrop(item.numberFrame, edge, fill, rim)
+            end
+            if changed or force then item:UpdateHeight() end
+            height = height + item.frame:GetHeight() + 8
+        end
+        content:SetHeight(height)
+    end
+    window.UpdateTheme = function(self) self.guideSteps:SetRows(self.guideSteps.rows, true) end
     return window
+end
+function addon.v2:UpdateGuideWindow()
+    local steps = self.state.guideWindow.guideSteps
+    steps:SetRows(steps.rows)
 end
 addon.v2.IsGuideWindowEnabled = function() return v2Mode end
 function addon.targeting:RenderTargetFrameBackground()
@@ -120,7 +167,9 @@ end
 function addon.SetStep(i)
     if v2Mode then
         local steps = addon.v2.state.guideWindow.guideSteps
-        steps:SetRows(steps.items)
+        local row = i % 36 + 1
+        steps.rows[row] = marker .. " A different quest objective with inline instructions " .. i % 5
+        addon.v2:UpdateGuideWindow()
         return
     end
     for j, card in ipairs(guide.CurrentStepFrame.framePool) do
@@ -232,7 +281,17 @@ end
 if not coldProfile then print(("RXP setup definition_ms=%.6f"):format(fixture.definitionMS)) end
 Measure("install", install, 1, 0)
 Measure("first_open", open, 1, 0)
+Measure("v2_first_open", function()
+    v2Mode = true
+    addon.v2.state.guideWindow = MakeV2()
+    addon.v2:DisableLegacyGuideWindow()
+    addon.v2:UpdateGuideWindow()
+    flush()
+end, 1, 0)
 if coldProfile then return end
+v2Mode = false
+for _, panel in ipairs({guide.BottomFrame, guide.GuideName, guide.Footer, guide.CurrentStepFrame}) do panel:SetShown(true) end
+if not native then module.refresh(); flush() end
 local n, warm = 120, 20
 Measure("reopen", function() guide:SetShown(false); guide:SetShown(true); flush() end, n, warm)
 Measure("guide_switch", function(i) addon:LoadGuide(i % 2); flush() end, n, warm)
@@ -266,7 +325,8 @@ Measure("theme_switch", function()
     if native then addon:LoadActiveTheme(); guide:UpdateVisuals() else module.refresh() end
     flush()
 end, 30, warm)
-addon.v2.state.guideWindow = MakeV2()
+look = "forever"
+if not native then module.refresh(); flush() end
 Measure("mode_switch", function(i)
     v2Mode = not v2Mode
     if v2Mode then addon.v2:DisableLegacyGuideWindow()
@@ -275,6 +335,11 @@ Measure("mode_switch", function(i)
 end, 40, warm)
 v2Mode = true; addon.SetStep(1); flush()
 Measure("v2_rows", function(i) addon.SetStep(i % 15); flush() end, n, warm)
+Measure("v2_resize", function(i)
+    addon.v2.state.guideWindow.guideSteps.scroll.scrollframe.width = i % 2 == 0 and 242 or 342
+    addon.v2:UpdateGuideWindow()
+    flush()
+end, n, warm)
 v2Mode = false; guide:SetShown(false)
 Measure("closed_idle", flush, n, warm)
 Measure("closed_aux", function() addon.targeting:UpdateTargetFrame(); addon.UpdateItemFrame(); flush() end, n, warm)

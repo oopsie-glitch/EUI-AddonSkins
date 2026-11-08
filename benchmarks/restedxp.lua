@@ -149,6 +149,29 @@ local function MakeV2()
     window.UpdateTheme = function(self) self.guideSteps:SetRows(self.guideSteps.rows, true) end
     return window
 end
+local function MakeActiveStep()
+    local owner, card, title, body, text = frame(), Backdrop(frame()), Backdrop(frame()), frame(), Label("Step 48")
+    card:SetPoint("TOPLEFT", owner, "TOPLEFT", 0, 0)
+    title:SetPoint("TOPLEFT", card, "TOPLEFT", 6, 9)
+    title:SetHeight(16)
+    body:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -10)
+    body:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -6, 4)
+    text:SetHeight(12)
+    local item = {type = "RXPV2ActiveStepItem", frame = owner, card = card, title = title, titletext = text,
+        content = body, elementRows = {{text = Label(marker .. " Accept a quest"), icon = Label(marker)}}}
+    function item:OnHeightSet(height) self.content:SetHeight(height - 22) end
+    function item:SetHeight(height)
+        self.frame:SetHeight(height)
+        self:OnHeightSet(height)
+    end
+    item:SetHeight(70)
+    return item
+end
+function addon.v2:UpdatePlayerActiveStepItem(item, index)
+    item.titletext:SetText("Step " .. index)
+    item.elementRows[1].text:SetText(marker .. " Accept a quest")
+    item:SetHeight(70 + index % 2 * 14)
+end
 function addon.v2:UpdateGuideWindow()
     local steps = self.state.guideWindow.guideSteps
     steps:SetRows(steps.rows)
@@ -338,6 +361,11 @@ Measure("v2_rows", function(i) addon.SetStep(i % 15); flush() end, n, warm)
 Measure("v2_resize", function(i)
     addon.v2.state.guideWindow.guideSteps.scroll.scrollframe.width = i % 2 == 0 and 242 or 342
     addon.v2:UpdateGuideWindow()
+    flush()
+end, n, warm)
+local active = {MakeActiveStep(), MakeActiveStep(), MakeActiveStep()}
+Measure("v2_active_steps", function(i)
+    for j, item in ipairs(active) do addon.v2:UpdatePlayerActiveStepItem(item, i + j) end
     flush()
 end, n, warm)
 v2Mode = false; guide:SetShown(false)

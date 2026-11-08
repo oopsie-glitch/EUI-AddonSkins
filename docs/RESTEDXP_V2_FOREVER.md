@@ -38,3 +38,29 @@ Warm V2 list updates no longer need a full integration refresh once the known gu
 The regression suite covers width changes with stale row geometry, actual wrapped-height use in the fixture, badge clearance, pooled row release and reuse, native completion dimming, combat deferral, checkbox appearance and preserved click handler, framed scrollbar and disabled state, theme restoration, opacity endpoints, and the existing V1/V2 owner movement, resize and orphan-art tests. The package checks include Lua, manifests, full regression suite and installation archive integrity.
 
 The first in-game comparison should capture the same long V2 step at narrow and wide widths, plus a screenshot of the independent Current Step and auxiliary panels. Check a wrapped quest warning and a long inline item link, completed/active rows, scrollbar arrows and drag, checkbox hover and skip, collapsed and expanded list, and movement at reduced UI scale. Switch Standard → Forever and V1 → V2 → V1, refresh EUI, and compare backgrounds at 0%, 50% and 100%. The WoW client is needed to confirm the wrapped FontString metric, corner seams, actual visual parity and secure interactions. This pass provides host-Lua benchmarks only.
+
+## Current Step refinement
+
+The follow-up at baseline `b4bf9cd` limits its runtime changes to Forever player Current Step cards. RestedXP anchors the native title nine units above each card, and starts quest content ten units below the card top. The skin seats the existing label inside the chamfer, budgets the larger of the title-frame and text heights, and reserves the remaining inset in the native AceGUI widget height. The native content-height callback receives the original budget so quest text, links, checkboxes and icons keep their existing space. The one-unit rule shares the card's warm surface, and the existing EUI rim uses 72% artwork opacity. The background slider still drives the card fill. Card ownership, positioning, native resize behavior and the approved V1 path are preserved. Standard restores the saved native title/content anchors and both height methods, including when a pooled card is reused after a theme change.
+
+The supplied screenshot shows a partially visible row under the header and another above the footer, with full intervening rows wrapping within their separators and number gutters. The native scroll widget offsets its content behind a fixed viewport, so rows can be partial at either edge. Source review and the existing narrow/wide, pooled-row, badge-width and scroll-extent fixtures found no additional in-row clipping defect. The follow-up keeps the guide-list measurement, gaps, scroll offset and clipping unchanged. See [native viewport behavior](https://github.com/RestedXP/RXPGuides/blob/b4a0f99a2ceac856f75a11594bcaa19886236a01/UI/V2/Core.lua#L1627-L1659) and [native player card height and anchors](https://github.com/RestedXP/RXPGuides/blob/b4a0f99a2ceac856f75a11594bcaa19886236a01/UI/V2/Core.lua#L2935-L3039).
+
+Five rotating host-Lua trials compared the same fixture with the adapter disabled, at `b4bf9cd`, and with the refinement. The existing 120-operation list and resize workloads are unchanged. The additional active-card workload updates three cards per operation for 120 operations. Timings are host CPU in milliseconds. The separate call and scan counters describe one warm operation.
+
+Values are native / baseline / candidate.
+
+| Workload | CPU ms | Total calls | Child/region reads | Churn KiB |
+| --- | ---: | ---: | ---: | ---: |
+| V2 row update | 0.606 / 0.949 / 0.948 | 81 / 125 / 125 | 0 / 0 / 0 | 14.9 / 33.5 / 33.5 |
+| V2 width change | 10.933 / 34.296 / 34.388 | 1520 / 5785 / 5785 | 0 / 0 / 0 | 5062.6 / 6424.4 / 6424.4 |
+| V2 update three Current Step cards | 0.256 / 1.356 / 1.703 | 29 / 221 / 245 | 0 / 0 / 0 | 36.2 / 162.9 / 162.9 |
+| V1 step | 0.385 / 10.510 / 10.261 | 59 / 1718 / 1718 | 0 / 0 / 0 | 28.6 / 570.1 / 570.1 |
+| Reopen | 0.078 / 8.835 / 8.420 | 7 / 1689 / 1689 | 0 / 57 / 57 | 0.0 / 940.0 / 940.0 |
+| Guide switch | 2.458 / 47.104 / 46.568 | 206 / 6158 / 6158 | 0 / 57 / 57 | 1403.6 / 4116.1 / 4116.1 |
+| V1 ↔ V2 | 0.214 / 11.537 / 11.159 | 96 / 4486 / 4486 | 0 / 79 / 79 | 12.4 / 583.3 / 583.3 |
+| Theme change | 0.027 / 17.799 / 18.399 | 7 / 10302 / 10302 | 0 / 57 / 57 | 7.0 / 2255.3 / 2255.3 |
+| Closed idle | 0.061 / 0.052 / 0.076 | 2 / 2 / 2 | 0 / 0 / 0 | 0.0 / 0.0 / 0.0 |
+
+List, resize and V1 operation counts and heap churn match the baseline. Active cards incur an extra 24 calls per three-card operation for header sizing and height delegation, with identical warm heap churn. Each card adds one rule texture on first styling. Warm probes created zero frames or textures and installed zero hooks. No client FPS or memory measurements were made.
+
+The added fixture checks two card owners, different label heights, reserved body space, per-card resizing, restored geometry, pool reuse, and opacity endpoints. Live verification should compare the same multi-step V2 guide at a narrow and wide width, including a screenshot while scrolled between steps. Check title and rim alignment, checkbox and quest-link interaction, the step numbers in fully visible rows, and switching to Standard and back.

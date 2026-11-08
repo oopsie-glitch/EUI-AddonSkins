@@ -1170,6 +1170,7 @@ do
     viewport.width, badge.width = 330, 30
     steps:SetRows({{index = 1234, complete = true}})
     assert(text.width == 288 and poolRow:GetHeight() == 37 and poolRow:GetAlpha() == 0.5)
+    assert(text:GetHeight() + 9 <= poolRow:GetHeight() and steps.rowsHeight == poolRow:GetHeight() + 8)
     combat = true
     steps:SetRows(steps.rows); flush()
     assert(poolRow:GetHeight() == 30)
@@ -1211,6 +1212,99 @@ do
     window.frame:SetShown(false)
     assert(not Visible(guideArt) and not Visible(rings[arrow].host))
     window.frame:SetShown(true)
+    v2Mode = false
+end
+-- Current Step cards use the actual AceGUI height hand-off: SetHeight
+-- records the outer height, and OnHeightSet receives that same outer height.
+do
+    EUIAddonSkinsDB = {restedXP = {opacity = 0.5}}
+    local originalPlayers = RXP.v2.state.player
+    local function MakeCurrentStep(x, titleHeight)
+        local owner, card, title, body, text = frame(), frame(), frame(), frame(), label()
+        parents[card], parents[title], parents[body] = owner, card, card
+        owner:SetPoint("TOPLEFT", guide, "TOPRIGHT", x, -40)
+        card:SetPoint("TOPLEFT", owner, "TOPLEFT", 0, 0)
+        card:SetPoint("BOTTOMRIGHT", owner, "BOTTOMRIGHT", 0, 8)
+        card:SetBackdrop({bgFile = "native"})
+        title:SetBackdrop({bgFile = "native"})
+        local function ReplacePoint(self, point, ...)
+            self.points = self.points or {}
+            for index, anchor in ipairs(self.points) do
+                if anchor[1] == point then self.points[index] = {point, ...}; return end
+            end
+            self.points[#self.points + 1] = {point, ...}
+        end
+        title.SetPoint, body.SetPoint = ReplacePoint, ReplacePoint
+        title:SetPoint("TOPLEFT", card, "TOPLEFT", 6, 9)
+        title:SetHeight(16)
+        text:SetHeight(titleHeight)
+        text:SetText("Step 48")
+        body:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -10)
+        body:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -6, 4)
+        local widget = {type = "RXPV2ActiveStepItem", frame = owner, card = card, title = title,
+            titletext = text, content = body}
+        function widget:OnHeightSet(height) body:SetHeight(height - 22) end
+        function widget:SetHeight(height)
+            owner:SetHeight(height)
+            self:OnHeightSet(height)
+        end
+        widget:SetHeight(70)
+        return widget
+    end
+    local first, second = MakeCurrentStep(15, 12), MakeCurrentStep(260, 23)
+    local container = {children = {first, second}, layouts = 0}
+    function container:DoLayout() self.layouts = self.layouts + 1 end
+    RXP.v2.state.player = {Player = {activeStepFrame = container}}
+    local nativeSetHeight, nativeOnHeightSet = first.SetHeight, first.OnHeightSet
+    local painted = {}
+    EllesmereUI.ForeverBorderPaint = function(ring, _, _, _, alpha) painted[ring] = alpha end
+    v2Mode = true
+    RXP.v2:DisableLegacyGuideWindow()
+    modules.RXPGuides.refresh(); flush()
+    local a, b = rings[first.card], rings[second.card]
+    assert(a and b and a.host ~= b.host and parents[a.host] == first.card and parents[b.host] == second.card)
+    assert(not a.host.mouseEnabled and not b.host.mouseEnabled and painted[a] == 0.72 and painted[b] == 0.72)
+    assert(not registeredPanels[a.host] and not registeredPanels[b.host])
+    assert(first.title.points[1][5] == -4 and first.content.points[1][5] == -23)
+    assert(second.title.points[1][5] == -7.5 and second.content.points[1][5] == -30)
+    assert(first.frame:GetHeight() == 83 and second.frame:GetHeight() == 90 and container.layouts == 1)
+    assert(first.content:GetHeight() == 48 and second.content:GetHeight() == 48)
+    assert(first.content.points[2][5] == 4 and second.content.points[2][5] == 4)
+    assert(first.frame.points[1][4] == 15 and second.frame.points[1][4] == 260)
+    local created = #a.host.created
+    local rule = a.host.created[created]
+    assert(rule.height == 1 and rule.points[1][5] == -21)
+    first:SetHeight(97)
+    assert(first.frame:GetHeight() == 110 and first.content:GetHeight() == 75 and second.frame:GetHeight() == 90)
+    assert(RXP.v2:UpdatePlayerActiveStepItem(first) == "native update")
+    assert(#a.host.created == created and container.layouts == 1)
+    first.frame:SetShown(false)
+    assert(not Visible(a.host) and Visible(b.host))
+    first.frame:SetShown(true)
+    opened.args.opacity.set(nil, 0); flush()
+    assert(a.host.created[1]:GetAlpha() == 0 and rule.shown)
+    activeLook = "eui"
+    modules.RXPGuides.refresh(); flush()
+    assert(first.SetHeight == nativeSetHeight and first.OnHeightSet == nativeOnHeightSet)
+    assert(first.frame:GetHeight() == 97 and first.content:GetHeight() == 75)
+    assert(first.title.points[1][5] == 9 and first.content.points[1][5] == -10 and not rule.shown)
+    assert(second.frame:GetHeight() == 70 and container.layouts == 2)
+    activeLook = "forever"
+    modules.RXPGuides.refresh(); flush()
+    assert(first.frame:GetHeight() == 110 and second.frame:GetHeight() == 90)
+    assert(rings[first.card] == a and rings[second.card] == b and #a.host.created == created and rule.shown)
+    assert(container.layouts == 3)
+    -- A released card can miss a theme refresh. Its first update on reuse
+    -- restores the native geometry before RestedXP lays out the new list.
+    first.frame:SetShown(false)
+    container.children = {second}
+    activeLook = "eui"
+    modules.RXPGuides.refresh(); flush()
+    first:SetHeight(70)
+    assert(RXP.v2:UpdatePlayerActiveStepItem(first) == "native update")
+    assert(first.frame:GetHeight() == 70 and first.SetHeight == nativeSetHeight and not rule.shown)
+    RXP.v2.state.player = originalPlayers
+    EllesmereUI.ForeverBorderPaint = nil
     v2Mode = false
 end
 EUIAddonSkinsDB, LibStub, GAMEOPTIONS_MENU = oldDB, oldStub, savedOptionsText

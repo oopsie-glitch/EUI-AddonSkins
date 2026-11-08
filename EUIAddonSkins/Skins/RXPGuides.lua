@@ -2093,6 +2093,65 @@ end, function(S, module)
         if background and background.textures then background.textures[1]:SetVertexColor(unpack(v2CheckFill)) end
         for _, edge in ipairs(border and border.textures or {}) do edge:SetVertexColor(unpack(v2CheckBorder)) end
     end
+    local activeHeaders = setmetatable({}, {__mode = "k"})
+    local function SeatV2ActiveHeader(item, shell, forever)
+        if item.type ~= "RXPV2ActiveStepItem" then return end
+        local card, title, text, content = item.card, item.title, item.titletext, item.content
+        local state = activeHeaders[item]
+        if not state then
+            if not (forever and shell and shell.art and title and title.GetPoint and text and text.GetHeight
+                and content and content.GetPoint and item.SetHeight and item.OnHeightSet) then return end
+            local titlePoint, contentPoint = {title:GetPoint(1)}, {content:GetPoint(1)}
+            if titlePoint[1] ~= "TOPLEFT" or titlePoint[2] ~= card or contentPoint[1] ~= "TOPLEFT"
+                or (contentPoint[2] and contentPoint[2] ~= card) or type(contentPoint[5]) ~= "number" then return end
+            state = {title = titlePoint, content = contentPoint, extra = 0,
+                setHeight = item.SetHeight, onHeightSet = item.OnHeightSet}
+            activeHeaders[item] = state
+            -- AceGUI consumes the widget height, but RestedXP still owns the
+            -- native content budget and both of its height callback paths.
+            state.heightWithHeader = function(self, height) return state.setHeight(self, height + state.extra) end
+            state.contentHeight = function(self, height) return state.onHeightSet(self, height - state.extra) end
+            local rule = shell.art:CreateTexture(nil, "BACKGROUND", nil, 3)
+            rule:SetHeight(1)
+            rule:SetColorTexture(bronzeR, bronzeG, bronzeB, 0.34)
+            state.rule = rule
+            local EUI = _G.EllesmereUI
+            if shell.rim and EUI.ForeverBorderPaint then
+                EUI.ForeverBorderPaint(shell.rim, 1, 1, 1, 0.72)
+            end
+        end
+        local extra, titleTop
+        if forever then
+            local titleHeight, textHeight = title:GetHeight(), text:GetHeight()
+            -- Keep the rendered label below the rim even with a larger font,
+            -- and leave three units between the label and the content.
+            titleTop = -4 - math.max(0, (textHeight - titleHeight) * 0.5)
+            local bodyTop = -math.ceil(7 + math.max(titleHeight, textHeight))
+            extra = (state.content[5] or 0) - bodyTop
+        else
+            extra = 0
+        end
+        if state.extra == extra and state.titleTop == titleTop then return end
+        local oldExtra = state.extra
+        local height = (item.frame.height or item.frame:GetHeight()) - oldExtra
+        state.extra, state.titleTop = extra, titleTop
+        if forever then
+            item.SetHeight, item.OnHeightSet = state.heightWithHeader, state.contentHeight
+            title:SetPoint("TOPLEFT", card, "TOPLEFT", state.title[4], titleTop)
+            content:SetPoint("TOPLEFT", card, "TOPLEFT", state.content[4], state.content[5] - extra)
+            state.rule:ClearAllPoints()
+            local ruleY = state.content[5] - extra + 2
+            state.rule:SetPoint("TOPLEFT", card, "TOPLEFT", 8, ruleY)
+            state.rule:SetPoint("TOPRIGHT", card, "TOPRIGHT", -8, ruleY)
+        else
+            item.SetHeight, item.OnHeightSet = state.setHeight, state.onHeightSet
+            title:SetPoint(unpack(state.title))
+            content:SetPoint(unpack(state.content, 1, 5))
+        end
+        state.rule:SetShown(forever)
+        if extra ~= oldExtra then item:SetHeight(height) end
+        return extra ~= oldExtra
+    end
     local function V2Active(item, forever)
         local card = item.card or item.frame
         local shell, badge = themed[card], themed[item.title]
@@ -2100,7 +2159,9 @@ end, function(S, module)
         if not badge or badge.forever ~= forever then ThemeShell(item.title, "badge") end
         NativeFillAlpha(card and card.rxpShadow, forever and 0 or nil)
         if forever then Font(item.titletext, 0.86, 0.73, 0.51) end
+        local resized = SeatV2ActiveHeader(item, themed[card], forever)
         SkinActiveIcons(item, forever)
+        return resized
     end
     local function V2FooterFill(window, forever)
         local alpha = BackgroundOverride()
@@ -2303,9 +2364,11 @@ end, function(S, module)
         local state = addon.v2 and addon.v2.state
         for _, player in pairs(state and state.player or {}) do
             local active = player.activeStepFrame
+            local resized
             for _, child in pairs(active and active.children or {}) do
-                V2Active(child, forever)
+                if V2Active(child, forever) then resized = true end
             end
+            if resized and active.DoLayout then active:DoLayout() end
         end
         local party = state and state.activePartyStepFrame
         if party then ThemeShell(party.frame) end
@@ -2382,7 +2445,8 @@ end, function(S, module)
     end)
     H.Hook(addon.v2, "UpdatePlayerActiveStepItem", function(_, item)
         if CombatLocked() then applyWaiting = true; return end
-        if ForeverLook() then V2Active(item, true) end
+        local forever = ForeverLook()
+        if forever or activeHeaders[item] then V2Active(item, forever) end
     end)
     H.Hook(addon.v2, "UpdateGuideWindow", function()
         if not ReadyV2Snapshot() then refresh() end

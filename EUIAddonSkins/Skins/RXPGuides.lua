@@ -614,7 +614,7 @@ end, function(S, module)
         texture:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -top)
         texture:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -x, bottom)
     end
-    local function MaskFill(art, edge, first, second, third, step, bottomInset)
+    local function MaskFill(art, edge, first, second, bottomInset)
         local mode = Enum and Enum.UITextureSliceMode and Enum.UITextureSliceMode.Stretched
         if mode and art.CreateMaskTexture and first.AddMaskTexture then
             local mask = art:CreateMaskTexture()
@@ -626,7 +626,6 @@ end, function(S, module)
             mask:SetAllPoints(edge)
             first:AddMaskTexture(mask)
             second:AddMaskTexture(mask)
-            if third then third:AddMaskTexture(mask) end
             return mask
         else
             -- Older clients without sliced masks retain a conservative inset.
@@ -634,10 +633,6 @@ end, function(S, module)
             second:ClearAllPoints()
             SeatFill(first, art, 2, 9, bottomInset or 9)
             SeatFill(second, art, 2, 9, bottomInset or 9)
-            if third then
-                third:ClearAllPoints()
-                SeatFill(third, step, 0, 3, 0)
-            end
         end
     end
     local function MeterHeaderArt(texture, bandOnly)
@@ -713,20 +708,8 @@ end, function(S, module)
         return grain, plate, meterArt
     end
 
-    local function ForeverOpacity()
-        -- Use the public house-panel alpha; normalize against EUI's 92% default.
-        local override = BackgroundOverride()
-        return override and override / 0.70 or (select(4, S.GetPanelColor()) or 0.92) / 0.92
-    end
-    local function SharedAlpha(opacity, scale)
-        local override = BackgroundOverride()
-        if override then
-            return override
-        end
-        return math.min(opacity, 0.66 * scale)
-    end
-    local function SectionAlpha(default, scale)
-        return BackgroundOverride() or math.min(1, default * scale)
+    local function ForeverBackgroundOpacity()
+        return BackgroundOverride() or 0.75
     end
     local function OverlayAlpha(target, base)
         return base < 1 and math.max(0, math.min(1, target) - base) / (1 - base) or 0
@@ -757,25 +740,14 @@ end, function(S, module)
             if not (EUI.IS_FOREVER and EUI.ForeverBorder and EUI.ForeverBorderSeat and EUI.ForeverBorderShown) then return end
             art = ForeverArtHost(root)
             art.grain, art.plate = ForeverSurface(art, false)
-            if currentStep then
-                local fill = art:CreateTexture(nil, "BACKGROUND", nil, 3)
-                fill:SetAllPoints(currentStep)
-                fill:SetColorTexture(0.165, 0.115, 0.075)
-                fill:SetBlendMode("BLEND")
-                surfacePaint[fill] = {}
-                art.stepFill = fill
-            end
-            art.masked = MaskFill(art, art, art.plate, art.grain, art.stepFill, currentStep)
-            art.header, art.footer, art.currentStep = header, footer, currentStep
+            art.masked = MaskFill(art, art, art.plate, art.grain)
+            art.header, art.footer = header, footer
             local function AnchorTop()
                 if not ForeverLook() then return end
                 if CombatLocked() then refresh(); return end
                 local top = currentStep and currentStep:IsShown() and currentStep:GetHeight() > 0 and currentStep or header
                 if art.top == top then return end
                 art.top = top
-                if art.stepFill then
-                    SetPaintAlpha(art.stepFill, surfacePaint[art.stepFill].alpha or 0, top == currentStep)
-                end
                 if art.headerRule then art.headerRule:SetShown(top ~= header) end
                 art:ClearAllPoints()
                 art:SetPoint("TOPLEFT", top, "TOPLEFT", -2, top == currentStep and 6 or 2)
@@ -907,9 +879,9 @@ end, function(S, module)
             out.edge.texCoords = {top = {0, 1, 0, 1}, bottom = {0, 1, 0, 1}, left = {0, 1, 0, 1}, right = {0, 1, 0, 1}}
         else
             out.background = {pr, pg, pb, pa}
-            -- V1 uses this fill for idle and mouse-leave. Keep the row's
-            -- own alpha and hover palette while exposing the shared surface.
-            out.bottomFrameBG = {pr, pg, pb, forever and OverlayAlpha(SectionAlpha(0.70, ForeverOpacity()), SharedAlpha(pa or 1, ForeverOpacity())) or BackgroundOverride() or pa}
+            -- Forever's shared surface supplies the idle row fill. Keep the
+            -- separate native mouse-over colour.
+            out.bottomFrameBG = {pr, pg, pb, forever and 0 or BackgroundOverride() or pa}
             out.bottomFrameHighlight = {r, g, b, 1}
             out.textColor = {0.9, 0.9, 0.92}
         end
@@ -1504,31 +1476,21 @@ end, function(S, module)
         end
         if not entry.forever then opacity = BackgroundOverride() or opacity end
         local composition = entry.composition
+        local foreverAlpha = entry.forever and ForeverBackgroundOpacity()
         if composition then
-            local scale = ForeverOpacity()
-            local base = SharedAlpha(opacity, scale)
-            local override = BackgroundOverride()
-            local split = composition.masked ~= nil and override ~= nil and override > 0
+            local split = composition.masked ~= nil and foreverAlpha > 0
             SeatGuideFill(composition, split)
-            SurfaceAlpha(composition.plate, composition.grain, base, 0.32)
+            SurfaceAlpha(composition.plate, composition.grain, foreverAlpha, 0.32)
             if composition.upperPlate then
-                SurfaceAlpha(composition.upperPlate, composition.upperGrain, split and base or 0, 0.32)
-            end
-            if composition.stepFill then
-                local extra = OverlayAlpha(SectionAlpha(0.75, scale), base)
-                SetPaintAlpha(composition.stepFill, extra, composition.top == composition.currentStep)
+                SurfaceAlpha(composition.upperPlate, composition.upperGrain, split and foreverAlpha or 0, 0.32)
             end
         end
         if entry.forever and entry.plate and not entry.joinedBody then
-            local scale = ForeverOpacity()
-            local override = BackgroundOverride()
             local auxiliary = entry.titleBody and themed[entry.titleBody]
             local titleMask = auxiliary and auxiliary.mask
-            local splitAux = titleMask and override and override > 0
-            local base = entry.auxTitle and SectionAlpha(0.75, scale)
-                or entry.underlay and SharedAlpha(select(4, S.GetPanelColor()) or 1, scale) or 0
-            local targetAlpha = SectionAlpha(entry.band and 0.80 or 0.75, scale)
-            local split = entry.underlay and entry.underlay.masked and override and override > 0
+            local splitAux = titleMask and foreverAlpha > 0
+            local base = (entry.auxTitle or entry.underlay) and foreverAlpha or 0
+            local split = entry.underlay and entry.underlay.masked and foreverAlpha > 0
             if entry.titleMask ~= titleMask then
                 if entry.titleMask then
                     entry.plate:RemoveMaskTexture(entry.titleMask)
@@ -1547,7 +1509,7 @@ end, function(S, module)
                 entry.titleMask = titleMask
             end
             if entry.auxBodyTitle and entry.mask then
-                local splitBody = override and override > 0
+                local splitBody = foreverAlpha > 0
                 if entry.splitBody ~= splitBody then
                     for _, texture in ipairs({entry.plate, entry.grain}) do
                         texture:ClearAllPoints()
@@ -1559,11 +1521,11 @@ end, function(S, module)
                     entry.splitBody = splitBody
                 end
             end
-            local extra = (split or splitAux or base == 1) and targetAlpha or OverlayAlpha(targetAlpha, base)
+            local extra = (split or splitAux or base == 1) and foreverAlpha or OverlayAlpha(foreverAlpha, base)
             SurfaceAlpha(entry.plate, entry.grain, extra, entry.meterArt and 0 or entry.band and 0.28 or 0.32)
             if entry.topRule then
-                TextureAlpha(entry.topRule, targetAlpha)
-                TextureAlpha(entry.bottomRule, targetAlpha)
+                TextureAlpha(entry.topRule, foreverAlpha)
+                TextureAlpha(entry.bottomRule, foreverAlpha)
             end
             if entry.art:IsShown() ~= shown then entry.art:SetShown(shown) end
         end
@@ -1642,7 +1604,7 @@ end, function(S, module)
                 entry.secondary = band
                 if not entry.secondary then entry.rim = ForeverRim(art) end
                 local edge = underlay or (entry.rim and art)
-                if edge then entry.mask = MaskFill(art, edge, plate, grain, nil, nil, legacyHeader and 0 or nil) end
+                if edge then entry.mask = MaskFill(art, edge, plate, grain, legacyHeader and 0 or nil) end
 
                 if legacyHeader then
                     -- Use the outer rim's exact edge art, including its fallback.
@@ -2039,9 +2001,7 @@ end, function(S, module)
         local forever = ForeverLook()
         local window = addon.v2 and addon.v2.state and addon.v2.state.guideWindow or _G.RXPV2GuideWindow
         local shell = forever and window and compositions[window.frame]
-        local scale = shell and ForeverOpacity()
-        local extra = scale and OverlayAlpha(SectionAlpha(0.70, scale), SharedAlpha(select(4, S.GetPanelColor()) or 1, scale))
-            or (not forever and BackgroundOverride())
+        local extra = shell and 0 or (not forever and BackgroundOverride())
         local reflow
         for _, item in pairs(steps.items or {}) do
             if IsV2Row(item) then
@@ -2451,12 +2411,17 @@ end, function(S, module)
         if not ns.IsEnabled(module) then return end
         if CombatLocked() then themeWaiting = true; return end
         themeWaiting = false
+        local v2 = addon.v2
+        local window = v2 and v2.state and v2.state.guideWindow or _G.RXPV2GuideWindow
         if addon.settings and addon.settings.profile and addon.RXPFrame then
             H.Safe(addon.LoadActiveTheme, addon)
-            -- Refresh visuals directly; RenderFrame also reloads the current guide.
-            if addon.RXPFrame.UpdateVisuals then H.Safe(addon.RXPFrame.UpdateVisuals, addon.RXPFrame, true) end
+            -- Native V2 UpdateVisuals dispatches GuideWindowRefresh, which
+            -- already invokes UpdateTheme on the same guide window.
+            local v2Redraw = v2 and NativeV2List(window) and window.UpdateTheme
+                and v2.IsGuideWindowEnabled and v2:IsGuideWindowEnabled()
+                and v2.events and type(v2.events.GuideWindowRefresh) == "function"
+            if not v2Redraw and addon.RXPFrame.UpdateVisuals then H.Safe(addon.RXPFrame.UpdateVisuals, addon.RXPFrame, true) end
         end
-        local window = addon.v2 and addon.v2.state and addon.v2.state.guideWindow or _G.RXPV2GuideWindow
         if window and window.UpdateTheme then H.Safe(window.UpdateTheme, window, {updateChildren = true}) end
         if addon.v2 and addon.v2.UpdateActiveStepTheme and addon.v2.state and addon.v2.state.player and addon.player then
             H.Safe(addon.v2.UpdateActiveStepTheme, addon.v2)
@@ -2572,9 +2537,7 @@ end, function(S, module)
         local fill = colors and colors.bottomFrameBG
         if fill then
             local old = fill[4]
-            local scale = ForeverOpacity()
-            fill[4] = ForeverLook() and OverlayAlpha(SectionAlpha(0.70, scale), SharedAlpha(colors.background[4] or 1, scale))
-                or BackgroundOverride() or select(4, S.GetPanelColor())
+            fill[4] = forever and 0 or BackgroundOverride() or select(4, S.GetPanelColor())
             local root = addon.RXPFrame or _G.RXPFrame
             for _, row in ipairs(root and root.ScrollChild and root.ScrollChild.framePool or {}) do
                 if H.Allowed(row) and row.GetBackdropColor then
@@ -2610,11 +2573,8 @@ end, function(S, module)
                         type = "range", name = "Background Opacity", order = 1,
                         width = "full", min = 0, max = 100, step = 1, bigStep = 5,
                         get = function()
-                            local alpha = BackgroundOverride()
-                            if alpha == nil then
-                                alpha = select(4, S.GetPanelColor()) or 0.92
-                                if ForeverLook() then alpha = alpha * 0.70 / 0.92 end
-                            end
+                            local alpha = ForeverLook() and ForeverBackgroundOpacity()
+                                or BackgroundOverride() or select(4, S.GetPanelColor()) or 0.92
                             return math.floor(alpha * 100 + 0.5)
                         end,
                         set = function(_, value)

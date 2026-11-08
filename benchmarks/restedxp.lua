@@ -5,7 +5,8 @@ local addon, module, S = fixture.addon, fixture.module, fixture.api
 local frame, guide, flush = fixture.frame, fixture.guide, fixture.flush
 local native = os.getenv("RXP_NATIVE") == "1"
 local look, v2Mode = "forever", false
-local checked = false
+local checked, combat = false, false
+InCombatLockdown = function() return combat end
 local marker = "|TInterface/GossipFrame/AvailableQuestIcon:0|t"
 local guides = {{}, {}}
 Enum = {UITextureSliceMode = {Stretched = 0}}
@@ -102,7 +103,27 @@ local function MakeV2()
     function content:GetParent() return viewport end
     window.frame.children = {window.upperFrame, window.guideNameFrame, window.guideStepsFrame, window.footer, viewport}
     viewport.children = {content}
-    local steps = {type = "RXPV2GuideSteps", rows = {}, items = {}, scroll = {scrollframe = viewport}}
+    local bar = frame("Slider")
+    bar.ScrollUpButton, bar.ScrollDownButton = frame("Button"), frame("Button")
+    bar.ThumbTexture = bar:CreateTexture()
+    bar.ThumbTexture.GetObjectType = function() return "Texture" end
+    local track = bar:CreateTexture()
+    track.GetObjectType = bar.ThumbTexture.GetObjectType
+    viewport.children[2] = bar
+    local steps = {type = "RXPV2GuideSteps", rows = {}, items = {}, scroll = {
+        scrollframe = viewport, scrollbar = bar, scrollbg = track,
+    }}
+    function steps.scroll:RefreshVisuals()
+        self.scrollbg:SetColorTexture(0.083, 0.065, 0.05, 0.95)
+        self.scrollbar.ThumbTexture:SetVertexColor(1, 1, 1, 1)
+    end
+    function steps.scroll:SetScroll(value)
+        self.value = value
+        local offset = (content:GetHeight() - 120) * value / 1000
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", viewport, "TOPLEFT", 2, offset)
+        content:SetPoint("TOPRIGHT", viewport, "TOPRIGHT", -2, offset)
+    end
     window.guideSteps = steps
     local backdrop = addon.ui.v2
     local edge, fill, rim = {}, {0.06, 0.05, 0.04, 0.95}, {0.49, 0.33, 0.18, 1}
@@ -146,7 +167,10 @@ local function MakeV2()
         end
         content:SetHeight(height)
     end
-    window.UpdateTheme = function(self) self.guideSteps:SetRows(self.guideSteps.rows, true) end
+    function window:UpdateTheme()
+        self.guideSteps.scroll:RefreshVisuals()
+        self.guideSteps:SetRows(self.guideSteps.rows, true)
+    end
     return window
 end
 local function MakeActiveStep()
@@ -215,7 +239,12 @@ function addon.LoadGuide(_, i)
     end
     addon.SetStep(i)
 end
+addon.v2.events = {GuideWindowRefresh = function(self)
+    local window = addon.v2.state.guideWindow
+    if window then window:UpdateTheme({}) end
+end}
 function guide:UpdateVisuals()
+    if v2Mode then addon.v2.events:GuideWindowRefresh(); return end
     self.BottomFrame:SetBackdrop(self.backdrop.edge)
     self.GuideName:SetBackdrop(self.backdrop.guideName)
 end
@@ -244,14 +273,14 @@ guide:SetShown(false)
 
 local coldProfile = os.getenv("RXP_COLD_PROFILE") == "1"
 local counted = {frame = "frames", CreateTexture = "textures", CreateMaskTexture = "masks", Label = "fonts",
-    GetChildren = "scans", GetRegions = "scans", After = "queues", hooksecurefunc = "hooks", HookScript = "hooks",
+    GetChildren = "scans", GetRegions = "scans", After = "queues", RegisterEvent = "events", hooksecurefunc = "hooks", HookScript = "hooks",
     SetBackdrop = "writes", SetBackdropBorderColor = "writes", SetBackdropColor = "writes", SetColorTexture = "writes",
     SetVertexColor = "writes", SetTexture = "writes", SetShown = "writes", SetPoint = "writes",
     ClearAllPoints = "writes", SetSize = "writes", SetAlpha = "writes", SetTextColor = "writes", SetFont = "writes"}
 local function Measure(name, action, iterations, warm)
     if coldProfile and warm > 0 then return end
     local counters = {calls = 0, skin = 0, frames = 0, textures = 0, masks = 0, fonts = 0,
-        scans = 0, writes = 0, queues = 0, hooks = 0}
+        scans = 0, writes = 0, queues = 0, hooks = 0, events = 0}
     local function Count()
         local info = debug.getinfo(2, "Sn")
         counters.calls = counters.calls + 1
@@ -364,6 +393,41 @@ Measure("v2_resize", function(i)
     flush()
 end, n, warm)
 local active = {MakeActiveStep(), MakeActiveStep(), MakeActiveStep()}
+local v2Window = addon.v2.state.guideWindow
+Measure("v2_reopen", function()
+    v2Window.frame:SetShown(false)
+    v2Window.frame:SetShown(true)
+    addon.v2:UpdateGuideWindow()
+    flush()
+end, n, warm)
+Measure("v2_guide_switch", function(i)
+    local steps = v2Window.guideSteps
+    for row = 1, #steps.rows do steps.rows[row] = marker .. " Different route " .. i % 2 .. " step " .. row end
+    addon:LoadGuide(i % 2)
+    flush()
+end, n, warm)
+Measure("v2_scroll", function(i)
+    v2Window.guideSteps.scroll:SetScroll(i * 19 % 1000)
+    flush()
+end, n, warm)
+Measure("v2_combat_recovery", function(i)
+    combat = true
+    v2Window.guideSteps.scroll.scrollframe.width = i % 2 == 0 and 242 or 342
+    addon.v2:UpdateGuideWindow()
+    if not native then module.refresh() end
+    flush()
+    combat = false
+    local event = fixture.combatEvent()
+    if event then event() end
+    flush()
+end, 30, warm)
+Measure("v2_theme_switch", function()
+    look = look == "forever" and "eui" or "forever"
+    if native then guide:UpdateVisuals() else module.refresh() end
+    flush()
+end, 30, warm)
+look = "forever"
+if not native then module.refresh(); flush() end
 Measure("v2_active_steps", function(i)
     for j, item in ipairs(active) do addon.v2:UpdatePlayerActiveStepItem(item, i + j) end
     flush()

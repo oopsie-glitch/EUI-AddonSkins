@@ -100,3 +100,105 @@ Border reuse accounted for most of the churn reduction during full scans. Scopin
 The local full regression suite and package verification cover warm and cold Current Step, same-batch guide reload, post-layout anchor correction, synchronous white-border repair, semantic colours, settled border write suppression, pooled copper checks, alpha composition, chamfered bounds, auxiliary panels, arrow and inline artwork, native menu and control callbacks, settings, EUI cleanup, Standard restoration, V2 owner replacement and mode transitions, and combat deferral. The added benchmark and profiling code are development-only and excluded from the ZIP.
 
 Live WoW Forever verification remains open. Use the same character, guide, addon set and EUI profile across native-only, approved and candidate runs. Capture at least five matched trials of login or `/reload`, first open, close and reopen, guide/step changes, scrolling, opacity drag, nested menus, and V1/V2 and theme switches. Compare client CPU and frame-time tails with the same profiler configuration and sample addon memory after repeated cycles and stabilization. Include closed idle and closed quest progress, and verify that combat interactions and recovery produce no blocked actions or taint. Check Current Step's border/checkboxes during fast step changes and the shared anchor when a step starts hidden or expands. Confirm V2 movement/recreation and EUI texture cleanup visually. The host suite provides no live frame-time, GC, secure-interaction or appearance certification.
+
+## Final combined V1/V2 audit
+
+The comparison baseline is `91ccb72` from draft PR #75. The source review uses RestedXP v4.11.34 at `b4a0f99a2ceac856f75a11594bcaa19886236a01`. [V2 implementation and visual validation history](RESTEDXP_V2_FOREVER.md)
+
+Forever now defaults to 75% using the same composition as an explicit 75% slider choice. With no custom preference, the resolver supplies 75% without populating saved variables. Explicit values including 0% and 100% remain valid in either look. Reset removes the custom settings and restores the selected look's default. Standard still uses the existing EUI panel alpha or saved override. The obsolete V1 automatic step-fill texture is removed because the shared surface now supplies the complete opacity budget. Existing colours, textures, mask material and header treatments are preserved.
+
+### Workloads and measured changes
+
+Run the existing host-Lua runner from the repository root with a checkout containing the baseline.
+
+```sh
+python3 benchmarks/run_rxp.py --native --output /tmp/rxp-native.json
+python3 benchmarks/run_rxp.py --baseline 91ccb72 --output /tmp/rxp-before.json
+python3 benchmarks/run_rxp.py --output /tmp/rxp-after.json
+```
+
+Each configuration used five fresh Lua processes and separate cold call probes. The audit rotated configuration order. The fixture adds a V2 slider and wheel/drag offset model, V2 reopen, guide changes, native-shaped theme dispatch and combat recovery. It models 36 guide rows, three Current Step cards and native asset groups. V2 resize alternates 242 and 342 units. Warm paths have 20 warmups and 120 operations, except theme and combat recovery (30) and mode transitions (40). The opacity workload changes the slider eight times before draining one queue. The native control executes the same modeled operations without installing the skin. Some native controls are simple stand-ins, notably menu display, options layout, native row/font rendering and combat. Persistence is a functional test using a reconstructed saved-variable table. It is separate from the timing suite and actual game disk persistence remains a live check.
+
+Confirmed redundant work occurs on V2 theme application. Native legacy `UpdateVisuals` returns after dispatching the V2 theme refresh, which the adapter was invoking again directly. For that known native V2 path the adapter now makes one explicit theme call with its existing child-refresh payload. The opacity-only trial still recorded 14,975 calls for a V2 theme change. The final candidate recorded 9,925. The fallback and V1 continue to use their native redraw path. Guide changes and reopen still have measurable discovery costs. This pass keeps those ownership checks and leaves row measurement, scroll geometry and inline-icon invalidation intact.
+
+All table cells show native / baseline / candidate. Timings are median host CPU totals and per-operation P95, in milliseconds. Calls, scans and queued flushes are one sampled operation. Heap churn is the GC-stopped batch delta in KiB.
+
+### CPU and heap
+
+| Workload | CPU ms | P95 ms | Max ms | Churn KiB | Forced GC ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Adapter installation | 0.004 / 0.383 / 0.411 | 0.001 / 0.382 / 0.411 | 0.001 / 0.382 / 0.411 | 0.0 / 121.6 / 125.2 | 0.071 / 0.138 / 0.139 |
+| First V1 open | 0.779 / 3.372 / 2.740 | 0.778 / 3.371 / 2.738 | 0.778 / 3.371 / 2.738 | 497.5 / 955.1 / 959.2 | 0.174 / 0.496 / 0.407 |
+| First V2 open after V1 | 2.159 / 4.775 / 4.253 | 2.158 / 4.773 / 4.250 | 2.158 / 4.773 / 4.250 | 1426.5 / 1805.2 / 1814.9 | 0.703 / 1.363 / 1.388 |
+| V1 reopen | 0.084 / 10.737 / 10.458 | 0.001 / 0.146 / 0.147 | 0.001 / 0.398 / 0.431 | 0.0 / 940.0 / 940.0 | 0.570 / 1.590 / 1.317 |
+| V1 guide switch | 2.875 / 57.628 / 58.037 | 0.027 / 0.681 / 0.658 | 0.108 / 1.116 / 1.369 | 1403.6 / 4116.1 / 4116.1 | 1.062 / 2.413 / 2.163 |
+| V1 step | 0.418 / 13.262 / 12.654 | 0.004 / 0.173 / 0.169 | 0.050 / 0.273 / 0.311 | 28.6 / 570.1 / 570.1 | 0.508 / 1.251 / 1.066 |
+| V1 scroll and row update | 0.102 / 4.957 / 5.264 | 0.001 / 0.071 / 0.065 | 0.004 / 0.116 / 0.155 | 10.1 / 425.5 / 425.5 | 0.533 / 1.110 / 1.112 |
+| Auxiliary updates | 0.107 / 4.345 / 3.775 | 0.001 / 0.070 / 0.047 | 0.002 / 0.144 / 0.203 | 28.2 / 217.2 / 217.2 | 0.555 / 1.089 / 1.091 |
+| Context and nested menu | 0.069 / 0.813 / 0.838 | 0.001 / 0.007 / 0.006 | 0.001 / 0.064 / 0.046 | 0.0 / 114.4 / 114.4 | 0.501 / 0.924 / 0.909 |
+| Opacity burst | 0.107 / 6.688 / 5.656 | 0.001 / 0.103 / 0.071 | 0.001 / 0.216 / 0.178 | 0.0 / 354.1 / 354.1 | 0.615 / 1.036 / 1.151 |
+| Theme switch with V1 active | 0.031 / 22.651 / 21.578 | 0.001 / 1.050 / 0.908 | 0.002 / 1.393 / 0.977 | 7.0 / 2264.7 / 2264.7 | 0.541 / 1.783 / 1.574 |
+| V1 ↔ V2 | 0.227 / 15.193 / 13.464 | 0.007 / 0.546 / 0.459 | 0.014 / 0.787 / 0.623 | 12.4 / 589.4 / 589.4 | 0.587 / 1.278 / 1.174 |
+| V2 row and wrapping update | 0.654 / 1.085 / 1.070 | 0.005 / 0.009 / 0.011 | 0.037 / 0.073 / 0.073 | 14.9 / 33.5 / 33.5 | 0.528 / 1.008 / 1.058 |
+| V2 width change | 13.820 / 42.423 / 41.621 | 0.190 / 0.517 / 0.458 | 0.319 / 0.893 / 0.699 | 5062.6 / 6424.4 / 6424.4 | 1.856 / 2.826 / 2.739 |
+| V2 reopen | 0.627 / 11.517 / 11.394 | 0.005 / 0.156 / 0.164 | 0.042 / 0.259 / 0.227 | 0.0 / 749.8 / 749.8 | 0.534 / 1.357 / 1.205 |
+| V2 guide switch | 4.864 / 73.196 / 70.552 | 0.083 / 0.843 / 0.759 | 0.183 / 1.099 / 1.181 | 1798.5 / 5461.2 / 5461.2 | 0.906 / 2.731 / 2.445 |
+| V2 scrollbar movement | 0.162 / 0.204 / 0.202 | 0.001 / 0.002 / 0.003 | 0.018 / 0.042 / 0.033 | 42.2 / 42.2 / 42.2 | 0.559 / 1.002 / 1.007 |
+| V2 combat deferral and recovery | 2.858 / 48.394 / 34.636 | 0.157 / 2.226 / 1.427 | 0.181 / 2.540 / 1.558 | 1265.8 / 6736.7 / 5114.3 | 0.857 / 2.997 / 2.552 |
+| V2 theme switch | 2.929 / 28.739 / 18.426 | 0.151 / 1.318 / 0.869 | 0.182 / 1.364 / 0.947 | 1274.5 / 3503.3 / 1923.2 | 0.917 / 2.863 / 2.037 |
+| Three V2 Current Step cards | 0.282 / 2.081 / 1.722 | 0.002 / 0.023 / 0.014 | 0.036 / 0.169 / 0.054 | 36.2 / 162.9 / 162.8 | 0.557 / 1.075 / 1.156 |
+| Closed idle | 0.059 / 0.060 / 0.061 | 0.001 / 0.001 / 0.001 | 0.001 / 0.001 / 0.001 | 0.0 / 0.0 / 0.0 | 0.679 / 1.088 / 0.998 |
+| Closed auxiliary callback | 0.112 / 4.518 / 4.468 | 0.001 / 0.064 / 0.067 | 0.003 / 0.120 / 0.154 | 28.2 / 217.3 / 217.3 | 0.712 / 1.095 / 1.036 |
+| Closed step callback | 0.388 / 13.139 / 13.429 | 0.003 / 0.166 / 0.181 | 0.009 / 0.442 / 0.229 | 28.6 / 570.3 / 570.3 | 0.651 / 1.482 / 1.211 |
+
+### Call profile
+
+| Workload | Total calls | Adapter calls | Scans | Queues | Selected writes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Adapter installation | 4 / 1294 / 1266 | 0 / 217 / 189 | 0 / 4 / 4 | 0 / 1 / 1 | 0 / 80 / 93 |
+| First V1 open | 639 / 13737 / 13652 | 0 / 1481 / 1442 | 0 / 218 / 218 | 0 / 1 / 1 | 99 / 874 / 886 |
+| First V2 open after V1 | 2276 / 15338 / 15261 | 0 / 2343 / 2286 | 0 / 160 / 160 | 0 / 1 / 1 | 368 / 839 / 856 |
+| V1 reopen | 7 / 1689 / 1689 | 0 / 127 / 127 | 0 / 57 / 57 | 0 / 1 / 1 | 2 / 50 / 50 |
+| V1 guide switch | 206 / 6189 / 5998 | 0 / 1166 / 1079 | 0 / 57 / 57 | 0 / 1 / 1 | 38 / 136 / 136 |
+| V1 step | 59 / 1718 / 1646 | 0 / 444 / 414 | 0 / 0 / 0 | 0 / 1 / 1 | 2 / 7 / 7 |
+| V1 scroll and row update | 4 / 838 / 838 | 0 / 43 / 43 | 0 / 37 / 37 | 0 / 1 / 1 | 0 / 0 / 0 |
+| Auxiliary updates | 8 / 567 / 471 | 0 / 204 / 156 | 0 / 0 / 0 | 0 / 1 / 1 | 2 / 7 / 7 |
+| Context and nested menu | 5 / 89 / 89 | 0 / 18 / 18 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+| Opacity burst | 3 / 866 / 751 | 0 / 194 / 143 | 0 / 0 / 0 | 0 / 1 / 1 | 0 / 12 / 12 |
+| Theme switch with V1 active | 7 / 10379 / 10292 | 0 / 2143 / 2103 | 0 / 57 / 57 | 0 / 1 / 1 | 2 / 804 / 804 |
+| V1 ↔ V2 | 96 / 4567 / 4433 | 0 / 965 / 905 | 0 / 80 / 80 | 0 / 1 / 1 | 4 / 58 / 58 |
+| V2 row and wrapping update | 81 / 125 / 125 | 0 / 15 / 15 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+| V2 width change | 1520 / 5785 / 5785 | 0 / 1229 / 1229 | 0 / 0 / 0 | 0 / 0 / 0 | 360 / 396 / 396 |
+| V2 reopen | 84 / 1866 / 1866 | 0 / 103 / 103 | 0 / 80 / 80 | 0 / 1 / 1 | 2 / 2 / 2 |
+| V2 guide switch | 444 / 7672 / 7539 | 0 / 1531 / 1472 | 0 / 80 / 80 | 0 / 1 / 1 | 36 / 76 / 76 |
+| V2 scrollbar movement | 8 / 8 / 8 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 3 / 3 / 3 |
+| V2 combat deferral and recovery | 1522 / 26013 / 19879 | 0 / 5484 / 4130 | 0 / 80 / 80 | 0 / 1 / 1 | 360 / 1603 / 1201 |
+| V2 theme switch | 1525 / 15025 / 9925 | 0 / 3231 / 2074 | 0 / 80 / 80 | 0 / 1 / 1 | 362 / 1066 / 664 |
+| Three V2 Current Step cards | 29 / 245 / 245 | 0 / 51 / 51 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 3 / 3 |
+| Closed idle | 2 / 2 / 2 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+| Closed auxiliary callback | 8 / 587 / 487 | 0 / 202 / 156 | 0 / 0 / 0 | 0 / 1 / 1 | 2 / 7 / 7 |
+| Closed step callback | 59 / 1701 / 1637 | 0 / 430 / 402 | 0 / 0 / 0 | 0 / 1 / 1 | 2 / 7 / 7 |
+
+### Cold objects and retention
+
+| Phase | Frames | Textures | Masks | FontStrings | Hooks | Events | Retained KiB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Adapter installation | 0 / 9 / 9 | 0 / 12 / 13 | 0 / 3 / 3 | 0 / 0 / 0 | 0 / 42 / 43 | 0 / 1 / 1 | 0.0 / 108.1 / 115.7 |
+| First V1 open | 57 / 69 / 69 | 12 / 118 / 118 | 0 / 2 / 2 | 102 / 102 / 102 | 0 / 269 / 269 | 0 / 0 / 0 | 483.6 / 883.9 / 887.8 |
+| First V2 open after V1 | 262 / 272 / 272 | 362 / 418 / 420 | 0 / 3 / 3 | 36 / 36 / 36 | 0 / 401 / 402 | 0 / 0 / 0 | 1424.9 / 1768.5 / 1778.0 |
+
+Host adapter-file load and compilation measured 3.572 / 3.693 / 3.764 ms, including the unused compilation in the native control. This is separate from installation and WoW login.
+
+Default opacity now initializes the split composition on first use, which explains the additional cold textures and hooks. Warm probes created no UI objects and registered no hooks or events. Warm post-GC heap deltas were near zero, with the V1/V2 mode fixture retaining about 1.3 KiB in all three controls. These figures cannot establish native object reclamation, WoW memory leaks, actual allocation counts, frame times or FPS. Small timing differences on unchanged paths and individual maxima are inconclusive. Closed idle had zero adapter calls and zero queued work. Closed native callbacks still run the corresponding cosmetic paths. The closed-step probe is an explicit delivered callback and does not imply polling.
+
+### Stability and secret-string investigation
+
+The reported failure originates at RestedXP's `GetNpcName`. It reads `GameTooltipTextLeft1:GetText()` and immediately calls `name:match`. Native `UpdateActiveStepsFrame` calls `GetActiveStepText` while checking whether the active-step payload is ready. `ReplaceNpcIds` resolves the NPC token before the display-widget update and even before the native V2-mode check. The reported error therefore occurs before the adapter's post-hook on the active-step item. Blizzard documents restrictions on inspecting secret UI values. The adapter has no hook or direct call to these resolver and payload functions. Its theme path updates existing widget styles and reads cached guide-row descriptors. [Native resolver](https://github.com/RestedXP/RXPGuides/blob/b4a0f99a2ceac856f75a11594bcaa19886236a01/functions.lua#L890-L941) · [Native payload path](https://github.com/RestedXP/RXPGuides/blob/b4a0f99a2ceac856f75a11594bcaa19886236a01/GuideWindow.lua#L3469-L3515) · [Blizzard's secret-value overview](https://worldofwarcraft.blizzard.com/en-gb/news/24246290)
+
+A scratch host probe ran the unmodified upstream event, payload, token and lookup functions with the adapter absent and installed. Each configuration read 60 tooltip values for 60 unique IDs, with 30 ordinary strings and 30 deliberately restricted stand-ins. Both produced 30 failures at the same access. All five function identities were unchanged by installation. Twenty modeled look refreshes caused zero additional tooltip reads in either configuration. The stand-in raises on indexing and does not model Blizzard's secret tags or execution taint. This supports reporting the unguarded tooltip access upstream. RestedXP should guard restricted tooltip values before matching or caching them and fall back to the name already present in the guide token when resolution is unavailable. This audit leaves the resolver untouched and cannot determine whether the skin changes the circumstances of real-client taint.
+
+The adapter uses owned presentation objects, combat guards around eligible cosmetic work, protected/forbidden checks at discovery and a single recovery event. Pooled cards keep their native parents and callbacks. The V1/V2 hide paths and EUI texture-cleanup isolation continue to be exercised by the regression suite. No new runtime profiling or diagnostic code was shipped.
+
+### Remaining client validation
+
+The full package suite covers appearance inputs, native handlers, guide/step ownership, checkbox marks, wrapping, labels, opacity endpoints and reset, deserialized settings, theme and mode changes, and deferred combat recovery. Confirm in WoW that fresh and reset Forever profiles render at 75%, saved 0% and 100% persist through `/reload`, and the appearance remains approved in both modes. For the secret-string report, repeat the same affected guide and NPC under matching combat and instance conditions with AddonSkins disabled and enabled. Record the client build, RestedXP version, mode and stack trace if the error returns. Live long-session memory, native taint and actual frame times remain unmeasured.

@@ -217,7 +217,8 @@ function RXP.ui.v2:SetFrameBackdropShown(owner, shown)
 end
 if benchmark == "rxp-benchmark" then
     return {addon = RXP, module = modules.RXPGuides, api = S, frame = frame, flush = flush,
-        guide = guide, step = step, errors = errors, definitionMS = definitionMS, menu = function() return shownMenu end}
+        guide = guide, step = step, errors = errors, definitionMS = definitionMS, menu = function() return shownMenu end,
+        combatEvent = function() return combatEvents and combatEvents.hooks.OnEvent end}
 end
 assert(modules.RXPGuides.available())
 modules.RXPGuides.install(S, modules.RXPGuides); flush()
@@ -550,10 +551,10 @@ for _, art in ipairs({legacyArt, guideArt}) do
     local alpha = art:GetAlpha()
     local plate, grain = art.created[1].alpha * alpha, art.created[2].alpha * alpha
     assert(art.created[1].color[1] == 0.165)
-    assert(math.abs(1 - (1 - plate) * (1 - grain) - 0.66 * 0.95 / 0.92) < 0.0001)
+    assert(math.abs(1 - (1 - plate) * (1 - grain) - 0.75) < 0.0001)
     for i = 1, 2 do
         local fill = art.created[i]
-        assert(fill.allPoints == art and #fill.masks == 1)
+        assert(fill.points[1][2] == art.header and fill.points[2][2] == art.footer and #fill.masks == 1)
         local mask = fill.masks[1]
         assert(mask.edge == art and mask.mode == 0 and table.concat(mask.margins, ",") == "8,8,8,8")
         assert(mask.wrapX == "CLAMPTOBLACKADDITIVE" and mask.wrapY == "CLAMPTOBLACKADDITIVE")
@@ -585,23 +586,17 @@ assert(bandArt and bandArt.mouseEnabled == false and bandArt.created[1].color[1]
 assert(bandArt.created[1].masks[1].edge == guideArt)
 assert(bandArt.points[2][2] == band and bandArt.points[2][5] == -1, "V2 header fill misses the shared surface seam")
 assert(lastRim.texture.alpha ~= 0 and rings[window.frame].texture.alpha ~= 0)
-local base = 0.66 * 0.95 / 0.92
-local bandAlpha = 1 - (1 - base) * (1 - bandArt.created[1].alpha) * (1 - bandArt.created[2].alpha)
-assert(math.abs(bandAlpha - 0.80 * 0.95 / 0.92) < 0.0001)
-local stepFill = legacyArt.created[3]
-assert(stepFill.shown and stepFill.allPoints == guide.CurrentStepFrame and stepFill.masks[1] == legacyArt.created[1].masks[1])
-local stepAlpha = 1 - (1 - base) * (1 - stepFill.alpha * legacyArt:GetAlpha())
-assert(math.abs(stepAlpha - 0.75 * 0.95 / 0.92) < 0.0001)
-guide.CurrentStepFrame:SetShown(false)
-assert(not stepFill.shown)
-guide.CurrentStepFrame:SetShown(true)
-assert(stepFill.shown)
+local base = 0.75
+local bandAlpha = 1 - (1 - bandArt.created[1].alpha) * (1 - bandArt.created[2].alpha)
+assert(math.abs(bandAlpha - base) < 0.0001)
+local upperAlpha = 1 - (1 - legacyArt.upperPlate.alpha) * (1 - legacyArt.upperGrain.alpha)
+assert(math.abs(upperAlpha - base) < 0.0001)
 
 assert(#row.created == 1 and row.created[1].shown)
 window.guideSteps:SetRows({{frame = v2Row}})
 assert(#v2Row.created == 1 and v2Row.created[1].shown)
 local v2Fill = 0.95 * v2Row.rxpBackground:GetAlpha()
-assert(math.abs(1 - (1 - base) * (1 - v2Fill) - 0.70 * 0.95 / 0.92) < 0.0001)
+assert(math.abs(1 - (1 - base) * (1 - v2Fill) - base) < 0.0001)
 assert(v2Row:GetAlpha() == 1 and window.footerBackground:GetAlpha() == 0)
 modules.RXPGuides.refresh(); flush()
 assert(rimCalls == 5 and #row.created == 1 and #v2Row.created == 1)
@@ -609,7 +604,7 @@ local bronze = RXP.v2:GetTheme()
 assert(bronze.borderColors.common[1] == 0.49)
 assert(bronze.backgroundColors.guideName[1] > bronze.backgroundColors.common[1])
 assert(step.borderColor[1] == 0.49 and RXP.colors.background[1] == 0.062)
-assert(math.abs(1 - (1 - base) * (1 - RXP.colors.bottomFrameBG[4]) - 0.70 * 0.95 / 0.92) < 0.0001)
+assert(math.abs(1 - (1 - base) * (1 - RXP.colors.bottomFrameBG[4]) - base) < 0.0001)
 assert(RXP.colors.bottomFrameHighlight[2] == 0.8 and RXP.colors.bottomFrameHighlight[4] == 1)
 assert(bronze.backgroundColors.common[4] == 0.95) -- V2 native row fill is unchanged.
 step:SetBackdropBorderColor(0.1, 0.8, 0.6, 1)
@@ -875,7 +870,7 @@ assert(checked.path == checkPath and #checkbox.created == 7)
 assert(statusCheck.path:find("rxp-checked-32", 1, true) and statusCheck.tint[2] == 0.17)
 CheckBronzeMarkers()
 choices[5].func()
-assert(opened.args.opacity.get() == 72)
+assert(opened.args.opacity.get() == 75 and EUIAddonSkinsDB.restedXP.opacity == nil)
 assert(status:GetBackdrop() == nil and close:GetScript("OnClick") == closeClick)
 local dialogArt
 for host, parent in pairs(parents) do
@@ -910,7 +905,7 @@ local function composite(...)
     for _, alpha in ipairs({...}) do remaining = remaining * (1 - alpha) end
     return 1 - remaining
 end
-assert(math.abs(composite(legacyArt.created[1].alpha, legacyArt.created[2].alpha, stepFill.alpha) - 0.2) < 0.0001)
+assert(math.abs(composite(legacyArt.created[1].alpha, legacyArt.created[2].alpha) - 0.2) < 0.0001)
 local bodyRGB = {table.unpack(legacyArt.created[1].gradient[2])}
 local function bodyPixel(art, world, channel)
     local plate, grain = art.created[1], art.created[2]
@@ -1010,12 +1005,13 @@ for _, percent in ipairs({0, 25, 50, 75, 95, 100}) do
     assert(checkbox.click == click and scrollButton.click == scrollAction)
 end
 choices[6].func(); flush()
-assert(not EUIAddonSkinsDB.restedXP and not legacyArt:IsShown())
+assert(not EUIAddonSkinsDB.restedXP and not legacyArt:IsShown() and opened.args.opacity.get() == 95)
 opacityRoot.frame:SetShown(false)
 opacityRoot.children[1].frame:SetShown(false) -- simulate inherited OnHide
 assert(status:GetBackdrop().bgFile == "native" and dialogArt:GetAlpha() == 0)
 assert(track:GetAlpha() == 0 and thumb:GetAlpha() == 0.8)
 activeLook = "forever"
+assert(opened.args.opacity.get() == 75 and not EUIAddonSkinsDB.restedXP)
 -- V2 keeps the V1 root and root-owned cog alive while hiding the native
 -- panels. Reproduce the two pieces of chrome shown in the live screenshot.
 local v2Mode = false
@@ -1271,7 +1267,31 @@ local function VerifyV2Guide()
     assert(not Visible(guideArt) and not Visible(rings[arrow].host) and not Visible(scrollbarArt))
     window.frame:SetShown(true)
     assert(Visible(scrollbarArt) and Visible(rings[arrow].host))
-    window.UpdateTheme = nil
+    -- V2's legacy redraw dispatches the same window theme through the
+    -- native event. A full adapter refresh should invoke it once.
+    local themeCalls, nativeTheme, nativeVisuals = 0, window.UpdateTheme, guide.UpdateVisuals
+    function window:UpdateTheme(...)
+        themeCalls = themeCalls + 1
+        return nativeTheme(self, ...)
+    end
+    RXP.v2.events = {GuideWindowRefresh = function() window:UpdateTheme({}) end}
+    function guide:UpdateVisuals() if v2Mode then RXP.v2.events:GuideWindowRefresh() end end
+    for _, saved in ipairs({0, 1}) do
+        -- Reconstruct the deserialized saved-variable table and change
+        -- both UI mode and look without writing a new preference.
+        EUIAddonSkinsDB = {restedXP = {opacity = saved}}
+        themeCalls = 0
+        modules.RXPGuides.refresh(); flush()
+        assert(themeCalls == 1 and opened.args.opacity.get() == saved * 100)
+        assert(guideArt.split == (saved > 0))
+        activeLook, v2Mode = "eui", false
+        modules.RXPGuides.refresh(); flush()
+        assert(opened.args.opacity.get() == saved * 100 and EUIAddonSkinsDB.restedXP.opacity == saved)
+        activeLook, v2Mode = "forever", true
+    end
+    opened.args.reset.func(); flush()
+    assert(opened.args.opacity.get() == 75 and not EUIAddonSkinsDB.restedXP and guideArt.split)
+    guide.UpdateVisuals, window.UpdateTheme, RXP.v2.events = nativeVisuals, nil, nil
     v2Mode = false
 end
 VerifyV2Guide()

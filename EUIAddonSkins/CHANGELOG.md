@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.5 — RestedXP Forever V1/V2
+
+- Added the approved Forever design for RestedXP V1 and V2, including guide and Current Step windows, Active Targets/Items, menus, controls and copper navigation artwork.
+- Improved theme switching, pooled controls and V1/V2 window ownership while preserving native guide actions, quest/status colours and Standard styling.
+- Forever backgrounds now default to 75% opacity. Saved overrides, including 0% and 100%, persist; Reset restores the selected look's default.
+- Reduced repeated V1 step styling, V2 row/resize work and duplicate V2 theme refreshes, with regression coverage for combat deferral and restoration.
+- RestedXP V1/V2 in-game acceptance is maintainer-approved. Performance figures remain host-Lua measurements; live frame timing, taint and long-session memory are unmeasured.
+
 ## 1.6.4 — Auctionator Settings Hotfix
 
 - Keep Auctionator Settings checkbox and radio artwork from intercepting mouse input, and preserve native edit-box bounds.

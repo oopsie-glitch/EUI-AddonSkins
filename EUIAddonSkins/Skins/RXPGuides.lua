@@ -932,7 +932,7 @@ end, function(S, module)
         end
     end
     local SyncShell
-    local borderLocks = {}
+    local borderPainters = setmetatable({}, {__mode = "k"})
     local guideChecks = setmetatable({}, {__mode = "k"})
     local stockCheckFolders = {[""] = true, ["darkmode/"] = true, ["goldassistant/"] = true,
         ["green/"] = true, ["hardcore/"] = true}
@@ -1066,34 +1066,41 @@ end, function(S, module)
             or f.GetParent and f:GetParent() == bar) then return end
         if f.GetBackdrop and f.SetBackdropBorderColor then
             local backdrop = f:GetBackdrop()
-            local function PaintBorder(_, r, g, b)
-                if borderLocks[f] then return end
-                if InCombatLockdown and InCombatLockdown() then if refresh then refresh() end; return end
-                if r == nil and f.GetBackdropBorderColor then r, g, b = f:GetBackdropBorderColor() end
-                -- Checked/status borders retain their semantic accent colour.
-                local wasBronze = r and g and b and math.abs(r - bronzeR) < 0.002
-                    and math.abs(g - bronzeG) < 0.002 and math.abs(b - bronzeB) < 0.002
-                if not wasBronze and r and g and b and (math.abs(r - g) > 0.04 or math.abs(r - b) > 0.04) then return end
-                borderLocks[f] = true
-                if ForeverLook() then
-                    local entry = themed[f]
-                    f:SetBackdropBorderColor(bronzeR, bronzeG, bronzeB, entry and (entry.rim or entry.secondary or entry.joinedBody) and 0 or 1)
-                else f:SetBackdropBorderColor(0.055, 0.055, 0.055, 1) end
-                borderLocks[f] = false
-            end
-            if backdrop and backdrop.edgeFile then PaintBorder() end
-            H.Hook(f, "SetBackdropBorderColor", PaintBorder)
-            -- Native SetBackdrop resets border color to white. Correct it in
-            -- the same call stack, before the client can draw another frame.
-            H.Hook(f, "SetBackdrop", function()
-                if InCombatLockdown and InCombatLockdown() then return end
-                local current = f:GetBackdrop()
-                if current and current.edgeFile then PaintBorder() end
-                local entry = themed[f]
-                if entry then
-                    SyncShell(f, entry)
+            local paint = borderPainters[f]
+            if not paint then
+                local painting
+                paint = function(_, r, g, b, a)
+                    if painting then return end
+                    if CombatLocked() then if refresh then refresh() end; return end
+                    if r == nil and f.GetBackdropBorderColor then r, g, b, a = f:GetBackdropBorderColor() end
+                    local wasBronze = r and g and b and math.abs(r - bronzeR) < 0.002
+                        and math.abs(g - bronzeG) < 0.002 and math.abs(b - bronzeB) < 0.002
+                    -- Checked/status borders retain their semantic accent colour.
+                    if not wasBronze and r and g and b and (math.abs(r - g) > 0.04 or math.abs(r - b) > 0.04) then return end
+                    local red, green, blue, alpha = 0.055, 0.055, 0.055, 1
+                    if ForeverLook() then
+                        red, green, blue = bronzeR, bronzeG, bronzeB
+                        local entry = themed[f]
+                        if entry and (entry.rim or entry.secondary or entry.joinedBody) then alpha = 0 end
+                    end
+                    if r and g and b and a == alpha and math.abs(r - red) < 0.00001
+                        and math.abs(g - green) < 0.00001 and math.abs(b - blue) < 0.00001 then return end
+                    painting = true
+                    f:SetBackdropBorderColor(red, green, blue, alpha)
+                    painting = false
                 end
-            end)
+                borderPainters[f] = paint
+                H.Hook(f, "SetBackdropBorderColor", paint)
+                -- The native backdrop can reset to white. Correct it synchronously.
+                H.Hook(f, "SetBackdrop", function()
+                    if CombatLocked() then return end
+                    local current = f:GetBackdrop()
+                    if current and current.edgeFile then paint() end
+                    local entry = themed[f]
+                    if entry then SyncShell(f, entry) end
+                end)
+            end
+            if backdrop and backdrop.edgeFile then paint() end
         end
     end
     local function LegacySkipCheck(button, forever)
@@ -1975,6 +1982,22 @@ end, function(S, module)
         ThemeShell(step, role)
         ThemeShell(step.number, "badge")
     end
+    local function ApplyLegacySteps(legacy, shell, forever, shownOnly)
+        local current = legacy.CurrentStepFrame
+        if not current or not current.framePool then return end
+        for _, step in pairs(current.framePool) do
+            if not shownOnly or step:IsShown() then
+                LegacyStepShell(step, LegacyStepRole(step, legacy, shell))
+                if forever then Font(step.number and step.number.text) end
+                for _, element in pairs(step.elements or {}) do
+                    LegacySkipCheck(element.button, forever)
+                    if forever then Font(element.text) end
+                    SkinIconLabel(element.icon, forever)
+                    SkinIconLabel(element.text, forever)
+                end
+            end
+        end
+    end
     local function PrepareLegacySteps()
         if CombatLocked() or not ForeverLook() then return end
         local legacy = addon.RXPFrame or _G.RXPFrame
@@ -2005,9 +2028,19 @@ end, function(S, module)
             end
         end
     end
+    local readyLegacy, readyGuide, readyRows
+    local function ReadyLegacySteps()
+        local legacy = addon.RXPFrame or _G.RXPFrame
+        if not legacy or legacy ~= readyLegacy or not readyGuide or addon.currentGuide ~= readyGuide
+            or not readyRows or not legacy.ScrollChild or legacy.ScrollChild.framePool ~= readyRows
+            or not ForeverLook() then return end
+        local v2 = addon.v2
+        if v2 and type(v2.IsGuideWindowEnabled) == "function" and not v2:IsGuideWindowEnabled() then return legacy end
+    end
     local function Apply()
         if CombatLocked() then applyWaiting = true; return end
         applyWaiting = false
+        readyLegacy, readyGuide, readyRows = nil, nil, nil
         Wrap(addon.v2, "GetTheme")
         local forever = ForeverLook()
         local legacy = addon.RXPFrame or _G.RXPFrame
@@ -2032,17 +2065,9 @@ end, function(S, module)
             ThemeShell(legacy.GuideName, "legacyHeader", nil, shell)
             ThemeShell(legacy.Footer, "footer", nil, shell)
             ns.AttachAccent(S, legacy.GuideName)
-            for _, step in pairs(legacy.CurrentStepFrame and legacy.CurrentStepFrame.framePool or {}) do
-                LegacyStepShell(step, LegacyStepRole(step, legacy, shell))
-                if forever then
-                    Font(step.number and step.number.text)
-                end
-                for _, element in pairs(step.elements or {}) do
-                    LegacySkipCheck(element.button, forever)
-                    if forever then Font(element.text) end
-                    SkinIconLabel(element.icon, forever)
-                    SkinIconLabel(element.text, forever)
-                end
+            ApplyLegacySteps(legacy, shell, forever)
+            if shell and legacy.ScrollChild then
+                readyLegacy, readyGuide, readyRows = legacy, addon.currentGuide, legacy.ScrollChild.framePool
             end
             H.Hook(legacy, "UpdateVisuals", function() LegacyChrome(legacy); refresh() end)
             H.Hook(legacy, "UpdateScrollBar", function() LegacyChrome(legacy) end)
@@ -2117,7 +2142,23 @@ end, function(S, module)
             H.Hook(importer, "UpdateTheme", refresh)
         end
     end
-    refresh = function() H.Queue(module, Apply) end
+    local fullRefresh
+    local function ApplyQueued()
+        local legacy = not fullRefresh and ReadyLegacySteps()
+        fullRefresh = nil
+        if not legacy then Apply(); return end
+        if CombatLocked() then applyWaiting = true; return end
+        applyWaiting = false
+        -- SetStep rebuilds Current Step. LoadGuide owns the scroll-row pool,
+        -- while targets/items already finish through their native callbacks.
+        local shell = compositions[legacy]
+        shell.anchorTop()
+        ApplyLegacySteps(legacy, shell, true, true)
+    end
+    refresh = function()
+        fullRefresh = true
+        H.Queue(module, ApplyQueued)
+    end
     local function UpdateTheme()
         if not ns.IsEnabled(module) then return end
         if CombatLocked() then themeWaiting = true; return end
@@ -2142,7 +2183,8 @@ end, function(S, module)
     Wrap(addon.v2, "GetTheme")
     for _, name in ipairs({"RenderFrame", "LoadGuide"}) do H.Hook(addon, name, refresh) end
     H.Hook(addon, "SetStep", function()
-        refresh()
+        if ReadyLegacySteps() then H.Queue(module, ApplyQueued)
+        else refresh() end
         PrepareLegacySteps()
     end)
     H.Hook(addon.v2, "GetGuideWindow", function()

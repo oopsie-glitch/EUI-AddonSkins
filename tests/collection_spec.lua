@@ -1,4 +1,6 @@
 -- Integration regressions for optional, lazy targets and session-only RXP themes.
+local benchmark, adapter = ...
+local definitionMS
 local timers, errors, modules, looks = {}, {}, {}, {}
 local enabled = true
 local popupOptions
@@ -95,7 +97,10 @@ local function frame(kind)
     function f:SetBackdrop(v) self.backdropValue = v; self.borderColor = {1, 1, 1, 1} end
     function f:GetBackdrop() return self.backdropValue end
     function f:SetBackdropColor() end
-    function f:SetBackdropBorderColor(...) self.borderColor = {...} end
+    function f:SetBackdropBorderColor(...)
+        self.borderColor = {...}
+        self.borderWrites = (self.borderWrites or 0) + 1
+    end
     function f:GetBackdropBorderColor() return table.unpack(self.borderColor or {1, 1, 1, 1}) end
     return f
 end
@@ -126,7 +131,10 @@ function S.Panel(f) registeredPanels[f] = true; for _, r in ipairs(f.regions) do
 function S.EditBox(f) edits = edits + 1; assert(not f.protected) end
 for _, key in ipairs({'Font', 'Button', 'StateButtonLabel', 'Checkbox', 'Dropdown', 'ScrollBar', 'CloseButton', 'FadeNineSlice', 'PageButton'}) do S[key] = function(f) if key == 'CloseButton' then f.euiClose = true end end end
 for _, file in ipairs({'EUIAddonSkins/Accent.lua', 'EUIAddonSkins/Widgets.lua', 'EUIAddonSkins/Skins/ForeverDungeonJournal.lua', 'EUIAddonSkins/Skins/RXPGuides.lua'}) do
-    assert(loadfile(file))('EUIAddonSkins', ns)
+    local measure = benchmark == "rxp-benchmark" and file:find("/RXPGuides.lua", 1, true)
+    local start = measure and os.clock()
+    assert(loadfile(measure and adapter or file))('EUIAddonSkins', ns)
+    if measure then definitionMS = (os.clock() - start) * 1000 end
 end
 RXP = nil; ForeverDungeonJournal_NS = nil
 assert(not modules.RXPGuides.available() and not modules.ForeverDungeonJournal.available(), 'targets must be optional')
@@ -190,6 +198,10 @@ RXP = {targeting = {CreateTargetFrame = function(self) self.activeTargetFrame = 
             local window = {frame = frame(), banner = region('v2-banner', 'ARTWORK'), UpdateTheme = function() end}
             self.state.guideWindow = window; return window
         end}}
+if benchmark == "rxp-benchmark" then
+    return {addon = RXP, module = modules.RXPGuides, api = S, frame = frame, flush = flush,
+        guide = guide, step = step, errors = errors, definitionMS = definitionMS, menu = function() return shownMenu end}
+end
 assert(modules.RXPGuides.available())
 modules.RXPGuides.install(S, modules.RXPGuides); flush()
 assert(guide.BottomFrame.borderColor[1] == 0.055 and step.borderColor[1] == 0.055 and step.number.borderColor[1] == 0.055, 'legacy border tint missing')
@@ -199,6 +211,9 @@ assert(step.borderColor[1] == 0.055, 'reused step backdrop became white on a pro
 step:SetBackdropBorderColor(0.1, 0.8, 0.6, 1); assert(step.borderColor[2] == 0.8, 'semantic status border changed')
 step:SetBackdropBorderColor(0.2, 0.2, 0.22, 1); assert(step.borderColor[1] == 0.055, 'neutral border must stay subdued')
 guide.protected = false
+local settledWrites = step.borderWrites
+modules.RXPGuides.refresh(); flush()
+assert(step.borderWrites == settledWrites, "settled border was rewritten during a repeat scan")
 assert(guideCreates == 0, 'skin must not create lazy guide windows')
 assert(edits == 1, 'protected controls must remain unstyled')
 assert(guide.GuideName.bg.alpha == 0, 'legacy banner remains visible')
@@ -982,6 +997,31 @@ local function Visible(f)
     return f:IsShown() and (not parents[f] or Visible(parents[f]))
 end
 assert(Visible(legacyArt) and Visible(rings[cog].host))
+
+-- Warm SetStep touches Current Step even when its native OnShow happened
+-- before the final height was assigned. A LoadGuide in the same turn wins.
+local guideScans, getGuideChildren = 0, guide.GetChildren
+function guide:GetChildren()
+    guideScans = guideScans + 1
+    return getGuideChildren(self)
+end
+RXP.currentGuide = {}
+modules.RXPGuides.refresh(); flush()
+guideScans = 0
+local current = guide.CurrentStepFrame
+local currentHeight = current.height
+current:SetShown(false)
+current.height = 0
+local warmStep = RXP.SetStep(2)
+assert(legacyArt.points[1][2] == guide.GuideName)
+current.height = 24
+flush()
+assert(guideScans == 0 and legacyArt.points[1][2] == current and warmStep.fill[4] == 0)
+assert(RXP:LoadGuide("warm-guide", 2) == "warm-guide"); flush()
+assert(guideScans > 0)
+guide.GetChildren = getGuideChildren
+current.height = currentHeight
+
 v2Mode = true
 RXP.v2:DisableLegacyGuideWindow()
 assert(guide:IsShown() and cog:IsShown() and not guide.Footer:IsShown())

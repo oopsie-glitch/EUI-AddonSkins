@@ -1921,6 +1921,41 @@ end, function(S, module)
             end
         end
     end
+    local function LegacyStepRole(step, legacy, shell)
+        -- The V1 pool also supplies independently positioned tip windows.
+        if shell and (not step.GetFrameStrata or step:GetFrameStrata() == legacy:GetFrameStrata()) then
+            return "joined"
+        end
+        return "body"
+    end
+    local function LegacyStepShell(step, role)
+        TintBackdrop(step)
+        TintBackdrop(step.number)
+        ThemeShell(step, role)
+        ThemeShell(step.number, "badge")
+    end
+    local function PrepareLegacySteps()
+        if CombatLocked() or not ForeverLook() then return end
+        local legacy = addon.RXPFrame or _G.RXPFrame
+        if not legacy or addon.v2 and type(addon.v2.IsGuideWindowEnabled) == "function" and addon.v2:IsGuideWindowEnabled() then return end
+        local current = legacy.CurrentStepFrame
+        local pool = current and current.framePool
+        if not pool then return end
+        local shell = compositions[legacy]
+        for i = 1, legacy.activeSteps and #legacy.activeSteps or #pool do
+            local step = pool[i]
+            if not step then break end
+            local entry, badge = themed[step], themed[step.number]
+            local joined = LegacyStepRole(step, legacy, shell) == "joined"
+            -- Warm rows already have the synchronous SetBackdrop tint.
+            -- First-use cards and pool role changes cannot wait for Apply.
+            if step:IsShown() and (not entry or not entry.forever or entry.joinedBody ~= joined
+                or step.number and (not badge or not badge.forever)) then
+                shell = ComposeGuide(legacy, legacy.GuideName, legacy.Footer, current, true)
+                LegacyStepShell(step, LegacyStepRole(step, legacy, shell))
+            end
+        end
+    end
     local function Apply()
         if CombatLocked() then applyWaiting = true; return end
         applyWaiting = false
@@ -1949,8 +1984,7 @@ end, function(S, module)
             ThemeShell(legacy.Footer, "footer", nil, shell)
             ns.AttachAccent(S, legacy.GuideName)
             for _, step in pairs(legacy.CurrentStepFrame and legacy.CurrentStepFrame.framePool or {}) do
-                TintBackdrop(step)
-                TintBackdrop(step.number)
+                LegacyStepShell(step, LegacyStepRole(step, legacy, shell))
                 if forever then
                     Font(step.number and step.number.text)
                 end
@@ -1960,10 +1994,6 @@ end, function(S, module)
                     SkinIconLabel(element.icon, forever)
                     SkinIconLabel(element.text, forever)
                 end
-                -- The V1 pool also supplies independently positioned tip windows.
-                local detached = step.GetFrameStrata and step:GetFrameStrata() ~= legacy:GetFrameStrata()
-                ThemeShell(step, shell and not detached and "joined" or "body")
-                ThemeShell(step.number, "badge")
             end
             H.Hook(legacy, "UpdateVisuals", function() LegacyChrome(legacy); refresh() end)
             H.Hook(legacy, "UpdateScrollBar", function() LegacyChrome(legacy) end)
@@ -2061,7 +2091,11 @@ end, function(S, module)
     end
     Wrap(addon, "LoadActiveTheme", true)
     Wrap(addon.v2, "GetTheme")
-    for _, name in ipairs({"RenderFrame", "LoadGuide", "SetStep"}) do H.Hook(addon, name, refresh) end
+    for _, name in ipairs({"RenderFrame", "LoadGuide"}) do H.Hook(addon, name, refresh) end
+    H.Hook(addon, "SetStep", function()
+        refresh()
+        PrepareLegacySteps()
+    end)
     H.Hook(addon.v2, "GetGuideWindow", function()
         local window = addon.v2.state and addon.v2.state.guideWindow or _G.RXPV2GuideWindow
         if window and window ~= guideWindowSeen then refresh() end

@@ -53,27 +53,31 @@ def coverage(distance, width):
 
 
 BRONZE = (
-    (0.00, (106, 61, 36)),
-    (0.23, (245, 204, 148)),
-    (0.42, (216, 157, 99)),
-    (0.72, (180, 111, 63)),
-    (1.00, (105, 59, 34)),
+    (0.00, (117, 69, 43)),
+    (0.17, (249, 215, 164)),
+    (0.32, (225, 167, 107)),
+    (0.55, (161, 95, 55)),
+    (0.78, (181, 115, 66)),
+    (1.00, (93, 53, 33)),
 )
 
 
 def metal_face(x, y, white):
+    rim = (34, 21, 15)
     if not white:
-        return (0, 0, 0)
-    # Light catches the upper bevel on both faces. Fine brushed variation
-    # follows the edge and the right face sits a little further from the light.
+        return rim
+    # A narrow light bevel above a recessed copper face. Reflective streaks
+    # run along the arms at different intensities, under the same edge light.
     across = y - (9 + abs(x - 15) * 10.5 / 11)
     depth = max(0, min(1, across / (inner_peak - 9)))
-    grain = 3 * sin(across * 31 + sin(x * 0.9)) + 2 * sin(x * 1.7)
-    light = grain - (7 if x > 15 else 0)
+    grain = 4 * sin(across * 23 + sin(x * 0.7)) + 4 * sin(x * 1.9 + across * 2)
+    reflection = 12 * sin(x * 0.53 + across * 2.2) + 6 * sin(x * 1.16 - across * 3)
+    light = grain + reflection - (12 if x > 15 else 0)
     for (start, near), (end, far) in zip(BRONZE, BRONZE[1:]):
         if depth <= end:
             weight = (depth - start) / (end - start)
-            return tuple(round((a + (b - a) * weight + light) * white / 255) for a, b in zip(near, far))
+            return tuple(min(255, round(edge + (a + (b - a) * weight + light - edge) * white / 255))
+                         for edge, a, b in zip(rim, near, far))
 
 
 outer = offset_polygon(POINTS, OUTLINE)

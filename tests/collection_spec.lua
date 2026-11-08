@@ -155,7 +155,29 @@ RXP = {targeting = {CreateTargetFrame = function(self) self.activeTargetFrame = 
     ShowMenu = function(_, menu, owner) shownMenu = menu; return owner, nil, 9 end,
     LoadActiveTheme = function() originalCalls = originalCalls + 1; return source, nil, 'tail' end,
     RenderFrame = function() renders = renders + 1; return nil, 'render-tail' end,
-    LoadGuide = function(_, key) return key end,
+    LoadGuide = function(_, key, index)
+        if index then RXP.SetStep(index) end
+        return key
+    end,
+    SetStep = function(index)
+        guide.CurrentStepFrame:SetShown(true)
+        local pool = guide.CurrentStepFrame.framePool
+        local card = pool[index]
+        if not card then
+            card = frame()
+            card.number = frame()
+            pool[index] = card
+        end
+        for _, panel in ipairs({card, card.number}) do
+            if not panel.GetBackdropColor then
+                function panel:SetBackdropColor(...) self.fill = {...} end
+                function panel:GetBackdropColor() return table.unpack(self.fill or {}) end
+            end
+            panel:SetBackdrop(guide.backdrop.edge)
+            panel:SetBackdropColor(0.062, 0.052, 0.043, 0.95)
+        end
+        return card, nil, "native step"
+    end,
     v2 = {state = {}, DisableLegacyGuideWindow = function()
             for _, panel in ipairs({guide.BottomFrame, guide.GuideName, guide.Footer, guide.CurrentStepFrame}) do
                 panel:SetShown(false)
@@ -425,6 +447,24 @@ scrollButton.hooks.OnDisable()
 assert(scrollIcon:GetAlpha() == 0.45)
 assert(guidePanel.rxpBorder:GetAlpha() == 0 and band.rxpBorder:GetAlpha() == 0)
 assert(guide.BottomFrame.borderColor[4] == 0 and step.borderColor[4] == 0)
+guide.protected = true
+local newStep, middle, nativeStep = RXP.SetStep(2)
+assert(middle == nil and nativeStep == "native step")
+assert(newStep.borderColor[4] == 0 and newStep.number.borderColor[4] == 0,
+    "cold V1 card or number badge showed its white backdrop before the queued refresh")
+assert(newStep.fill[4] == 0 and newStep.number.fill[4] == 0, "native fill covered the Forever surface")
+guide.CurrentStepFrame:SetShown(false)
+assert(RXP:LoadGuide("switch-and-reopen", 2) == "switch-and-reopen")
+assert(newStep.borderColor[4] == 0 and newStep.number.borderColor[4] == 0, "pooled step flashed on reopen")
+guide.protected = false
+flush()
+combat = true
+local combatStep = RXP.SetStep(3)
+flush()
+assert(combatStep.borderColor[1] == 1 and combatStep.number.borderColor[1] == 1)
+combat = false
+combatEvents.hooks.OnEvent(); flush()
+assert(combatStep.borderColor[4] == 0 and combatStep.number.borderColor[4] == 0, "combat-deferred shell was not repaired")
 local legacyArt, guideArt = rings[guide].host, rings[window.frame].host
 assert(legacyArt.points[1][2] == guide.CurrentStepFrame and legacyArt.points[2][2] == guide.Footer)
 assert(guideArt.points[1][2] == band and guideArt.points[2][2] == window.footer)
@@ -519,6 +559,7 @@ assert(not checkbox.created[3].shown and not scrollIcon.shown and scrollButton.N
 assert(v2Row.rxpBackground:GetAlpha() == 1 and window.footerBackground:GetAlpha() == 0.8)
 assert(RXP.colors.bottomFrameBG[4] == 0.95 and RXP.colors.bottomFrameHighlight[4] == 1)
 assert(step.borderColor[4] == 1 and guide.BottomFrame.borderColor[4] == 1)
+assert(newStep.borderColor[1] == 0.055 and newStep.number.borderColor[1] == 0.055, "Standard pooled borders changed")
 assert(guidePanel.rxpBorder:GetAlpha() == oldBorderAlpha and band.rxpBorder:GetAlpha() == bandBorderAlpha)
 activeLook = "forever"
 modules.RXPGuides.refresh(); flush()

@@ -51,6 +51,7 @@ local function frame(kind)
             GetHeight = function(self) return self.height end,
             GetTexture = function(self) return self.path end,
             SetTexture = function(self, path) self.path = path end, SetVertexColor = function(self, r, g, b, a) self.tint = {r, g, b, a}; self.alpha = a end,
+            GetVertexColor = function(self) return table.unpack(self.tint or {1, 1, 1, 1}) end,
             SetHorizTile = function() end, SetVertTile = function() end,
             SetShown = function(self, shown) self.shown = shown end}
         t.layer, t.sublevel = layer, sublevel
@@ -238,6 +239,9 @@ scrollButton.click = scrollAction
 window.guideSteps.scroll = {scrollbar = {ScrollUpButton = scrollButton}}
 local checkbox = frame("CheckButton")
 local checked, disabledChecked = checkbox:CreateTexture(), checkbox:CreateTexture()
+checked:SetTexture("Interface\\AddOns\\RXPGuides\\Textures\\DarkMode\\rxp-checked-32.blp")
+disabledChecked:SetTexture("Interface/AddOns/RXPGuides/Textures/rxp-checked-32")
+checkbox.theme = {}
 checked.GetObjectType = function() return "Texture" end
 disabledChecked.GetObjectType = checked.GetObjectType
 checkbox.GetCheckedTexture = function() return checked end
@@ -258,6 +262,14 @@ checkbox.click = click
 checkbox:EnableMouse(true)
 step.elements = {element}
 guide.children[#guide.children + 1] = checkbox
+local statusCheckbox = frame("CheckButton")
+local statusCheck = statusCheckbox:CreateTexture()
+statusCheck.GetObjectType = checked.GetObjectType
+statusCheck:SetTexture("Interface/AddOns/RXPGuides/Textures/rxp-checked-32")
+statusCheck:SetVertexColor(0.85, 0.17, 0.15, 1)
+statusCheckbox.theme = {}
+function statusCheckbox:GetCheckedTexture() return statusCheck end
+guide.children[#guide.children + 1] = statusCheckbox
 local up, down = frame("Button"), frame("Button")
 local position = 5
 for _, arrow in ipairs({up, down}) do
@@ -323,6 +335,8 @@ assert(rimCalls == 5 and lastRim.on and parents[lastRim.host] == button)
 assert(checkbox.click == click and checkbox:click() == "native check" and element.skip)
 checkbox:click(); assert(element.skip == false and checkbox.mouseEnabled)
 assert(checked.path:find("UI-CheckBox-Check", 1, true) and checked.width == 8 and checkbox.created[3].shown)
+assert(checked.tint[1] == 0.91 and checked.tint[2] == 0.71 and disabledChecked.tint[1] == 0.53)
+assert(statusCheck.path:find("rxp-checked-32", 1, true) and statusCheck.tint[2] == 0.17)
 local skipBorder = checkbox.created[4]
 assert(#checkbox.created == 7 and skipBorder.shown and skipBorder.height == 1 and skipBorder.points[1][2] == checkbox)
 local oldTooltip, oldUIParent = GameTooltip, UIParent
@@ -497,6 +511,21 @@ local function label()
     function text:SetJustifyH(value) self.justify = value end
     return text
 end
+local resizeButton = frame("Button")
+resizeButton:SetSize(16, 16)
+resizeButton:SetPoint("BOTTOMRIGHT", guide.Footer, "BOTTOMRIGHT", -1, 3)
+resizeButton:EnableMouse(true)
+resizeButton.regions = {region("Interface/CHATFRAME/UI-ChatIM-SizeGrabber-Up", "ARTWORK")}
+function resizeButton:CreateFontString()
+    local text = label()
+    self.regions[#self.regions + 1] = text
+    return text
+end
+local dragging, width = false, 200
+local startSizing = function() dragging = true end
+local stopSizing = function() dragging = false end
+resizeButton.hooks.OnMouseDown, resizeButton.hooks.OnMouseUp = startSizing, stopSizing
+guide.Footer.icon = resizeButton
 local nativeAccept = "|TInterface/GossipFrame/AvailableQuestIcon:0|t"
 local nativeTurnin = "|TInterface/GossipFrame/ActiveQuestIcon:0|t"
 local nativeTalk = "|Tinterface/worldmap/chatbubble_64grey.blp:20|t"
@@ -558,12 +587,31 @@ for host, parent in pairs(parents) do
         titleArt[#titleArt + 1] = host
         local fill = host.created[1]
         assert(host.mouseEnabled == false and fill.path == 12345 and fill.coords[1] == 64 / 300)
-        assert(fill.points[1][4] == 8 and fill.points[1][5] == -3 and fill.points[2][4] == -8)
+        assert(fill.coords[4] == 33 / 40 and #host.created == 2, "the atlas rail/shadow must not occupy the title seam")
+        assert(fill.points[1][4] == 0 and fill.points[1][5] == 0 and fill.points[2][4] == 0 and fill.points[2][5] == 0)
         assert(fill.points[3][2] == host and fill.points[3][5] == 0)
+        local auxBody = fill.points[1][2]
+        assert(fill.masks[1] == rings[auxBody].host.created[1].masks[1])
+        local titleFrame = parents[host]
+        local iconInset = auxBody == auxTarget and 15 or (43 - 25 - 2)
+        assert(-titleFrame.points[1][5] + titleFrame:GetHeight() < iconInset)
         assert(fill:GetAlpha() > 0 and fill:GetAlpha() < 1 and host.created[2]:GetAlpha() == 0)
     end
 end
 assert(#titleArt == 2)
+local resizeArt
+for _, texture in ipairs(guide.Footer.created or {}) do
+    if texture.path and texture.path:find("resize_element.png", 1, true) then resizeArt = texture end
+end
+local resizePlus = resizeButton.regions[2]
+assert(resizeArt and resizeArt.shown and resizeArt.width == 10 and resizeArt.height == 10
+    and resizeArt.points[1][2] == resizeButton and not resizePlus:IsShown())
+assert(resizeButton.width == 16 and resizeButton.height == 16 and resizeButton.mouseEnabled)
+assert(resizeButton.hooks.OnMouseDown == startSizing and resizeButton.hooks.OnMouseUp == stopSizing)
+resizeButton.hooks.OnMouseDown()
+if dragging then width = width + 25; guide:SetSize(width, 400) end
+resizeButton.hooks.OnMouseUp()
+assert(guide.width == 225 and not dragging)
 CheckBronzeMarkers()
 row.text:SetText(statusIcons)
 assert(row.text:GetText() == statusIcons)
@@ -648,6 +696,7 @@ local choices = shownMenu[2].menuList
 assert(choices[2].checked())
 choices[3].func(); flush()
 assert(EUIAddonSkinsDB.restedXP.style == "standard" and not legacyArt:IsShown())
+assert(not resizeArt.shown and resizePlus:IsShown() and checked.color[1] == 0.1 and checked.color[2] == 0.8)
 assert(row.text:GetText() == originalMarkers and activeIcon:GetText() == nativeAccept)
 assert(v2ListText:GetText() == nativeTurnin and v2Icon:GetText() == nativeTalk and v2Text:GetText() == nativeFlag)
 assert(guide.GuideName.text:GetAlpha() == 1 and guide.GuideName.text.justify == "CENTER" and not labels[1]:IsShown())
@@ -656,6 +705,8 @@ assert(select(2, auxTarget.title.text:GetFont()) == 12)
 activeLook = "eui"
 choices[4].func(); flush()
 assert(EUIAddonSkinsDB.restedXP.style == "forever" and legacyArt:IsShown())
+assert(resizeArt.shown and not resizePlus:IsShown() and checked.tint[1] == 0.91)
+assert(statusCheck.path:find("rxp-checked-32", 1, true) and statusCheck.tint[2] == 0.17)
 CheckBronzeMarkers()
 choices[5].func()
 assert(opened.args.opacity.get() == 72)
@@ -773,6 +824,15 @@ for _, percent in ipairs({0, 25, 50, 75, 95, 100}) do
     for _, art in ipairs(titleArt) do
         local atlas = art.created[1]
         assert(atlas.tint[1] == 0.62 and atlas.tint[4] == alpha)
+        local auxBody = atlas.points[1][2]
+        local body, bodyFill = rings[auxBody].host, rings[auxBody].host.created[1]
+        if alpha > 0 then
+            local point = bodyFill.points[1]
+            assert(point[1] == "TOPLEFT" and point[2] == parents[art] and point[3] == "BOTTOMLEFT")
+            assert(point[4] + parents[art].points[1][4] == 0 and point[5] == 0)
+        end
+        assert(bodyFill.masks[1] == atlas.masks[1])
+        assert(math.abs(composite(bodyFill:GetAlpha(), body.created[2]:GetAlpha()) - alpha) < 0.0001)
     end
     assert(bandArt.created[1].allPoints == bandArt, "the title band must stay inset from the outer rim")
     if alpha > 0 then

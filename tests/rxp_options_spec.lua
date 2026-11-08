@@ -371,6 +371,20 @@ assert(arrow.text.text=='Step 3\n(32yd)' and arrow.distance==32)
 local setup,empty,tail=RXP.SetupArrow()
 assert(setup=='setup-native' and empty==nil and tail=='setup-tail' and arrow.texture.path==arrowPath and arrow.text.font=='eui')
 assert(arrow:UpdateVisuals()=='visual-native' and arrow.texture.path==arrowPath,'native theme reset lost arrow styling')
+local priorEUI=EllesmereUI
+EllesmereUI={IS_FOREVER=true}
+EUIAddonSkinsDB.restedXP={style='forever'}
+local beforeRotation=rotations
+assert(arrow:UpdateVisuals()=='visual-native' and arrow.texture.path==arrowPath and rotations==beforeRotation+1)
+assert(arrow.texture.color[1]==.91 and arrow.texture.color[2]==.71 and arrow.texture.color[3]==.43)
+assert(arrow.texture.rotation==arrow.orientation and arrow.text.text=='Step 3\n(32yd)' and arrow.distance==32)
+local beforeTexture=textureWrites
+assert(arrow.hooks.OnUpdate(arrow)=='direction-native' and textureWrites==beforeTexture)
+assert(arrow.texture.color[1]==.91 and arrow.texture.rotation==.5 and arrow.text.text=='Step 3\n(32yd)')
+EUIAddonSkinsDB.restedXP.style='standard'
+assert(arrow:UpdateVisuals()=='visual-native' and arrow.texture.color[1]==accent)
+EUIAddonSkinsDB.restedXP=nil
+EllesmereUI=priorEUI
 arrow.text:SetFont('eui',17)
 ns.SetRXPSetting('arrow',false)
 assert(select(2,arrow.text:GetFont())==17,'arrow-off reset the configured text size')

@@ -514,6 +514,7 @@ end, function(S, module)
         EUIAddonSkinsDB.restedXP[key] = value
     end
     local auxTitlePoints = setmetatable({}, {__mode = "k"})
+    local auxTitleInset = 5
     local function SeatAuxiliaryTitle(f, title, text)
         if not title.GetPoint or not title.SetHeight then return end
         local saved = auxTitlePoints[title]
@@ -524,9 +525,9 @@ end, function(S, module)
                 for i = 1, title:GetNumPoints() do saved.points[i] = {title:GetPoint(i)} end
                 auxTitlePoints[title] = saved
             end
-            if point ~= "TOPLEFT" or relative ~= f or anchor ~= "TOPLEFT" or x ~= 5 or y ~= -1 then
+            if point ~= "TOPLEFT" or relative ~= f or anchor ~= "TOPLEFT" or x ~= auxTitleInset or y ~= -1 then
                 title:ClearAllPoints()
-                title:SetPoint("TOPLEFT", f, "TOPLEFT", 5, -1)
+                title:SetPoint("TOPLEFT", f, "TOPLEFT", auxTitleInset, -1)
             end
             if title:GetHeight() ~= 11 then title:SetHeight(11) end
             local path, size, flags = text:GetFont()
@@ -584,9 +585,9 @@ end, function(S, module)
         local db = _G.EllesmereUIDB
         return EUI.ProfileWindowSkinLook(EUI.GetActiveProfileData(), db and db.fonts) == "forever"
     end
-    -- Concept A's chrome palette. Semantic quest, completion and arrow
-    -- colours continue to come from their existing theme fields.
+    -- Concept A's chrome palette. Semantic quest and status colours stay native.
     local bronzeR, bronzeG, bronzeB = 0.49, 0.33, 0.18
+    local copperR, copperG, copperB = 0.91, 0.71, 0.43
     local function ForeverPanel(header)
         if header then return 0.115, 0.082, 0.052 end
         return 0.062, 0.052, 0.043
@@ -639,15 +640,15 @@ end, function(S, module)
             end
         end
     end
-    local function MeterHeaderArt(texture, legacyHeader)
+    local function MeterHeaderArt(texture, bandOnly)
         local atlas = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("ui-questtracker-primary-objective-header")
         local file = atlas and (atlas.file or atlas.filename)
         if not file then return false end
         local l, t = atlas.leftTexCoord, atlas.topTexCoord
         local w, h = atlas.rightTexCoord - l, atlas.bottomTexCoord - t
         -- The meter reserves extra height for the last six rows (rail and
-        -- shadow). V1 uses the 24-row band and seats its divider at the seam.
-        local bottom = legacyHeader and 33 or 39
+        -- shadow). Compact titles use just the 24-row band.
+        local bottom = bandOnly and 33 or 39
         texture:SetTexture(file)
         texture:SetTexCoord(l + w * 64 / 300, l + w * 176 / 300, t + h * 9 / 40, t + h * bottom / 40)
         return true
@@ -678,7 +679,7 @@ end, function(S, module)
         if titleBody then
             for _, texture in ipairs({plate, grain}) do
                 texture:SetPoint("TOPLEFT", titleBody, "TOPLEFT", 8, -3)
-                texture:SetPoint("RIGHT", titleBody, "RIGHT", -8, 0)
+                texture:SetPoint("TOPRIGHT", titleBody, "TOPRIGHT", -8, -3)
                 texture:SetPoint("BOTTOM", art, "BOTTOM", 0, 0)
             end
         else
@@ -690,7 +691,7 @@ end, function(S, module)
         plate:SetColorTexture(r, g, b, 1)
         local paint = {r = r, g = g, b = b}
         surfacePaint[plate] = paint
-        local meterArt = (guideHeader or titleBody) and MeterHeaderArt(plate, legacyHeader)
+        local meterArt = (guideHeader or titleBody) and MeterHeaderArt(plate, legacyHeader or titleBody ~= nil)
         if not meterArt and plate.SetGradient and CreateColor then
             paint.shade = band and (guideHeader and 0.73 or 0.65) or 0.73
             paint.low = CreateColor(r * paint.shade, g * paint.shade, b * paint.shade, 1)
@@ -933,6 +934,8 @@ end, function(S, module)
     local SyncShell
     local borderLocks = {}
     local guideChecks = setmetatable({}, {__mode = "k"})
+    local stockCheckFolders = {[""] = true, ["darkmode/"] = true, ["goldassistant/"] = true,
+        ["green/"] = true, ["hardcore/"] = true}
     local function TintBackdrop(f)
         if InCombatLockdown and InCombatLockdown() then return end
         if not f or (f.IsForbidden and f:IsForbidden()) then return end
@@ -942,7 +945,14 @@ end, function(S, module)
                 for _, getter in ipairs({"GetCheckedTexture", "GetDisabledCheckedTexture"}) do
                     local texture = f[getter] and H.Texture(f[getter](f))
                     local path = texture and texture.GetTexture and texture:GetTexture()
-                    if path and f.theme then marks[getter] = {path, {texture:GetVertexColor()}} end
+                    if path and f.theme then
+                        local tint = {texture:GetVertexColor()}
+                        local folder = type(path) == "string" and path:lower():gsub("\\", "/"):gsub("%.blp$", "")
+                            :match("^interface/addons/rxpguides/textures/(.-)rxp%-checked%-32$")
+                        -- These V1 files bake their green tick into the bitmap.
+                        -- Leave custom or explicitly status-tinted marks alone.
+                        marks[getter] = {path, tint, stockCheckFolders[folder] and tint[1] == 1 and tint[2] == 1 and tint[3] == 1}
+                    end
                 end
                 local before = {}; for _, region in ipairs(H.Regions(f)) do before[region] = true end
                 S.Checkbox(f)
@@ -971,13 +981,13 @@ end, function(S, module)
                 local texture = f[getter] and H.Texture(f[getter](f))
                 if texture then
                     local mark = visual.marks[getter]
-                    if forever and mark then
+                    if forever and mark and not mark[3] then
                         texture:SetTexture(mark[1])
                         texture:SetVertexColor(unpack(mark[2]))
                     elseif forever then
                         texture:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
                         if getter == "GetDisabledCheckedTexture" then texture:SetVertexColor(0.53, 0.48, 0.40, 1)
-                        else texture:SetVertexColor(0.91, 0.71, 0.43, 1) end
+                        else texture:SetVertexColor(copperR, copperG, copperB, 1) end
                     else
                         texture:SetColorTexture(r, g, b, 1)
                     end
@@ -1088,6 +1098,38 @@ end, function(S, module)
     local slimThumbs = {}
     local guideChrome = setmetatable({}, {__mode = "k"})
     local footerTint = setmetatable({}, {__mode = "k"})
+    local resizeGrips = setmetatable({}, {__mode = "k"})
+    local function LegacyResizeGrip(footer, forever)
+        local button = footer.icon
+        if not H.Allowed(button) then return end
+        local grip = resizeGrips[button]
+        if not forever or not grip then H.Resize(button, true) end
+        if not grip then
+            for _, region in ipairs(H.Regions(button)) do
+                if region.GetText and region:GetText() == "+" then
+                    grip = {label = region}
+                    resizeGrips[button] = grip
+                    break
+                end
+            end
+            if not grip then return end
+        end
+        if forever and not grip.art then
+            -- The footer owns the art, so the native resize button and its
+            -- hit rectangle stay intact and the Standard helper cannot fade it.
+            local art = footer:CreateTexture(nil, "OVERLAY")
+            art:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\resize_element.png")
+            art:SetSize(10, 10)
+            art:SetPoint("CENTER", button, "CENTER", -1, 0)
+            art:SetVertexColor(0.79, 0.63, 0.42, 0.90)
+            grip.art = art
+        end
+        if grip.forever ~= forever then
+            grip.forever = forever
+            grip.label:SetShown(not forever)
+            if grip.art then grip.art:SetShown(forever) end
+        end
+    end
     local scrollArrows = setmetatable({}, {__mode = "k"})
     local function ScrollArrow(button, up, forever, legacy)
         if not H.Allowed(button) then return end
@@ -1262,7 +1304,7 @@ end, function(S, module)
             end
         end
         if f.Footer then
-            if H.Allowed(f.Footer.icon) then H.Resize(f.Footer.icon, true) end
+            LegacyResizeGrip(f.Footer, forever)
             local cog = f.Footer.cog
             local label = f.Footer.text
             if forever then Font(label) end
@@ -1360,13 +1402,12 @@ end, function(S, module)
             local scale = ForeverOpacity()
             local override = BackgroundOverride()
             local auxiliary = entry.titleBody and themed[entry.titleBody]
-            local auxMask = auxiliary and auxiliary.mask
-            local splitAux = auxMask and override and override > 0
+            local titleMask = auxiliary and auxiliary.mask
+            local splitAux = titleMask and override and override > 0
             local base = entry.auxTitle and SectionAlpha(0.75, scale)
                 or entry.underlay and SharedAlpha(select(4, S.GetPanelColor()) or 1, scale) or 0
             local targetAlpha = SectionAlpha(entry.band and 0.80 or 0.75, scale)
             local split = entry.underlay and entry.underlay.masked and override and override > 0
-            local titleMask = splitAux and auxMask or nil
             if entry.titleMask ~= titleMask then
                 if entry.titleMask then
                     entry.plate:RemoveMaskTexture(entry.titleMask)
@@ -1376,25 +1417,21 @@ end, function(S, module)
                     entry.plate:AddMaskTexture(titleMask)
                     entry.grain:AddMaskTexture(titleMask)
                 end
-                entry.titleMask = titleMask
-            end
-            if entry.auxTitle and (splitAux or entry.splitAux) and entry.splitAux ~= splitAux then
                 for _, texture in ipairs({entry.plate, entry.grain}) do
                     texture:ClearAllPoints()
-                    texture:SetPoint("TOPLEFT", entry.titleBody, "TOPLEFT", splitAux and 0 or 8, splitAux and 0 or -3)
-                    texture:SetPoint("RIGHT", entry.titleBody, "RIGHT", splitAux and 0 or -8, 0)
+                    texture:SetPoint("TOPLEFT", entry.titleBody, "TOPLEFT", titleMask and 0 or 8, titleMask and 0 or -3)
+                    texture:SetPoint("TOPRIGHT", entry.titleBody, "TOPRIGHT", titleMask and 0 or -8, titleMask and 0 or -3)
                     texture:SetPoint("BOTTOM", entry.art, "BOTTOM", 0, 0)
                 end
+                entry.titleMask = titleMask
             end
-            entry.splitAux = splitAux
             if entry.auxBodyTitle and entry.mask then
                 local splitBody = override and override > 0
                 if entry.splitBody ~= splitBody then
                     for _, texture in ipairs({entry.plate, entry.grain}) do
                         texture:ClearAllPoints()
                         if splitBody then
-                            texture:SetPoint("TOP", entry.auxBodyTitle, "BOTTOM", 0, 0)
-                            texture:SetPoint("LEFT", entry.art, "LEFT", 0, 0)
+                            texture:SetPoint("TOPLEFT", entry.auxBodyTitle, "BOTTOMLEFT", -auxTitleInset, 0)
                             texture:SetPoint("BOTTOMRIGHT", entry.art, "BOTTOMRIGHT")
                         else texture:SetAllPoints(entry.art) end
                     end
@@ -1504,17 +1541,12 @@ end, function(S, module)
                     end
                     entry.topRule = rule
                 end
-                if band and (legacyHeader or not meterArt) then
+                if band and (legacyHeader or (not title and not meterArt)) then
                     local divider = art:CreateTexture(nil, "BACKGROUND", nil, 3)
                     local edge = chrome == "footer" and "TOP" or "BOTTOM"
                     divider:SetPoint(edge .. "LEFT", art, edge .. "LEFT", 2, 0)
                     divider:SetPoint(edge .. "RIGHT", art, edge .. "RIGHT", -2, 0)
                     divider:SetHeight(1)
-                    if title then
-                        divider:ClearAllPoints()
-                        divider:SetPoint("BOTTOMLEFT", plate, "BOTTOMLEFT")
-                        divider:SetPoint("BOTTOMRIGHT", plate, "BOTTOMRIGHT")
-                    end
                     divider:SetColorTexture(bronzeR, bronzeG, bronzeB, header and 0.55 or 0.34)
                     if legacyHeader then
                         if entry.mask then divider:AddMaskTexture(entry.mask) end
@@ -1639,10 +1671,14 @@ end, function(S, module)
                 end
             end
             local path = "Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationChevronSmooth.tga"
+            local forever = ForeverLook()
             if texture:GetTexture() ~= path or arrowTextureSeen ~= texture then
                 texture:SetTexture(path)
                 -- High-resolution shallow chevron; preserve the initial proportions.
                 texture:SetTexCoord(0.1, 0.9, 0.1, 0.9)
+                if forever and texture.SetRotation and frame.orientation and frame.orientation ~= 0 then
+                    texture:SetRotation(frame.wrongContinent and 0 or frame.orientation)
+                end
                 arrowTextureSeen = texture
                 arrowWidth, arrowHeight = nil, nil
             end
@@ -1655,6 +1691,7 @@ end, function(S, module)
                 arrowWidth, arrowHeight = width, height
             end
             local r, g, b = S.GetAccentColor()
+            if forever then r, g, b = copperR, copperG, copperB end
             local cr, cg, cb, ca = texture:GetVertexColor()
             if cr ~= r or cg ~= g or cb ~= b or ca ~= 1 then texture:SetVertexColor(r, g, b, 1) end
         end

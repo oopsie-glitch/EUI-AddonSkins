@@ -1,0 +1,93 @@
+name: Publish approved v1.6.5 from cloud
+on:
+  push:
+    branches: [chore/publish-1.6.5-cloud]
+    paths: [.github/workflows/publish-1.6.5-cloud.yml]
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: publish-approved-v1.6.5
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: oopsie-glitch/EUI-AddonSkins
+      RELEASE_COMMIT: b4fa58940f86e48171188adde09e1514d2a7c674
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: b4fa58940f86e48171188adde09e1514d2a7c674
+          persist-credentials: false
+      - name: Verify approved tree, main and CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/$GH_REPO/git/ref/heads/main --jq .object.sha)" = "$RELEASE_COMMIT"
+          test "$(gh api repos/$GH_REPO/git/commits/$RELEASE_COMMIT --jq .tree.sha)" = "764d32981ab6a7321e433aa53166e2fbbaa89254"
+          test "$(gh api repos/$GH_REPO/pulls/76 --jq .head.sha)" = "27c09ca2e2f37c201304d78bddbc8f883a88b107"
+          test "$(gh api repos/$GH_REPO/pulls/76 --jq .merged)" = "true"
+          test "$(gh api repos/$GH_REPO/actions/runs/42530692311 --jq .conclusion)" = "success"
+          if gh api repos/$GH_REPO/git/ref/tags/v1.6.5 >/dev/null 2>&1; then
+            echo "v1.6.5 already exists; stop rather than replace a published tag"
+            exit 1
+          fi
+      - name: Install Lua runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Run complete regression suite and package
+        run: python3 scripts/package.py
+      - name: Verify archive and prepare approved notes
+        run: |
+          gh api repos/$GH_REPO/pulls/76 --jq .body > /tmp/release-pr-body.md
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import hashlib
+          import re
+          addon=Path('EUIAddonSkins')
+          assert Path('CHANGELOG.md').read_bytes()==(addon/'CHANGELOG.md').read_bytes()
+          assert re.search(r'^## 1\.6\.5 ',Path('CHANGELOG.md').read_text(),re.M)
+          with ZipFile('EUIAddonSkins-1.6.5.zip') as z:
+              names=z.namelist()
+              assert z.testzip() is None and len(names)==len(set(names))==66
+              assert {p.split('/')[0] for p in names}=={'EUIAddonSkins'}
+              expected={p.as_posix() for p in addon.rglob('*') if p.is_file()
+                        and p.name not in ('README.md','CHANGELOG.md')}
+              assert set(names)==expected
+              assert len([p for p in names if p.startswith('EUIAddonSkins/Skins/')])==43
+              assert z.read('EUIAddonSkins/LICENSE')==Path('LICENSE').read_bytes()
+              for name in names:
+                  assert z.read(name)==Path(name).read_bytes()
+              for name in ('EUIAddonSkins.toc','EUIAddonSkins_Camelot.toc','EUIAddonSkins_Mainline.toc'):
+                  assert b'## Version: 1.6.5' in z.read('EUIAddonSkins/'+name)
+          body=Path('/tmp/release-pr-body.md').read_text()
+          notes=body.split('## Draft GitHub release notes\n\n',1)[1].split('\n## Review gates',1)[0].strip()
+          notes=notes.replace('Once published, download','Download')
+          Path('/tmp/release-notes.md').write_text(notes+'\n')
+          digest=hashlib.sha256(Path('EUIAddonSkins-1.6.5.zip').read_bytes()).hexdigest()
+          print('Verified cloud release ZIP SHA256:',digest)
+          print('Verified archive: 66 files, 43 skins, 3 TOCs, exact MIT LICENSE; no development files')
+          PY
+      - name: Create immutable annotated v1.6.5 tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_sha=$(gh api --method POST repos/$GH_REPO/git/tags -f tag=v1.6.5 -f message="EUI AddonSkins 1.6.5" -f object="$RELEASE_COMMIT" -f type=commit --jq .sha)
+          gh api --method POST repos/$GH_REPO/git/refs -f ref=refs/tags/v1.6.5 -f sha="$tag_sha" --jq '{ref: .ref, object: .object.sha}'
+      - name: Create draft release with installable ZIP and verify upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create v1.6.5 EUIAddonSkins-1.6.5.zip --verify-tag --draft --title "EUI AddonSkins 1.6.5 — RestedXP Forever V1/V2" --notes-file /tmp/release-notes.md
+          mkdir /tmp/release-upload-verification
+          gh release download v1.6.5 --pattern EUIAddonSkins-1.6.5.zip --dir /tmp/release-upload-verification
+          cmp EUIAddonSkins-1.6.5.zip /tmp/release-upload-verification/EUIAddonSkins-1.6.5.zip
+      - name: Publish verified GitHub release
+        run: gh release edit v1.6.5 --draft=false --latest
+      - name: Dispatch established Wago publication once
+        run: gh workflow run wago-release.yml --ref main -f release_tag=v1.6.5

@@ -936,23 +936,48 @@ end, function(S, module)
     local guideChecks = setmetatable({}, {__mode = "k"})
     local stockCheckFolders = {[""] = true, ["darkmode/"] = true, ["goldassistant/"] = true,
         ["green/"] = true, ["hardcore/"] = true}
+    local checkArt = "Interface\\Buttons\\UI-CheckBox-Check"
+    local copperCheck = {copperR, copperG, copperB, 1}
+    local disabledCheck = {0.53, 0.48, 0.40, 1}
+    local checkSetters = {GetCheckedTexture = "SetCheckedTexture", GetDisabledCheckedTexture = "SetDisabledCheckedTexture"}
+    local function ReadCheckmark(texture, path, previous)
+        if type(path) ~= "string" then
+            path = texture.GetTextureFilePath and texture:GetTextureFilePath()
+            if not path or path == "" then path = texture:GetTexture() end
+        end
+        if not path or path == "" then return end
+        local r, g, b, a = texture:GetVertexColor()
+        local paint = previous and previous.texture == texture and previous.paint
+        if paint and r == paint[1] and g == paint[2] and b == paint[3] and a == paint[4] then
+            r, g, b, a = unpack(previous.tint)
+        end
+        local folder = type(path) == "string" and path:lower():gsub("\\", "/"):gsub("%.blp$", "")
+            :match("^interface/addons/rxpguides/textures/(.-)rxp%-checked%-32$")
+        return {path = path, tint = {r, g, b, a}, texture = texture,
+            stock = stockCheckFolders[folder] and r == 1 and g == 1 and b == 1}
+    end
+    local function PaintCheckmark(texture, getter, mark)
+        local tint = getter == "GetDisabledCheckedTexture" and disabledCheck or copperCheck
+        local path = checkArt
+        if mark then
+            if mark.stock then mark.paint = tint
+            else path, tint = mark.path, mark.tint end
+        end
+        if texture:GetTexture() ~= path then texture:SetTexture(path) end
+        local r, g, b, a = texture:GetVertexColor()
+        if r ~= tint[1] or g ~= tint[2] or b ~= tint[3] or a ~= tint[4] then
+            texture:SetVertexColor(unpack(tint))
+        end
+    end
     local function TintBackdrop(f)
         if InCombatLockdown and InCombatLockdown() then return end
         if not f or (f.IsForbidden and f:IsForbidden()) then return end
         if H.Allowed(f) and f:GetObjectType() == "CheckButton" then
             if not guideChecks[f] then
                 local marks = {}
-                for _, getter in ipairs({"GetCheckedTexture", "GetDisabledCheckedTexture"}) do
+                for getter in pairs(checkSetters) do
                     local texture = f[getter] and H.Texture(f[getter](f))
-                    local path = texture and texture.GetTexture and texture:GetTexture()
-                    if path and f.theme then
-                        local tint = {texture:GetVertexColor()}
-                        local folder = type(path) == "string" and path:lower():gsub("\\", "/"):gsub("%.blp$", "")
-                            :match("^interface/addons/rxpguides/textures/(.-)rxp%-checked%-32$")
-                        -- These V1 files bake their green tick into the bitmap.
-                        -- Leave custom or explicitly status-tinted marks alone.
-                        marks[getter] = {path, tint, stockCheckFolders[folder] and tint[1] == 1 and tint[2] == 1 and tint[3] == 1}
-                    end
+                    if texture and f.theme then marks[getter] = ReadCheckmark(texture) end
                 end
                 local before = {}; for _, region in ipairs(H.Regions(f)) do before[region] = true end
                 S.Checkbox(f)
@@ -977,23 +1002,23 @@ end, function(S, module)
             end
             if visual.hover then visual.hover:SetShown(forever) end
             local r, g, b = S.GetAccentColor()
-            for _, getter in ipairs({"GetCheckedTexture", "GetDisabledCheckedTexture"}) do
+            for getter in pairs(checkSetters) do
                 local texture = f[getter] and H.Texture(f[getter](f))
                 if texture then
                     local mark = visual.marks[getter]
-                    if forever and mark and not mark[3] then
-                        texture:SetTexture(mark[1])
-                        texture:SetVertexColor(unpack(mark[2]))
-                    elseif forever then
-                        texture:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
-                        if getter == "GetDisabledCheckedTexture" then texture:SetVertexColor(0.53, 0.48, 0.40, 1)
-                        else texture:SetVertexColor(copperR, copperG, copperB, 1) end
+                    if forever then
+                        PaintCheckmark(texture, getter, mark)
                     else
+                        if mark and mark.paint then
+                            texture:SetVertexColor(unpack(mark.tint))
+                            mark.paint = nil
+                        end
                         texture:SetColorTexture(r, g, b, 1)
                     end
                     texture:ClearAllPoints(); texture:SetPoint("CENTER", f, "CENTER"); texture:SetSize(8, 8)
                 end
             end
+            visual.forever, visual.markDirty = forever, nil
             return true -- preserve native checked/disabled visibility and skip actions
         end
         -- Legacy scrollbar geometry and its track/arrow chrome stay unchanged.
@@ -1037,13 +1062,34 @@ end, function(S, module)
     local function LegacySkipCheck(button, forever)
         if not H.Allowed(button) then return end
         local visual = guideChecks[button]
-        if not visual then
-            if not forever then return end
+        if not visual and not forever then return end
+        if not visual or visual.forever ~= forever or visual.markDirty then
             TintBackdrop(button)
             visual = guideChecks[button]
             if not visual then return end
         end
         if forever and not visual.skipBorder then
+            -- RestedXP reassigns the stock bitmap when a pooled row gets a
+            -- new theme. Repair that native write, not every checked-state change.
+            for getter, setter in pairs(checkSetters) do
+                H.Hook(button, setter, function(self, path)
+                    if not H.Allowed(self) then return end
+                    local texture = H.Texture(self[getter](self))
+                    if not texture then return end
+                    local previous = visual.marks[getter]
+                    local mark = ReadCheckmark(texture, path, previous)
+                    visual.marks[getter] = mark
+                    if not (mark and ForeverLook()) then return end
+                    if CombatLocked() then
+                        visual.markDirty = true
+                        refresh()
+                        return
+                    end
+                    if mark.stock or previous and previous.paint then
+                        PaintCheckmark(texture, getter, mark)
+                    end
+                end)
+            end
             local lines = {}
             for _, edge in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
                 local line = button:CreateTexture(nil, "BORDER", nil, 2)
@@ -1618,11 +1664,11 @@ end, function(S, module)
         end)
     end
     for _, name in ipairs({"CreateActiveItemFrame", "UpdateItemFrame"}) do H.Hook(addon, name, QueueItems) end
-    local arrowTextureSeen, arrowWidth, arrowHeight, originalArrow, restoringArrow, arrowWaiting
+    local arrowTextureSeen, arrowWidth, arrowHeight, arrowForever, originalArrow, restoringArrow, arrowWaiting
     local function RestoreArrow()
         local saved = originalArrow
         if not saved then return end
-        originalArrow, arrowTextureSeen, arrowWidth, arrowHeight = nil, nil, nil, nil
+        originalArrow, arrowTextureSeen, arrowWidth, arrowHeight, arrowForever = nil, nil, nil, nil, nil
         local texture, frame = saved.texture, saved.frame
         texture:ClearAllPoints()
         texture:SetSize(saved.width, saved.height)
@@ -1670,16 +1716,18 @@ end, function(S, module)
                     originalArrow.font, originalArrow.color = {frame.text:GetFont()}, {frame.text:GetTextColor()}
                 end
             end
-            local path = "Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationChevronSmooth.tga"
             local forever = ForeverLook()
+            local path = "Interface\\AddOns\\EUIAddonSkins\\Media\\"
+                .. (forever and "NavigationChevronBronze.tga" or "NavigationChevronSmooth.tga")
             if texture:GetTexture() ~= path or arrowTextureSeen ~= texture then
                 texture:SetTexture(path)
                 -- High-resolution shallow chevron; preserve the initial proportions.
                 texture:SetTexCoord(0.1, 0.9, 0.1, 0.9)
-                if forever and texture.SetRotation and frame.orientation and frame.orientation ~= 0 then
+                if (forever or arrowForever) and texture.SetRotation and frame.orientation and frame.orientation ~= 0 then
                     texture:SetRotation(frame.wrongContinent and 0 or frame.orientation)
                 end
                 arrowTextureSeen = texture
+                arrowForever = forever
                 arrowWidth, arrowHeight = nil, nil
             end
             local width, height = frame:GetWidth(), frame:GetHeight()
@@ -1691,7 +1739,7 @@ end, function(S, module)
                 arrowWidth, arrowHeight = width, height
             end
             local r, g, b = S.GetAccentColor()
-            if forever then r, g, b = copperR, copperG, copperB end
+            if forever then r, g, b = 1, 1, 1 end
             local cr, cg, cb, ca = texture:GetVertexColor()
             if cr ~= r or cg ~= g or cb ~= b or ca ~= 1 then texture:SetVertexColor(r, g, b, 1) end
         end

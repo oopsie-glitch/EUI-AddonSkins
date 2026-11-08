@@ -374,15 +374,18 @@ assert(arrow:UpdateVisuals()=='visual-native' and arrow.texture.path==arrowPath,
 local priorEUI=EllesmereUI
 EllesmereUI={IS_FOREVER=true}
 EUIAddonSkinsDB.restedXP={style='forever'}
+local bronzeArrowPath='Interface\\AddOns\\EUIAddonSkins\\Media\\NavigationChevronBronze.tga'
 local beforeRotation=rotations
-assert(arrow:UpdateVisuals()=='visual-native' and arrow.texture.path==arrowPath and rotations==beforeRotation+1)
-assert(arrow.texture.color[1]==.91 and arrow.texture.color[2]==.71 and arrow.texture.color[3]==.43)
+assert(arrow:UpdateVisuals()=='visual-native' and arrow.texture.path==bronzeArrowPath and rotations==beforeRotation+1)
+assert(arrow.texture.color[1]==1 and arrow.texture.color[2]==1 and arrow.texture.color[3]==1)
 assert(arrow.texture.rotation==arrow.orientation and arrow.text.text=='Step 3\n(32yd)' and arrow.distance==32)
+assert(math.abs(arrow.texture.width-35.2)<.00001 and arrow.texture.crop[1]==.1)
 local beforeTexture=textureWrites
 assert(arrow.hooks.OnUpdate(arrow)=='direction-native' and textureWrites==beforeTexture)
-assert(arrow.texture.color[1]==.91 and arrow.texture.rotation==.5 and arrow.text.text=='Step 3\n(32yd)')
+assert(arrow.texture.path==bronzeArrowPath and arrow.texture.rotation==.5 and arrow.text.text=='Step 3\n(32yd)')
 EUIAddonSkinsDB.restedXP.style='standard'
-assert(arrow:UpdateVisuals()=='visual-native' and arrow.texture.color[1]==accent)
+ns.RXPSettingsChanged()
+assert(arrow.texture.path==arrowPath and arrow.texture.color[1]==accent and arrow.texture.rotation==arrow.orientation)
 EUIAddonSkinsDB.restedXP=nil
 EllesmereUI=priorEUI
 arrow.text:SetFont('eui',17)

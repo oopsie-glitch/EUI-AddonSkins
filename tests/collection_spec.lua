@@ -239,13 +239,22 @@ scrollButton.click = scrollAction
 window.guideSteps.scroll = {scrollbar = {ScrollUpButton = scrollButton}}
 local checkbox = frame("CheckButton")
 local checked, disabledChecked = checkbox:CreateTexture(), checkbox:CreateTexture()
-checked:SetTexture("Interface\\AddOns\\RXPGuides\\Textures\\DarkMode\\rxp-checked-32.blp")
+checked:SetTexture(4321)
+function checked:GetTextureFilePath()
+    if self.path == 4321 then return "Interface\\AddOns\\RXPGuides\\Textures\\DarkMode\\rxp-checked-32.blp" end
+end
 disabledChecked:SetTexture("Interface/AddOns/RXPGuides/Textures/rxp-checked-32")
 checkbox.theme = {}
 checked.GetObjectType = function() return "Texture" end
 disabledChecked.GetObjectType = checked.GetObjectType
 checkbox.GetCheckedTexture = function() return checked end
 checkbox.GetDisabledCheckedTexture = function() return disabledChecked end
+local stockPath = "Interface/AddOns/RXPGuides/Textures/GoldAssistant/rxp-checked-32"
+function checkbox:SetCheckedTexture(path)
+    checked:SetTexture(path == stockPath and 12345 or path) -- client-resolved file ID
+    return "native setter"
+end
+function checkbox:SetDisabledCheckedTexture(path) disabledChecked:SetTexture(path) end
 local element = {button = checkbox}
 function checkbox:GetParent() return element end
 function element:GetLeft() return 100 end
@@ -337,6 +346,37 @@ checkbox:click(); assert(element.skip == false and checkbox.mouseEnabled)
 assert(checked.path:find("UI-CheckBox-Check", 1, true) and checked.width == 8 and checkbox.created[3].shown)
 assert(checked.tint[1] == 0.91 and checked.tint[2] == 0.71 and disabledChecked.tint[1] == 0.53)
 assert(statusCheck.path:find("rxp-checked-32", 1, true) and statusCheck.tint[2] == 0.17)
+local checkPath = checked.path
+guide.protected = true -- the explicit V1 path still owns objective rows
+local beforeNativeWrite = #timers
+for _ = 1, 3 do
+    assert(checkbox:SetCheckedTexture(stockPath) == "native setter")
+    checkbox:SetDisabledCheckedTexture(stockPath)
+    assert(checked.path == checkPath and checked.tint[1] == 0.91 and checked.tint[2] == 0.71)
+    assert(disabledChecked.path == checkPath and disabledChecked.tint[1] == 0.53)
+end
+assert(#timers == beforeNativeWrite and #checkbox.created == 7)
+local customCheck = "Interface/AddOns/Example/Textures/quest-status"
+checkbox:SetCheckedTexture(customCheck)
+assert(checked.path == customCheck and checked.tint[1] == 1 and checked.tint[2] == 1)
+checked:SetVertexColor(0.85, 0.17, 0.15, 1)
+checkbox:SetCheckedTexture(stockPath)
+assert(checked.path == 12345 and checked.tint[2] == 0.17, "explicit quest status tint overwritten")
+checked:SetVertexColor(1, 1, 1, 1)
+checkbox:SetCheckedTexture(stockPath)
+assert(checked.path == checkPath and checked.tint[1] == 0.91)
+combat = true
+checkbox:SetCheckedTexture(stockPath)
+flush()
+assert(checked.path == 12345, "skin repainted a native setter during combat")
+combat = false
+combatEvents.hooks.OnEvent(); flush()
+assert(checked.path == checkPath, "protected guide lost the combat-deferred mark repair")
+activeLook = "eui"; modules.RXPGuides.refresh(); flush()
+assert(checked.color[1] == 0.1 and checked.tint[1] == 1, "protected guide failed to restore Standard")
+activeLook = "forever"; modules.RXPGuides.refresh(); flush()
+assert(checked.path == checkPath and checked.tint[1] == 0.91, "protected guide lost its mark on theme switch")
+guide.protected = false
 local skipBorder = checkbox.created[4]
 assert(#checkbox.created == 7 and skipBorder.shown and skipBorder.height == 1 and skipBorder.points[1][2] == checkbox)
 local oldTooltip, oldUIParent = GameTooltip, UIParent
@@ -697,6 +737,8 @@ assert(choices[2].checked())
 choices[3].func(); flush()
 assert(EUIAddonSkinsDB.restedXP.style == "standard" and not legacyArt:IsShown())
 assert(not resizeArt.shown and resizePlus:IsShown() and checked.color[1] == 0.1 and checked.color[2] == 0.8)
+checkbox:SetCheckedTexture(stockPath)
+assert(checked.path == 12345 and checked.tint[1] == 1, "native setter intercepted in Standard")
 assert(row.text:GetText() == originalMarkers and activeIcon:GetText() == nativeAccept)
 assert(v2ListText:GetText() == nativeTurnin and v2Icon:GetText() == nativeTalk and v2Text:GetText() == nativeFlag)
 assert(guide.GuideName.text:GetAlpha() == 1 and guide.GuideName.text.justify == "CENTER" and not labels[1]:IsShown())
@@ -706,6 +748,7 @@ activeLook = "eui"
 choices[4].func(); flush()
 assert(EUIAddonSkinsDB.restedXP.style == "forever" and legacyArt:IsShown())
 assert(resizeArt.shown and not resizePlus:IsShown() and checked.tint[1] == 0.91)
+assert(checked.path == checkPath and #checkbox.created == 7)
 assert(statusCheck.path:find("rxp-checked-32", 1, true) and statusCheck.tint[2] == 0.17)
 CheckBronzeMarkers()
 choices[5].func()

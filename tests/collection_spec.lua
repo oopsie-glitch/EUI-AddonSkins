@@ -139,7 +139,7 @@ end
 RXP = nil; ForeverDungeonJournal_NS = nil
 assert(not modules.RXPGuides.available() and not modules.ForeverDungeonJournal.available(), 'targets must be optional')
 local source = {font = 'original-font', background = {1, 1, 1, 1}, textColor = {1, 0, 0}, mapPins = {1, 0, 0}, tooltip = {1, 1, 0}}
-local source2 = {font = 'original-v2', backgroundColors = {common = {1, 1, 1}}, borderColors = {common = {1, 1, 1}}, textColor = {title = {1, 1, 0}}, edge = {}, mapPins = {0, 1, 1}, navigationArrow = 'arrow'}
+local source2 = {guideWindow = {settingsIcon = "native-settings", guideSelectIcon = "native-guide"}, font = 'original-v2', backgroundColors = {common = {1, 1, 1}}, borderColors = {common = {1, 1, 1}}, textColor = {title = {1, 1, 0}}, edge = {}, mapPins = {0, 1, 1}, navigationArrow = 'arrow'}
 local guide = frame()
 guide.backdrop = {
     edge = {edgeSize = 8, insets = {left = 4, right = 2, top = 2, bottom = 4}},
@@ -211,6 +211,9 @@ function RXP.ui.v2:ApplyFrameBackdrop(owner, _, background, border)
     end
     owner.rxpBackground.textures[1]:SetVertexColor(table.unpack(background))
     for _, edge in ipairs(owner.rxpBorder.textures) do edge:SetVertexColor(table.unpack(border)) end
+end
+function RXP.ui.v2:SetFrameBackdropShown(owner, shown)
+    for _, art in pairs({owner.rxpBackground, owner.rxpBorder, owner.rxpShadow}) do art:SetShown(shown) end
 end
 if benchmark == "rxp-benchmark" then
     return {addon = RXP, module = modules.RXPGuides, api = S, frame = frame, flush = flush,
@@ -725,8 +728,21 @@ for _, f in ipairs({auxTarget, auxItem}) do
     f:SetBackdrop({edgeFile = 'old', bgFile = 'fill'})
     f.title:SetBackdrop({edgeFile = 'old', bgFile = 'fill'})
 end
+-- Model the V2 shadow created outside the frame after the native backdrop.
+auxTarget.v2 = true
+auxTarget.rxpShadow = frame()
+auxTarget.rxpShadow:SetAlpha(0.5)
+auxItem.rxpShadow = frame() -- a V1 auxiliary frame is outside the fix
+auxItem.rxpShadow:SetAlpha(0.5)
 RXP.targeting.activeTargetFrame, RXP.activeItemFrame = auxTarget, auxItem
 modules.RXPGuides.refresh(); flush()
+assert(auxTarget.rxpShadow:GetAlpha() == 0 and auxItem.rxpShadow:GetAlpha() == 0.5)
+auxItem.v2 = true
+modules.RXPGuides.refresh(); flush()
+auxItem.rxpShadow = frame()
+auxItem.rxpShadow:SetAlpha(0.5)
+RXP.ui.v2:SetFrameBackdropShown(auxItem, true)
+assert(auxItem.rxpShadow:GetAlpha() == 0)
 local titleArt = {}
 for host, parent in pairs(parents) do
     if (parent == auxTarget.title or parent == auxItem.title) and host.created then
@@ -849,6 +865,7 @@ assert(row.text:GetText() == originalMarkers and activeIcon:GetText() == nativeA
 assert(v2ListText:GetText() == nativeTurnin and v2Icon:GetText() == nativeTalk and v2Text:GetText() == nativeFlag)
 assert(guide.GuideName.text:GetAlpha() == 1 and guide.GuideName.text.justify == "CENTER" and not labels[1]:IsShown())
 assert(select(5, auxTarget.title:GetPoint()) == 8 and auxTarget.title:GetHeight() == 19)
+assert(auxTarget.rxpShadow:GetAlpha() == 0.5 and auxItem.rxpShadow:GetAlpha() == 0.5)
 assert(select(2, auxTarget.title.text:GetFont()) == 12)
 activeLook = "eui"
 choices[4].func(); flush()
@@ -1101,7 +1118,7 @@ assert(Visible(legacyArt) and rings[cog].on and not rings[replacement.frame].hos
 RXP.v2.state.guideWindow = window
 -- RestedXP v4.11.34 measures on SetRows, after SetRow applies native
 -- backdrops. The two FontString height APIs deliberately differ here.
-do
+local function VerifyV2Guide()
     local viewport = frame("ScrollFrame")
     viewport.width = 190
     function viewport:GetWidth() return self.width end
@@ -1142,27 +1159,63 @@ do
         item:UpdateHeight()
         self.rowsHeight = poolRow:GetHeight() + 8
     end
-    local bar = {ScrollUpButton = frame("Button"), ThumbTexture = region("knob", "ARTWORK")}
+    local bar = frame("Slider")
+    parents[bar] = window.frame
+    bar.ScrollUpButton, bar.ScrollDownButton = frame("Button"), frame("Button")
+    bar.ThumbTexture = region("knob", "ARTWORK")
     steps.scroll.scrollbar, steps.scroll.scrollbg = bar, region("track", "BACKGROUND")
-    local arrow = bar.ScrollUpButton
-    parents[arrow] = window.frame
+    local arrow, down = bar.ScrollUpButton, bar.ScrollDownButton
+    arrow:SetSize(16, 16)
+    down:SetSize(16, 16)
+    parents[arrow], parents[down] = bar, bar
     arrow.Normal, arrow.Highlight = region("up", "ARTWORK"), region("up-hover", "HIGHLIGHT")
     function arrow:IsEnabled() return not self.disabled end
     arrow.click = scrollAction
     bar.ThumbTexture.GetVertexColor = function(self) return table.unpack(self.tint or {1, 1, 1, 1}) end
     bar.ThumbTexture.SetVertexColor = function(self, ...) self.tint = {...} end
     function steps.scroll:RefreshVisuals() bar.ThumbTexture:SetVertexColor(1, 1, 1, 1) end
+    local settings = window.settingsButton
+    local states = {}
+    for _, getter in ipairs({"GetNormalTexture", "GetPushedTexture", "GetHighlightTexture"}) do
+        local texture = settings:CreateTexture()
+        texture.GetObjectType = checked.GetObjectType
+        settings[getter] = function() return texture end
+        states[#states + 1] = texture
+    end
+    settings.click = function() return "native settings" end
+    function window:UpdateFrameLayout() end
+    function window:UpdateTheme()
+        for _, texture in ipairs(states) do texture:SetTexture(RXP.v2:GetTheme().guideWindow.settingsIcon) end
+        self:UpdateFrameLayout()
+    end
     window.guideSteps = steps
     v2Mode = true
     RXP.v2:DisableLegacyGuideWindow(); flush()
     window.frame:SetShown(true)
+    window:UpdateTheme(); flush()
     steps:SetRows(steps.rows)
     assert(text.width == 156 and poolRow:GetHeight() == 51 and steps.rowsHeight == 59)
     assert(text.nonSpaceWrap and text:GetText():find("RestedXPQuestTurnIn", 1, true))
     assert(poolRow.rxpBorder:GetAlpha() == 0 and badge.rxpBorder:GetAlpha() == 0 and poolRow.rxpBackground:GetAlpha() == 0)
     assert(poolRow.rxpShadow:GetAlpha() == 0, "shadow allocated between native row and badge escaped styling")
     assert(Visible(rings[arrow].host) and not rings[arrow].host.mouseEnabled and arrow.click == scrollAction)
-    assert(bar.ThumbTexture.tint[1] == 0.68 and steps.scroll.scrollbg:GetAlpha() == 0)
+    local scrollbarArt
+    for host, parent in pairs(parents) do
+        if parent == bar and host.created and #host.created == 4 then scrollbarArt = host end
+    end
+    assert(scrollbarArt and not scrollbarArt.mouseEnabled and not registeredPanels[scrollbarArt])
+    local edge, rail, grip, face = table.unpack(scrollbarArt.created)
+    assert(edge.width == 5 and rail.width == 3 and grip.points[1][2] == bar.ThumbTexture)
+    assert(face.width == 10 and face.color[1] == 0.91)
+    assert(bar.ThumbTexture:GetAlpha() == 0 and steps.scroll.scrollbg:GetAlpha() == 0)
+    assert(rings[arrow].host.created[1].width == 16 and rings[down].host.created[1].width == 16)
+    assert(arrow.width == 16 and down.width == 16 and rings[arrow].insets[1] == 1)
+    assert(source2.guideWindow.settingsIcon == "native-settings")
+    assert(RXP.v2:GetTheme().guideWindow.guideSelectIcon == "native-guide")
+    for _, texture in ipairs(states) do
+        assert(texture.path:find("cogs-3.png", 1, true) and texture.tint[1] == 0.79)
+    end
+    assert(settings.click() == "native settings")
     arrow.disabled = true; arrow.hooks.OnDisable()
     assert(rings[arrow].host:GetAlpha() == 0.65 and arrow.click == scrollAction)
     assert(not Visible(legacyArt) and Visible(guideArt))
@@ -1199,10 +1252,15 @@ do
     assert(not text.nonSpaceWrap and text.width == 212 and poolRow:GetHeight() == 30)
     assert(action.rxpCheckShort.tint[1] == 1 and action.rxpBackground.textures[1].tint[1] == 1)
     assert(not rings[arrow].host:IsShown() and steps.scroll.scrollbg:GetAlpha() == 0.8)
+    assert(not scrollbarArt:IsShown() and bar.ThumbTexture:GetAlpha() == 0.8)
+    for _, texture in ipairs(states) do assert(texture.path == "native-settings" and texture.tint[1] == 1) end
     activeLook = "forever"
     modules.RXPGuides.refresh(); flush()
     steps:SetRows(steps.rows)
     assert(poolRow.rxpBorder:GetAlpha() == 0 and text.width == 288)
+    assert(RXP:LoadGuide("polish-guide") == "polish-guide"); flush()
+    steps.scroll:RefreshVisuals()
+    assert(scrollbarArt:IsShown() and bar.ThumbTexture:GetAlpha() == 0 and #scrollbarArt.created == 4)
     EUIAddonSkinsDB = {restedXP = {opacity = 0}}
     modules.RXPGuides.refresh(); flush()
     assert(poolRow.rxpBackground:GetAlpha() == 0 and guideArt.plate:GetAlpha() == 0 and poolRow:GetAlpha() == 1)
@@ -1210,10 +1268,13 @@ do
     modules.RXPGuides.refresh(); flush()
     assert(poolRow.rxpBackground:GetAlpha() == 0 and guideArt.plate:GetAlpha() > 0)
     window.frame:SetShown(false)
-    assert(not Visible(guideArt) and not Visible(rings[arrow].host))
+    assert(not Visible(guideArt) and not Visible(rings[arrow].host) and not Visible(scrollbarArt))
     window.frame:SetShown(true)
+    assert(Visible(scrollbarArt) and Visible(rings[arrow].host))
+    window.UpdateTheme = nil
     v2Mode = false
 end
+VerifyV2Guide()
 -- Current Step cards use the actual AceGUI height hand-off: SetHeight
 -- records the outer height, and OnHeightSet receives that same outer height.
 do

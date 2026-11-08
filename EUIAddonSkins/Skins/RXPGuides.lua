@@ -858,6 +858,8 @@ end, function(S, module)
         if ForeverLook() then return 0.86, 0.73, 0.51 end
         return S.GetAccentColor()
     end
+    local settingsCog = "Interface\\AddOns\\EllesmereUI\\media\\icons\\cogs-3.png"
+    local v2GuideWindowThemes = setmetatable({}, {__mode = "k"})
     local function Theme(source)
         if type(source) ~= "table" then return source end
         local out = copies[source]
@@ -869,6 +871,17 @@ end, function(S, module)
         out.font = S.GetFont()
         -- Session copies leave registered themes, saved choices and semantic colors intact.
         if source.backgroundColors then
+            local guideWindow = source.guideWindow
+            out.guideWindow = guideWindow
+            if forever and guideWindow then
+                local themedWindow = v2GuideWindowThemes[guideWindow]
+                if not themedWindow then
+                    themedWindow = Copy(guideWindow)
+                    themedWindow.settingsIcon = settingsCog
+                    v2GuideWindowThemes[guideWindow] = themedWindow
+                end
+                out.guideWindow = themedWindow
+            end
             out.backgroundColors = Copy(source.backgroundColors)
             for _, key in ipairs({"common", "guideName", "guideWindow", "scrollbar", "inactivePartyTab", "activeStepCheckbox"}) do
                 out.backgroundColors[key] = {pr, pg, pb, pa}
@@ -1233,16 +1246,18 @@ end, function(S, module)
             local arrow = (host or button):CreateTexture(nil, "OVERLAY")
             arrow:SetTexture(up and "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-up3.png"
                 or "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-down3.png")
-            arrow:SetSize(12, 12)
+            local size = framed and 16 or 12
+            arrow:SetSize(size, size)
             arrow:SetPoint("CENTER", button, "CENTER")
             arrow:SetVertexColor(0.88, 0.66, 0.39, 1)
             state = {arrow = arrow, alpha = {}, host = host}
             scrollArrows[button] = state
             local fill
             if host then
-                ForeverRim(host, nil, 3)
+                ForeverRim(host, nil, framed and 1 or 3)
                 fill = host:CreateTexture(nil, "BACKGROUND")
-                SeatFill(fill, host, 5, 5, 5)
+                local inset = framed and 3 or 5
+                SeatFill(fill, host, inset, inset, inset)
             end
             local function Reflect()
                 local enabled = not button.IsEnabled or button:IsEnabled()
@@ -1415,15 +1430,27 @@ end, function(S, module)
             if H.Allowed(cog) and cog.GetNormalTexture then
                 local icon = H.Texture(cog:GetNormalTexture())
                 if icon then
-                    icon:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\cogs-3.png")
+                    icon:SetTexture(settingsCog)
                     if forever then icon:SetVertexColor(0.79, 0.63, 0.42, 1)
                     else icon:SetVertexColor(0.8, 0.8, 0.8, 1) end
                 end
             end
         end
     end
+    local nativeFillAlpha = setmetatable({}, {__mode = "k"})
+    local function NativeFillAlpha(fill, alpha)
+        if not H.Allowed(fill) or not fill.GetAlpha or not fill.SetAlpha then return end
+        if alpha then
+            if nativeFillAlpha[fill] == nil then nativeFillAlpha[fill] = fill:GetAlpha() end
+            TextureAlpha(fill, nativeFillAlpha[fill] * alpha)
+        elseif nativeFillAlpha[fill] ~= nil then
+            TextureAlpha(fill, nativeFillAlpha[fill])
+            nativeFillAlpha[fill] = nil
+        end
+    end
     SyncShell = function(f, entry)
         if entry.suspended or CombatLocked() then return end
+        if entry.v2Auxiliary then NativeFillAlpha(f.rxpShadow, entry.forever and 0 or nil) end
         local shown = true
         local border = f.rxpBorder
         if (entry.rim or entry.secondary or entry.joinedBody or entry.borderAlpha ~= nil) and border and border.GetAlpha and border.SetAlpha then
@@ -1590,6 +1617,7 @@ end, function(S, module)
             entry.composition = composition
             entry.underlay = underlay
             entry.badge = chrome == "badge"
+            entry.v2Auxiliary = chrome == "auxBody" and f.v2
             if entry.badge then entry.secondary = true end
             if forever and not entry.art and not joinedBody and not entry.badge then
                 local legacyHeader = chrome == "legacyHeader"
@@ -1804,14 +1832,35 @@ end, function(S, module)
     ns.RXPSettingsChanged = ApplyArrow
     H.Hook(addon, "SetupArrow", ApplyArrow)
     local guideWindowSeen, guideStepsSeen
+    local v2Marks = setmetatable({}, {__mode = "k"})
+    local function TintV2Texture(texture, tint)
+        if not H.Texture(texture) or not texture.GetVertexColor then return end
+        local native = v2Marks[texture]
+        if tint then
+            local r, g, b, a = texture:GetVertexColor()
+            if not native then v2Marks[texture] = {r, g, b, a} end
+            if not CheckTintMatches(tint, r, g, b, a) then texture:SetVertexColor(unpack(tint)) end
+        elseif native then
+            texture:SetVertexColor(unpack(native))
+            v2Marks[texture] = nil
+        end
+    end
+    local settingsCogTint = {0.79, 0.63, 0.42, 1}
     local function V2Chrome(window)
         if not window then return end
         if CombatLocked() then applyWaiting = true; return end
         H.Fade(window.iconLogo); H.Fade(window.classIcon)
+        local forever = ForeverLook()
+        local settings = window.settingsButton
+        if H.Allowed(settings) then
+            local tint = forever and settingsCogTint
+            if settings.GetNormalTexture then TintV2Texture(settings:GetNormalTexture(), tint) end
+            if settings.GetPushedTexture then TintV2Texture(settings:GetPushedTexture(), tint) end
+            if settings.GetHighlightTexture then TintV2Texture(settings:GetHighlightTexture(), tint) end
+        end
         local title, header = window.title, window.guideNameFrame
         if title and title.ClearAllPoints and H.Allowed(header) then
             local right = 6
-            local forever = ForeverLook()
             if forever and H.Allowed(window.settingsButton) then right = 16 end
             for _, button in pairs({window.settingsButton, window.guideSelectButton}) do
                 if H.Allowed(button) then right = right + button:GetWidth() + 7 end
@@ -1847,17 +1896,6 @@ end, function(S, module)
             rowDividers[row] = divider
         end
         if divider then divider:SetShown(forever) end
-    end
-    local nativeFillAlpha = setmetatable({}, {__mode = "k"})
-    local function NativeFillAlpha(fill, alpha)
-        if not H.Allowed(fill) or not fill.GetAlpha or not fill.SetAlpha then return end
-        if alpha then
-            if nativeFillAlpha[fill] == nil then nativeFillAlpha[fill] = fill:GetAlpha() end
-            TextureAlpha(fill, nativeFillAlpha[fill] * alpha)
-        elseif nativeFillAlpha[fill] ~= nil then
-            TextureAlpha(fill, nativeFillAlpha[fill])
-            nativeFillAlpha[fill] = nil
-        end
     end
     -- Change only the display labels. RXP's shared icon table also feeds
     -- tooltips, map markers and exported step data.
@@ -2033,9 +2071,8 @@ end, function(S, module)
         return steps and steps.type == "RXPV2GuideSteps" and addon.ui and addon.ui.v2
             and type(addon.ui.v2.ApplyFrameBackdrop) == "function"
     end
-    local v2ThumbTint = {0.68, 0.50, 0.32, 1}
-    local v2ThumbColors = setmetatable({}, {__mode = "k"})
     local v2ScrollbarOwners = setmetatable({}, {__mode = "k"})
+    local v2ScrollArt = setmetatable({}, {__mode = "k"})
     local function V2Scrollbar(window, forever)
         local scroll = window.guideSteps and window.guideSteps.scroll
         local bar = scroll and scroll.scrollbar
@@ -2043,19 +2080,42 @@ end, function(S, module)
         local framed = NativeV2List(window)
         ScrollArrow(bar.ScrollUpButton, true, forever, false, framed)
         ScrollArrow(bar.ScrollDownButton, false, forever, false, framed)
-        if not framed then return end
-        NativeFillAlpha(scroll.scrollbg, forever and 0 or nil)
+        if not framed or not H.Allowed(bar) then return end
         local thumb = H.Texture(bar.ThumbTexture)
-        if not thumb or not thumb.GetVertexColor then return end
-        local r, g, b, a = thumb:GetVertexColor()
-        local tinted = CheckTintMatches(v2ThumbTint, r, g, b, a)
-        if forever and not tinted then
-            v2ThumbColors[thumb] = {r, g, b, a}
-            thumb:SetVertexColor(unpack(v2ThumbTint))
-        elseif not forever and v2ThumbColors[thumb] then
-            if tinted then thumb:SetVertexColor(unpack(v2ThumbColors[thumb])) end
-            v2ThumbColors[thumb] = nil
+        local art = v2ScrollArt[bar]
+        if not art and forever and thumb then
+            local host = ForeverArtHost(bar)
+            local edge = host:CreateTexture(nil, "BACKGROUND")
+            edge:SetPoint("TOP", host, "TOP")
+            edge:SetPoint("BOTTOM", host, "BOTTOM")
+            edge:SetWidth(5)
+            edge:SetColorTexture(0.075, 0.046, 0.025, 0.95)
+            local rail = host:CreateTexture(nil, "ARTWORK")
+            rail:SetPoint("TOP", edge, "TOP", 0, -1)
+            rail:SetPoint("BOTTOM", edge, "BOTTOM", 0, 1)
+            rail:SetWidth(3)
+            rail:SetColorTexture(0.56, 0.41, 0.27, 0.92)
+            local grip = host:CreateTexture(nil, "OVERLAY", nil, 1)
+            grip:SetSize(12, 10)
+            grip:SetColorTexture(0.092, 0.054, 0.028, 1)
+            local face = host:CreateTexture(nil, "OVERLAY", nil, 2)
+            face:SetPoint("CENTER", grip, "CENTER")
+            face:SetSize(10, 8)
+            face:SetColorTexture(copperR, copperG, copperB, 1)
+            art = {host = host, grip = grip}
+            v2ScrollArt[bar] = art
         end
+        if not art then return end
+        if art.thumb ~= thumb then
+            NativeFillAlpha(art.thumb, nil)
+            art.thumb = thumb
+            art.grip:ClearAllPoints()
+            if thumb then art.grip:SetPoint("CENTER", thumb, "CENTER") end
+        end
+        local shown = forever and thumb ~= nil
+        if art.host:IsShown() ~= shown then art.host:SetShown(shown) end
+        NativeFillAlpha(scroll.scrollbg, shown and 0 or nil)
+        NativeFillAlpha(thumb, shown and 0 or nil)
     end
     local function RefreshV2Scrollbar(scroll)
         local window = v2ScrollbarOwners[scroll]
@@ -2064,20 +2124,7 @@ end, function(S, module)
             V2Scrollbar(window, shell and shell:IsShown() and ForeverLook() or false)
         end
     end
-    local v2Marks = setmetatable({}, {__mode = "k"})
     local v2FooterColors = setmetatable({}, {__mode = "k"})
-    local function TintV2Texture(texture, tint)
-        if not H.Texture(texture) or not texture.GetVertexColor then return end
-        local native = v2Marks[texture]
-        if tint then
-            local r, g, b, a = texture:GetVertexColor()
-            if not native then v2Marks[texture] = {r, g, b, a} end
-            if not CheckTintMatches(tint, r, g, b, a) then texture:SetVertexColor(unpack(tint)) end
-        elseif native then
-            texture:SetVertexColor(unpack(native))
-            v2Marks[texture] = nil
-        end
-    end
     local v2CheckFill = {0.115, 0.082, 0.052, 0.92}
     local v2CheckBorder = {bronzeR, bronzeG, bronzeB, 1}
     local function V2Checkbox(button, forever)

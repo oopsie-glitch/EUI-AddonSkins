@@ -936,36 +936,72 @@ end, function(S, module)
     local guideChecks = setmetatable({}, {__mode = "k"})
     local stockCheckFolders = {[""] = true, ["darkmode/"] = true, ["goldassistant/"] = true,
         ["green/"] = true, ["hardcore/"] = true}
+    local stockCheckIDs
+    local function StockCheck(path)
+        if type(path) == "string" then
+            local folder = path:lower():gsub("\\", "/"):gsub("%.blp$", "")
+                :match("^interface/addons/rxpguides/textures/(.-)rxp%-checked%-32$")
+            return stockCheckFolders[folder]
+        end
+        if type(path) ~= "number" or type(GetFileIDFromPath) ~= "function" then return end
+        if not stockCheckIDs then
+            stockCheckIDs = {}
+            for _, folder in ipairs({"", "DarkMode/", "GoldAssistant/", "Green/", "Hardcore/"}) do
+                local stock = "Interface/AddOns/RXPGuides/Textures/" .. folder .. "rxp-checked-32"
+                for _, suffix in ipairs({".blp", ""}) do
+                    local id = GetFileIDFromPath(stock .. suffix)
+                    -- Loose addon textures can have negative session-local IDs.
+                    if id and id ~= 0 then stockCheckIDs[id] = true end
+                end
+            end
+        end
+        return stockCheckIDs[path]
+    end
     local checkArt = "Interface\\Buttons\\UI-CheckBox-Check"
     local copperCheck = {copperR, copperG, copperB, 1}
     local disabledCheck = {0.53, 0.48, 0.40, 1}
     local checkSetters = {GetCheckedTexture = "SetCheckedTexture", GetDisabledCheckedTexture = "SetDisabledCheckedTexture"}
+    local function CheckTintMatches(tint, r, g, b, a)
+        -- The client can round a written vertex colour on readback.
+        return math.abs(r - tint[1]) < 0.002 and math.abs(g - tint[2]) < 0.002
+            and math.abs(b - tint[3]) < 0.002 and math.abs(a - tint[4]) < 0.002
+    end
     local function ReadCheckmark(texture, path, previous)
-        if type(path) ~= "string" then
+        local file = texture:GetTexture()
+        local hasPath = type(path) == "string"
+        if not hasPath then
             path = texture.GetTextureFilePath and texture:GetTextureFilePath()
-            if not path or path == "" then path = texture:GetTexture() end
+            if not path or path == "" then path = file end
         end
         if not path or path == "" then return end
         local r, g, b, a = texture:GetVertexColor()
         local paint = previous and previous.texture == texture and previous.paint
-        if paint and r == paint[1] and g == paint[2] and b == paint[3] and a == paint[4] then
+        if paint and CheckTintMatches(paint, r, g, b, a) then
             r, g, b, a = unpack(previous.tint)
         end
-        local folder = type(path) == "string" and path:lower():gsub("\\", "/"):gsub("%.blp$", "")
-            :match("^interface/addons/rxpguides/textures/(.-)rxp%-checked%-32$")
-        return {path = path, tint = {r, g, b, a}, texture = texture,
-            stock = stockCheckFolders[folder] and r == 1 and g == 1 and b == 1}
+        return {path = path, file = file, tint = {r, g, b, a}, texture = texture,
+            stock = (StockCheck(path) or not hasPath and file ~= path and StockCheck(file))
+                and r == 1 and g == 1 and b == 1}
     end
     local function PaintCheckmark(texture, getter, mark)
         local tint = getter == "GetDisabledCheckedTexture" and disabledCheck or copperCheck
         local path = checkArt
+        local resolved
         if mark then
-            if mark.stock then mark.paint = tint
-            else path, tint = mark.path, mark.tint end
+            if mark.stock then
+                mark.paint = tint
+                resolved = mark.paintFile
+            else
+                path, tint, resolved = mark.path, mark.tint, mark.file
+            end
         end
-        if texture:GetTexture() ~= path then texture:SetTexture(path) end
+        local file = texture:GetTexture()
+        if file ~= path and (not resolved or file ~= resolved) then
+            texture:SetTexture(path)
+            if mark and mark.stock then mark.paintFile = texture:GetTexture() end
+        end
         local r, g, b, a = texture:GetVertexColor()
-        if r ~= tint[1] or g ~= tint[2] or b ~= tint[3] or a ~= tint[4] then
+        if not CheckTintMatches(tint, r, g, b, a) then
             texture:SetVertexColor(unpack(tint))
         end
     end
@@ -1012,6 +1048,7 @@ end, function(S, module)
                         if mark and mark.paint then
                             texture:SetVertexColor(unpack(mark.tint))
                             mark.paint = nil
+                            mark.paintFile = nil
                         end
                         texture:SetColorTexture(r, g, b, 1)
                     end
@@ -1086,6 +1123,10 @@ end, function(S, module)
                         return
                     end
                     if mark.stock or previous and previous.paint then
+                        -- RXP binds the normal bitmap just before the checked slot.
+                        if getter == "GetCheckedTexture" and mark.stock and self.GetNormalTexture then
+                            H.Fade(self:GetNormalTexture())
+                        end
                         PaintCheckmark(texture, getter, mark)
                     end
                 end)
@@ -1947,12 +1988,20 @@ end, function(S, module)
             if not step then break end
             local entry, badge = themed[step], themed[step.number]
             local joined = LegacyStepRole(step, legacy, shell) == "joined"
+            local shown = step:IsShown()
             -- Warm rows already have the synchronous SetBackdrop tint.
             -- First-use cards and pool role changes cannot wait for Apply.
-            if step:IsShown() and (not entry or not entry.forever or entry.joinedBody ~= joined
+            if shown and (not entry or not entry.forever or entry.joinedBody ~= joined
                 or step.number and (not badge or not badge.forever)) then
                 shell = ComposeGuide(legacy, legacy.GuideName, legacy.Footer, current, true)
                 LegacyStepShell(step, LegacyStepRole(step, legacy, shell))
+            end
+            if shown and step.elements then
+                for _, element in ipairs(step.elements) do
+                    local button = element.button
+                    local visual = guideChecks[button]
+                    if button and (not visual or not visual.skipBorder) then LegacySkipCheck(button, true) end
+                end
             end
         end
     end

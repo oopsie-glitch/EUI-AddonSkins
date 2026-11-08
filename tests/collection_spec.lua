@@ -159,7 +159,7 @@ RXP = {targeting = {CreateTargetFrame = function(self) self.activeTargetFrame = 
         if index then RXP.SetStep(index) end
         return key
     end,
-    SetStep = function(index)
+    SetStep = function(index, elements)
         guide.CurrentStepFrame:SetShown(true)
         local pool = guide.CurrentStepFrame.framePool
         local card = pool[index]
@@ -168,6 +168,7 @@ RXP = {targeting = {CreateTargetFrame = function(self) self.activeTargetFrame = 
             card.number = frame()
             pool[index] = card
         end
+        if elements then card.elements = elements end
         for _, panel in ipairs({card, card.number}) do
             if not panel.GetBackdropColor then
                 function panel:SetBackdropColor(...) self.fill = {...} end
@@ -261,11 +262,17 @@ scrollButton.click = scrollAction
 window.guideSteps.scroll = {scrollbar = {ScrollUpButton = scrollButton}}
 local checkbox = frame("CheckButton")
 local checked, disabledChecked = checkbox:CreateTexture(), checkbox:CreateTexture()
-checked:SetTexture(4321)
-function checked:GetTextureFilePath()
-    if self.path == 4321 then return "Interface\\AddOns\\RXPGuides\\Textures\\DarkMode\\rxp-checked-32.blp" end
+local oldFileID = GetFileIDFromPath
+local fileLookups = 0
+function GetFileIDFromPath(path)
+    fileLookups = fileLookups + 1
+    if path == "Interface/AddOns/RXPGuides/Textures/DarkMode/rxp-checked-32.blp" then return -4321 end
+    if path == "Interface/AddOns/RXPGuides/Textures/Hardcore/rxp-checked-32" then return 5321 end
+    return 0
 end
-disabledChecked:SetTexture("Interface/AddOns/RXPGuides/Textures/rxp-checked-32")
+checked:SetTexture(-4321)
+function checked:GetTextureFilePath() return self.path end -- current client returns the ID here too
+disabledChecked:SetTexture(5321)
 checkbox.theme = {}
 checked.GetObjectType = function() return "Texture" end
 disabledChecked.GetObjectType = checked.GetObjectType
@@ -365,18 +372,28 @@ modules.RXPGuides.refresh(); flush()
 assert(rimCalls == 5 and lastRim.on and parents[lastRim.host] == button)
 assert(checkbox.click == click and checkbox:click() == "native check" and element.skip)
 checkbox:click(); assert(element.skip == false and checkbox.mouseEnabled)
-assert(checked.path:find("UI-CheckBox-Check", 1, true) and checked.width == 8 and checkbox.created[3].shown)
+assert(checked.path == "Interface\\Buttons\\UI-CheckBox-Check"
+    and checked.width == 8 and checkbox.created[3].shown, "a stock file ID escaped the copper treatment")
 assert(checked.tint[1] == 0.91 and checked.tint[2] == 0.71 and disabledChecked.tint[1] == 0.53)
 assert(statusCheck.path:find("rxp-checked-32", 1, true) and statusCheck.tint[2] == 0.17)
+function checked:GetVertexColor()
+    local tint = self.tint or {1, 1, 1, 1}
+    local function Round(value) return math.floor(value * 255 + 0.5) / 255 end
+    return Round(tint[1]), Round(tint[2]), Round(tint[3]), Round(tint[4])
+end
 local checkPath = checked.path
 guide.protected = true -- the explicit V1 path still owns objective rows
 local beforeNativeWrite = #timers
+local resolvedStockFiles = fileLookups
+local nativeNormal = region("Interface/AddOns/RXPGuides/Textures/rxp-btn-blank-32", "ARTWORK")
+function checkbox:GetNormalTexture() return nativeNormal end
 for _ = 1, 3 do
     assert(checkbox:SetCheckedTexture(stockPath) == "native setter")
     checkbox:SetDisabledCheckedTexture(stockPath)
     assert(checked.path == checkPath and checked.tint[1] == 0.91 and checked.tint[2] == 0.71)
     assert(disabledChecked.path == checkPath and disabledChecked.tint[1] == 0.53)
 end
+assert(nativeNormal:GetAlpha() == 0 and fileLookups == resolvedStockFiles and resolvedStockFiles > 0)
 assert(#timers == beforeNativeWrite and #checkbox.created == 7)
 local customCheck = "Interface/AddOns/Example/Textures/quest-status"
 checkbox:SetCheckedTexture(customCheck)
@@ -384,6 +401,8 @@ assert(checked.path == customCheck and checked.tint[1] == 1 and checked.tint[2] 
 checked:SetVertexColor(0.85, 0.17, 0.15, 1)
 checkbox:SetCheckedTexture(stockPath)
 assert(checked.path == 12345 and checked.tint[2] == 0.17, "explicit quest status tint overwritten")
+checkbox:SetCheckedTexture(77777)
+assert(checked.path == 77777 and checked.tint[2] == 0.17, "unknown custom file ID was changed")
 checked:SetVertexColor(1, 1, 1, 1)
 checkbox:SetCheckedTexture(stockPath)
 assert(checked.path == checkPath and checked.tint[1] == 0.91)
@@ -448,16 +467,32 @@ assert(scrollIcon:GetAlpha() == 0.45)
 assert(guidePanel.rxpBorder:GetAlpha() == 0 and band.rxpBorder:GetAlpha() == 0)
 assert(guide.BottomFrame.borderColor[4] == 0 and step.borderColor[4] == 0)
 guide.protected = true
-local newStep, middle, nativeStep = RXP.SetStep(2)
+local coldButton = frame("CheckButton")
+local coldMark = coldButton:CreateTexture()
+coldMark.GetObjectType = checked.GetObjectType
+coldMark:SetTexture(-4321)
+local coldWrites, resolvedTick = 0, 90210
+function coldMark:SetTexture(path)
+    coldWrites = coldWrites + 1
+    self.path = path == checkPath and resolvedTick or path
+end
+coldButton.theme = {}
+function coldButton:GetCheckedTexture() return coldMark end
+local newStep, middle, nativeStep = RXP.SetStep(2, {{button = coldButton}})
 assert(middle == nil and nativeStep == "native step")
+assert(coldMark.path == resolvedTick and coldMark.tint[1] == 0.91, "new objective waited for queued styling")
 assert(newStep.borderColor[4] == 0 and newStep.number.borderColor[4] == 0,
     "cold V1 card or number badge showed its white backdrop before the queued refresh")
 assert(newStep.fill[4] == 0 and newStep.number.fill[4] == 0, "native fill covered the Forever surface")
 guide.CurrentStepFrame:SetShown(false)
 assert(RXP:LoadGuide("switch-and-reopen", 2) == "switch-and-reopen")
 assert(newStep.borderColor[4] == 0 and newStep.number.borderColor[4] == 0, "pooled step flashed on reopen")
+assert(coldMark.path == resolvedTick and #coldButton.created == 6, "reopen rebuilt objective artwork")
 guide.protected = false
+guide.children[#guide.children + 1] = coldButton
 flush()
+assert(coldWrites == 1, "a resolved copper tick was rewritten during the queued pass")
+GetFileIDFromPath = oldFileID
 combat = true
 local combatStep = RXP.SetStep(3)
 flush()

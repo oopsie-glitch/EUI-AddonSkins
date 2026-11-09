@@ -17,7 +17,6 @@ end, function(S, module)
     -- unregistered, mouse-inert hosts, never on secure targeting buttons.
     local APP = "EUIAddonSkinsSpy"
     local foreverWindows, rowArt, rowSlots, controlArt = {}, {}, {}, {}
-    local menuOwners = setmetatable({}, {__mode = "k"})
     local settingsRegistered
     local reasonDialogs = {}
     local unpack = unpack or table.unpack
@@ -91,6 +90,14 @@ end, function(S, module)
             mask:SetAllPoints(host); plate:AddMaskTexture(mask); grain:AddMaskTexture(mask)
         end
         return plate, grain
+    end
+    local function BackgroundOpacity()
+        local preferences = EUIAddonSkinsDB and EUIAddonSkinsDB.spy
+        local value = preferences and preferences.opacity
+        if type(value) == "number" and SafeValue(value) and value == value then
+            return math.max(0, math.min(1, value))
+        end
+        return 0.75
     end
     local function PanelAlpha()
         local _, _, _, alpha = S.GetPanelColor()
@@ -217,62 +224,136 @@ end, function(S, module)
         end
     end
     local controls = {"CloseButton", "LeftButton", "RightButton", "ClearButton", "StatsButton", "CountButton"}
-    local function SyncTitle(f, forever, capture)
-        if f ~= spy.MainWindow or not (f.Title and f.Title.GetLeft) then return end
+    local controlOrder = {"CloseButton", "RightButton", "LeftButton", "ClearButton", "StatsButton"}
+    local SyncHeader
+    local function SavePoints(region)
+        local points = {}
+        if region.GetNumPoints then
+            for i = 1, region:GetNumPoints() do points[i] = {region:GetPoint(i)} end
+        end
+        return points
+    end
+    local function RestorePoints(region, points)
+        region:ClearAllPoints()
+        for _, point in ipairs(points) do region:SetPoint(unpack(point)) end
+    end
+    local function Anchor(region, point, relative, relativePoint, x, y)
+        if region.GetNumPoints and region:GetNumPoints() == 1 then
+            local p, r, rp, px, py = region:GetPoint(1)
+            if p == point and r == relative and rp == relativePoint and px == x and py == y then return end
+        end
+        region:ClearAllPoints(); region:SetPoint(point, relative, relativePoint, x, y)
+    end
+    local function TrackHeaderRegion(f, layout, region)
+            if not region or layout.regions[region] then return end
+            layout.regions[region] = SavePoints(region)
+            if region == f.Title or region == (f.CountFrame and f.CountFrame.Text) then
+                H.Hook(region, "SetText", function()
+                    SyncHeader(f, ns.IsEnabled(module) and ForeverLook())
+                end)
+            end
+            if region == (f.CountFrame and f.CountFrame.Text) then
+                local function CounterChanged() SyncHeader(f, ns.IsEnabled(module) and ForeverLook()) end
+                H.Hook(region, "SetAlpha", CounterChanged)
+                H.Hook(region, "Show", CounterChanged)
+                H.Hook(region, "Hide", CounterChanged)
+            end
+            -- Only observe owned native anchors. Never touch row anchors or a
+            -- global frame/menu factory. Ignore the adapter's own writes.
+            H.Hook(region, "SetPoint", function()
+                if layout.writing then return end
+                layout.regions[region] = SavePoints(region)
+                SyncHeader(f, ns.IsEnabled(module) and ForeverLook())
+            end)
+    end
+    SyncHeader = function(f, forever, capture)
+        if f ~= spy.MainWindow or not f.Title then return end
+        if Locked() then waiting = true; return end
         local entry = foreverWindows[f]
         if not entry then return end
-        local text, current = f.Title, f.Title:GetWidth()
-        if not SafeValue(current) then return end
-        local layout = entry.titleLayout
+        local layout = entry.headerLayout
         if not layout then
             if not forever then return end
-            layout = {width = current, alpha = text:GetAlpha()}
-            entry.titleLayout = layout
+            layout = {regions = {}, titleWidth = f.Title:GetWidth(), titleHeight = f.Title:GetHeight(),
+                wordWrap = f.Title.GetWordWrap and f.Title:GetWordWrap()}
+            entry.headerLayout = layout
         end
-        if capture or current ~= layout.applied then layout.width = current end
-        local target, alpha = layout.width, layout.alpha
-        if forever then
-            local left = text:GetLeft()
-            if not SafeValue(left) or not left then return end
-            local limit
-            local function Bound(region)
-                if not (region and region.GetLeft and (not region.IsVisible or region:IsVisible())) then return end
-                local a = region.GetAlpha and region:GetAlpha() or 1
-                local x = region:GetLeft()
-                if SafeValue(a) and a > 0 and SafeValue(x) and x and (not limit or x < limit) then limit = x end
+        if layout.writing then return end
+        TrackHeaderRegion(f, layout, f.Title)
+        for _, key in ipairs(controls) do TrackHeaderRegion(f, layout, f[key]) end
+        local counter = f.CountFrame and f.CountFrame.Text
+        TrackHeaderRegion(f, layout, counter)
+        if capture then layout.titleWidth = f.Title:GetWidth() end
+        layout.writing = true
+        if not forever then
+            if layout.active then
+                for region, points in pairs(layout.regions) do RestorePoints(region, points) end
+                f.Title:SetWidth(layout.titleWidth); f.Title:SetHeight(layout.titleHeight)
+                if f.Title.SetWordWrap and layout.wordWrap ~= nil then f.Title:SetWordWrap(layout.wordWrap) end
+                entry.host:ClearAllPoints(); entry.host:SetAllPoints(f)
+                layout.active = false
             end
-            for _, key in ipairs(controls) do Bound(f[key]) end
-            Bound(f.CountFrame and f.CountFrame.Text)
-            if limit then
-                local space = limit - left - 2
-                target = math.max(1, math.min(target, space))
-                if space < 3 then alpha = 0 end
-            end
-            -- TitleClick normally follows the FontString. Pin its original
-            -- rectangle before clipping text, preserving the native drag hitbox.
-            local drag = f.TitleClick
-            if drag and drag.GetNumPoints and (target ~= layout.width or layout.pinned) then
-                if not layout.dragPoints then
-                    layout.dragPoints = {}
-                    for i = 1, drag:GetNumPoints() do layout.dragPoints[i] = {drag:GetPoint(i)} end
-                end
-                if not layout.pinned then
-                    drag:ClearAllPoints(); drag:SetPoint("TOPLEFT", text, "TOPLEFT", 0, 0)
-                    layout.pinned = true
-                end
-                if drag:GetWidth() ~= layout.width then drag:SetWidth(layout.width) end
-                if drag:GetHeight() ~= text:GetHeight() then drag:SetHeight(text:GetHeight()) end
-            end
-        elseif layout.pinned then
-            local drag = f.TitleClick
-            drag:ClearAllPoints()
-            if #layout.dragPoints == 0 then drag:SetAllPoints(text)
-            else for _, point in ipairs(layout.dragPoints) do drag:SetPoint(unpack(point)) end end
-            layout.pinned = false
+            layout.writing = false
+            return
         end
-        if current ~= target then text:SetWidth(target) end
-        layout.applied = target
-        Alpha(text, alpha)
+        local width, title = f:GetWidth(), f.Title
+        if not SafeValue(width) then layout.writing = false; return end
+        local counterWidth = 0
+        if counter and (not counter.IsVisible or counter:IsVisible()) then
+            local alpha = counter.GetAlpha and counter:GetAlpha() or 1
+            local size = counter:GetStringWidth()
+            if SafeValue(alpha) and SafeValue(size) and alpha > 0 and size > 0 then
+                counterWidth = size + 6
+            end
+        end
+        local available = math.max(16, width - 16 - counterWidth)
+        if title:GetWidth() ~= available then title:SetWidth(available) end
+        if title.SetWordWrap and (not title.GetWordWrap or not title:GetWordWrap()) then title:SetWordWrap(true) end
+        local measure = title.GetUnboundedStringWidth or title.GetStringWidth
+        local length = measure and measure(title) or available
+        if not SafeValue(length) then length = available end
+        local line = math.max(12, layout.titleHeight)
+        local lines = math.max(1, math.ceil(length / available))
+        if title.GetStringHeight then
+            local height = title:GetStringHeight()
+            if SafeValue(height) then lines = math.max(lines, math.ceil(height / line)) end
+        end
+        local titleHeight = line * lines
+        if title:GetHeight() ~= titleHeight then title:SetHeight(titleHeight) end
+        -- Reuse the native 34-unit header and extend only its decorative top.
+        -- This leaves every secure row, native resize bound and saved size alone.
+        local top = titleHeight
+        Anchor(title, "TOPLEFT", f, "TOPLEFT", 8, top - 4)
+        if counter then Anchor(counter, "TOPRIGHT", f, "TOPRIGHT", -8, top - 4) end
+        if f.CountButton then Anchor(f.CountButton, "TOPRIGHT", f, "TOPRIGHT", -6, top - 4) end
+        local total, number = 0, 0
+        for _, key in ipairs(controlOrder) do
+            local button = f[key]
+            if button and (not button.IsShown or button:IsShown()) then
+                total, number = total + button:GetWidth(), number + 1
+            end
+        end
+        local gap = number > 1 and math.min(2, math.max(0, (width - 6 - total) / (number - 1))) or 0
+        local offset = 3
+        for _, key in ipairs(controlOrder) do
+            local button = f[key]
+            if button and (not button.IsShown or button:IsShown()) then
+                Anchor(button, "RIGHT", f, "TOPRIGHT", -offset, -21)
+                offset = offset + button:GetWidth() + gap
+            end
+        end
+        if layout.top ~= top or not layout.active then
+            entry.host:ClearAllPoints()
+            entry.host:SetPoint("TOPLEFT", f, "TOPLEFT", 0, top)
+            entry.host:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
+            layout.top = top
+        end
+        if entry.seam and not layout.seamAnchored then
+            Anchor(entry.seam, "TOPLEFT", f, "TOPLEFT", 4, -8)
+            entry.seam:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -8)
+            layout.seamAnchored = true
+        end
+        layout.active, layout.writing = true, false
     end
     local function SyncWindow(f, alert, standardLayer, forever)
         local entry = foreverWindows[f]
@@ -308,11 +389,12 @@ end, function(S, module)
         if entry.standardLayer then Alpha(entry.standardLayer, forever and 0 or 1) end
         if entry.nativeBackground then Alpha(entry.nativeBackground, forever and 0 or entry.backgroundAlpha) end
         if forever then
-            local alpha = PanelAlpha()
+            local alpha = f == spy.MainWindow and BackgroundOpacity() or PanelAlpha()
             local grainAlpha = alpha * 0.12
             Alpha(entry.grain, grainAlpha)
             Alpha(entry.plate, grainAlpha < 1 and (alpha - grainAlpha) / (1 - grainAlpha) or 0)
-            if entry.band then Alpha(entry.band, alpha * 0.16); Alpha(entry.seam, alpha) end
+            -- The warm plate/grain already cover the header. No stacked fill.
+            if entry.band then Alpha(entry.band, f == spy.MainWindow and 0 or alpha * 0.16); Alpha(entry.seam, 1) end
             -- Alert borders are severity indicators, not neutral bronze trim.
             if alert and entry.rim and f.GetBackdropBorderColor and _G.EllesmereUI.ForeverBorderPaint then
                 local r, g, b, a = f:GetBackdropBorderColor()
@@ -326,7 +408,7 @@ end, function(S, module)
         for _, key in ipairs(controls) do
             if f[key] then SyncControl(f[key], forever, key) end
         end
-        SyncTitle(f, forever)
+        SyncHeader(f, forever)
     end
     local function SyncRow(row, forever)
         if not Owned(row) then return end
@@ -407,8 +489,33 @@ end, function(S, module)
         end
         if ns.RefreshPopupMenusNow then ns.RefreshPopupMenusNow() end
     end
-    local function OpenSettings()
+    local opacityKey = {}
+    local function SavePreference(key, value)
+        EUIAddonSkinsDB = EUIAddonSkinsDB or {}
+        EUIAddonSkinsDB.spy = EUIAddonSkinsDB.spy or {}
+        EUIAddonSkinsDB.spy[key] = value
+    end
+    local function NotifySettings()
+        local registry = LibStub and LibStub("AceConfigRegistry-3.0", true)
+        if settingsRegistered and registry and registry.NotifyChange then registry:NotifyChange(APP) end
+    end
+    local function SetStyle(value)
+        if value ~= "auto" and value ~= "standard" and value ~= "forever" then return end
+        SavePreference("style", value); refresh(); NotifySettings()
+    end
+    local function ResetSkinSettings()
+        if EUIAddonSkinsDB then EUIAddonSkinsDB.spy = nil end
+        refresh(); NotifySettings()
+    end
+    local function ApplyOpacity()
         if Locked() then waiting = true; return end
+        if not ns.IsEnabled(module) then return end
+        local f = spy.MainWindow
+        local entry = f and foreverWindows[f]
+        if entry then SyncWindow(f, false, entry.standardLayer, ForeverLook()) end
+    end
+    local function OpenSettings()
+        if Locked() then return end
         local registry = LibStub and LibStub("AceConfigRegistry-3.0", true)
         local dialog = LibStub and LibStub("AceConfigDialog-3.0", true)
         if not (registry and registry.RegisterOptionsTable and dialog and dialog.Open) then return end
@@ -418,21 +525,74 @@ end, function(S, module)
                     style = {type = "select", name = "Style", order = 1, width = "full",
                         values = {auto = "Automatic", standard = "EUI Standard", forever = "EUI Forever"},
                         get = function() return EUIAddonSkinsDB and EUIAddonSkinsDB.spy and EUIAddonSkinsDB.spy.style or "auto" end,
+                        set = function(_, value) SetStyle(value) end,
+                    },
+                    opacity = {type = "range", name = "Background Opacity", order = 2,
+                        desc = "Forever decorative background only. Spy retains its own bar textures and window fading.",
+                        width = "full", min = 0, max = 100, step = 1, bigStep = 5,
+                        get = function() return math.floor(BackgroundOpacity() * 100 + 0.5) end,
                         set = function(_, value)
-                            if value ~= "auto" and value ~= "standard" and value ~= "forever" then return end
-                            EUIAddonSkinsDB = EUIAddonSkinsDB or {}
-                            EUIAddonSkinsDB.spy = EUIAddonSkinsDB.spy or {}
-                            EUIAddonSkinsDB.spy.style = value
-                            refresh()
+                            if type(value) ~= "number" or not SafeValue(value) or value ~= value then return end
+                            SavePreference("opacity", math.max(0, math.min(100, value)) / 100)
+                            H.Queue(opacityKey, ApplyOpacity)
                         end,
                     },
-                    opacity = {type = "description", name = "Opacity uses Spy's existing window controls and the EllesmereUI panel appearance.", order = 2},
+                    reset = {type = "execute", name = "Reset Skin Settings", order = 3, func = ResetSkinSettings},
                 },
             })
-            if dialog.SetDefaultSize then dialog:SetDefaultSize(APP, 360, 180) end
+            if dialog.SetDefaultSize then dialog:SetDefaultSize(APP, 360, 240) end
             settingsRegistered = true
         end
         dialog:Open(APP)
+    end
+    local function StyleChoice(label, value)
+        return {text = label, isNotRadio = false, checked = function()
+            local preferences = EUIAddonSkinsDB and EUIAddonSkinsDB.spy
+            return (preferences and preferences.style or "auto") == value
+        end, func = function() SetStyle(value) end}
+    end
+    local menuToken = {}
+    local settingsItems = {
+        {text = "Style", isTitle = true, notCheckable = true},
+        StyleChoice("Automatic", "auto"),
+        StyleChoice("EUI Standard", "standard"),
+        StyleChoice("EUI Forever", "forever"),
+        {text = "Background Opacity…", notCheckable = true, func = OpenSettings},
+        {text = "Reset Skin Settings", notCheckable = true, func = ResetSkinSettings},
+    }
+    local settingsMenu = {text = "EUI AddonSkins", notCheckable = true, hasArrow = true,
+        value = menuToken, menuList = settingsItems, padding = 28}
+    local initializerWrappers = setmetatable({}, {__mode = "k"})
+    local wrappedInitializers = setmetatable({}, {__mode = "k"})
+    local function WrapInitializer(original)
+        if wrappedInitializers[original] then return original end
+        if initializerWrappers[original] then return initializerWrappers[original] end
+        local wrapper = function(self, level, ...)
+            local active = ns.IsEnabled(module)
+            if active and (level or 1) == 2 and
+                (UIDROPDOWNMENU_MENU_VALUE == menuToken or UIDROPDOWNMENU_MENU_VALUE == settingsItems) then
+                for _, item in ipairs(settingsItems) do UIDropDownMenu_AddButton(item, level) end
+                return
+            end
+            local result = pack(original(self, level, ...))
+            if active and (level or 1) == 1 and UIDropDownMenu_AddButton then
+                UIDropDownMenu_AddButton(settingsMenu, level or 1)
+            end
+            return unpack(result, 1, result.n)
+        end
+        initializerWrappers[original], wrappedInitializers[wrapper] = wrapper, true
+        return wrapper
+    end
+    -- Spy assigns and opens this initializer inside BarDropDownOpen. Wrap it
+    -- before that call so the first opening already has the submenu.
+    if type(spy.BarDropDownOpen) == "function" then
+        local open = spy.BarDropDownOpen
+        spy.BarDropDownOpen = function(...)
+            if type(_G.Spy_CreateBarDropdown) == "function" then
+                _G.Spy_CreateBarDropdown = WrapInitializer(_G.Spy_CreateBarDropdown)
+            end
+            return open(...)
+        end
     end
     if type(SlashCmdList) == "table" then
         SLASH_EUISPYSKIN1 = "/euispy"
@@ -451,16 +611,8 @@ end, function(S, module)
     local menuOptions = {legacyLook = function() return menuLook end}
     local function BindMenu(menu, addSettings)
         if not menu then return end
-        if addSettings and type(menu.initialize) == "function" and not menuOwners[menu] then
-            local original = menu.initialize
-            menuOwners[menu] = original
-            menu.initialize = function(self, level, ...)
-                local result = pack(original(self, level, ...))
-                if ns.IsEnabled(module) and (level or 1) == 1 and UIDropDownMenu_AddButton then
-                    UIDropDownMenu_AddButton({text = "EUI AddonSkins…", notCheckable = true, func = OpenSettings}, level or 1)
-                end
-                return unpack(result, 1, result.n)
-            end
+        if addSettings and type(menu.initialize) == "function" then
+            menu.initialize = WrapInitializer(menu.initialize)
         end
         if ns.BindPopupOwner then ns.BindPopupOwner(S, menuModule, menu, menuOptions) end
     end
@@ -505,6 +657,7 @@ end, function(S, module)
         -- Spy's class/KOS colors, macro attributes and click handlers intact.
         local exclude = {}
         if f.Icon then exclude[f.Icon] = true end
+        for _, key in ipairs(controls) do if f[key] then exclude[f[key]] = true end end
         for _, row in pairs(f.Rows or {}) do exclude[row] = true end
         exclude[layers[f]] = true
         local art = foreverWindows[f]
@@ -557,7 +710,7 @@ end, function(S, module)
     H.Hook(spy, "CreateRow", function() refresh() end)
     H.Hook(spy, "ResizeMainWindow", function()
         if Locked() then waiting = true; return end
-        SyncTitle(spy.MainWindow, ns.IsEnabled(module) and ForeverLook(), true)
+        SyncHeader(spy.MainWindow, ns.IsEnabled(module) and ForeverLook(), true)
     end)
     H.Hook(spy, "SetCurrentList", function()
         if Locked() then waiting = true; return end

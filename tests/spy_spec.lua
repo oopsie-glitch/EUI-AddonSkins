@@ -1,7 +1,10 @@
 -- Spy Forever: native-shaped UI plus optional unmodified official constructors.
 do
 local timers, errors, looks, events = {}, {}, {}, {}
-local combat, enabled, look = false, true, "blizzard"
+local combat, enabled, look, panelAlpha = false, true, "blizzard", 0.8
+local rings, shells = {}, {}
+tinsert=table.insert
+tDeleteItem=function(t,item) for i=#t,1,-1 do if t[i]==item then table.remove(t,i) end end end
 local counts = {objects=0, hooks=0, reads=0, alphaWrites=0, scans=0}
 local function pack(...) return {n=select("#",...), ...} end
 local unpack=table.unpack or unpack
@@ -112,6 +115,7 @@ local function frame(kind,parent)
     function f:GetPushedTexture() return self.pushed end
     function f:GetDisabledTexture() return self.disabledTexture end
     function f:GetHighlightTexture() return self.highlight end
+    if f.kind=="StatusBar" then f.SetVertexColor=nil;f.GetVertexColor=nil end
     return f
 end
 CreateFrame=function(kind,name,parent,template)
@@ -143,8 +147,8 @@ local menuBinding
 ns.BindPopupOwner=function(S,m,owner,options) menuBinding={module=m,owner=owner,options=options} end
 ns.RefreshPopupMenusNow=function() end
 local S={OnLooksChanged=function(fn) looks[#looks+1]=fn end,
-    GetPanelColor=function() return 0.04,0.04,0.04,0.8 end}
-function S.Shell(f,opts) f.standardShell=true;f.shellOptions=opts end
+    GetPanelColor=function() return 0.04,0.04,0.04,panelAlpha end}
+function S.Shell(f,opts) f.standardShell=true;f.shellOptions=opts;shells[f]=true end
 function S.CloseButton(f) f.close=true end
 function S.PageButton(f,glyph) f.glyph=glyph end
 function S.Font(f) f.font={"EUI",11,""} end
@@ -159,7 +163,7 @@ function S.ApplyBarFill() error("secure row discovered by generic scan") end
 EllesmereUI={IS_FOREVER=true,GetActiveProfileData=function() return look end,
     ProfileWindowSkinLook=function(p) return p end,
     ForeverBorder=function(host)
-        local edge=host:CreateTexture();return {on=true,host=host,edge=edge}
+        local edge=host:CreateTexture();local r={on=true,host=host,edge=edge};rings[host]=r;return r
     end,
     ForeverBorderSeat=function() end,
     ForeverBorderShown=function(r,v) r.on=v end,
@@ -171,13 +175,14 @@ local colors={
         SHAMAN={r=0,g=0.44,b=0.87,a=1},HUNTER={r=0.67,g=0.83,b=0.45,a=1},ROGUE={r=1,g=0.96,b=0.41,a=1}},
     Window={Title={r=1,g=1,b=1,a=1},Background={r=0,g=0,b=0,a=1},["Title Text"]={r=1,g=1,b=1,a=1}},
     Bar={["Bar Text"]={r=1,g=1,b=1,a=1}},
+    Alert={["KOS Border"]={r=0.9,g=0.1,b=0.05,a=1},Background={r=0,g=0,b=0,a=1},Icon={r=1,g=1,b=1,a=1},["KOS Text"]={r=1,g=0.1,b=0.1,a=1},["Name Text"]={r=1,g=1,b=1,a=1}},
 }
 Spy={db={profile={MainWindow={RowHeight=16,RowSpacing=1,TextHeight=12},Colors=colors}},
     Colors={},CreateMainWindow=function() end,CreateFrame=function(_,name)
         local f=frame(); _G[name]=f;return f,nil,"native-tail" end,
     SetFontSize=function(_,f,size) f.font[2]=size end,AddFontString=function() end,
     SetCurrentList=function(_,list) return list,nil,"list-tail" end,
-    ShowAlert=function() return "native-alert" end,BarDropDownOpen=function() end}
+    ShowAlert=function(self) self.AlertWindow:SetBackdropBorderColor(0.9,0.1,0.05,1);self.AlertWindow.Title:SetTextColor(1,0.1,0.1,1);return "native-alert" end,BarDropDownOpen=function() end}
 local function makeRow(index)
     local row=frame("Button",Spy.MainWindow);row.secure=true;row.id=index
     row.StatusBar=frame("StatusBar",row);row.StatusBar:SetStatusBarTexture("native")
@@ -289,7 +294,30 @@ local retired=Spy.MainWindow.Rows[2];retired:Hide();Spy.MainWindow.Rows[2]=nil
 Spy:CreateRow(2);flush()
 Spy:SetBar(2,"Recycled","60 Hunter",100,"Class","HUNTER",nil,1)
 assert(Spy.MainWindow.Rows[2]~=retired)
+-- Native warning severity, stats frame and unregistered art ownership.
+Spy:ShowAlert("kos","Enemy","Source","Location");flush()
+local rootRim,alertRim,statsRim
+for host,rim in pairs(rings) do
+    assert(not shells[host] and host.mouse==false,"Forever host entered EUI registry or intercepts input")
+    if host.parent==Spy.MainWindow then rootRim=rim end
+    if host.parent==Spy.AlertWindow then alertRim=rim end
+    if host.parent==SpyStatsFrame then statsRim=rim end
+end
+assert(rootRim and rootRim.on and alertRim and statsRim,"auxiliary Forever frame missing")
+assert(alertRim.color[1]==0.9 and Spy.AlertWindow.Title.textColor[1]==1,"alert severity changed")
+-- Simulate EUI's registered-host texture cleanup; custom art remains outside it.
+for host in pairs(shells) do for _,region in ipairs(host.regions) do region.alpha=0 end end
+assert(rootRim.edge.alpha==1,"EUI cleanup stripped Forever rim")
+local plate,grain=rootRim.host.regions[1],rootRim.host.regions[2]
+for _,a in ipairs({0,0.35,1,0.8}) do
+    panelAlpha=a;module.refresh();flush()
+    assert(math.abs((plate.alpha+grain.alpha*(1-plate.alpha))-a)<0.0001,"stacked opacity budget")
+end
+local savedRows=Spy.MainWindow.Rows
+Spy.MainWindow:Hide();Spy.MainWindow:Show();flush()
+assert(Spy.MainWindow.Rows==savedRows and row.scripts.OnClick()=="target")
 style.set(nil,"standard");flush()
+assert(not rootRim.on and not alertRim.on and not statsRim.on,"Standard retained Forever rims")
 assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1 and Spy.MainWindow.Background:GetAlpha()==1)
 assert(Spy.MainWindow.CloseButton.normal.color[1]==1,"Standard icon tint not restored")
 -- Automatic follows the current EUI profile; saved overrides survive reconstruction.

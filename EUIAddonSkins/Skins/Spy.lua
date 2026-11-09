@@ -19,6 +19,7 @@ end, function(S, module)
     local foreverWindows, rowArt, rowSlots, controlArt, rowKinds = {}, {}, {}, {}, setmetatable({}, {__mode = "k"})
     local menuOwners = setmetatable({}, {__mode = "k"})
     local settingsRegistered
+    local reasonDialogs = {}
     local unpack = unpack or table.unpack
     local pack = table.pack or function(...) return {n = select("#", ...), ...} end
     local function Locked() return InCombatLockdown and InCombatLockdown() end
@@ -247,11 +248,27 @@ end, function(S, module)
             SyncRow(row, classTint, forever)
         end
     end
+    local function ReasonDialogs(discover)
+        if not ns.StyleTextureDialog then return end
+        if discover then
+            for i = 1, 4 do
+                local popup = _G["StaticPopup" .. i]
+                if popup and popup.which == "Spy_SetKOSReasonOther" then reasonDialogs[popup] = true end
+            end
+        end
+        for popup in pairs(reasonDialogs) do
+            ns.StyleTextureDialog(S, module, popup, ns.IsEnabled(module) and ForeverLook()
+                and popup.which == "Spy_SetKOSReasonOther" and popup:IsShown())
+        end
+    end
     local function RestoreForever()
         if Locked() then waiting = true; return end
         for f, entry in pairs(foreverWindows) do SyncWindow(f, f == spy.AlertWindow, entry.standardLayer, false) end
         for button in pairs(controlArt) do SyncControl(button, false) end
         for row in pairs(rowArt) do SyncRow(row, nil, false) end
+        for popup in pairs(reasonDialogs) do
+            if ns.StyleTextureDialog then ns.StyleTextureDialog(S, module, popup, false) end
+        end
         if ns.RefreshPopupMenusNow then ns.RefreshPopupMenusNow() end
     end
     local function OpenSettings()
@@ -343,7 +360,11 @@ end, function(S, module)
             if H.Allowed(f.LeftButton) and S.SoftPageButton then S.SoftPageButton(f.LeftButton, "<") end
             if H.Allowed(f.RightButton) and S.SoftPageButton then S.SoftPageButton(f.RightButton, ">") end
         end
-        H.Font(f.Title)
+        if alert and ForeverLook() and f.Title and f.Title.GetTextColor then
+            local r, g, b, a = f.Title:GetTextColor()
+            H.Font(f.Title, r, g, b)
+            if f.Title.SetTextColor then f.Title:SetTextColor(r, g, b, a) end
+        else H.Font(f.Title) end
         -- Scan individual unprotected children; secure rows and their bars keep
         -- Spy's class/KOS colors, macro attributes and click handlers intact.
         local exclude = {}
@@ -375,6 +396,9 @@ end, function(S, module)
         end
         for f in pairs(options) do H.Scan(f, refresh) end
         S.RefreshSoftBorders()
+        if H.Allowed(_G.SpyStatsFrameTopCloseButton) then SyncControl(_G.SpyStatsFrameTopCloseButton, ForeverLook()) end
+        if config and config.OpenFrames and config.OpenFrames[APP] then Window(config.OpenFrames[APP].frame) end
+        ReasonDialogs(false)
         SyncRows(ForeverLook())
         if ns.RefreshPopupMenusNow then ns.RefreshPopupMenusNow() end
     end
@@ -409,6 +433,10 @@ end, function(S, module)
     H.Hook(spy, "ShowAlert", function()
         if Locked() then waiting = true; return end
         SyncWindow(spy.AlertWindow, true, layers[spy.AlertWindow], ForeverLook())
+    end)
+    H.Hook(spy, "SetKOSReason", function()
+        if Locked() then waiting = true; return end
+        ReasonDialogs(true)
     end)
     H.Hook(spy, "BarDropDownOpen", function() BindMenu(_G.Spy_BarDropDownMenu, true) end)
     H.Hook(spy, "ShowStatsDropDown", function() BindMenu(_G.StatsDropDownMenu, false) end)

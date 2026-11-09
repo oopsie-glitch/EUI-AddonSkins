@@ -187,12 +187,12 @@ end, function(S, module)
             controlArt[button] = entry
             SnapshotControl(entry)
             local function Reflect() ReflectControl(entry) end
-            H.Script(button, "OnEnter", function() entry.hover = true; Reflect() end)
-            H.Script(button, "OnLeave", function() entry.hover, entry.pressed = false, false; Reflect() end)
-            H.Script(button, "OnMouseDown", function() entry.pressed = true; Reflect() end)
-            H.Script(button, "OnMouseUp", function() entry.pressed = false; Reflect() end)
-            H.Script(button, "OnEnable", Reflect)
-            H.Script(button, "OnDisable", Reflect)
+            button:HookScript("OnEnter", function() entry.hover = true; Reflect() end)
+            button:HookScript("OnLeave", function() entry.hover, entry.pressed = false, false; Reflect() end)
+            button:HookScript("OnMouseDown", function() entry.pressed = true; Reflect() end)
+            button:HookScript("OnMouseUp", function() entry.pressed = false; Reflect() end)
+            button:HookScript("OnEnable", Reflect)
+            button:HookScript("OnDisable", Reflect)
             for setter, getter in pairs({SetNormalTexture = "GetNormalTexture", SetPushedTexture = "GetPushedTexture",
                 SetDisabledTexture = "GetDisabledTexture", SetButtonState = false}) do
                 H.Hook(button, setter, function()
@@ -375,7 +375,6 @@ end, function(S, module)
         local rows = spy.MainWindow and spy.MainWindow.Rows or {}
         for row, entry in pairs(rowArt) do
             if row.id and rows[row.id] ~= row then
-                if entry.texture and entry.nativeAlpha then Alpha(entry.texture, entry.nativeAlpha) end
                 Alpha(entry.host, 0)
                 rowArt[row] = nil
                 entry.row = nil

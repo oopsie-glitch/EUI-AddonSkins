@@ -23,20 +23,19 @@ or shared runtime helper changes are needed. Artwork lives on unregistered,
 mouse-disabled children; it is not put in EUI's registered-panel texture keep
 set and does not require recurring restrip repair.
 
-Native title positions, button sizes/spacing, list density, row anchors, text
-width calculations, resize bounds and drag/click scripts remain owned by Spy.
-The header band follows the existing title bar rather than adding another bar.
-Control rims reuse the existing icon slots and retain all native functions,
-tooltips, visibility, alpha and state textures.
+Native title positions, button hitboxes/spacing, list density, row anchors,
+resize bounds and drag/click scripts remain owned by Spy. The header band follows
+the existing title bar. Forever clips only the title text where native controls
+would overlap it, preserving the original title drag rectangle; Standard restores
+its original text width and anchors. Control artwork fits inside native slots,
+retaining functions, tooltips, visibility, whole-control alpha and state identity.
 
-Ordinary class fills retain native RGB and alpha semantics, with their texture
-coverage softened to 32% of its original region alpha over the warm surface.
-Player text and other status fills are not faded. The adapter never reads or
-rewrites player names, levels, targeting attributes or detection data.
-Out-of-combat cosmetic texture writes are separate from secure row actions.
-One separator host is reused per native row slot, with stale-row callbacks
-gated against later ownership. Native status-bar texture replacement restores
-the prior texture before adopting the new one.
+Spy exclusively owns row/bar texture paths, alpha, RGB and profile settings.
+The adapter does not hook SetBar, SetBarTextures or UpdateBarTextures and never
+reads or changes a native StatusBar texture. Fine row separators are separate
+reusable artwork; stale-row callbacks are gated against later ownership. Native
+texture changes take effect immediately and survive refresh, resize and reopen.
+Player text, status colours and secure targeting actions remain native.
 
 There is no additional opacity slider: Spy already exposes main-window and
 instance opacity. Those remain native, including whole-window fading.
@@ -99,7 +98,7 @@ reads/scans, cosmetic alpha writes or queued refreshes for unchanged class rows.
 Both source-shaped and actual-source row modes run on Actions. These are
 operation counts in mocked UI, not live CPU, FPS, taint or memory measurements.
 Full discovery remains event-driven at construction, options/profile/style
-boundaries; ordinary `SetBar` work is local and there is no new polling/OnUpdate.
+boundaries; ordinary `SetBar` work invokes no skin code and there is no new polling/OnUpdate.
 
 The branch-specific Actions workflow builds the one-folder addon, verifies
 source bytes/66 entries/43 skin files/three unchanged-version TOCs/MIT license,
@@ -131,6 +130,33 @@ and no publishing steps. The PR records exact commit, CI and artifact links.
    reload and cycle modes repeatedly. Record exact versions, screenshots and
    any errors. No in-game visual, taint or long-session approval is claimed.
 
-The requested reference screenshots were not visible in this chat. This initial
-variant follows the written brief and approved RestedXP implementation; its
-appearance remains pending maintainer screenshots and feedback.
+## Button and texture refinement
+
+The initial button treatment placed the full-sized Forever rim over 12–20-unit
+native buttons. EUI's public border has nine-unit inner corners at full scale,
+and Standard helpers replace the X/arrows with their own 14-unit glyphs and fills.
+Framing only native texture getters left that replacement artwork crowded inside
+the rim. Forever now snapshots those direct native/helper regions once, hides
+only those regions while active, and paints a centred, half-scale rim inside a
+maximum 14-unit seat with a smaller inset glyph. Adjacent painted rims have a
+gap while native hitboxes, positions and header height stay unchanged. Standard
+restores the saved regions. The approved outer rim and window material are
+unchanged. Hover/pressed/disabled changes update only the affected control;
+native icon paths retain baked-in on/off colours. Added artwork rejects mouse
+and motion input.
+
+The dark-row issue was the previous adapter multiplying ordinary class-bar
+texture alpha by 0.32, regardless of the selected Spy texture. That ownership and
+the associated SetBar hook are removed completely, rather than substituting a
+new texture or selector. Spy's opacity controls and user texture settings remain
+native in every style.
+
+Regression coverage includes native texture selection/profile reapplication,
+non-default alpha, repeated native paints, theme/reopen transitions, native
+90/130/200/300-unit layouts, title/control separation, native tooltip/click
+identity, pressed/hover/disabled feedback, replacement texture slots, Standard
+helper restoration, and 1,000 unchanged control-state updates without new
+objects/hooks/scans/alpha writes. Automated checks cannot approve the rendering
+or establish live combat/taint safety. Repeat the in-game checklist above and
+change Spy's bar texture before and after reload; verify the selected material
+and opacity match the native configuration in every list.

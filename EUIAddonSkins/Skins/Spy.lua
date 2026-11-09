@@ -16,7 +16,7 @@ end, function(S, module)
     -- Keep the released Standard primitives intact; Forever art lives on
     -- unregistered, mouse-inert hosts, never on secure targeting buttons.
     local APP = "EUIAddonSkinsSpy"
-    local foreverWindows, rowArt, rowSlots, controlArt, rowKinds = {}, {}, {}, {}, setmetatable({}, {__mode = "k"})
+    local foreverWindows, rowArt, rowSlots, controlArt = {}, {}, {}, {}
     local menuOwners = setmetatable({}, {__mode = "k"})
     local settingsRegistered
     local reasonDialogs = {}
@@ -97,30 +97,183 @@ end, function(S, module)
         if type(alpha) ~= "number" or not SafeValue(alpha) or alpha ~= alpha then return 0.92 end
         return math.max(0, math.min(1, alpha))
     end
-    local function SyncControl(button, forever)
+    local CONTROL_SCALE = 0.5
+    local fixedIcons = {
+        CloseButton = {"atlas", "uitools-icon-close"},
+        LeftButton = {"file", "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-left.png"},
+        RightButton = {"file", "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-right.png"},
+    }
+    local function SnapshotControl(entry)
+        -- Includes EUI's replacement X/arrow and flat block, not just the
+        -- now-empty normal texture slots. This is one discovery per control.
+        for _, region in ipairs({entry.button:GetRegions()}) do
+            if region.GetAlpha and not entry.native[region] then
+                entry.native[region] = {alpha = region:GetAlpha()}
+            end
+        end
+    end
+    local function ReflectControl(entry)
+        if Locked() then waiting = true; return end
+        local button = entry.button
+        local active = ns.IsEnabled(module) and ForeverLook()
+        if not active then
+            if entry.active == false then return end
+            for region, saved in pairs(entry.native) do Alpha(region, saved.alpha) end
+            Alpha(entry.seat, 0); ShowRim(entry.rim, false)
+            entry.active = false
+            return
+        end
+        local w, h = button:GetWidth(), button:GetHeight()
+        if not (SafeValue(w) and SafeValue(h)) then return end
+        local width, height = math.min(14, w - 2), math.min(14, h - 2)
+        if width <= 0 or height <= 0 then Alpha(entry.seat, 0); return end
+        local geometry = entry.w ~= w or entry.h ~= h
+        if geometry then
+            entry.w, entry.h = w, h
+            entry.seat:SetSize(width, height)
+            local size = math.max(1, math.min(9, math.min(width, height) - 3)) / CONTROL_SCALE
+            entry.icon:SetSize(size, size)
+        end
+        local enabled = not button.IsEnabled or button:IsEnabled()
+        local pressed = enabled and (entry.pressed or button.GetButtonState and button:GetButtonState() == "PUSHED") or false
+        local hover = enabled and entry.hover or false
+        local fixed = fixedIcons[entry.role]
+        local texture
+        if not fixed then
+            if not enabled and button.GetDisabledTexture then texture = button:GetDisabledTexture() end
+            if not texture and pressed and button.GetPushedTexture then texture = button:GetPushedTexture() end
+            texture = texture or button.GetNormalTexture and button:GetNormalTexture()
+        end
+        local path = fixed and fixed[2] or texture and texture.GetTexture and texture:GetTexture()
+        if not SafeValue(path) then return end
+        -- Empty disabled/pushed slots use the current normal icon.
+        if not fixed and (not path or path == "") and button.GetNormalTexture then
+            texture = button:GetNormalTexture()
+            path = texture and texture.GetTexture and texture:GetTexture()
+        end
+        if not SafeValue(path) then return end
+        if entry.active and not geometry and entry.enabled == enabled and entry.down == pressed
+            and entry.over == hover and entry.path == path then return end
+        entry.enabled, entry.down, entry.over, entry.path, entry.active = enabled, pressed, hover, path, true
+        for region in pairs(entry.native) do Alpha(region, 0) end
+        Alpha(entry.seat, 1); ShowRim(entry.rim, true)
+        if fixed and fixed[1] == "atlas" and entry.icon.SetAtlas then entry.icon:SetAtlas(path)
+        elseif path and path ~= "" then entry.icon:SetTexture(path) end
+        entry.icon:ClearAllPoints()
+        entry.icon:SetPoint("CENTER", entry.host, "CENTER", 0, pressed and -1 / CONTROL_SCALE or 0)
+        -- Keep colour baked into native state icons (for example on/off).
+        if fixed then entry.icon:SetVertexColor(0.91, 0.71, 0.43, enabled and 1 or 0.55)
+        else entry.icon:SetVertexColor(1, 1, 1, enabled and 1 or 0.55) end
+        local shade = pressed and 0.035 or hover and 0.12 or 0.065
+        entry.fill:SetColorTexture(shade, shade * 0.72, shade * 0.48, 0.9)
+        local EUI = _G.EllesmereUI
+        if entry.rim and EUI.ForeverBorderPaint then
+            EUI.ForeverBorderPaint(entry.rim, 1, 1, 1, not enabled and 0.55 or hover and 1 or 0.85)
+        end
+    end
+    local function SyncControl(button, forever, role)
         local entry = controlArt[button]
         if not entry and forever and H.Allowed(button) then
-            local host = Host(button)
-            entry = {host = host, rim = Rim(host), colors = {}}
+            local seat = Host(button)
+            seat:ClearAllPoints(); seat:SetPoint("CENTER", button, "CENTER", 0, 0)
+            local host = Host(seat)
+            host:SetScale(CONTROL_SCALE)
+            local icon = host:CreateTexture(nil, "OVERLAY", nil, 5)
+            local fill = host:CreateTexture(nil, "BACKGROUND")
+            fill:SetPoint("TOPLEFT", host, "TOPLEFT", 4, -4)
+            fill:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -4, 4)
+            entry = {button = button, seat = seat, host = host, icon = icon, fill = fill,
+                rim = Rim(host), role = role, native = {}}
             controlArt[button] = entry
-            for _, getter in ipairs({"GetNormalTexture", "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture"}) do
-                local texture = button[getter] and button[getter](button)
-                if texture and texture.GetVertexColor then
-                    entry.colors[texture] = {texture:GetVertexColor()}
-                end
+            SnapshotControl(entry)
+            local function Reflect() ReflectControl(entry) end
+            H.Script(button, "OnEnter", function() entry.hover = true; Reflect() end)
+            H.Script(button, "OnLeave", function() entry.hover, entry.pressed = false, false; Reflect() end)
+            H.Script(button, "OnMouseDown", function() entry.pressed = true; Reflect() end)
+            H.Script(button, "OnMouseUp", function() entry.pressed = false; Reflect() end)
+            H.Script(button, "OnEnable", Reflect)
+            H.Script(button, "OnDisable", Reflect)
+            for setter, getter in pairs({SetNormalTexture = "GetNormalTexture", SetPushedTexture = "GetPushedTexture",
+                SetDisabledTexture = "GetDisabledTexture", SetButtonState = false}) do
+                H.Hook(button, setter, function()
+                    if Locked() then waiting = true; return end
+                    -- A native setter can replace a slot's Texture object.
+                    local texture = getter and button[getter] and button[getter](button)
+                    if texture and texture.GetAlpha then
+                        if not entry.native[texture] then entry.native[texture] = {alpha = texture:GetAlpha()} end
+                        if texture:GetAlpha() ~= 0 then entry.active = nil end
+                    end
+                    Reflect()
+                end)
             end
         end
         if not entry then return end
-        Alpha(entry.host, forever and 1 or 0)
-        ShowRim(entry.rim, forever)
-        if entry.active == forever then return end
-        entry.active = forever
-        for texture, saved in pairs(entry.colors) do
-            if forever then texture:SetVertexColor(0.91, 0.71, 0.43, saved[4])
-            else texture:SetVertexColor(unpack(saved)) end
+        if forever then ReflectControl(entry)
+        else
+            if entry.active ~= false then
+                for region, saved in pairs(entry.native) do Alpha(region, saved.alpha) end
+                Alpha(entry.seat, 0); ShowRim(entry.rim, false); entry.active = false
+            end
         end
     end
     local controls = {"CloseButton", "LeftButton", "RightButton", "ClearButton", "StatsButton", "CountButton"}
+    local function SyncTitle(f, forever, capture)
+        if f ~= spy.MainWindow or not (f.Title and f.Title.GetLeft) then return end
+        local entry = foreverWindows[f]
+        if not entry then return end
+        local text, current = f.Title, f.Title:GetWidth()
+        if not SafeValue(current) then return end
+        local layout = entry.titleLayout
+        if not layout then
+            if not forever then return end
+            layout = {width = current, alpha = text:GetAlpha()}
+            entry.titleLayout = layout
+        end
+        if capture or current ~= layout.applied then layout.width = current end
+        local target, alpha = layout.width, layout.alpha
+        if forever then
+            local left = text:GetLeft()
+            if not SafeValue(left) or not left then return end
+            local limit
+            local function Bound(region)
+                if not (region and region.GetLeft and (not region.IsVisible or region:IsVisible())) then return end
+                local a = region.GetAlpha and region:GetAlpha() or 1
+                local x = region:GetLeft()
+                if SafeValue(a) and a > 0 and SafeValue(x) and x and (not limit or x < limit) then limit = x end
+            end
+            for _, key in ipairs(controls) do Bound(f[key]) end
+            Bound(f.CountFrame and f.CountFrame.Text)
+            if limit then
+                local space = limit - left - 2
+                target = math.max(1, math.min(target, space))
+                if space < 3 then alpha = 0 end
+            end
+            -- TitleClick normally follows the FontString. Pin its original
+            -- rectangle before clipping text, preserving the native drag hitbox.
+            local drag = f.TitleClick
+            if drag and drag.GetNumPoints and (target ~= layout.width or layout.pinned) then
+                if not layout.dragPoints then
+                    layout.dragPoints = {}
+                    for i = 1, drag:GetNumPoints() do layout.dragPoints[i] = {drag:GetPoint(i)} end
+                end
+                if not layout.pinned then
+                    drag:ClearAllPoints(); drag:SetPoint("TOPLEFT", text, "TOPLEFT", 0, 0)
+                    layout.pinned = true
+                end
+                if drag:GetWidth() ~= layout.width then drag:SetWidth(layout.width) end
+                if drag:GetHeight() ~= text:GetHeight() then drag:SetHeight(text:GetHeight()) end
+            end
+        elseif layout.pinned then
+            local drag = f.TitleClick
+            drag:ClearAllPoints()
+            if #layout.dragPoints == 0 then drag:SetAllPoints(text)
+            else for _, point in ipairs(layout.dragPoints) do drag:SetPoint(unpack(point)) end end
+            layout.pinned = false
+        end
+        if current ~= target then text:SetWidth(target) end
+        layout.applied = target
+        Alpha(text, alpha)
+    end
     local function SyncWindow(f, alert, standardLayer, forever)
         local entry = foreverWindows[f]
         if not entry and forever and Owned(f) then
@@ -171,11 +324,12 @@ end, function(S, module)
             end
         end
         for _, key in ipairs(controls) do
-            if f[key] then SyncControl(f[key], forever) end
+            if f[key] then SyncControl(f[key], forever, key) end
         end
+        SyncTitle(f, forever)
     end
-    local function SyncRow(row, classTint, forever)
-        if not Owned(row) or not Owned(row.StatusBar) then return end
+    local function SyncRow(row, forever)
+        if not Owned(row) then return end
         local entry = rowArt[row] or row.id and rowSlots[row.id]
         if not entry and forever then
             local root = spy.MainWindow
@@ -193,9 +347,8 @@ end, function(S, module)
         if entry.row ~= row then
             if entry.row then
                 rowArt[entry.row] = nil
-                if entry.texture and entry.nativeAlpha then Alpha(entry.texture, entry.nativeAlpha) end
             end
-            entry.row, entry.texture, entry.nativeAlpha, entry.classTint = row, nil, nil, nil
+            entry.row = row
             local host = entry.host
             if host.GetParent and host:GetParent() ~= spy.MainWindow then host:SetParent(spy.MainWindow) end
             host:ClearAllPoints(); host:SetAllPoints(row)
@@ -216,32 +369,7 @@ end, function(S, module)
             end)
             end
         end
-        if classTint ~= nil then entry.classTint = classTint end
-        local texture = row.StatusBar.GetStatusBarTexture and row.StatusBar:GetStatusBarTexture()
-        if texture ~= entry.texture then
-            if entry.texture and entry.nativeAlpha then Alpha(entry.texture, entry.nativeAlpha) end
-            entry.texture = texture
-            entry.nativeAlpha = texture and texture.GetAlpha and texture:GetAlpha()
-        end
-        if entry.texture and entry.nativeAlpha then
-            -- Retain native RGB, values, text alpha, flags and status colours.
-            Alpha(entry.texture, forever and entry.classTint and entry.nativeAlpha * 0.32 or entry.nativeAlpha)
-        end
         Alpha(entry.host, forever and (not row.IsShown or row:IsShown()) and 1 or 0)
-    end
-    local function InitialClassFill(row)
-        local bar = row.StatusBar
-        if not (bar and bar.GetStatusBarColor) then return false end
-        local r, g, b = bar:GetStatusBarColor()
-        if not (SafeValue(r) and SafeValue(g) and SafeValue(b)) then return false end
-        local profile = spy.db and spy.db.profile
-        local colors = profile and profile.Colors and profile.Colors.Class or _G.RAID_CLASS_COLORS
-        for _, color in pairs(colors or {}) do
-            if type(color) == "table" and color.r and color.g and color.b
-                and math.abs(r - color.r) < 0.004 and math.abs(g - color.g) < 0.004
-                and math.abs(b - color.b) < 0.004 then return true end
-        end
-        return false
     end
     local function SyncRows(forever)
         local rows = spy.MainWindow and spy.MainWindow.Rows or {}
@@ -250,13 +378,11 @@ end, function(S, module)
                 if entry.texture and entry.nativeAlpha then Alpha(entry.texture, entry.nativeAlpha) end
                 Alpha(entry.host, 0)
                 rowArt[row] = nil
-                entry.row, entry.texture, entry.nativeAlpha = nil, nil, nil
+                entry.row = nil
             end
         end
         for _, row in pairs(rows) do
-            local classTint = rowKinds[row]
-            if classTint == nil and forever then classTint = InitialClassFill(row) end
-            SyncRow(row, classTint, forever)
+            SyncRow(row, forever)
         end
     end
     local function ReasonDialogs(discover)
@@ -276,7 +402,7 @@ end, function(S, module)
         if Locked() then waiting = true; return end
         for f, entry in pairs(foreverWindows) do SyncWindow(f, f == spy.AlertWindow, entry.standardLayer, false) end
         for button in pairs(controlArt) do SyncControl(button, false) end
-        for row in pairs(rowArt) do SyncRow(row, nil, false) end
+        for row in pairs(rowArt) do SyncRow(row, false) end
         for popup in pairs(reasonDialogs) do
             if ns.StyleTextureDialog then ns.StyleTextureDialog(S, module, popup, false) end
         end
@@ -407,7 +533,7 @@ end, function(S, module)
         end
         for f in pairs(options) do H.Scan(f, refresh) end
         S.RefreshSoftBorders()
-        if H.Allowed(_G.SpyStatsFrameTopCloseButton) then SyncControl(_G.SpyStatsFrameTopCloseButton, ForeverLook()) end
+        if H.Allowed(_G.SpyStatsFrameTopCloseButton) then SyncControl(_G.SpyStatsFrameTopCloseButton, ForeverLook(), "CloseButton") end
         if config and config.OpenFrames and config.OpenFrames[APP] then Window(config.OpenFrames[APP].frame) end
         ReasonDialogs(false)
         SyncRows(ForeverLook())
@@ -430,12 +556,9 @@ end, function(S, module)
     for _, method in ipairs({"CreateMainWindow", "UpdateAlertWindow", "HandleProfileChanges",
         "SetupMainWindowButtons", "SetFont", "ShowConfig", "SetupOptions"}) do H.Hook(spy, method, refresh) end
     H.Hook(spy, "CreateRow", function() refresh() end)
-    H.Hook(spy, "SetBar", function(_, num, _, _, _, group)
-        if not SafeValue(num) or type(num) ~= "number" or not SafeValue(group) then return end
-        local row = spy.MainWindow and spy.MainWindow.Rows and spy.MainWindow.Rows[num]
-        if row then rowKinds[row] = group == "Class" end
+    H.Hook(spy, "ResizeMainWindow", function()
         if Locked() then waiting = true; return end
-        SyncRow(row, group == "Class", ForeverLook())
+        SyncTitle(spy.MainWindow, ns.IsEnabled(module) and ForeverLook(), true)
     end)
     H.Hook(spy, "SetCurrentList", function()
         if Locked() then waiting = true; return end

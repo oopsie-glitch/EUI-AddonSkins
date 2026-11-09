@@ -57,6 +57,18 @@ local function frame(kind,parent)
     function f:GetWidth() return self.width end
     function f:GetHeight() return self.height end
     function f:SetMovable() end
+    function f:SetScale(v) self.scale=v end
+    function f:GetLeft() return self.left end
+    function f:GetRight() return self.left and self.left+self.width end
+    function f:GetNumPoints() return #self.points end
+    function f:GetPoint(i) return unpack(self.points[i] or {}) end
+    function f:IsEnabled() return self.enabled~=false end
+    function f:GetButtonState() return self.state or "NORMAL" end
+    function f:SetButtonState(v) self.state=v end
+    function f:FireScript(key,...)
+        if self.scripts[key] then self.scripts[key](self,...) end
+        if self.hooks[key] then self.hooks[key](self,...) end
+    end
     function f:GetAlpha() return self.alpha end
     function f:SetAlpha(v)
         assert(not combat,"cosmetic alpha write in combat")
@@ -81,6 +93,14 @@ local function frame(kind,parent)
     function f:SetBackdropBorderColor(...) self.border={...} end
     function f:GetBackdropBorderColor() return unpack(self.border or {1,0,0,1}) end
     function f:SetTexture(v) self.path=v end
+    function f:SetAtlas(v) self.atlas=v end
+    for setter,slot in pairs({SetNormalTexture="normal",SetPushedTexture="pushed",SetDisabledTexture="disabledTexture",SetHighlightTexture="highlight"}) do
+        f[setter]=function(self,path)
+            local texture=self[slot]
+            if not texture then texture=frame("Texture");self[slot]=texture;self.regions[#self.regions+1]=texture end
+            texture:SetTexture(path)
+        end
+    end
     function f:GetTexture() return self.path end
     function f:SetColorTexture(...) self.color={...} end
     function f:SetVertexColor(...) self.color={...} end
@@ -150,8 +170,21 @@ ns.StyleTextureDialog=function(_,_,popup,active) popup.skinActive=active end
 local S={OnLooksChanged=function(fn) looks[#looks+1]=fn end,
     GetPanelColor=function() return 0.04,0.04,0.04,panelAlpha end}
 function S.Shell(f,opts) f.standardShell=true;f.shellOptions=opts;shells[f]=true end
-function S.CloseButton(f) f.close=true end
-function S.PageButton(f,glyph) f.glyph=glyph end
+function S.CloseButton(f)
+    if f.close then return end
+    f.close=true
+    for _,setter in ipairs({"SetNormalTexture","SetPushedTexture","SetDisabledTexture","SetHighlightTexture"}) do f[setter](f,"") end
+    local x=f:CreateTexture();x:SetAtlas("uitools-icon-close");x:SetSize(14,14);x:SetPoint("CENTER",-2,0)
+    f.standardGlyph=x
+end
+function S.PageButton(f,glyph)
+    if f.glyph then return end
+    f.glyph=glyph
+    for _,texture in ipairs({f.normal,f.pushed,f.highlight}) do texture.alpha=0 end
+    f.standardFill=f:CreateTexture();f.standardFill:SetColorTexture(0.04,0.04,0.04,0.8)
+    f.standardGlyph=f:CreateTexture();f.standardGlyph:SetTexture(glyph=="<" and "left" or "right")
+    f.standardGlyph:SetSize(14,14)
+end
 function S.Font(f,r,g,b) f.font={"EUI",11,""};f:SetTextColor(r or 1,g or 1,b or 1,1) end
 function S.Button(f) f.button=true end
 function S.EditBox() end
@@ -219,10 +252,18 @@ Spy.MainWindow.Background=Spy.MainWindow:CreateTexture()
 Spy.MainWindow.TitleBar=frame("Frame",Spy.MainWindow)
 Spy.MainWindow.Title=Spy.MainWindow:CreateFontString()
 Spy.MainWindow.Title:SetText("Kill On Sight")
+Spy.MainWindow.Title.left=8;Spy.MainWindow.Title.width=121
+Spy.MainWindow.TitleClick=frame("Frame",Spy.MainWindow)
+Spy.MainWindow.TitleClick:SetAllPoints(Spy.MainWindow.Title)
+Spy.MainWindow.TitleClick.width=121
 for _,key in ipairs({"CloseButton","LeftButton","RightButton","ClearButton","StatsButton","CountButton"}) do
     local b=frame("Button",Spy.MainWindow)
     b.normal=frame("Texture");b.pushed=frame("Texture");b.highlight=frame("Texture")
-    b.width=key=="StatsButton" and 12 or 16
+    b.width=key=="CloseButton" and 20 or 16
+    b.height=(key=="StatsButton" or key=="CountButton") and 12 or b.width
+    b.regions={b.normal,b.pushed,b.highlight}
+    b.normal.path="native-"..key;b.pushed.path="pressed-"..key
+    b.scripts.OnEnter=function(self) self.tooltipCalls=(self.tooltipCalls or 0)+1 end
     b.scripts.OnClick=function() return key end
     Spy.MainWindow[key]=b
 end
@@ -231,6 +272,28 @@ Spy.AlertWindow.Title=Spy.AlertWindow:CreateFontString();Spy.AlertWindow.Name=Sp
 Spy.AlertWindow.Location=Spy.AlertWindow:CreateFontString()
 SpyStatsFrame=frame();SpyStatsFrameTopCloseButton=frame("Button",SpyStatsFrame)
 Spy.optionsFrames={}
+Spy.db.profile.ResizeSpyLimit=40;Spy.ListAmountDisplayed=2;Spy.MainWindow.height=90
+Spy.MainWindow.CountButton.alpha=0
+local function NativeHeaderLayout(w)
+    Spy.MainWindow.width=w
+    local f=Spy.MainWindow
+    f.CloseButton.left=w-4-f.CloseButton.width
+    f.RightButton.left=w-23-f.RightButton.width
+    f.LeftButton.left=f.RightButton.left-f.LeftButton.width
+    f.ClearButton.left=f.LeftButton.left-f.ClearButton.width
+    f.StatsButton.left=f.ClearButton.left-4-f.StatsButton.width
+    f.CountButton.left=f.StatsButton.left-4-f.CountButton.width
+end
+NativeHeaderLayout(200)
+Spy.ResizeMainWindow=Spy.ResizeMainWindow or function()
+    Spy.MainWindow.Title:SetWidth(Spy.MainWindow.width-79)
+    return "native-resize",nil,5
+end
+Spy.SetBarTextures=Spy.SetBarTextures or function(self,path)
+    self.db.profile.BarTexture=path
+    for _,row in pairs(self.MainWindow.Rows) do row.StatusBar:SetStatusBarTexture(path) end
+end
+Spy.UpdateBarTextures=Spy.UpdateBarTextures or function(self) self:SetBarTextures(self.db.profile.BarTexture) end
 StaticPopup1=frame();StaticPopup1.shown=false
 Spy:CreateRow(1)
 local row=Spy.MainWindow.Rows[1]
@@ -265,16 +328,24 @@ classLabel:SetTextColor(0.2,0.4,0.9,0.6)
 style.set(nil,"forever");flush()
 assert(classLabel:GetTextColor()==0.2 and classLabel.textColor[4]==0.6,"statistics semantic label colour lost")
 assert(style.get()=="forever" and EUIAddonSkinsDB.other.preserved)
-assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==0.32,"class fill not softened")
+assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1,"skin changed native class fill alpha")
 assert(Spy.MainWindow.Background:GetAlpha()==0,"native background stacks under transparency")
 assert(row.StatusBar.statusColor[1]==1 and row.StatusBar.statusColor[2]==0.49,"class identity changed")
 assert(row.LeftText:GetText()=="Player" and row.RightText:GetText()=="60 Druid")
 assert(row.attributes.macrotext=="/target Enemy" and row.scripts.OnClick()=="target")
 assert(row.scripts.PostClick==nativePostClick and row.scripts.PostClick()=="native-port-postclick")
 assert(Spy.MainWindow.StatsButton.scripts.OnClick()=="StatsButton")
-assert(Spy.MainWindow.StatsButton.width==12,"header geometry changed")
-local tint=Spy.MainWindow.CloseButton.normal.color
-assert(tint[1]==0.91 and tint[2]==0.71)
+assert(Spy.MainWindow.StatsButton.width==16 and Spy.MainWindow.StatsButton.height==12,"native header hitbox changed")
+local function Control(button)
+    for host,rim in pairs(rings) do
+        if host.parent and host.parent.parent==button then return {host=host,seat=host.parent,rim=rim,icon=host.regions[1],fill=host.regions[2]} end
+    end
+end
+local close=assert(Control(Spy.MainWindow.CloseButton))
+assert(close.host.scale==0.5 and close.icon.color[1]==0.91)
+assert(Spy.MainWindow.CloseButton.standardGlyph.alpha==0,"EUI X stacked beneath Forever icon")
+assert(Spy.MainWindow.LeftButton.standardFill.alpha==0 and Spy.MainWindow.LeftButton.standardGlyph.alpha==0,"EUI page block/glyph not suppressed")
+assert(Spy.SetBar==rawSetBar,"skin still hooks native per-player bar paint")
 local nextResult=pack(Spy:SetBar(1,"A very long player name","60 Druid",100,"Class","DRUID",nil,1))
 assert(nextResult.n==oldSetBarResult.n)
 for i=1,nextResult.n do assert(nextResult[i]==oldSetBarResult[i]) end
@@ -282,10 +353,71 @@ assert(row.LeftText.width==textWidth,"native truncation changed")
 row.width=90
 Spy:SetBar(1,"A very long player name","60 Druid",100,"Class","DRUID",nil,1)
 assert(row.LeftText.width==90-row.RightText:GetStringWidth()-4)
+
+-- The native selected bar texture, including its region alpha, stays authoritative.
+Spy:SetBarTextures("player-selected-grain")
+local barTexture=row.StatusBar:GetStatusBarTexture()
+barTexture:SetAlpha(0.73)
+local textureAlphaWrites=counts.alphaWrites
+for i=1,50 do Spy:SetBar(1,"Player","60 Druid",100,"Class","DRUID",nil,0.6) end
+module.refresh();flush()
+assert(barTexture:GetTexture()=="player-selected-grain" and barTexture:GetAlpha()==0.73,"native texture appearance overridden")
+Spy:SetBarTextures("player-selected-flat")
+assert(row.StatusBar:GetStatusBarTexture():GetTexture()=="player-selected-flat" and #timers==0,"native texture selector delayed by skin")
+local profile=Spy.db.profile
+Spy.db.profile.BarTexture="saved-profile-texture";Spy:UpdateBarTextures()
+assert(row.StatusBar:GetStatusBarTexture():GetTexture()=="saved-profile-texture")
+style.set(nil,"standard");flush();style.set(nil,"forever");flush()
+assert(row.StatusBar:GetStatusBarTexture():GetTexture()=="saved-profile-texture" and barTexture:GetAlpha()==0.73,"theme switch rewrote selected texture")
+Spy.MainWindow:Hide();Spy.MainWindow:Show();flush()
+assert(barTexture:GetTexture()=="saved-profile-texture" and barTexture:GetAlpha()==0.73)
+barTexture:SetAlpha(1)
+-- At native narrow/wide bounds the visual trim stays inside the same hitboxes;
+-- title clipping preserves the original drag rectangle and Standard width.
+for _,width in ipairs({90,130,200,300}) do
+    NativeHeaderLayout(width)
+    Spy:ResizeMainWindow();flush()
+    local text=Spy.MainWindow.Title
+    local limit=Spy.MainWindow.StatsButton.left
+    assert(text.alpha==0 or text.left+text.width<=limit-2,"title overlaps visible controls")
+    assert(Spy.MainWindow.TitleClick.width==width-79,"native title drag rectangle changed")
+    for _,key in ipairs({"CloseButton","LeftButton","RightButton","ClearButton","StatsButton"}) do
+        local b=Spy.MainWindow[key];local art=assert(Control(b))
+        assert(art.seat.width<=b.width-2 and art.seat.height<=b.height-2,"trim extends beyond native hitbox")
+        local icon=art.icon.width*art.host.scale
+        assert(icon<=math.min(art.seat.width,art.seat.height)-3,"icon lacks inner padding")
+        assert(art.seat.mouse==false and art.host.mouse==false and art.host.motion==false,"decorative input interception")
+    end
+    local left,right=Control(Spy.MainWindow.LeftButton),Control(Spy.MainWindow.RightButton)
+    local lEnd=Spy.MainWindow.LeftButton.left+(Spy.MainWindow.LeftButton.width+left.seat.width)/2
+    local rStart=Spy.MainWindow.RightButton.left+(Spy.MainWindow.RightButton.width-right.seat.width)/2
+    assert(rStart-lEnd>=2,"adjacent painted frames touch")
+end
+NativeHeaderLayout(200);Spy:ResizeMainWindow();flush()
+local b=Spy.MainWindow.ClearButton
+local art=Control(b)
+local callback=b.scripts.OnClick
+b:FireScript("OnEnter");assert(b.tooltipCalls==1 and art.fill.color[1]==0.12)
+b:FireScript("OnMouseDown");assert(art.fill.color[1]==0.035 and art.icon.points[1][5]==-2)
+b:FireScript("OnMouseUp");assert(art.fill.color[1]==0.12)
+b:FireScript("OnLeave");assert(art.fill.color[1]==0.065)
+b.enabled=false;b:FireScript("OnDisable");assert(art.icon.color[4]==0.55)
+b.enabled=true;b:FireScript("OnEnable");assert(art.icon.color[4]==1)
+b:SetNormalTexture("native-active-on")
+assert(art.icon.path=="native-active-on" and b.normal.alpha==0,"native active icon not reflected")
+assert(b.scripts.OnClick==callback and callback()=="ClearButton","click replaced")
+local stableObjects,stableHooks,stableReads,stableWrites=counts.objects,counts.hooks,counts.reads,counts.alphaWrites
+for i=1,1000 do b:FireScript("OnEnable");b:SetNormalTexture("native-active-on") end
+assert(counts.objects==stableObjects and counts.hooks==stableHooks and counts.reads==stableReads and counts.alphaWrites==stableWrites,"stable control repainted/rediscovered")
+style.set(nil,"standard");flush()
+assert(Spy.MainWindow.CloseButton.standardGlyph.alpha==1 and Spy.MainWindow.LeftButton.standardGlyph.alpha==1,"Standard helper glyph lost")
+assert(Spy.MainWindow.Title.width==121 and not Spy.MainWindow.TitleClick.points[1],"Standard title geometry not restored")
+style.set(nil,"forever");flush()
+
 for _,class in ipairs({"DRUID","PALADIN","SHAMAN","HUNTER","ROGUE"}) do
     Spy:SetBar(1,"Player","60 "..class,75,"Class",class,nil,0.7)
     assert(row.StatusBar.statusColor[1]==colors.Class[class].r and row.StatusBar.statusColor[2]==colors.Class[class].g)
-    assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==0.32 and row.StatusBar.value==75)
+    assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1 and row.StatusBar.value==75)
 end
 Spy:SetBar(1,"Player","KOS",100,"Bar","Bar Text",nil,1)
 assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1,"non-class/status fill dimmed")
@@ -303,7 +435,7 @@ local q=#timers;Spy:UpdateMainWindow();assert(#timers==q)
 Spy:CreateRow(2);flush()
 Spy:SetBar(2,"Second","60 Rogue",100,"Class","ROGUE",nil,1)
 local second=Spy.MainWindow.Rows[2];second:Hide();second:Show()
-assert(second.StatusBar:GetStatusBarTexture():GetAlpha()==0.32)
+assert(second.StatusBar:GetStatusBarTexture():GetAlpha()==1)
 local retired=Spy.MainWindow.Rows[2];retired:Hide();Spy.MainWindow.Rows[2]=nil
 Spy:CreateRow(2);flush()
 Spy:SetBar(2,"Recycled","60 Hunter",100,"Class","HUNTER",nil,1)
@@ -341,7 +473,7 @@ assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1 and Spy.MainWindow.Back
 assert(Spy.MainWindow.CloseButton.normal.color[1]==1,"Standard icon tint not restored")
 -- Automatic follows the current EUI profile; saved overrides survive reconstruction.
 style.set(nil,"auto");look="forever";for _,fn in ipairs(looks)do fn()end;flush()
-assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==0.32)
+assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1)
 EUIAddonSkinsDB={spy={style="standard"},other={preserved=true}}
 for _,fn in ipairs(looks)do fn()end;flush()
 assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1)

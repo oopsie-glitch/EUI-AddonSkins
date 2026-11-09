@@ -4,6 +4,7 @@ on:
     branches: [skin/spy-forever]
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: spy-test-package
   cancel-in-progress: true
@@ -29,6 +30,13 @@ jobs:
           data=urllib.request.urlopen('https://edge.forgecdn.net/files/9501/070/Spy-1.3.8-forever5.zip').read()
           assert hashlib.sha256(data).hexdigest()=='f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec'
           z=zipfile.ZipFile(io.BytesIO(data))
+          import re
+          print('UPSTREAM UI SURFACE INVENTORY')
+          for member in z.namelist():
+              if member.count('/')==1 and member.endswith('.lua'):
+                  for number,line in enumerate(z.read(member).decode('utf-8-sig',errors='replace').splitlines(),1):
+                      if re.search(r'(CreateFrame\(|StaticPopupDialogs\[|function Spy:\w*(?:Window|Alert|DropDown|Config))',line):
+                          print(member.rsplit('/',1)[-1]+':'+str(number)+': '+line.strip())
           for name in ('Colors.lua','Widgets.lua','MainWindow.lua'):
               path=Path('/tmp/spy-upstream')/name
               path.parent.mkdir(parents=True,exist_ok=True)
@@ -58,9 +66,31 @@ jobs:
           print('CLOUD ZIP SHA256:',digest)
           PY
       - name: Upload installable test ZIP (not a release)
+        id: upload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: EUIAddonSkins-Spy-Forever-${{ github.sha }}-test
           path: /tmp/spy-test-package/
           retention-days: 30
           if-no-files-found: error
+      - name: Verify downloadable artifact bytes and installation root
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: oopsie-glitch/EUI-AddonSkins
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          gh api repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip > /tmp/spy-downloadable-test.zip
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import hashlib
+          data=Path('/tmp/spy-downloadable-test.zip').read_bytes()
+          with ZipFile('/tmp/spy-downloadable-test.zip') as z:
+              assert z.testzip() is None and len(z.namelist())==66
+              assert {p.split('/')[0] for p in z.namelist()}=={'EUIAddonSkins'}
+              for name in z.namelist():
+                  assert z.read(name)==Path(name).read_bytes()
+              assert z.read('EUIAddonSkins/LICENSE')==Path('LICENSE').read_bytes()
+          print('VERIFIED DOWNLOAD: installable artifact ZIP, 66 source-identical files, one EUIAddonSkins folder')
+          print('DOWNLOADABLE ARTIFACT SHA256:',hashlib.sha256(data).hexdigest())
+          PY

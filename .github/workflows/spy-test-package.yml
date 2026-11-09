@@ -31,6 +31,16 @@ jobs:
           assert hashlib.sha256(data).hexdigest()=='f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec'
           z=zipfile.ZipFile(io.BytesIO(data))
           import re
+          print('FOREVER UI OVERRIDES BEGIN')
+          for member in ('Spy/Forever.lua','Spy/Watch.lua'):
+              lines=z.read(member).decode('utf-8-sig',errors='replace').splitlines()
+              selected=set()
+              for i,line in enumerate(lines):
+                  if re.search(r'(CreateMainWindow|CreateRow|SetupBar|SetBar\b|SetupMainWindowButtons|BarDropDown|ShowStatsDropDown|UpdateMainWindow|UpdateAlertWindow|WatchMainWindow|AlertWatch|ShowAlert)',line):
+                      selected.update(range(max(0,i-4),min(len(lines),i+65)))
+              print('REVIEW FILE '+member)
+              for i in sorted(selected): print(str(i+1)+': '+lines[i])
+          print('FOREVER UI OVERRIDES END')
           print('UPSTREAM UI SURFACE INVENTORY')
           for member in z.namelist():
               if member.count('/')==1 and member.endswith('.lua'):

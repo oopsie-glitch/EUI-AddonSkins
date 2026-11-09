@@ -38,8 +38,19 @@ end, function(S, module)
         local db = _G.EllesmereUIDB
         return EUI.ProfileWindowSkinLook(EUI.GetActiveProfileData(), db and db.fonts) == "forever"
     end
+    local nativeFont = S.Font
+    S.Font = function(text, r, g, b)
+        if not ForeverLook() or r ~= nil or not text.GetTextColor then return nativeFont(text, r, g, b) end
+        local cr, cg, cb, ca = text:GetTextColor()
+        if not (SafeValue(cr) and SafeValue(cg) and SafeValue(cb) and SafeValue(ca)) then return end
+        nativeFont(text, cr, cg, cb)
+        text:SetTextColor(cr, cg, cb, ca)
+    end
     local function Alpha(texture, alpha)
-        if texture and texture.SetAlpha and texture:GetAlpha() ~= alpha then texture:SetAlpha(alpha) end
+        if not (texture and texture.SetAlpha and texture.GetAlpha)
+            or texture.IsForbidden and texture:IsForbidden() then return end
+        local current = texture:GetAlpha()
+        if SafeValue(current) and current ~= alpha then texture:SetAlpha(alpha) end
     end
     local function Host(parent, level)
         local host = CreateFrame("Frame", nil, parent)

@@ -146,12 +146,13 @@ ns.RegisterModule=function(_,_,_,install) module={install=install} end
 local menuBinding
 ns.BindPopupOwner=function(S,m,owner,options) menuBinding={module=m,owner=owner,options=options} end
 ns.RefreshPopupMenusNow=function() end
+ns.StyleTextureDialog=function(_,_,popup,active) popup.skinActive=active end
 local S={OnLooksChanged=function(fn) looks[#looks+1]=fn end,
     GetPanelColor=function() return 0.04,0.04,0.04,panelAlpha end}
 function S.Shell(f,opts) f.standardShell=true;f.shellOptions=opts;shells[f]=true end
 function S.CloseButton(f) f.close=true end
 function S.PageButton(f,glyph) f.glyph=glyph end
-function S.Font(f) f.font={"EUI",11,""} end
+function S.Font(f,r,g,b) f.font={"EUI",11,""};f:SetTextColor(r or 1,g or 1,b or 1,1) end
 function S.Button(f) f.button=true end
 function S.EditBox() end
 function S.Checkbox() end
@@ -182,6 +183,7 @@ Spy={db={profile={MainWindow={RowHeight=16,RowSpacing=1,TextHeight=12},Colors=co
         local f=frame(); _G[name]=f;return f,nil,"native-tail" end,
     SetFontSize=function(_,f,size) f.font[2]=size end,AddFontString=function() end,
     SetCurrentList=function(_,list) return list,nil,"list-tail" end,
+    SetKOSReason=function() StaticPopup1.which="Spy_SetKOSReasonOther";StaticPopup1.shown=true;return "native-reason" end,
     ShowAlert=function(self) self.AlertWindow:SetBackdropBorderColor(0.9,0.1,0.05,1);self.AlertWindow.Title:SetTextColor(1,0.1,0.1,1);return "native-alert" end,BarDropDownOpen=function() end}
 local function makeRow(index)
     local row=frame("Button",Spy.MainWindow);row.secure=true;row.id=index
@@ -228,6 +230,7 @@ Spy.AlertWindow.Title=Spy.AlertWindow:CreateFontString();Spy.AlertWindow.Name=Sp
 Spy.AlertWindow.Location=Spy.AlertWindow:CreateFontString()
 SpyStatsFrame=frame();SpyStatsFrameTopCloseButton=frame("Button",SpyStatsFrame)
 Spy.optionsFrames={}
+StaticPopup1=frame();StaticPopup1.shown=false
 Spy:CreateRow(1)
 local row=Spy.MainWindow.Rows[1]
 row.attributes={type1="macro",macrotext="/target Enemy"}
@@ -253,7 +256,11 @@ SlashCmdList.EUISPYSKIN()
 local settings=registry.tables.EUIAddonSkinsSpy
 assert(settings and dialog.lastOpen=="EUIAddonSkinsSpy")
 local style=settings.args.style
+local statsColour=frame("Frame",SpyStatsFrame)
+local classLabel=statsColour:CreateFontString()
+classLabel:SetTextColor(0.2,0.4,0.9,0.6)
 style.set(nil,"forever");flush()
+assert(classLabel:GetTextColor()==0.2 and classLabel.textColor[4]==0.6,"statistics semantic label colour lost")
 assert(style.get()=="forever" and EUIAddonSkinsDB.other.preserved)
 assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==0.32,"class fill not softened")
 assert(Spy.MainWindow.Background:GetAlpha()==0,"native background stacks under transparency")
@@ -285,6 +292,9 @@ assert(counts.objects==before.objects and counts.hooks==before.hooks,"warm row o
 assert(counts.reads==before.reads and counts.scans==before.scans,"warm row traversed hierarchy")
 assert(counts.alphaWrites==before.writes and #timers==0,"settled rows wrote alpha or queued full work")
 print("BENCH Spy "..(source and "actual-source" or "source-shaped")..": 1000 warm SetBar updates: new UI objects/hooks, hierarchy scans/reads, cosmetic alpha writes and queued refreshes=0")
+-- Native whole-window opacity updates do not schedule a skin repaint.
+Spy.UpdateMainWindow=Spy.UpdateMainWindow or function() Spy.MainWindow.alpha=0.45 end
+local q=#timers;Spy:UpdateMainWindow();assert(#timers==q)
 -- New row pools, shrink/removal and same-slot replacement retain native actions.
 Spy:CreateRow(2);flush()
 Spy:SetBar(2,"Second","60 Rogue",100,"Class","ROGUE",nil,1)
@@ -294,6 +304,10 @@ local retired=Spy.MainWindow.Rows[2];retired:Hide();Spy.MainWindow.Rows[2]=nil
 Spy:CreateRow(2);flush()
 Spy:SetBar(2,"Recycled","60 Hunter",100,"Class","HUNTER",nil,1)
 assert(Spy.MainWindow.Rows[2]~=retired)
+local settledObjects,settledHooks=counts.objects,counts.hooks
+Spy.MainWindow.Rows[2]:Hide();Spy.MainWindow.Rows[2]:Show()
+retired:Hide();retired:Show()
+assert(counts.objects==settledObjects and counts.hooks==settledHooks,"retired row callbacks allocated artwork")
 -- Native warning severity, stats frame and unregistered art ownership.
 Spy:ShowAlert("kos","Enemy","Source","Location");flush()
 local rootRim,alertRim,statsRim
@@ -332,6 +346,10 @@ for i=1,40 do
     style.set(nil,i%2==0 and "forever" or "standard");flush()
 end
 assert(counts.objects==objects and counts.hooks==hooks,"theme cycling accumulated artwork/hooks")
+-- Spy owns only its reason dialog; foreign StaticPopup reuse stays native.
+assert(Spy:SetKOSReason()=="native-reason" and StaticPopup1.skinActive)
+StaticPopup1.which="OtherAddon";module.refresh();flush()
+assert(not StaticPopup1.skinActive,"reason-dialog style leaked into a foreign popup")
 -- Borrowed menu retains callback returns and has one skin settings command.
 Spy_BarDropDownMenu={initialize=function()return "native-menu",nil,3 end}
 local menuEntries={}

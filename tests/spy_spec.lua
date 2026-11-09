@@ -146,6 +146,8 @@ local function frame(kind,parent)
     function f:GetUnboundedStringWidth() return self:GetStringWidth() end
     function f:SetWordWrap(v) self.wordWrap=v end
     function f:GetWordWrap() return self.wordWrap or false end
+    function f:SetNonSpaceWrap(v) self.nonSpaceWrap=v end
+    function f:GetNonSpaceWrap() return self.nonSpaceWrap or false end
     function f:GetStringHeight()
         return 12 * (self.wordWrap and math.max(1,math.ceil(self:GetStringWidth()/self.width)) or 1)
     end
@@ -236,7 +238,8 @@ EllesmereUI={IS_FOREVER=true,GetActiveProfileData=function() return look end,
     ForeverBorderSeat=function() end,
     ForeverBorderShown=function(r,v) r.on=v end,
     ForeverBorderPaint=function(r,...) r.color={...} end}
-EUIAddonSkinsDB={spy={style="auto"},other={preserved=true}}
+local bootOpacity=tonumber(os.getenv("SPY_BOOT_OPACITY"))
+EUIAddonSkinsDB={spy={style="auto",opacity=bootOpacity},other={preserved=true}}
 SlashCmdList={}
 local colors={
     Class={DRUID={r=1,g=0.49,b=0.04,a=1},PALADIN={r=0.96,g=0.55,b=0.73,a=1},
@@ -325,6 +328,12 @@ local function NativeHeaderLayout(w)
     f.CountButton.left=f.StatsButton.left-4-f.CountButton.width
 end
 NativeHeaderLayout(200)
+Spy.MainWindow.CloseButton:SetPoint("TOPRIGHT",Spy.MainWindow,"TOPRIGHT",-4,-12)
+Spy.MainWindow.RightButton:SetPoint("TOPRIGHT",Spy.MainWindow,"TOPRIGHT",-23,-14.5)
+Spy.MainWindow.LeftButton:SetPoint("RIGHT",Spy.MainWindow.RightButton,"LEFT",0,0)
+Spy.MainWindow.ClearButton:SetPoint("RIGHT",Spy.MainWindow.LeftButton,"LEFT",0,0)
+Spy.MainWindow.StatsButton:SetPoint("RIGHT",Spy.MainWindow.ClearButton,"LEFT",-4,0)
+Spy.MainWindow.CountButton:SetPoint("RIGHT",Spy.MainWindow.StatsButton,"LEFT",-4,0)
 Spy.ResizeMainWindow=Spy.ResizeMainWindow or function()
     Spy.MainWindow.Title:SetWidth(Spy.MainWindow.width-79)
     return "native-resize",nil,5
@@ -375,6 +384,7 @@ SlashCmdList.EUISPYSKIN()
 local settings=registry.tables.EUIAddonSkinsSpy
 assert(settings and dialog.lastOpen=="EUIAddonSkinsSpy")
 local style=settings.args.style
+assert(settings.args.opacity.get()==math.floor((bootOpacity or 0.75)*100+0.5),"saved/default opacity was overwritten")
 local statsColour=frame("Frame",SpyStatsFrame)
 local classLabel=statsColour:CreateFontString()
 classLabel:SetTextColor(0.2,0.4,0.9,0.6)
@@ -399,6 +409,17 @@ assert(close.host.scale==0.5 and close.icon.color[1]==0.91)
 assert(Spy.MainWindow.CloseButton.standardGlyph.alpha==0,"EUI X stacked beneath Forever icon")
 assert(Spy.MainWindow.LeftButton.standardFill.alpha==0 and Spy.MainWindow.LeftButton.standardGlyph.alpha==0,"EUI page block/glyph not suppressed")
 assert(Spy.SetBar==rawSetBar,"skin still hooks native per-player bar paint")
+if bootOpacity then
+    for host in pairs(rings) do
+        if host.parent==Spy.MainWindow then
+            local plate,grain=host.regions[1],host.regions[2]
+            assert(math.abs(plate.alpha+grain.alpha*(1-plate.alpha)-bootOpacity)<0.0001,"fresh bootstrap lost saved opacity")
+        end
+    end
+    assert(EUIAddonSkinsDB.spy.opacity==bootOpacity,"bootstrap overwrote saved endpoint")
+    EUIAddonSkinsDB.spy.opacity=nil
+    module.refresh();flush()
+end
 local nextResult=pack(Spy:SetBar(1,"A very long player name","60 Druid",100,"Class","DRUID",nil,1))
 assert(nextResult.n==oldSetBarResult.n)
 for i=1,nextResult.n do assert(nextResult[i]==oldSetBarResult[i]) end
@@ -491,8 +512,9 @@ for i=1,1000 do b:FireScript("OnEnable");b:SetNormalTexture("native-active-on") 
 assert(counts.objects==stableObjects and counts.hooks==stableHooks and counts.reads==stableReads and counts.alphaWrites==stableWrites,"stable control repainted/rediscovered")
 style.set(nil,"standard");flush()
 assert(Spy.MainWindow.CloseButton.standardGlyph.alpha==1 and Spy.MainWindow.LeftButton.standardGlyph.alpha==1,"Standard helper glyph lost")
-assert(Spy.MainWindow.Title.width==121 and Spy.MainWindow.Title.height==16 and not Spy.MainWindow.Title:GetWordWrap(),"Standard title geometry not restored")
-assert(Spy.MainWindow.Title.points[1][5]==-16 and not Spy.MainWindow.CloseButton.points[1],"Standard native anchors not restored")
+assert(Spy.MainWindow.Title.width==121 and Spy.MainWindow.Title.height==16 and not Spy.MainWindow.Title:GetWordWrap() and not Spy.MainWindow.Title:GetNonSpaceWrap(),"Standard title geometry not restored")
+assert(Spy.MainWindow.Title.points[1][5]==-16 and Spy.MainWindow.CloseButton.points[1][1]=="TOPRIGHT" and Spy.MainWindow.CloseButton.points[1][4]==-4 and Spy.MainWindow.CloseButton.points[1][5]==-12,"Standard native anchors not restored")
+assert(Spy.MainWindow.LeftButton.points[1][2]==Spy.MainWindow.RightButton and Spy.MainWindow.StatsButton.points[1][2]==Spy.MainWindow.ClearButton,"Standard native anchor chain not restored")
 style.set(nil,"forever");flush()
 
 for _,class in ipairs({"DRUID","PALADIN","SHAMAN","HUNTER","ROGUE"}) do
@@ -609,8 +631,11 @@ style.set(nil,"standard");flush();assert(not menuBinding.module.skin.IsEnabled()
 -- Combat defers even inherited-protected cosmetics and catches disable cleanup.
 style.set(nil,"forever");flush()
 combat=true
-local alphaBefore=counts.alphaWrites
+local alphaBefore,geometryBefore=counts.alphaWrites,counts.geometry
+Spy.MainWindow.Title:SetText("Nearby")
+settings.args.opacity.set(nil,0)
 style.set(nil,"standard");flush()
+assert(counts.geometry==geometryBefore,"header geometry wrote in combat")
 assert(counts.alphaWrites==alphaBefore,"theme wrote in combat")
 combat=false
 for _,f in ipairs(events)do if f.events and f.events.PLAYER_REGEN_ENABLED then f.scripts.OnEvent()end end

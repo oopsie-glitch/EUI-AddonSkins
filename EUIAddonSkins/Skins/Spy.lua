@@ -275,7 +275,8 @@ end, function(S, module)
         if not layout then
             if not forever then return end
             layout = {regions = {}, titleWidth = f.Title:GetWidth(), titleHeight = f.Title:GetHeight(),
-                wordWrap = f.Title.GetWordWrap and f.Title:GetWordWrap()}
+                wordWrap = f.Title.GetWordWrap and f.Title:GetWordWrap(),
+                nonSpaceWrap = f.Title.GetNonSpaceWrap and f.Title:GetNonSpaceWrap()}
             entry.headerLayout = layout
         end
         if layout.writing then return end
@@ -290,6 +291,7 @@ end, function(S, module)
                 for region, points in pairs(layout.regions) do RestorePoints(region, points) end
                 f.Title:SetWidth(layout.titleWidth); f.Title:SetHeight(layout.titleHeight)
                 if f.Title.SetWordWrap and layout.wordWrap ~= nil then f.Title:SetWordWrap(layout.wordWrap) end
+                if f.Title.SetNonSpaceWrap and layout.nonSpaceWrap ~= nil then f.Title:SetNonSpaceWrap(layout.nonSpaceWrap) end
                 entry.host:ClearAllPoints(); entry.host:SetAllPoints(f)
                 layout.active = false
             end
@@ -309,6 +311,7 @@ end, function(S, module)
         local available = math.max(16, width - 16 - counterWidth)
         if title:GetWidth() ~= available then title:SetWidth(available) end
         if title.SetWordWrap and (not title.GetWordWrap or not title:GetWordWrap()) then title:SetWordWrap(true) end
+        if title.SetNonSpaceWrap and (not title.GetNonSpaceWrap or not title:GetNonSpaceWrap()) then title:SetNonSpaceWrap(true) end
         local measure = title.GetUnboundedStringWidth or title.GetStringWidth
         local length = measure and measure(title) or available
         if not SafeValue(length) then length = available end

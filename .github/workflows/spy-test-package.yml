@@ -53,6 +53,32 @@ jobs:
               path.write_bytes(z.read('Spy/'+name))
           PY
           SPY_SOURCE=/tmp/spy-upstream python3 tests/run_lua.py
+      - name: Fresh Lua bootstrap with saved Spy opacity endpoints
+        run: |
+          SPY_BOOT_OPACITY=0 python3 tests/run_lua.py
+          SPY_BOOT_OPACITY=1 python3 tests/run_lua.py
+      - name: Verify regression sensitivity for default opacity and header separation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess, sys
+          path=Path('EUIAddonSkins/Skins/Spy.lua')
+          original=path.read_text()
+          mutations=[
+              ('return 0.75', 'return 0.92', 'saved/default opacity was overwritten'),
+              ('"TOPRIGHT", -offset, -21)', '"TOPRIGHT", -offset, -2)', 'title/control rows overlap'),
+          ]
+          try:
+              for before,after,message in mutations:
+                  assert original.count(before)==1
+                  path.write_text(original.replace(before,after))
+                  result=subprocess.run([sys.executable,'tests/run_lua.py'],capture_output=True,text=True)
+                  assert result.returncode!=0 and message in result.stdout+result.stderr, result.stdout+result.stderr
+                  print('VERIFIED regression sensitivity:',message)
+          finally:
+              path.write_text(original)
+          assert path.read_text()==original
+          PY
       - name: Verify clean install artifact and unchanged release metadata
         run: |
           python3 - <<'PY'

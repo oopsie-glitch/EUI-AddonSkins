@@ -441,10 +441,12 @@ end, function(S, module)
         if Locked() then waiting = true; return end
         SyncRows(ForeverLook())
     end)
-    H.Hook(spy, "ShowAlert", function()
-        if Locked() then waiting = true; return end
-        SyncWindow(spy.AlertWindow, true, layers[spy.AlertWindow], ForeverLook())
-    end)
+    for _, method in ipairs({"ShowAlert", "AlertWatch"}) do
+        H.Hook(spy, method, function()
+            if Locked() then waiting = true; return end
+            SyncWindow(spy.AlertWindow, true, layers[spy.AlertWindow], ForeverLook())
+        end)
+    end
     H.Hook(spy, "SetKOSReason", function()
         if Locked() then waiting = true; return end
         ReasonDialogs(true)

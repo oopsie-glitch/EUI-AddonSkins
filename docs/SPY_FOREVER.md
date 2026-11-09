@@ -52,7 +52,11 @@ interface 16001. Archive SHA256:
 `f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec`
 
 Reviewed native `Widgets.lua`, `MainWindow.lua`, `List.lua`, `Colors.lua`, `SpyStats.lua` and `SpyStats.xml`
-on a GitHub-hosted runner. The native row constructor is `CreateRow` / `SetupBar`;
+on a GitHub-hosted runner. Reviewed the UI wrappers in `Forever.lua` and the
+shared alert/menu paths in `Watch.lua`: the port adds a native row PostClick and
+combat show/hide recovery, while watch warnings reuse the same AlertWindow.
+Those native callbacks remain in place. The adapter observes both ShowAlert and
+AlertWatch to synchronize the existing rim without reading detection payloads. The native row constructor is `CreateRow` / `SetupBar`;
 `SetBar` owns text, truncation, progress, class/status colours and opacity.
 Four lists share that pool. `UpdateMainWindow` only sets native whole-window
 alpha, so it no longer triggers a generic skin scan.
@@ -71,10 +75,10 @@ is neither committed nor included in the install artifact.
 | Native close, previous/next, clear, statistics and count controls | Bronze trim; original scripts, modifiers, tooltips, visibility and sizes retained. |
 | Statistics window | Matching outer shell/close trim; native sorting, filters, data colours, row layout and scrollbar behavior retained through existing helpers. |
 | Alert window | Matching background with native severity-coloured rim; native icons, text colours, widths, location, timing/flashing and sounds remain. |
-| Player context menu and nested reasons; statistics menu | Existing scoped shared-menu helper only while Forever is active. Standard menus retain native appearance plus the new settings command. |
+| Spy row context menu and nested reasons; statistics menu | Existing scoped shared-menu helper only while Forever is active. Standard menus retain native appearance plus the new settings command. |
 | KOS “Other reason” shared confirmation | Existing texture-only dialog helper, scoped to Spy's popup identity; native fonts, input/actions and foreign reuse retained. |
 | Spy AceConfig windows and skin-style dialog | Existing controls/helper treatment with matching outer shell; no replacement settings framework. |
-| Shared GameTooltip, map/combat markers, minimap and target-frame KOS button | Remain native. Their semantic art, shared ownership and protected overlays require separate treatment; no global hooks are added. |
+| Shared GameTooltip, Blizzard player-unit menus, map/combat markers, minimap and target-frame KOS button | Remain native. Their semantic art, shared ownership and protected overlays require separate treatment; no global hooks are added. |
 
 The source's main-window wheel handler is a placeholder. The skin does not add
 scrolling or change Spy's native navigation. Existing settings and statistics

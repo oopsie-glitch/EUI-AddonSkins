@@ -183,6 +183,7 @@ Spy={db={profile={MainWindow={RowHeight=16,RowSpacing=1,TextHeight=12},Colors=co
         local f=frame(); _G[name]=f;return f,nil,"native-tail" end,
     SetFontSize=function(_,f,size) f.font[2]=size end,AddFontString=function() end,
     SetCurrentList=function(_,list) return list,nil,"list-tail" end,
+    AlertWatch=function(self) self.AlertWindow:SetBackdropBorderColor(0.6,0.2,0.8,1);return "native-watch" end,
     SetKOSReason=function() StaticPopup1.which="Spy_SetKOSReasonOther";StaticPopup1.shown=true;return "native-reason" end,
     ShowAlert=function(self) self.AlertWindow:SetBackdropBorderColor(0.9,0.1,0.05,1);self.AlertWindow.Title:SetTextColor(1,0.1,0.1,1);return "native-alert" end,BarDropDownOpen=function() end}
 local function makeRow(index)
@@ -235,6 +236,8 @@ Spy:CreateRow(1)
 local row=Spy.MainWindow.Rows[1]
 row.attributes={type1="macro",macrotext="/target Enemy"}
 row.scripts.OnClick=function()return "target" end
+local nativePostClick=function()return "native-port-postclick" end
+row.scripts.PostClick=nativePostClick
 local rawSetBar=Spy.SetBar
 Spy:SetBar(1,"A very long player name","60 Druid",100,"Class","DRUID",nil,1)
 local textWidth=row.LeftText.width
@@ -267,6 +270,7 @@ assert(Spy.MainWindow.Background:GetAlpha()==0,"native background stacks under t
 assert(row.StatusBar.statusColor[1]==1 and row.StatusBar.statusColor[2]==0.49,"class identity changed")
 assert(row.LeftText:GetText()=="Player" and row.RightText:GetText()=="60 Druid")
 assert(row.attributes.macrotext=="/target Enemy" and row.scripts.OnClick()=="target")
+assert(row.scripts.PostClick==nativePostClick and row.scripts.PostClick()=="native-port-postclick")
 assert(Spy.MainWindow.StatsButton.scripts.OnClick()=="StatsButton")
 assert(Spy.MainWindow.StatsButton.width==12,"header geometry changed")
 local tint=Spy.MainWindow.CloseButton.normal.color
@@ -319,6 +323,7 @@ for host,rim in pairs(rings) do
 end
 assert(rootRim and rootRim.on and alertRim and statsRim,"auxiliary Forever frame missing")
 assert(alertRim.color[1]==0.9 and Spy.AlertWindow.Title.textColor[1]==1,"alert severity changed")
+assert(Spy:AlertWatch()=="native-watch" and alertRim.color[1]==0.6 and alertRim.color[3]==0.8,"watch alert severity failed to refresh")
 -- Simulate EUI's registered-host texture cleanup; custom art remains outside it.
 for host in pairs(shells) do for _,region in ipairs(host.regions) do region.alpha=0 end end
 assert(rootRim.edge.alpha==1,"EUI cleanup stripped Forever rim")

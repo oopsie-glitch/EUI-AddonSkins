@@ -49,11 +49,11 @@ local function frame(kind,parent)
     function f:SetParent(parent)
         if self.parent==parent then return end
         if self.parent then
-            local list=(self.kind=="Texture" or self.kind=="FontString") and self.parent.regions or self.parent.children
+            local list=(self.kind=="Texture" or self.kind=="FontString" or self.kind=="MaskTexture") and self.parent.regions or self.parent.children
             for i=#list,1,-1 do if list[i]==self then table.remove(list,i) end end
         end
         self.parent=parent
-        local list=(self.kind=="Texture" or self.kind=="FontString") and parent.regions or parent.children
+        local list=(self.kind=="Texture" or self.kind=="FontString" or self.kind=="MaskTexture") and parent.regions or parent.children
         list[#list+1]=self
         counts.geometry=counts.geometry+1
     end

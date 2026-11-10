@@ -51,6 +51,18 @@ jobs:
                   if chosen:
                       print('SPY OPTIONS FILE '+member)
                       for i in sorted(chosen): print(str(i+1)+': '+lines[i])
+          print('SPY BACKDROP COMPAT AUDIT BEGIN')
+          for member in z.namelist():
+              if member.endswith('.lua'):
+                  lines=z.read(member).decode('utf-8-sig',errors='replace').splitlines()
+                  chosen=set()
+                  for i,line in enumerate(lines):
+                      if re.search(r'(BackdropTemplate|BackdropTemplateMixin|GetDropDownFrame|CreateFrame\\s*=|CreateFrame\\s*\\)|SharedMediaWidgets|LSM30_Statusbar|AceGUISharedMedia)',line):
+                          chosen.update(range(max(0,i-5),min(len(lines),i+18)))
+                  if chosen:
+                      print('COMPAT FILE '+member)
+                      for i in sorted(chosen): print(str(i+1)+': '+lines[i])
+          print('SPY BACKDROP COMPAT AUDIT END')
           print('SPY SHARED MEDIA SOURCE AUDIT END')
           print('SPY NATIVE STATE AUDIT BEGIN')
           for member in z.namelist():

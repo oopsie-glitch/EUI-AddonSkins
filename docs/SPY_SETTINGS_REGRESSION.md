@@ -46,7 +46,7 @@ The archive-wide Spy source audit found no compatibility replacement of this
 popup constructor. Spy's own main/title windows and its bundled ordinary
 AceGUI dropdown explicitly inherit BackdropTemplate; the SharedMedia popup
 and its Slider do not. This establishes a concrete capability mismatch,
-**not why enabling EUI AddonSkins is the observed trigger**.
+**not whether enabling EUI AddonSkins changes the live outcome**.
 
 Potential load-order/library-winner differences and the exact live client
 capabilities remain unverified. The pinned package and inspected EUI commit
@@ -86,11 +86,52 @@ Runtime files and visuals remain byte-identical to investigation baseline
 Before selecting the smallest source fix, establish the exact installed Spy
 version and client/build, and the outcome of the same interaction after
 disabling only EUI AddonSkins and reloading with all other addons unchanged.
-The missing evidence is the live EUI-specific trigger, not permission for
-local access. All further work remains cloud-only.
+The missing evidence is whether there is a live EUI-specific interaction, not
+permission for local access. All further work remains cloud-only.
 
 After a justified fix, functional acceptance must cover Interface settings
 open/create, popup open, different texture selections, native saved preference
 and row updates, settings reopen, reload, all three styles and restoration,
 combat recovery, and bounded widgets/hooks/artwork. Those checks are still
 pending for this regression. In-game dropdown repair is not claimed.
+
+## Follow-up: isolated native-library controls
+
+The maintainer clarified that the error occurred in WoW Forever with the skin
+enabled, and no isolated disabled-skin comparison has been confirmed. This
+supersedes the earlier description of a confirmed EUI-only regression.
+
+tests/spy_sharedmedia_spec.lua adds a fresh, restricted Lua environment with
+no EUI code loaded. It executes the actual bundled AceGUI-3.0 core (minor 41),
+SharedMedia prototypes (revision 9003), Statusbar widget (version 12) and the
+BarTexture option table extracted from Spy.lua. The native UI API and
+LibSharedMedia data source are modeled; this is not the WoW client.
+
+| Host capability model, with no EUI loaded | Observed result |
+| --- | --- |
+| Plain frames lack backdrop methods | Exact prototypes.lua:211 failure before native option setter |
+| Frame methods available, Slider methods absent (test control) | Reaches the later untemplated Slider and fails on its SetBackdrop |
+| Legacy backdrop methods available | Native popup construction/selection succeeds |
+| Backdrop methods available on all frames (test control) | Native popup construction/selection succeeds |
+
+The controls do not patch the official source and are not production fixes.
+They isolate the capability assumption and show that EUI is not required
+to reproduce this source failure under that host model. They do not establish
+whether WoW Forever has a compatibility provider, which runtime library wins
+in the user's session, or whether enabling the skin changes either.
+
+Positive controls exercise the actual widget and AceGUI pool, native texture
+preview values, real BarTexture getter/setter, saved key, selected check mark,
+scrollable lists, disabled click behavior, native enter/leave event forwarding,
+hide/release, 200 reacquisitions, same-version library initialization and a
+fresh environment with the saved profile. Frame/texture/font counts stay
+constant through the repeated reopen workload. The native UpdateBarTextures
+callback is counted, not a client render; existing Spy native-source tests
+cover separate row update/texture-preservation behavior.
+
+The isolated test does not open Blizzard's actual Interface settings or test
+client taint/combat restrictions. Existing adapter tests remain responsible
+for Standard/Forever/Automatic, restoration and combat deferral. There is no
+new runtime artwork, hook, widget type, library patch or polling. No EUI-specific
+source repair is justified yet by these results. Keep the live reported error
+open without claiming either confirmed skin causation or a confirmed in-game fix.

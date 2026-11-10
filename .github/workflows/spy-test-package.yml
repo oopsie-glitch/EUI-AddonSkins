@@ -32,6 +32,20 @@ jobs:
           z=zipfile.ZipFile(io.BytesIO(data))
           import re
           print('SPY SHARED MEDIA SOURCE AUDIT BEGIN')
+          for member in z.namelist():
+              if member.endswith('.toc'):
+                  print('OFFICIAL PACKAGE TOC:', member)
+                  for line in z.read(member).decode('utf-8-sig').splitlines():
+                      if line.startswith(('## Version:', '## Interface:', '## Title:')): print(line)
+          spy_source = Path('/tmp/spy-upstream/Spy.lua')
+          spy_source.parent.mkdir(parents=True, exist_ok=True)
+          spy_source.write_bytes(z.read('Spy/Spy.lua'))
+          core_member = 'Spy/Libs/AceGUI-3.0/AceGUI-3.0.lua'
+          core_data = z.read(core_member)
+          assert hashlib.sha256(core_data).hexdigest() == 'db24d1193ec97955bc7c1c47f22009042fdc4c680eecc2a28852bd95a6bb741a'
+          core_target = Path('/tmp/spy-upstream/Libs/AceGUI-3.0/AceGUI-3.0.lua')
+          core_target.parent.mkdir(parents=True, exist_ok=True)
+          core_target.write_bytes(core_data)
           widget_sources = {
               'prototypes.lua': 'b91f176401c605a0a9aa20acba5d7c68be4a92478ee3086a206633d2cfdad327',
               'StatusbarWidget.lua': '4874591d8c0809f4811d058b9f46088f101a75510e55a743594408f3613a3ae4',

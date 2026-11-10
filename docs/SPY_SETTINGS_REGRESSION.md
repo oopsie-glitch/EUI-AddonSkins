@@ -1,9 +1,11 @@
 # Spy texture-settings regression investigation
 
 Status: **open; no runtime fix has been applied**. This is a release blocker for
-the Spy integration. The maintainer reports that the same bar-texture interaction
-works without EUI AddonSkins and fails when it is enabled. That reproduction
-report is accepted; its EUI-specific technical trigger is not yet established.
+the Spy integration. The maintainer observed the failure in WoW Forever with EUI AddonSkins enabled.
+They have clarified that an isolated comparison with only EUI AddonSkins disabled
+has not been performed. Skin causation is therefore a hypothesis, not a confirmed
+reproduction result. The installed Spy version is likely 1.3.8-forever5 but is
+not verified: cloud repository/package evidence cannot inspect the installed client.
 
 ## Verified source and failing operation
 

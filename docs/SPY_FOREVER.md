@@ -48,12 +48,23 @@ upper highlight, warm lower edge and subtle side rails. This creates stable
 rectangular items and consistent row rhythm even when the native progress fill
 is partial or empty. There are no stacked opaque row plates.
 
-Only the native StatusBar's visual rectangle is recessed by one unit on each
-edge. Native row targeting buttons, heights, spacing, positions, macro
+Only the native StatusBar's visual rectangle is recessed two units horizontally
+and one vertically. Native row targeting buttons, heights, spacing, positions, macro
 attributes, sort/data/actions and pooled identity stay unchanged. Spy's chosen
 status-bar texture, vertex/status RGB, region alpha and value are never read or
 overwritten by the skin. Class/status colours stay meaningful; the subdued
 bronze framing provides the refined contrast instead of replacing semantic RGB.
+
+The latest material pass adds two reusable two-unit gradient strips per slot:
+a warm upper bevel (maximum alpha 0.14) and a dark lower bevel (0.16). They sit
+on the native StatusBar at ARTWORK sublevel 2, below its OVERLAY text, and do not
+replace the fill, texture, colour, value or alpha. They have no mouse input or
+full-row opaque plate. Existing four-edge chrome supplies the copper separation.
+The inner viewport rails sit three units from the window edge, with four short
+corner ticks; a one-unit warm ledge accompanies the header rule. No native row,
+secure hitbox, text coordinate, pitch, clipping flag or window bounds moves.
+The material strips are decorative chrome independent of Spy's fill alpha;
+Spy's whole-window fading still applies to them.
 
 Native names remain primary on the left, metadata on the right. Their anchors
 are pinned to the same original row coordinates (two-unit text margins), not
@@ -81,7 +92,10 @@ player-name parsing is added.
 Row chrome uses one reusable mouse/motion-disabled sibling host per native slot,
 below the StatusBar/text frame level. It contains edge textures only, never a
 raised fill over data. The list surround lives under the existing unregistered
-Forever art host. EUI texture cleanup cannot strip/recreate these custom hosts.
+Forever art host. EUI texture cleanup cannot strip/recreate these custom hosts. Material strips
+on native bars are created once, hidden for Standard, and reparented to the
+reusable cosmetic slot when the native bar is retired. Replacement bars acquire
+the same two textures instead of accumulating new artwork.
 
 Native child anchors are captured on acquisition and restored on Standard,
 disable, stale-row retirement and slot transfer. New StatusBar/label objects
@@ -91,6 +105,22 @@ growing per-update artwork is retained.
 
 Combat gates all cosmetic geometry/paint and defer eligible changes to recovery.
 Mocks cannot establish live taint safety; secure/forbidden APIs are not bypassed.
+
+## Native states
+
+The pinned Spy.xml secure-row template has native OnEnter/OnLeave callbacks to
+Spy:ShowTooltip and an additive BarFill highlight. Posthooks retain those scripts,
+click attributes, native hover artwork and tooltips. The four existing copper
+edges brighten only during a real row hover; cached transitions avoid duplicate
+paint. Hide, recycling, Standard and disable clear the cosmetic hover state.
+Combat defers cosmetic writes until recovery. No per-player or target scan is
+used to infer focus.
+
+No dependable persistent selected/focused row state was found in this upstream
+implementation; statistics tab selection is unrelated. No sticky selection is
+invented. Nearby, Last Hour, Ignore and KOS classifications, unknown-player
+metadata and alert severity remain entirely native. All share the same reusable
+row material; none receives an invented warning or bronze status colour.
 
 ## Settings and unaffected UI
 
@@ -116,7 +146,8 @@ Shared player-unit menus, GameTooltip, map/minimap/target markers remain native.
 The focused Spy suite covers single-line and narrow reflow headers; dynamic
 titles/counters; native actions, hitboxes and state feedback; source-shaped
 native helper child-border suppression/Standard restoration; recessed fill and
-four-edge row chrome; unchanged row/text coordinates and truncation; selected
+four-edge row chrome and two bevel bands; native tooltip/hover script retention,
+non-sticky hover and stale callback isolation; unchanged row/text coordinates and truncation; selected
 texture/alpha preservation; native widths and row pitch; acquire/recycle/remove;
 Standard/disable restoration; theme/opacity/reset/combat and art cleanup.
 
@@ -124,20 +155,38 @@ Actions runs the full 45-suite package check and an actual-source mode executing
 unmodified Colors/Widgets/MainWindow against mocked client APIs. It also boots
 fresh Lua states with saved 0%, 75%, 100%. Sensitivity checks reintroduce a
 separate header row, remove the fill inset or restore black helper borders and
-must fail focused assertions. Existing opacity/tint/gradient checks remain.
+must fail focused assertions. Hover-palette and bevel-height mutations must also fail their focused assertions.
+Existing opacity/tint/gradient checks remain.
 
 Warm workloads count UI objects/hooks, hierarchy reads and cosmetic writes:
 1,000 native SetBar calls retain zero extra cosmetic work. A separate source-shaped 1,000
 unchanged row synchronization workload checks that cached inset anchors/edges
 do not add objects/hooks/scans/geometry/paint/alpha writes. Existing header/state/
 opacity and repeated theme-cycle workloads remain. These are mock counts,
-not live CPU/FPS, taint or retained-memory measurements.
+not live CPU/FPS, taint or retained-memory measurements. The additional five-trial
+baseline comparison and explicit cold/hover costs are recorded in
+[SPY_FOREVER_PERFORMANCE.md](SPY_FOREVER_PERFORMANCE.md).
 
 The read-only branch workflow builds and re-downloads the installable artifact:
 66 source-identical runtime files, 43 skin factories, three unchanged v1.6.5 TOCs,
 one EUIAddonSkins folder and exact MIT license. No tests, docs, scripts,
 benchmarks, diagnostics or upstream dependencies are bundled. The PR records
 the final commit, CI, checksum and public sign-in-free nightly.link test ZIP.
+
+## Concept A scope
+
+Implemented: low-contrast bevel depth, warm upper highlights, fine copper row
+separation, a slightly recessed viewport with restrained corner ticks, matched
+header rule/ledge and genuine native hover emphasis. The approved outer rim,
+single-row header geometry/buttons, materials and 75% background compositor
+remain unchanged. The slightly wider visual fill inset reveals the viewport
+rail without narrowing native text or hitboxes.
+
+Intentionally omitted: mockup typography/column headings/class icons, extra row
+height, thick independent borders, full-row opaque plates, heavy shadows/glow,
+additional artwork files and synthetic selected/threat states. Existing Spy
+textures remain user-controlled; the small reusable edge bands provide material
+depth without a new texture selector or per-update texture replacement.
 
 ## Exact in-game review checklist
 
@@ -149,8 +198,10 @@ the final commit, CI, checksum and public sign-in-free nightly.link test ZIP.
    width fallback, divider, bronze corners and absence of black control boxes.
 3. Compare short/long names, metadata columns, native ordering and truncation.
    Check rows with full/partial/empty fills, all five requested class identities,
-   custom class/status colours and native faded/selected/hover states. Confirm
-   recessed bodies and row rails remain subtle and readable at normal UI scale.
+   custom class/status colours and native hover states. Confirm
+   recessed bodies, bevel strips, copper separators and inner rails remain subtle
+   and readable at normal UI scale. Hover/leave, hide/show and recycled slots must
+   clear the brighter outline while keeping native tooltip/target interactions.
 4. Change Spy's bar texture and native opacity; verify immediate application and
    after row updates, new detections, list changes, clear/remove/reuse, resize
    and reopen. Check every target/modifier click, tooltip and header action.

@@ -520,7 +520,7 @@ assert(Spy.MainWindow.StatsButton.scripts.OnClick()=="StatsButton")
 assert(Spy.MainWindow.StatsButton.width==16 and Spy.MainWindow.StatsButton.height==12,"native header hitbox changed")
 local function RowChrome(row)
     for _,host in ipairs(Spy.MainWindow.children) do
-        if host.points[1] and host.points[1][2]==row and #host.regions==2 and host.mouse==false then return host end
+        if host.points[1] and host.points[1][2]==row and (#host.regions==2 or #host.regions==4) and host.mouse==false then return host end
     end
 end
 local chrome=assert(RowChrome(row),"contained row frame missing")
@@ -554,6 +554,7 @@ assert(#bevels==2 and bevels[1].height==2 and bevels[2].height==2,"reused row be
 assert(bevels[1].gradient.low[4]==0 and bevels[1].gradient.high[4]==0.45
     and bevels[2].gradient.low[4]==0.75 and bevels[2].gradient.high[4]==0,"row bevel falloff missing")
 assert(bevels[1].parent==row.StatusBar and bevels[2].parent==row.StatusBar,"bevels do not follow native row visibility")
+assert(#chrome.regions==2 and bevels[1].blend=="BLEND" and bevels[2].blend=="BLEND","bevel ownership/blending is not exclusive")
 assert(#tones==1 and tones[1].allPoints==row.StatusBar,"row material does not cover the surface")
 assert(tones[1].gradient and tones[1].blend=="BLEND","row material paint path missing")
 assert(tones[1].parent==row.StatusBar and tones[1].drawLayer=="BACKGROUND" and row.LeftText.drawLayer=="OVERLAY" and row.RightText.drawLayer=="OVERLAY","row bevel can cover text")
@@ -583,7 +584,7 @@ assert(counts.paint==hoverPaint,"duplicate hover repainted")
 row:FireScript("OnLeave")
 assert(not row.nativeTooltip and bevels[1].vertexColor[4]==0.60,"native leave did not restore row bevel")
 for i=1,4 do assert(row.StatusBar.statusColor[i]==nativeColor[i],"hover changed meaningful class/status colour") end
-row:Hide();assert(chrome.alpha==0 and Coverage(tones[1])==0,"hidden row retained rendered bevel")
+row:Hide();assert(chrome.alpha==0 and Coverage(tones[1])==0 and not bevels[1]:IsVisible() and not bevels[2]:IsVisible(),"hidden row retained rendered bevel")
 row:Show()
 local stableHoverObjects,stableHoverHooks=counts.objects,counts.hooks
 for i=1,1000 do row:FireScript("OnEnter");row:FireScript("OnLeave") end

@@ -476,14 +476,14 @@ end, function(S, module)
             top = host:CreateTexture(nil, "ARTWORK", nil, 3)
             top:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
             top:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, 0)
-            top:SetHeight(2); top:SetColorTexture(1, 1, 1, 1)
+            top:SetHeight(2); top:SetColorTexture(1, 1, 1, 1); top:SetBlendMode("BLEND")
             top:SetVertexColor(0.62, 0.43, 0.23, 0.60)
             if edgeColors and top.SetGradient then top:SetGradient("VERTICAL", edgeColors[1], edgeColors[2]) end
         end
         local bottom = host:CreateTexture(nil, "ARTWORK", nil, 3)
         bottom:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 0)
         bottom:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
-        bottom:SetHeight(2); bottom:SetColorTexture(1, 1, 1, 1)
+        bottom:SetHeight(2); bottom:SetColorTexture(1, 1, 1, 1); bottom:SetBlendMode("BLEND")
         bottom:SetVertexColor(0.20, 0.12, 0.055, 0.75)
         if edgeColors and bottom.SetGradient then bottom:SetGradient("VERTICAL", edgeColors[3], edgeColors[1]) end
         local left = host:CreateTexture(nil, "ARTWORK")

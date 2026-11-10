@@ -410,31 +410,103 @@ end, function(S, module)
         end
         -- One content rule below the integrated header, never a toolbar band.
         if entry.seam and layout.dividerY ~= -33 then
-            Anchor(entry.seam, "TOPLEFT", f, "TOPLEFT", 2, -33)
-            entry.seam:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -33)
+            Anchor(entry.seam, "TOPLEFT", f, "TOPLEFT", 3, -33)
+            entry.seam:SetPoint("TOPRIGHT", f, "TOPRIGHT", -3, -33)
             layout.dividerY = -33
         end
         layout.active, layout.writing = true, false
     end
     local function RowEdges(host, omitTop)
+        local top
         if not omitTop then
-        local top = host:CreateTexture(nil, "ARTWORK")
-        top:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
-        top:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, 0)
-        top:SetHeight(1); top:SetColorTexture(0.49, 0.33, 0.18, 0.50)
+            top = host:CreateTexture(nil, "ARTWORK")
+            top:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+            top:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, 0)
+            top:SetHeight(1); top:SetColorTexture(0.62, 0.43, 0.23, 0.60)
         end
         local bottom = host:CreateTexture(nil, "ARTWORK")
         bottom:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 0)
         bottom:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
-        bottom:SetHeight(1); bottom:SetColorTexture(0.12, 0.08, 0.045, 0.75)
+        bottom:SetHeight(1); bottom:SetColorTexture(0.20, 0.12, 0.055, 0.75)
         local left = host:CreateTexture(nil, "ARTWORK")
         left:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -1)
         left:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 1)
-        left:SetWidth(1); left:SetColorTexture(0.36, 0.24, 0.13, 0.38)
+        left:SetWidth(1); left:SetColorTexture(0.38, 0.25, 0.13, 0.50)
         local right = host:CreateTexture(nil, "ARTWORK")
         right:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -1)
         right:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 1)
-        right:SetWidth(1); right:SetColorTexture(0.23, 0.15, 0.08, 0.50)
+        right:SetWidth(1); right:SetColorTexture(0.25, 0.15, 0.07, 0.55)
+        return {top = top, bottom = bottom, left = left, right = right}
+    end
+    local function PaintRowHover(entry, hovered)
+        if entry.paintedHover == hovered then return end
+        entry.paintedHover = hovered
+        local e = entry.edges
+        if hovered then
+            e.top:SetColorTexture(0.92, 0.70, 0.38, 0.95)
+            e.bottom:SetColorTexture(0.66, 0.42, 0.19, 0.75)
+            e.left:SetColorTexture(0.78, 0.52, 0.25, 0.90)
+            e.right:SetColorTexture(0.78, 0.52, 0.25, 0.90)
+        else
+            e.top:SetColorTexture(0.62, 0.43, 0.23, 0.60)
+            e.bottom:SetColorTexture(0.20, 0.12, 0.055, 0.75)
+            e.left:SetColorTexture(0.38, 0.25, 0.13, 0.50)
+            e.right:SetColorTexture(0.25, 0.15, 0.07, 0.55)
+        end
+    end
+    local function RowHover(entry, row, entered)
+        if entry.row ~= row then return end
+        entry.wantHover = entered and (not row.IsVisible or row:IsVisible()) and ns.IsEnabled(module) and ForeverLook() or false
+        if Locked() then waiting = true; return end
+        PaintRowHover(entry, entry.wantHover)
+    end
+    local toneColors
+    local function RowTones(entry, bar, shown)
+        shown = shown and Owned(bar) and true or false
+        if not entry.tones and shown then
+            entry.tones = {bar:CreateTexture(nil, "ARTWORK", nil, 2),
+                bar:CreateTexture(nil, "ARTWORK", nil, 2)}
+            if CreateColor and entry.tones[1].SetGradient then
+                toneColors = toneColors or {CreateColor(0.90, 0.73, 0.48, 0),
+                    CreateColor(0.90, 0.73, 0.48, 0.14),
+                    CreateColor(0.04, 0.025, 0.01, 0.16), CreateColor(0.04, 0.025, 0.01, 0)}
+            end
+            for i, texture in ipairs(entry.tones) do
+                texture:SetColorTexture(1, 1, 1, 1)
+                texture:SetBlendMode("BLEND")
+                if toneColors then
+                    texture:SetGradient("VERTICAL", toneColors[i == 1 and 1 or 3], toneColors[i == 1 and 2 or 4])
+                else texture:SetVertexColor(i == 1 and 0.90 or 0.04, i == 1 and 0.73 or 0.025,
+                    i == 1 and 0.48 or 0.01, 0.07) end
+                texture:SetHeight(2)
+            end
+        end
+        if not entry.tones then return end
+        if shown and entry.toneParent ~= bar then
+            local upper, lower = entry.tones[1], entry.tones[2]
+            upper:SetParent(bar); lower:SetParent(bar)
+            upper:ClearAllPoints(); lower:ClearAllPoints()
+            upper:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+            upper:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
+            lower:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+            lower:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+            entry.toneParent = bar
+        end
+        if entry.tonesShown ~= shown then
+            for _, texture in ipairs(entry.tones) do texture:SetShown(shown) end
+            entry.tonesShown = shown
+        end
+    end
+    local function ReleaseTones(entry)
+        RowTones(entry, nil, false)
+        if entry.toneParent then
+            for _, texture in ipairs(entry.tones) do
+                texture:SetParent(entry.host); texture:ClearAllPoints()
+            end
+            entry.toneParent = nil
+        end
+        entry.wantHover = false
+        PaintRowHover(entry, false)
     end
     local function SyncWindow(f, alert, standardLayer, forever)
         local entry = foreverWindows[f]
@@ -446,9 +518,16 @@ end, function(S, module)
             if f == spy.MainWindow then
                 local well = Host(host)
                 well:ClearAllPoints()
-                well:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -33)
-                well:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+                well:SetPoint("TOPLEFT", f, "TOPLEFT", 3, -33)
+                well:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -3, 1)
                 RowEdges(well, true)
+                -- Four short corner ticks define the inner viewport without
+                -- moving/clipping native rows or adding a second full plate.
+                for _, point in ipairs({"TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT"}) do
+                    local corner = well:CreateTexture(nil, "ARTWORK")
+                    corner:SetSize(3, 1); corner:SetPoint(point, well, point, 0, 0)
+                    corner:SetColorTexture(0.68, 0.44, 0.22, 0.75)
+                end
                 entry.well = well
             end
             if f.Background and f.Background.GetAlpha then
@@ -468,6 +547,14 @@ end, function(S, module)
                 seam:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT", 1, 0)
                 seam:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", -1, 0)
                 seam:SetHeight(1); seam:SetColorTexture(0.49, 0.33, 0.18, 0.65)
+                if f == spy.MainWindow then
+                    local shade = header:CreateTexture(nil, "ARTWORK")
+                    shade:SetPoint("BOTTOMLEFT", seam, "TOPLEFT", 0, 0)
+                    shade:SetPoint("BOTTOMRIGHT", seam, "TOPRIGHT", 0, 0)
+                    shade:SetHeight(1); shade:SetColorTexture(0.055, 0.032, 0.014, 0.50)
+                    entry.seamShade = shade
+                    seam:SetColorTexture(0.58, 0.38, 0.19, 0.75)
+                end
                 entry.band, entry.seam = band, seam
             end
         end
@@ -528,8 +615,8 @@ end, function(S, module)
         if not forever then RestoreRowGeometry(entry); return end
         if entry.inset then return end
         entry.bar:ClearAllPoints()
-        entry.bar:SetPoint("TOPLEFT", row, "TOPLEFT", 1, -1)
-        entry.bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -1, 1)
+        entry.bar:SetPoint("TOPLEFT", row, "TOPLEFT", 2, -1)
+        entry.bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -2, 1)
         -- SetBar computes truncation from row width. Retain those exact text
         -- coordinates while recessing only the native fill inside the frame.
         Anchor(entry.left, "LEFT", row, "LEFT", 2, 0)
@@ -544,17 +631,19 @@ end, function(S, module)
             if not root then return end
             -- One reusable sibling per native row slot, below its secure text.
             local host = Host(root, math.max(root:GetFrameLevel(), row:GetFrameLevel() - 1))
-            RowEdges(host)
-            entry = {host = host}
+            local edges = RowEdges(host)
+            entry = {host = host, edges = edges, paintedHover = false}
             if row.id then rowSlots[row.id] = entry end
         end
         if not entry then return end
         if entry.row ~= row then
             if entry.row then
                 RestoreRowGeometry(entry)
+                ReleaseTones(entry)
                 rowArt[entry.row] = nil
             end
             entry.row = row
+            entry.forever, entry.wantHover = nil, false
             local host = entry.host
             local level = math.max(spy.MainWindow:GetFrameLevel(), row:GetFrameLevel() - 1)
             if host:GetFrameLevel() ~= level then host:SetFrameLevel(level) end
@@ -568,16 +657,35 @@ end, function(S, module)
             -- control artwork reassigned to another row in the same slot.
             row:HookScript("OnShow", function()
                 if entry.row ~= row then return end
-                if not Locked() then Alpha(host, ns.IsEnabled(module) and ForeverLook() and 1 or 0)
+                if not Locked() then
+                    if MouseIsOver then
+                        local hovered = MouseIsOver(row)
+                        if SafeValue(hovered) then entry.wantHover = hovered and true or false end
+                    end
+                    PaintRowHover(entry, entry.wantHover and ns.IsEnabled(module) and ForeverLook() or false)
+                    Alpha(host, ns.IsEnabled(module) and ForeverLook() and 1 or 0)
                 else waiting = true end
             end)
             row:HookScript("OnHide", function()
                 if entry.row ~= row then return end
-                if not Locked() then Alpha(host, 0) else waiting = true end
+                entry.wantHover = false
+                if not Locked() then PaintRowHover(entry, false); Alpha(host, 0) else waiting = true end
             end)
+            row:HookScript("OnEnter", function() RowHover(entry, row, true) end)
+            row:HookScript("OnLeave", function() RowHover(entry, row, false) end)
+            end
+        end
+        if entry.forever ~= forever then
+            entry.forever, entry.wantHover = forever, false
+            if forever and MouseIsOver then
+                local hovered = MouseIsOver(row)
+                if SafeValue(hovered) then entry.wantHover = hovered and true or false end
             end
         end
         RowGeometry(entry, row, forever)
+        RowTones(entry, row.StatusBar, forever and entry.inset or false)
+        if not forever then entry.wantHover = false end
+        PaintRowHover(entry, forever and entry.wantHover or false)
         Alpha(entry.host, forever and (not row.IsShown or row:IsShown()) and 1 or 0)
     end
     local function SyncRows(forever)
@@ -585,6 +693,7 @@ end, function(S, module)
         for row, entry in pairs(rowArt) do
             if row.id and rows[row.id] ~= row then
                 RestoreRowGeometry(entry)
+                ReleaseTones(entry)
                 Alpha(entry.host, 0)
                 rowArt[row] = nil
                 entry.row = nil

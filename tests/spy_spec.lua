@@ -43,6 +43,17 @@ local function frame(kind,parent)
     function f:IsForbidden() return self.forbidden end
     function f:IsProtected() return self.protected or self.secure end
     function f:GetParent() return self.parent end
+    function f:SetParent(parent)
+        if self.parent==parent then return end
+        if self.parent then
+            local list=(self.kind=="Texture" or self.kind=="FontString") and self.parent.regions or self.parent.children
+            for i=#list,1,-1 do if list[i]==self then table.remove(list,i) end end
+        end
+        self.parent=parent
+        local list=(self.kind=="Texture" or self.kind=="FontString") and parent.regions or parent.children
+        list[#list+1]=self
+        counts.geometry=counts.geometry+1
+    end
     function f:GetFrameLevel() return self.level end
     function f:SetFrameLevel(v) assert(not combat); self.level=v end
     function f:SetFrameStrata(v) self.strata=v end
@@ -115,6 +126,7 @@ local function frame(kind,parent)
     function f:GetButtonState() return self.state or "NORMAL" end
     function f:SetButtonState(v) self.state=v end
     function f:FireScript(key,...)
+        if key=="OnEnter" then self.mouseOver=true elseif key=="OnLeave" then self.mouseOver=false end
         if self.scripts[key] then self.scripts[key](self,...) end
         if self.hooks[key] then self.hooks[key](self,...) end
     end
@@ -127,7 +139,11 @@ local function frame(kind,parent)
     function f:Hide() counts.visibility=counts.visibility+1; self.shown=false; if self.hooks.OnHide then self.hooks.OnHide(self) end end
     function f:SetShown(shown) if shown then self:Show() else self:Hide() end end
     function f:IsShown() return self.shown end
-    function f:IsVisible() return self.shown end
+    function f:IsVisible()
+        local region=self
+        while region do if not region.shown then return false end;region=region.parent end
+        return true
+    end
     function f:HookScript(key,fn)
         counts.hooks=counts.hooks+1
         local old=self.hooks[key]
@@ -188,11 +204,11 @@ local function frame(kind,parent)
     function f:GetStatusBarColor() return unpack(self.statusColor or {0.5,0.5,0.5,1}) end
     function f:SetMinMaxValues(a,b) self.min,self.max=a,b end
     function f:SetValue(v) self.value=v end
-    function f:CreateTexture(_,layer)
-        local t=frame("Texture");t.parent=self;t.drawLayer=layer; self.regions[#self.regions+1]=t; return t
+    function f:CreateTexture(_,layer,_,sublevel)
+        local t=frame("Texture");t.parent=self;t.drawLayer=layer;t.sublevel=sublevel; self.regions[#self.regions+1]=t; return t
     end
-    function f:CreateFontString()
-        local t=frame("FontString");t.parent=self;t.autoWidth=true;self.regions[#self.regions+1]=t;return t
+    function f:CreateFontString(_,layer)
+        local t=frame("FontString");t.parent=self;t.autoWidth=true;t.drawLayer=layer or "OVERLAY";self.regions[#self.regions+1]=t;return t
     end
     function f:GetFontString() return self.label end
     function f:GetNormalTexture() return self.normal end
@@ -218,8 +234,14 @@ local function Composite(plate,grain)
     local a,b=Coverage(plate),Coverage(grain)
     return a+b*(1-a)
 end
+MouseIsOver=function(row) return row.mouseOver==true end
+local function NativeRowScripts(row)
+    row.scripts.OnEnter=function(self) self.nativeTooltip=true;self.nativeEnterCalls=(self.nativeEnterCalls or 0)+1 end
+    row.scripts.OnLeave=function(self) self.nativeTooltip=false;self.nativeLeaveCalls=(self.nativeLeaveCalls or 0)+1 end
+end
 CreateFrame=function(kind,name,parent,template)
     local f=frame(kind,parent);f.name=name;f.secure=template=="SpySecureActionButtonTemplate"
+    if f.secure then NativeRowScripts(f) end
     if name then _G[name]=f end
     if not parent then events[#events+1]=f end
     return f
@@ -312,7 +334,7 @@ Spy={db={profile={MainWindow={RowHeight=16,RowSpacing=1,TextHeight=12,Alpha=1,Al
     SetKOSReason=function() StaticPopup1.which="Spy_SetKOSReasonOther";StaticPopup1.shown=true;return "native-reason" end,
     ShowAlert=function(self) self.AlertWindow:SetBackdropBorderColor(0.9,0.1,0.05,1);self.AlertWindow.Title:SetTextColor(1,0.1,0.1,1);return "native-alert" end,BarDropDownOpen=function() end}
 local function makeRow(index)
-    local row=frame("Button",Spy.MainWindow);row.secure=true;row.id=index
+    local row=frame("Button",Spy.MainWindow);row.secure=true;row.id=index;NativeRowScripts(row)
     row:SetPoint("TOPLEFT",Spy.MainWindow,"TOPLEFT",2,-34-17*(index-1))
     row:SetSize(Spy.MainWindow:GetWidth()-4,16)
     row.StatusBar=frame("StatusBar",row);row.StatusBar:SetAllPoints(row);row.StatusBar:SetStatusBarTexture("native")
@@ -419,6 +441,7 @@ row.attributes={type1="macro",macrotext="/target Enemy"}
 row.scripts.OnClick=function()return "target" end
 local nativePostClick=function()return "native-port-postclick" end
 row.scripts.PostClick=nativePostClick
+local originalEnter,originalLeave=row.scripts.OnEnter,row.scripts.OnLeave
 local rawSetBar=Spy.SetBar
 Spy:SetBar(1,"A very long player name","60 Druid",100,"Class","DRUID",nil,1)
 local textWidth=row.LeftText.width
@@ -468,14 +491,48 @@ local function RowChrome(row)
 end
 local chrome=assert(RowChrome(row),"contained row frame missing")
 assert(chrome:GetFrameLevel()<row.StatusBar:GetFrameLevel(),"row frame can cover player text")
-assert(row.StatusBar.points[1][4]==1 and row.StatusBar.points[1][5]==-1 and row.StatusBar.points[2][4]==-1 and row.StatusBar.points[2][5]==1,"inset fill was not recessed")
-assert(row.StatusBar:GetWidth()==row:GetWidth()-2 and row.StatusBar:GetHeight()==row:GetHeight()-2,"recess changed row hitbox")
+assert(row.StatusBar.points[1][4]==2 and row.StatusBar.points[1][5]==-1 and row.StatusBar.points[2][4]==-2 and row.StatusBar.points[2][5]==1,"inset fill was not recessed")
+assert(row.StatusBar:GetWidth()==row:GetWidth()-4 and row.StatusBar:GetHeight()==row:GetHeight()-2,"recess changed row hitbox")
 assert(row.LeftText:GetLeft()==nativeLeft and row.RightText:GetRight()==nativeRight,"recess moved native text/truncation coordinates")
 assert(row.points[1][2]==nativeRowPoint[2] and row.points[1][4]==nativeRowPoint[4] and row.points[1][5]==nativeRowPoint[5],"skin moved secure row")
 assert(row.LeftText.points[1][2]==row and row.RightText.points[1][2]==row,"row labels still follow inset fill")
 for _,button in ipairs({Spy.MainWindow.LeftButton,Spy.MainWindow.RightButton}) do
     for _,edge in ipairs(button.standardBorder.regions) do assert(edge.baseColor[4]==0,"native helper border leaked into Forever") end
 end
+local function Tones(row)
+    local result={}
+    for _,region in ipairs(row.StatusBar.regions) do
+        if region.kind=="Texture" and region.drawLayer=="ARTWORK" and region.sublevel==2 then result[#result+1]=region end
+    end
+    return result
+end
+local tones=Tones(row)
+assert(#tones==2 and tones[1].height==2 and tones[2].height==2,"row bevel bands missing")
+assert(tones[1].gradient and tones[2].gradient and tones[1].blend=="BLEND","row material paint path missing")
+assert(tones[1].parent==row.StatusBar and row.LeftText.drawLayer=="OVERLAY" and row.RightText.drawLayer=="OVERLAY","row bevel can cover text")
+assert(tones[1]:GetTop()<=row.StatusBar:GetTop() and tones[2]:GetBottom()>=row.StatusBar:GetBottom(),"row material escapes native fill")
+assert(row.scripts.OnEnter==originalEnter and row.scripts.OnLeave==originalLeave,"native hover handlers replaced")
+row:Show()
+local nativeColor={table.unpack(row.StatusBar.statusColor)}
+row:FireScript("OnEnter")
+assert(row.nativeTooltip and chrome.regions[1].baseColor[4]==0.95,"native hover did not highlight bronze frame")
+local hoverPaint=counts.paint
+row:FireScript("OnEnter")
+assert(counts.paint==hoverPaint,"duplicate hover repainted")
+row:FireScript("OnLeave")
+assert(not row.nativeTooltip and chrome.regions[1].baseColor[4]==0.60,"native leave did not restore row bevel")
+for i=1,4 do assert(row.StatusBar.statusColor[i]==nativeColor[i],"hover changed meaningful class/status colour") end
+row:Hide();assert(chrome.alpha==0 and Coverage(tones[2])==0,"hidden row retained rendered bevel")
+row:Show()
+local stableHoverObjects,stableHoverHooks=counts.objects,counts.hooks
+for i=1,1000 do row:FireScript("OnEnter");row:FireScript("OnLeave") end
+assert(counts.objects==stableHoverObjects and counts.hooks==stableHoverHooks,"hover accumulated artwork/hooks")
+rawSetBar(1,"Unknown","?? Unknown",0,nil,nil,nil,0.6)
+local unknownColor={table.unpack(row.StatusBar.statusColor)}
+row:FireScript("OnEnter");row:FireScript("OnLeave")
+assert(row.RightText:GetText()=="?? Unknown" and row.StatusBar.value==0,"unknown player state changed")
+for i=1,4 do assert(row.StatusBar.statusColor[i]==unknownColor[i],"unknown/status colour was invented") end
+Spy:SetBar(1,"Player","60 Druid",100,"Class","DRUID",nil,1)
 local function Control(button)
     for host,rim in pairs(rings) do
         if host.parent and host.parent.parent==button then return {host=host,seat=host.parent,rim=rim,icon=host.regions[1],fill=host.regions[2]} end
@@ -561,7 +618,7 @@ for _,width in ipairs({90,130,160,200,240,300}) do
             assert(button:GetHeight()==(key=="StatsButton" and 12 or key=="CloseButton" and 20 or 16),"header hitbox changed")
             prior=button
         end
-        assert(row.StatusBar:GetWidth()==row:GetWidth()-2,"resize lost inset geometry")
+        assert(row.StatusBar:GetWidth()==row:GetWidth()-4,"resize lost inset geometry")
     end
     end
 end
@@ -600,6 +657,7 @@ assert(counts.objects==stableObjects and counts.hooks==stableHooks and counts.re
 style.set(nil,"standard");flush()
 assert(Spy.MainWindow.CloseButton.standardGlyph.alpha==1 and Spy.MainWindow.LeftButton.standardGlyph.alpha==1,"Standard helper glyph lost")
 assert(row.StatusBar.points[1][4]==0 and row.StatusBar.points[2][4]==0 and row.LeftText.points[1][2]==row.StatusBar and row.RightText.points[1][2]==row.StatusBar,"Standard row geometry not restored")
+assert(not tones[1]:IsShown() and not tones[2]:IsShown(),"Standard retained row material")
 for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"Standard helper border not restored") end
 assert(Spy.MainWindow.Title.width==121 and Spy.MainWindow.Title.height==16 and not Spy.MainWindow.Title:GetWordWrap() and not Spy.MainWindow.Title:GetNonSpaceWrap(),"Standard title geometry not restored")
 assert(Spy.MainWindow.Title.points[1][5]==-16 and Spy.MainWindow.CloseButton.points[1][1]=="TOPRIGHT" and Spy.MainWindow.CloseButton.points[1][4]==-4 and Spy.MainWindow.CloseButton.points[1][5]==-12,"Standard native anchors not restored")
@@ -640,12 +698,16 @@ local retired=Spy.MainWindow.Rows[2];retired:Hide();Spy.MainWindow.Rows[2]=nil
 Spy:CreateRow(2);flush()
 Spy:SetBar(2,"Recycled","60 Hunter",100,"Class","HUNTER",nil,1)
 assert(Spy.MainWindow.Rows[2]~=retired)
+assert(#Tones(retired)==0 and #Tones(Spy.MainWindow.Rows[2])==2,"row bevels accumulated on retired native bars")
 assert(retired.StatusBar.points[1][4]==0 and retired.LeftText.points[1][2]==retired.StatusBar,"retired row retained Forever anchors")
-assert(RowChrome(Spy.MainWindow.Rows[2]) and Spy.MainWindow.Rows[2].StatusBar.points[1][4]==1,"recycled slot lost contained row")
+assert(RowChrome(Spy.MainWindow.Rows[2]) and Spy.MainWindow.Rows[2].StatusBar.points[1][4]==2,"recycled slot lost contained row")
 local settledObjects,settledHooks=counts.objects,counts.hooks
 Spy.MainWindow.Rows[2]:Hide();Spy.MainWindow.Rows[2]:Show()
 retired:Hide();retired:Show()
 assert(counts.objects==settledObjects and counts.hooks==settledHooks,"retired row callbacks allocated artwork")
+local currentChrome=RowChrome(Spy.MainWindow.Rows[2]);local beforeRetired=counts.paint
+retired:FireScript("OnEnter");retired:FireScript("OnLeave")
+assert(counts.paint==beforeRetired and currentChrome.regions[1].baseColor[4]==0.60,"retired hover restyled current owner")
 -- Native warning severity, stats frame and unregistered art ownership.
 Spy:ShowAlert("kos","Enemy","Source","Location");flush()
 local rootRim,alertRim,statsRim
@@ -656,6 +718,14 @@ for host,rim in pairs(rings) do
     if host.parent==SpyStatsFrame then statsRim=rim end
 end
 assert(rootRim and rootRim.on and alertRim and statsRim,"auxiliary Forever frame missing")
+local viewport
+for _,child in ipairs(rootRim.host.children) do
+    if #child.regions==7 then viewport=child end
+end
+assert(viewport and viewport.parent==rootRim.host and viewport.mouse==false,"inner viewport ownership missing")
+assert(viewport:GetLeft()==Spy.MainWindow:GetLeft()+3 and viewport:GetRight()==Spy.MainWindow:GetRight()-3,"inner frame geometry follows outer border")
+assert(viewport.points[1][5]==-33 and viewport.points[2][5]==1,"inner frame changed native row viewport")
+
 assert(alertRim.color[1]==0.9 and Spy.AlertWindow.Title.textColor[1]==1,"alert severity changed")
 assert(Spy:AlertWatch()=="native-watch" and alertRim.color[1]==0.6 and alertRim.color[3]==0.8,"watch alert severity failed to refresh")
 -- Simulate EUI's registered-host texture cleanup; custom art remains outside it.
@@ -762,6 +832,7 @@ style.set(nil,"forever");flush()
 combat=true
 local alphaBefore,geometryBefore,paintBefore,visibilityBefore=counts.alphaWrites,counts.geometry,counts.paint,counts.visibility
 Spy.MainWindow.Title:SetText("Nearby")
+row:FireScript("OnEnter");row:FireScript("OnLeave")
 settings.args.opacity.set(nil,0)
 style.set(nil,"standard");flush()
 assert(counts.geometry==geometryBefore and counts.paint==paintBefore and counts.visibility==visibilityBefore,"header artwork wrote in combat")
@@ -774,6 +845,7 @@ enabled=false
 for _,fn in ipairs(looks)do fn()end;flush()
 assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1 and Spy.MainWindow.Background:GetAlpha()==1,"disable did not clean Forever art")
 assert(row.StatusBar.points[1][4]==0 and row.LeftText.points[1][2]==row.StatusBar and chrome.alpha==0,"disable retained custom row geometry")
+assert(not tones[1]:IsShown() and not tones[2]:IsShown(),"disable retained row bevels")
 for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"disable retained hidden Standard border") end
 assert(#errors==0,table.concat(errors,"\n"))
 print("PASS: Spy Standard/Forever/Automatic restoration, native class/status colours, secure rows, callbacks/truncation, controls, pooling, settings/menu ownership, combat and bounded warm work")

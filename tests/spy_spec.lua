@@ -535,7 +535,7 @@ assert(title:GetRight()+6<=counter:GetLeft(),"reopened counter overlaps title")
 local g,o,h,r,w,p,v=counts.geometry,counts.objects,counts.hooks,counts.reads,counts.alphaWrites,counts.paint,counts.visibility
 for i=1,1000 do title:SetText("Kill On Sight");counter:SetText("|cFF0070DE123|r") end
 assert(counts.geometry==g and counts.objects==o and counts.hooks==h and counts.reads==r and counts.alphaWrites==w and counts.paint==p and counts.visibility==v and #timers==0,"warm header state repainted/rediscovered")
-print("BENCH Spy header: 1000 unchanged title/counter pairs: geometry/alpha writes, new UI objects/hooks, hierarchy reads and queued refreshes=0")
+print("BENCH Spy header: 1000 unchanged title/counter pairs: geometry/alpha/paint/visibility writes, new UI objects/hooks, hierarchy reads and queued refreshes=0")
 counter:SetText("|cFF0070DE0|r")
 local b=Spy.MainWindow.ClearButton
 local art=Control(b)
@@ -698,11 +698,11 @@ style.set(nil,"standard");flush();assert(not menuBinding.module.skin.IsEnabled()
 -- Combat defers even inherited-protected cosmetics and catches disable cleanup.
 style.set(nil,"forever");flush()
 combat=true
-local alphaBefore,geometryBefore=counts.alphaWrites,counts.geometry
+local alphaBefore,geometryBefore,paintBefore,visibilityBefore=counts.alphaWrites,counts.geometry,counts.paint,counts.visibility
 Spy.MainWindow.Title:SetText("Nearby")
 settings.args.opacity.set(nil,0)
 style.set(nil,"standard");flush()
-assert(counts.geometry==geometryBefore,"header geometry wrote in combat")
+assert(counts.geometry==geometryBefore and counts.paint==paintBefore and counts.visibility==visibilityBefore,"header artwork wrote in combat")
 assert(counts.alphaWrites==alphaBefore,"theme wrote in combat")
 combat=false
 for _,f in ipairs(events)do if f.events and f.events.PLAYER_REGEN_ENABLED then f.scripts.OnEvent()end end

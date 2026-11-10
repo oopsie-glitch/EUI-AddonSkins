@@ -1,8 +1,8 @@
 # Spy Forever — Concept A composition
 
-Draft PR #77, based on released v1.6.5. The prior build is functionally stable,
-but its visual appearance is **not approved**. The Concept A image is the visual
-target. This redesign is awaiting real WoW screenshots; tests do not approve it.
+Draft PR #77, based on released v1.6.5. The current proportions/structure are functionally tested and retained. Concept A
+remains the visual target; this material-only refinement awaits new WoW screenshots.
+Tests do not approve perceived material depth.
 All repository operations/testing/packaging use GitHub cloud APIs and Actions.
 
 [Reference comparison recorded before runtime edits](SPY_CONCEPT_A_REDESIGN.md).
@@ -12,7 +12,7 @@ All repository operations/testing/packaging use GitHub cloud APIs and Actions.
 
 The public EllesmereUI Heavy Bronze window rim (when supported) encloses a shaded seven-unit
 bronze bezel, a distinct warm header material and a separately recessed list well.
-This is a surface/layout redesign, not additional thin rules around the old bars.
+The established composition is retained; this pass changes material lighting only.
 
 The list well starts seven units inside each side, at native y=-32, and ends
 three units below the native window's bottom. The cosmetic outer rim extends
@@ -23,7 +23,9 @@ moderately taller, while native width/height, drag/resize functions and saved
 profile dimensions remain unchanged. Decorative gutter art takes no mouse input.
 
 The inner well uses the shared textured chamfered rim with subdued bronze tint
-and three-unit inward shadow gradients. Seven-unit side gutters have directional
+and five-unit inward shadow gradients starting three units inside the perimeter.
+The four existing strips now reach beyond the rim band into the visible lip;
+where mask APIs exist they reuse the list surface mask for consistent chamfers. Seven-unit side gutters have directional
 bronze light/dark gradients; their bottom segment does not overlap either side.
 The main rim uses native UI-Frame-Metal artwork through the public Heavy API,
 without its opaque native title-band fill. Older EUI builds retain the textured
@@ -39,9 +41,10 @@ minimum 14-unit font size using the current EUI font family/flags; larger config
 EUI typography is retained. Standard/disable restore the current framework font,
 not a stale font snapshot after appearance changes.
 
-A dedicated bronze header gradient/grain ends where the list begins. The upper
-gradient and existing rim provide restrained highlight; a two-unit copper rule
-and two-unit dark ledge make the lower divider substantial. There is no separate
+A dedicated bronze header gradient/grain ends where the list begins. Its
+richer warm cap (RGB 0.285/0.185/0.090) falls to a dark bronze foot
+(0.105/0.062/0.030), with the existing texture pattern. The existing lower rule
+is a three-unit copper light/dark gradient with a four-unit fading shadow ledge. There is no separate
 normal-width toolbar row or decorative button. Existing helper black boxes stay
 suppressed only in Forever.
 
@@ -65,19 +68,35 @@ more of the reference's breathing room; no profile preferences are overwritten.
 
 ## Rows and native texture ownership
 
-Each visual row sits inside the panel: chrome is nine units inward from the
-secure row edges, and the native fill ten units inward, with one-unit vertical
-clearance. One reusable full-surface gradient replaces its two short edge strips. Warm
-upper lighting (alpha 0.16) transitions into a controlled dark lower shade
-(alpha 0.28). This gives broad matte curvature and controlled muting while Spy's
-chosen texture remains visible, with no overlapping pair of row glazes.
-Fine existing copper edges and genuine hover emphasis complete the surface.
+Each visual row keeps the existing fill/chrome/column geometry. The broad material
+is now a **BACKGROUND** region behind the native bar fill (maximum alpha 0.18
+below, 0.08 above). It complements partial/translucent fills rather than painting
+over user-selected texture/colour in the centre.
 
-There is **one fewer texture per row, no new per-row frames or hooks**. No full opaque plate replaces
-the native bar and no class/status RGB, status value, texture path or region
-alpha is overwritten. Decorative material layers are distinct from Spy's fill
-opacity, like the existing edge chrome. Their modest coverage is intentionally
-part of the Forever material, not a replacement texture selector.
+The two existing upper/lower line textures are reused as two-unit **ARTWORK
+sublevel 3** bevel ramps on the native StatusBar, below its OVERLAY text. They
+were previously sibling-host lines, partly hidden below the native fill. Their
+neutral white source/gradient is tinted through vertex colour; hover changes
+the tint without destroying the gradient:
+- Upper ramp: clear at its lower edge to alpha 0.45 at the top, multiplied by
+  normal vertex alpha 0.60 (peak 0.27) or hover alpha 0.95 (peak 0.4275).
+- Lower ramp: alpha 0.75 at the bottom fading inward to clear, with dark normal
+  copper vertex colour and alpha 0.75 (peak 0.5625).
+- Existing one-unit side rails remain on the noninteractive sibling host, with
+  normal alpha reduced to 0.18 to avoid individually boxed entries. Genuine
+  native hover retains their existing brighter feedback.
+
+All three owned regions (underlay plus reused bevels) share the existing slot
+visibility/retirement lifecycle. They hide for Standard/disable and detach from
+retired bars before reusing the same objects. No per-row texture, frame, mask
+or hook is added. The native bar texture, RGB, status value, region/frame alpha,
+text and interactions remain Spy-owned. No texture selector is added.
+
+A completely opaque native bar covers the broad underlay, deliberately. Its
+chosen centre texture/colour stays native; perceived thickness then comes from
+the small bevels and panel lip. Reproducing Concept A's grain across an opaque
+flat native texture would require covering/replacing that user choice. No
+ineffective extra grain layer or synthetic state is added to pretend otherwise.
 
 Right metadata is anchored four units inside the visual bar. Native name text
 is anchored four units inside the left edge and six units before metadata.
@@ -104,6 +123,12 @@ The main native background and released Standard shell are excluded in Forever.
 Slider changes affect background materials only, never parent alpha, text, buttons
 or native class fills. At 0 the full-area surfaces are hidden; borders and row
 chrome remain readable. Spy's whole-window fading remains independent.
+
+The list is deliberately darker: its gradient runs from RGB
+0.055/0.037/0.024 to 0.115/0.075/0.045 at the unchanged opacity budget. The masked
+lip shadows peak at alpha 0.48, confined to perimeter lighting. These edge
+shadows/dividers remain border chrome at 0%; no opaque full-area rectangle is
+introduced. Native bars and row chrome remain independent of the window slider.
 
 The list plate/grain and mask belong to the unregistered well host; header
 materials belong to the unregistered header host. Secure rows are excluded from

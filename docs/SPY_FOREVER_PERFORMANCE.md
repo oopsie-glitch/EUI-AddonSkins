@@ -1,192 +1,192 @@
-# Spy Forever — Concept A redesign performance comparison
+# Spy Forever — material/depth refinement performance
 
-The comparison baseline is the optimized, functionally tested PR #77 build
-`b4f2e7b6e4ac86b2b2a1ec9352c93422bdc3abe2`. Its visual design is not approved.
-The new composition and acceptance criteria are in [SPY_FOREVER.md](SPY_FOREVER.md).
+Baseline: optimized PR #77 `e7631a3e9fada47474a9bda356f0ce7a0fef1c2c`.
+This pass preserves its window/header/row geometry and changes lighting/materials.
+[Exact layers and limits](SPY_FOREVER.md#rows-and-native-texture-ownership).
 
-Measured runtime: `3fd024ca30105adea100aa61f00c61b81d683e53`.
-[Raw five-trial JSON and checks](https://github.com/oopsie-glitch/EUI-AddonSkins/actions/runs/42882717569).
+Measured runtime snapshot: `45189b1c5b2603f2e43659176b566d5329537f53`.
+[Cloud comparison and raw five-trial JSON](https://github.com/oopsie-glitch/EUI-AddonSkins/actions/runs/42896769375).
 The final documentation-only commit has the same runtime.
-[Previous optimization audit](https://github.com/oopsie-glitch/EUI-AddonSkins/blob/b4f2e7b6e4ac86b2b2a1ec9352c93422bdc3abe2/docs/SPY_FOREVER_PERFORMANCE.md)
-remains evidence for that snapshot; historical timings from different runners
-are not used as this comparison's baseline.
+[Earlier composition comparison](https://github.com/oopsie-glitch/EUI-AddonSkins/blob/e7631a3e9fada47474a9bda356f0ce7a0fef1c2c/docs/SPY_FOREVER_PERFORMANCE.md)
+remains evidence for that snapshot, not this pass's baseline timing.
 
 ## Method
 
-`SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline b4f2e7b6e4ac86b2b2a1ec9352c93422bdc3abe2 --trials 5 --iterations 1000 --rows 40`
+`SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline e7631a3e9fada47474a9bda356f0ce7a0fef1c2c --trials 5 --iterations 1000 --rows 40`
 
-GitHub Actions downloads pinned official Spy **1.3.8-forever5**, CF9501070,
-SHA256 `f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec`.
-Its unmodified Colors/Widgets/MainWindow constructors, SetBar and ShowTooltip run
-against deterministic mocked client/player/tooltip APIs. Native list dispatch
-and pointer events are shaped; full detection/bootstrap is not run.
+Five fresh VMs per native-only/baseline/candidate plus independent cold profiling
+VMs, 40 shown slots, 100 warm-ups. Player/sync/hover/hide-show/transfer/unchanged-
+opacity/closed jobs use 1,000 callbacks; reopen/theme/four-value opacity cycles
+use 100. Cold is one adapter acquisition over existing rows. Slot replacement
+alternates two pre-created identities, warming both, distinct from ordinary
+same-row hide/show.
 
-Five fresh timed VMs per native-only/baseline/candidate, with independent fresh
-cold call-profile VMs. Warm jobs get 100 warm-ups. Most jobs use 1,000 callbacks;
-reopen/theme pairs/four-value opacity cycles use 100. Cold is one adapter
-acquisition over 40 existing rows. Reuse alternates two pre-created native
-identities in slot 2, warmed before measuring, separate from same-row hide/show.
-Closed idle is a no-event loop plus source review for no added polling; it is
-not a game-wide idle profiler.
-
-CPU uses os.clock. GC is stopped during churn measurement, then collected for
-retained deltas. Total/direct Spy.lua/shared Widgets.lua/native/C calls are
-profiled separately (10 warm callbacks, one cold acquisition), never during
-timing. Fixture source has its own chunk name, avoiding false source matches.
-Every trial is retained in the linked logs.
+Official Spy 1.3.8-forever5 (CF9501070), SHA256
+`f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec`,
+runs unmodified Colors/Widgets/MainWindow/ShowTooltip on mocked client APIs.
+The list dispatcher/pointer events are shaped. Full detection/bootstrap is not
+run. CPU uses os.clock; churn stops GC, retention collects before/after. Call
+profiles run separately (ten warm callbacks, one cold acquisition) and never
+contaminate timed passes. Closed idle is a no-event loop, not a game profiler.
 
 ## Five-trial median host timings
 
-| Workload | Iterations | Native-only ms | Baseline ms | Redesign ms |
+| Workload | Iterations | Native-only ms | Baseline ms | Refinement ms |
 | --- | ---: | ---: | ---: | ---: |
-| Cold acquisition | 1 | 0.001 | 4.858 | 4.454 |
-| Native player updates | 1000 | 7.466 | 7.400 | 7.445 |
-| Whole-pool sync | 1000 | 0.051 | 35.932 | 33.736 |
-| Hover enter/leave pairs | 1000 | 1.014 | 3.723 | 3.813 |
-| Same-row hide/show | 1000 | 0.128 | 1.268 | 1.234 |
-| Reused-slot transfer | 1000 | 0.234 | 54.653 | 50.063 |
-| Window reopen | 100 | 0.019 | 19.706 | 19.945 |
-| Standard/Forever pairs | 100 | 0.003 | 73.111 | 70.840 |
-| 0/75/100/75 opacity cycles | 100 | 0.004 | 9.137 | 10.295 |
-| Unchanged opacity | 1000 | 0.018 | 0.596 | 0.574 |
-| Closed native updates | 1000 | 7.518 | 7.568 | 7.598 |
-| Closed no-event idle | 1000 | 0.015 | 0.015 | 0.014 |
+| Cold acquisition | 1 | 0.001 | 2.170 | 2.243 |
+| Native player updates | 1000 | 3.696 | 3.783 | 3.790 |
+| Whole-pool sync | 1000 | 0.026 | 19.380 | 20.131 |
+| Hover pairs | 1000 | 0.553 | 1.878 | 1.971 |
+| Same-row hide/show | 1000 | 0.058 | 0.673 | 0.653 |
+| Reused-slot transfer | 1000 | 0.144 | 26.078 | 28.710 |
+| Window reopen | 100 | 0.011 | 9.516 | 9.643 |
+| Standard/Forever pairs | 100 | 0.002 | 37.355 | 38.124 |
+| 0/75/100/75 opacity cycles | 100 | 0.002 | 4.918 | 4.873 |
+| Unchanged opacity | 1000 | 0.011 | 0.324 | 0.317 |
+| Closed native updates | 1000 | 3.683 | 3.849 | 3.852 |
+| Closed no-event idle | 1000 | 0.009 | 0.009 | 0.010 |
 
-Player/sync/hover have identical warm operation/call counts; their small timing
-differences are host variability, not a demonstrated CPU/FPS improvement.
-No new art/hooks/scans/geometry/paint/alpha writes are added to native SetBar.
-Its 1,000 width writes belong to native truncation, as the native-only control
-confirms. Whole-pool warm sync also adds zero cosmetic writes or discovery.
+No added calls/scans/artwork/geometry/paint/alpha/visibility work on native
+player updates or unchanged whole-pool sync. The 1,000 width writes in SetBar
+are native truncation; the native-only control makes them too.
+Hover still makes eight writes per enter/leave pair, now tinting the two reused
+bevel gradients with vertex colour rather than replacing their source colour.
+Its timing is slightly higher here; no CPU/FPS improvement is claimed.
+The same-row hide/show, reopen and opacity operation counts remain unchanged.
 
-Changed opacity is **12.7% slower here**, +1.158 ms per 100 four-value cycles:
-it now paints separate header/list backgrounds and three bezel segments. Paint
-writes rise 800 -> 2,800 (two -> seven per changed value), visibility writes
-400 -> 800. Unchanged opacity retains the optimized no-work path.
-Theme pairs make 4,200 more geometry writes per 100 pairs for revised anchors/
-title height and restoring native resize bounds. These are explicit lifecycle
-costs, not hidden warm-player work.
+**Replacement/theme overhead is real and bounded.** Slot transfer rises
+26.078 -> 28.710 ms (+10.1%, about 2.63 microseconds per transfer) per 1,000
+alternating replacements. It makes 12,000 more geometry writes and 4,000 more
+visibility calls because the two old line textures are now attached to/hid with
+the native bar. This work is not performed on normal per-player paints.
 
-## Resources: fixture counts versus real EUI primitives
+One hundred Standard/Forever pairs make 16,000 additional visibility calls
+(hiding/showing the reused bevels), measuring 37.355 -> 38.124 ms (+2.1%).
+Cold acquisition adds 320 geometry and 162 paint operations over 40 slots for
+the attachment and one-time gradient setup. No repeated gradient construction
+occurs on warm events. These costs are reported for draft visual review, not
+concealed as free cosmetics or treated as release approval.
 
-| Cold adapter acquisition, 40 rows (mock UI) | Baseline | Redesign | Delta |
+## Resources and heap
+
+| Complete cold mock adapter acquisition, 40 slots | Baseline | Refinement | Delta |
 | --- | ---: | ---: | ---: |
-| Frames | 65 | 65 | 0 |
-| Texture objects | 307 | 270 | -37 |
+| Frame objects | 65 | 65 | 0 |
+| Texture objects | 270 | 270 | 0 |
 | Posthooks | 195 | 195 | 0 |
-| Lua retained KiB | 2989.937 | 2707.030 | -282.906 |
-| Lua churn KiB | 3196.424 | 2908.049 | -288.375 |
+| Lua retained KiB | 2707.030 | 2752.522 | 45.492 |
+| Lua churn KiB | 2908.111 | 2992.314 | 84.203 |
 
-One full-row material texture replaces two short textures per slot: **40 fewer
-per-row textures** at this pool size, with no new per-row frame/hook. Shared
-header/bezel/inner-panel art adds resources. The single native tooltip posthook
-is retained; missing-ShowTooltip forks keep their existing fallback.
+**Zero new frames, textures, masks or hooks in this pass**, per-row or shared.
+The same EUI rim primitives and surface masks are called as in the baseline;
+only four additional shadow attachments reuse the existing well mask where
+supported. Seven new shared Colour objects support the row bevel ramps and
+header ledge (three module-wide, four per main window). Pool entries add two
+references to already existing textures; no native row object is duplicated.
 
-**The fixture models each EUI rim as one texture and no internal frame/masks.**
-Do not present its +0 frames/-37 textures as the actual game's complete count.
-The pinned public
-[EUI border implementation](https://github.com/EllesmereGaming/EllesmereUI/blob/d83ffb7db2dc0104d328d4c99cc700c2ea052948/EllesmereUI_RetailAtlas.lua)
-creates one layout frame, eight textures and four corner masks for a normal
-textured rim; Heavy Bronze creates one layout frame/eight textures without
-those masks. Each uses its own OnSizeChanged layout script, not polling.
+The rim fixture abstracts EUI's internal pieces/layout frames/masks, so these
+totals are not the real client's complete counts. Unlike the preceding redesign,
+this pass adds no EUI primitive call, hence the source-based native frame/texture/
+mask delta is also zero. GPU/native gradient state and allocations are not
+measured as bytes.
 
-Static native-primitive accounting for this redesign:
-- Main rim changes textured -> Heavy where supported: same frame/texture count,
-  four fewer corner masks.
-- New inner textured rim: +1 internal layout frame, +8 textures, +4 corner masks.
-- Shared header/bezel/shadows add nine ordinary textures and replace seven old
-  well-edge/tick textures: +2 textures.
-- Replacing two row bands with one material over 40 slots: -40 textures.
-- Header Surface may add one mask when the existing slice-mask API is available.
-
-Thus, for the pinned Heavy-capable API and 40 slots, the expected delta is
-**-30 ordinary textures, +1 EUI-internal layout frame, +1 optional surface mask,
-zero new posthooks**. The new inner layout frame has one owned size script.
-With the textured outer fallback, the expected mask delta is +5 instead of +1.
-These are source-based creation counts, not live client/GPU memory observations;
-future/older EUI implementations can differ. No additional native row objects
-or interactive frame is created by the adapter.
-
-### GPU fill trade-off
-
-The material now shades the row's full height. At a native 16-unit row height,
-one 14-unit-high surface covers roughly 3.5 times the area of two previous
-two-unit bands before horizontal insets, despite using fewer textures. It adds
-bounded fragment coverage; it is not free GPU work. This is the main visual
-benefit (broad surface depth), and actual GPU/FPS cost is unmeasured. One gradient
-was chosen instead of overlapping two full-row glazes to limit overdraw.
-
-## Heap and lifecycle comparison
-
-| Workload | Baseline churn KiB | Redesign churn KiB | Baseline retained KiB | Redesign retained KiB |
+| Workload | Baseline churn KiB | Refinement churn KiB | Baseline retained KiB | Refinement retained KiB |
 | --- | ---: | ---: | ---: | ---: |
 | Native player updates | 500.188 | 500.188 | 0.000 | 0.000 |
 | Whole-pool sync | 125.500 | 125.500 | 0.000 | 0.000 |
-| Hover enter/leave pairs | 2031.664 | 2031.664 | 0.000 | 0.000 |
+| Hover pairs | 2031.664 | 2031.664 | 0.000 | 0.000 |
 | Same-row hide/show | 0.344 | 0.344 | 0.000 | 0.000 |
-| Reused-slot transfer | 4024.031 | 3766.219 | 0.000 | 0.000 |
-| Window reopen | 4161.621 | 4181.934 | 0.156 | 0.156 |
-| Standard/Forever pairs | 15421.777 | 16059.277 | 0.000 | 0.000 |
-| 0/75/100/75 opacity cycles | 352.871 | 880.996 | 0.000 | 0.000 |
+| Reused-slot transfer | 3766.219 | 4578.719 | 0.000 | 0.000 |
+| Window reopen | 4181.996 | 4181.996 | 0.156 | 0.156 |
+| Standard/Forever pairs | 16059.277 | 16059.277 | 0.000 | 0.000 |
+| 0/75/100/75 opacity cycles | 880.996 | 880.996 | 0.000 | 0.000 |
 | Unchanged opacity | 0.250 | 0.250 | 0.063 | 0.063 |
 | Closed native updates | 500.188 | 500.188 | 0.000 | 0.000 |
 | Closed no-event idle | 0.000 | 0.000 | 0.000 | 0.000 |
 
-Churn is temporary, not retained memory. The fixture implements each UI object
-and its methods as Lua tables and colour setters as argument tables. Secure-hook
-emulation packs returns; WoW's native secure hook does not run that wrapper.
-These heap values do not estimate WoW C-side frames/textures, GPU memory or
-actual retained addon memory. Small post-GC values up to 0.156 KiB are VM/
-measurement residuals; no accumulating art was observed.
+The cold +45.492 KiB retained result is **mock Lua memory**, much of it fake
+gradient/anchor/colour tables; not a WoW C/GPU estimate. Transfer churn rises
+812.500 KiB per 1,000 replacements from extra anchor tables but retains zero
+after collection. Warm retained deltas up to 0.156 KiB are small VM residuals,
+not accumulating art. Theme/player/hover/opacity churn is unchanged.
 
-Slot transfer reduces geometry writes 28,000 -> 23,000 and visibility writes
-6,000 -> 4,000 per 1,000 swaps with one material instead of two. Its churn also
-falls. Native row identities are reused; native allocation is not disguised as
-skin cost. Theme/reopen and changed-opacity churn increases are explicit above.
-Ordinary steady updates/hover add no UI objects or hooks.
+The fixture represents UI objects/methods and setter arguments as Lua tables;
+native secure-hook emulation also packs returns. Neither models WoW's actual
+C-side storage or CPU implementation. Do not claim real retained memory/FPS
+from these numbers.
 
 ## Separate call profiles
 
-Ten callbacks per warm workload, one cold acquisition. Total includes fixture,
-C and shared calls; Spy.lua is the direct adapter subset.
+Ten callbacks per warm row, one acquisition for cold. Total includes fixture,
+shared and C calls; Spy.lua is the direct adapter subset.
 
-| Workload | Baseline total | Redesign total | Baseline Spy.lua | Redesign Spy.lua | Baseline helpers | Redesign helpers |
+| Workload | Baseline total | Refinement total | Baseline Spy.lua | Refinement Spy.lua | Baseline helpers | Refinement helpers |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Cold acquisition | 13951 | 13074 | 1197 | 1164 | 593 | 593 |
+| Cold acquisition | 13074 | 14250 | 1164 | 1164 | 593 | 593 |
 | Native player updates | 1601 | 1601 | 0 | 0 | 0 | 0 |
 | Whole-pool sync | 7791 | 7791 | 3240 | 3240 | 20 | 20 |
-| Hover enter/leave pairs | 441 | 441 | 80 | 80 | 0 | 0 |
+| Hover pairs | 441 | 441 | 80 | 80 | 0 | 0 |
 | Same-row hide/show | 351 | 351 | 120 | 120 | 0 | 0 |
-| Reused-slot transfer | 9611 | 9411 | 3540 | 3530 | 20 | 20 |
-| Window reopen | 29081 | 29151 | 4810 | 4830 | 3490 | 3490 |
-| Standard/Forever pairs | 100641 | 98381 | 14560 | 14180 | 7300 | 7300 |
-| 0/75/100/75 opacity cycles | 15151 | 15951 | 3720 | 3800 | 120 | 120 |
+| Reused-slot transfer | 9411 | 9811 | 3530 | 3530 | 20 | 20 |
+| Window reopen | 29151 | 29151 | 4830 | 4830 | 3490 | 3490 |
+| Standard/Forever pairs | 98381 | 103181 | 14180 | 14180 | 7300 | 7300 |
+| 0/75/100/75 opacity cycles | 15951 | 15951 | 3800 | 3800 | 120 | 120 |
 | Unchanged opacity | 171 | 171 | 50 | 50 | 0 | 0 |
 | Closed native updates | 1601 | 1601 | 0 | 0 | 0 | 0 |
 | Closed no-event idle | 11 | 11 | 0 | 0 | 0 | 0 |
 
-Raw profiles include native/C counts and native-only controls. Hover/player/sync
-counts are unchanged. The count reduction in slot transfer is a lifecycle
-improvement; no warm FPS claim follows from it.
+Native/C breakdown and every raw trial are in the linked JSON. Direct native
+SetBar uses zero adapter calls. The single scoped native tooltip posthook and
+its fallback are retained; this pass does not return to 274 hooks.
 
-## Stability and validation limits
+## Rendering trade-offs and actual limits
 
-The full suite and actual-source mode preserve native texture paths/RGBA/value,
-secure row anchors/actions, nil-containing callback returns, dynamic metadata
-and normal FontString truncation. The new dual-anchor name constraint adds no
-per-player hook. Current EUI typography and original anchors/bounds restore on
-Standard/disable; no native saved dimensions or row-height settings are written.
-The 180-unit resize floor is guarded and never forced above current width;
-legacy tiny saved windows retain the documented safety reflow.
+The prior panel shadows occupied the three-unit rim band, where the art could
+obscure them. Moving the same strips three units inward and making them five
+units deep exposes the lip, while the existing shared mask clips chamfers.
+Native opaque bars still hide material underneath; no raised full-area sibling
+is added over row text/data to fake a shadow.
 
-Normal/fallback hover and Heavy/slim rim API modes, pool retirement/reuse,
-native resize/mode changes, combat deferral, EUI cleanup, opacity 0/75/100 boots,
-Reset, queued reversions and theme cycling are tested. Mutation checks detect
-reverting the Heavy rim, full-surface material, inset, native-hover route, opacity
-budget and unchanged-value queue suppression. Packaging checks one addon folder,
-66 source-identical runtime files, exact MIT license and unchanged 1.6.5 metadata.
+The full-row material is now behind the native fill. Two former sibling lines
+become soft two-unit ARTWORK bevels on that fill, below OVERLAY text, with white
+gradient sources and vertex-tint hover feedback. Normal side rails drop to
+alpha 0.18, avoiding heavy individual boxes. Native colour/path/opacity/value
+and name/metadata geometry remain unchanged. Fully opaque native textures keep
+their native centre appearance; forced Concept A grain there would require
+replacing or overpainting the user's texture choice. This limitation is explicit.
 
-Mocks do not certify rendered chamfers/lighting, parent visibility propagation,
-native secure hit-testing, taint/crash freedom, actual native resource memory,
-GPU/FPS, every fork or long-session behavior. These require WoW screenshots and
-the [live checklist](SPY_FOREVER.md#deliberate-compromises-and-screenshot-checklist).
-The draft remains unmerged/untagged/unpublished.
+GPU work is not free: the top/bottom lines become two units high rather than one,
+and four shared panel shadow strips grow from three to five units. At a native
+16-unit row height, decorative row region area rises roughly 12.5% before
+horizontal inset differences (broad underlay plus edges, excluding side rails).
+Masking four lip strips adds mask sampling with an existing mask. Real blending/
+occlusion/batching, GPU cost and FPS are unmeasured. No new noisy artwork, baked
+class texture, reflection shader or continuous effect was added.
+
+Header/list coverage budgets are unchanged at 75% by default and preserve
+saved 0/100. Their RGB/material lighting changes; backgrounds are not stacked.
+At 0 their full-area surfaces hide, while native bars and decorative row/border
+chrome remain. Fixed lip shadows/dividers are narrow perimeter lighting, not an
+additional opaque full-window plate.
+
+## Validation and live acceptance
+
+Full regressions/package, actual-source/native constructors/paints, masked and
+unmasked surface modes, Heavy/slim rim modes, hover fallback, saved 0/75/100 boots,
+Reset, pooled retirement/reuse, Standard/disable, native texture/class opacity,
+counter/title/resize, combat deferral and EUI cleanup are exercised.
+Specific assertions cover reused bevel ownership/gradient falloff/BLEND/sublevel,
+native fill above underlay and text above bevels, inherited row visibility,
+retired-bar cleanup, panel lip placement, shared corner mask and header ledge.
+Mutation checks must detect missing bevels/lip, broken tint/opacity/ownership
+and the existing geometry/settings regressions.
+
+Source comparison confirms SyncHeader, SyncControl and RowGeometry are identical
+to the baseline. Only cosmetic edge sizes/anchors used for material rendering
+change; no native window/row/header/control layout is redesigned. Main, version
+and packaged 66-file installation layout are unchanged.
+
+Actual screenshot quality, texture contrast at UI scale, opaque/transparent
+native bars, corner lighting, targeting/tooltip/hover, parent visibility,
+combat taint and long-session native/GPU behavior remain live checks. The
+material pass is a draft for screenshots, not declared visually complete.

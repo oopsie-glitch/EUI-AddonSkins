@@ -339,7 +339,19 @@ end, function(S, module)
                 counterWidth = size + 6
             end
         end
-        local available = math.max(16, width - 16 - counterWidth)
+        local total, number, tallest = 0, 0, 0
+        for _, key in ipairs(controlOrder) do
+            local button = f[key]
+            if button and (not button.IsShown or button:IsShown()) then
+                total, number = total + button:GetWidth(), number + 1
+                tallest = math.max(tallest, button:GetHeight())
+            end
+        end
+        -- Share the title's content edge. At the 90-unit native minimum,
+        -- reduce both rows' inset together rather than shrinking hitboxes.
+        local gap = number > 1 and math.min(2, math.max(0, (width - 11 - total) / (number - 1))) or 0
+        local contentLeft = math.min(8, math.max(3, width - 3 - total - gap * math.max(0, number - 1)))
+        local available = math.max(16, width - contentLeft - 8 - counterWidth)
         if title:GetWidth() ~= available then title:SetWidth(available) end
         if title.SetWordWrap and (not title.GetWordWrap or not title:GetWordWrap()) then title:SetWordWrap(true) end
         if title.SetNonSpaceWrap and (not title.GetNonSpaceWrap or not title:GetNonSpaceWrap()) then title:SetNonSpaceWrap(true) end
@@ -354,26 +366,17 @@ end, function(S, module)
             if SafeValue(measured) and measured and measured > 0 then titleHeight = math.max(line, measured) end
         end
         if title:GetHeight() ~= titleHeight then title:SetHeight(titleHeight) end
-        local total, number, tallest = 0, 0, 0
-        for _, key in ipairs(controlOrder) do
-            local button = f[key]
-            if button and (not button.IsShown or button:IsShown()) then
-                total, number = total + button:GetWidth(), number + 1
-                tallest = math.max(tallest, button:GetHeight())
-            end
-        end
         -- Keep the row boundary at -34 and every native hitbox unchanged:
         -- 1 unit below controls, 2 between title and controls, 2 above title.
         local controlY = -33 + tallest / 2
         local dividerY = controlY + tallest / 2 + 1
         local titleTop = dividerY + 1 + titleHeight
         local top = titleTop + 2
-        Anchor(title, "TOPLEFT", f, "TOPLEFT", 8, titleTop)
+        Anchor(title, "TOPLEFT", f, "TOPLEFT", contentLeft, titleTop)
         local firstLine = math.max(line, math.min(titleHeight, counter and counter.GetStringHeight and counter:GetStringHeight() or line))
         if counter then Anchor(counter, "RIGHT", f, "TOPRIGHT", -8, titleTop - firstLine / 2) end
         if f.CountButton then Anchor(f.CountButton, "RIGHT", f, "TOPRIGHT", -6, titleTop - firstLine / 2) end
-        local gap = number > 1 and math.min(2, math.max(0, (width - 6 - total) / (number - 1))) or 0
-        local offset = (width - total - gap * math.max(0, number - 1)) / 2
+        local offset = width - contentLeft - total - gap * math.max(0, number - 1)
         for _, key in ipairs(controlOrder) do
             local button = f[key]
             if button and (not button.IsShown or button:IsShown()) then

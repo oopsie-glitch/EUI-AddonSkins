@@ -8,8 +8,8 @@ No merge, version bump, tag or platform publication is authorized.
 
 The chamfered bronze rim, warm window material, compact native rows, class/status
 colours and inset control artwork have passed maintainer in-game review. This
-iteration changes only header layout and skin settings/background opacity.
-The Rim and Surface primitives and button artwork are unchanged.
+iteration changes only toolbar horizontal alignment, using ed74b8e as the
+baseline. Current materials/opacity/settings, rim and button artwork are unchanged.
 
 Spy exclusively owns bar texture paths, region alpha, native colours, text,
 sorting, warnings, targeting and other gameplay actions. The adapter never
@@ -31,8 +31,12 @@ A thin bronze separator divides the rows. This polish pass removes the previous
 fixed -21 control baseline, seven-unit title/control gap and padded native title
 box. It measures actual wrapped glyph height instead of reserving the old
 FontString box. Existing native button heights determine the row's vertical
-center. The group is horizontally centered, with one consistent gap (up to two
-units, reduced evenly only at native minimum width); no hitbox is resized.
+center. The toolbar is left-aligned with the title, keeping the existing button
+order and one consistent gap (up to two units). Both rows normally start eight
+units from the left edge. When all five controls occupy the native 90-unit
+minimum, they need 84 units of unchanged hitboxes; both rows use a shared
+three-unit inset and evenly reduced gaps to retain three units at the right.
+The counter stays right-aligned. No control is resized or new row introduced.
 
 Exact normal 12-unit text / 20-unit tallest-button geometry, relative to the
 native window's top:
@@ -198,3 +202,17 @@ the final commit, CI and temporary sign-in-free nightly.link download.
 6. Check alerts/statistics, combat transitions/recovery, EUI cleanup, repeat
    reopening/theme cycles and errors. Rendering, real hit-testing/taint, native
    secure behavior and long-session stability still require WoW verification.
+
+## Toolbar alignment review
+
+This narrow pass keeps the prior vertical geometry and material/opacity behavior.
+Regression matrices cover Nearby, Last Hour and Kill On Sight at widths 90, 95,
+103, 130, 200 and 300, checking shared left edge, even gaps, unchanged hitboxes,
+compact height, right counter and first-visible alignment after hiding a control.
+Existing Standard/Forever restoration and warm-operation checks remain.
+
+For live review, supply screenshots of a narrow Nearby window and a wider
+window, including one short title and one longer title (for example Kill On
+Sight). Check that the toolbar reads as part of the title area, with unchanged
+vertical spacing, materials and opacity. Automated geometry does not approve
+the final appearance.

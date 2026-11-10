@@ -482,9 +482,11 @@ Spy.MainWindow:Hide();Spy.MainWindow:Show();flush()
 assert(barTexture:GetTexture()=="saved-profile-texture" and barTexture:GetAlpha()==0.73)
 barTexture:SetAlpha(1)
 -- Two independent header rows retain native button sizes and secure row anchors.
-for _,width in ipairs({90,130,200,300}) do
+for _,width in ipairs({90,95,103,130,200,300}) do
     NativeHeaderLayout(width)
     Spy:ResizeMainWindow();flush()
+    for _,label in ipairs({"Nearby","Last Hour","Kill On Sight"}) do
+    Spy.MainWindow.Title:SetText(label)
     local text=Spy.MainWindow.Title
     local counter=Spy.MainWindow.CountFrame.Text
     assert(text:GetRight()+6<=counter:GetLeft(),"title overlaps native counter")
@@ -512,11 +514,31 @@ for _,width in ipairs({90,130,200,300}) do
         assert(icon<=math.min(art.seat.width,art.seat.height)-3,"icon lacks inner padding")
         assert(art.seat.mouse==false and art.host.mouse==false and art.host.motion==false,"decorative input interception")
     end
-    assert(math.abs(Spy.MainWindow.StatsButton:GetLeft()-(width-Spy.MainWindow.CloseButton:GetRight()))<0.001,"button group not centered")
+    assert(math.abs(Spy.MainWindow.StatsButton:GetLeft()-text:GetLeft())<0.001,"toolbar is not aligned with title")
+    assert(math.abs(text:GetLeft()-(width==90 and 3 or 8))<0.001,"shared content inset changed")
+    assert(Spy.MainWindow.CloseButton.width==20 and Spy.MainWindow.CloseButton.height==20,"close hitbox changed")
+    assert(Spy.MainWindow.StatsButton.width==16 and Spy.MainWindow.StatsButton.height==12,"statistics hitbox changed")
+    local spacing
+    local previousButton
+    for _,key in ipairs({"StatsButton","ClearButton","LeftButton","RightButton","CloseButton"}) do
+        local button=Spy.MainWindow[key]
+        if previousButton then
+            local current=button:GetLeft()-previousButton:GetRight()
+            if spacing then assert(math.abs(current-spacing)<0.001,"toolbar gaps are inconsistent") end
+            spacing=current
+        end
+        previousButton=button
+    end
     local left,right=Control(Spy.MainWindow.LeftButton),Control(Spy.MainWindow.RightButton)
     local lEnd=Spy.MainWindow.LeftButton:GetLeft()+(Spy.MainWindow.LeftButton.width+left.seat.width)/2
     local rStart=Spy.MainWindow.RightButton:GetLeft()+(Spy.MainWindow.RightButton.width-right.seat.width)/2
     assert(rStart-lEnd>=2,"adjacent painted frames touch")
+    end
+    -- Hidden controls release space; the first visible native button still
+    -- starts at the title edge without preserving a centered empty slot.
+    Spy.MainWindow.StatsButton:Hide();module.refresh();flush()
+    assert(math.abs(Spy.MainWindow.ClearButton:GetLeft()-Spy.MainWindow.Title:GetLeft())<0.001,"hidden control retained leading space")
+    Spy.MainWindow.StatsButton:Show();module.refresh();flush()
 end
 NativeHeaderLayout(200);Spy:ResizeMainWindow();flush()
 local title=Spy.MainWindow.Title

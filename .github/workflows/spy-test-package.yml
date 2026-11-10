@@ -31,6 +31,12 @@ jobs:
           assert hashlib.sha256(data).hexdigest()=='f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec'
           z=zipfile.ZipFile(io.BytesIO(data))
           import re
+          print('SPY BACKGROUND SOURCE AUDIT BEGIN')
+          for member in ('Spy/Widgets.lua','Spy/Colors.lua'):
+              print('REVIEW FILE '+member)
+              for number,line in enumerate(z.read(member).decode('utf-8-sig').splitlines(),1):
+                  print(str(number)+': '+line)
+          print('SPY BACKGROUND SOURCE AUDIT END')
           print('FOREVER UI OVERRIDES BEGIN')
           for member in ('Spy/Forever.lua','Spy/Watch.lua'):
               lines=z.read(member).decode('utf-8-sig',errors='replace').splitlines()

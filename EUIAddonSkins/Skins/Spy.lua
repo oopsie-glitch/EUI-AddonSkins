@@ -85,10 +85,12 @@ end, function(S, module)
         else plate:SetColorTexture(0.165, 0.115, 0.075, 1) end
         local paint = managed and {header = header} or nil
         if plate.SetGradient and CreateColor then
-            local low, high = CreateColor(0.120, 0.084, 0.055, 1), CreateColor(0.165, 0.115, 0.075, 1)
+            local low, high
             if managed then
                 low = header and CreateColor(0.135, 0.085, 0.042, 1) or CreateColor(0.100, 0.065, 0.040, 1)
                 high = header and CreateColor(0.250, 0.165, 0.080, 1) or CreateColor(0.175, 0.115, 0.065, 1)
+            else
+                low, high = CreateColor(0.120, 0.084, 0.055, 1), CreateColor(0.165, 0.115, 0.075, 1)
             end
             if paint then paint.low, paint.high = low, high
             else plate:SetGradient("VERTICAL", low, high) end
@@ -357,7 +359,7 @@ end, function(S, module)
         end
         local width, title = f:GetWidth(), f.Title
         local font, size, flags = title:GetFont()
-        if type(size) == "number" and size < 14 then title:SetFont(font, 14, flags) end
+        if type(size) == "number" and SafeValue(size) and size < 14 then title:SetFont(font, 14, flags) end
         if not SafeValue(width) then layout.writing = false; return end
         if layout.bounds and (capture or not layout.active) then
             -- Do not clamp an existing custom narrow size; widen the resize
@@ -399,7 +401,7 @@ end, function(S, module)
         local line = type(fontSize) == "number" and math.max(1, fontSize) or layout.titleHeight
         local top, controlY, titleY
         if wrapped then
-            available = math.max(16, width - 16 - counterWidth)
+            available = math.max(1, width - 24 - counterWidth)
         end
         available = math.max(1, available)
         if title:GetWidth() ~= available then title:SetWidth(available) end

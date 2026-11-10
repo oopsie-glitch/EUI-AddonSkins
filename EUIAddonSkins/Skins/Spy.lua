@@ -524,28 +524,23 @@ end, function(S, module)
     local function RowTones(entry, bar, shown)
         shown = shown and Owned(bar) and true or false
         if not entry.tones and shown then
-            entry.tones = {bar:CreateTexture(nil, "ARTWORK", nil, 2),
-                bar:CreateTexture(nil, "ARTWORK", nil, 2)}
+            entry.tones = {bar:CreateTexture(nil, "ARTWORK", nil, 2)}
             if CreateColor and entry.tones[1].SetGradient then
-                toneColors = toneColors or {CreateColor(0.90, 0.73, 0.48, 0),
-                    CreateColor(0.90, 0.73, 0.48, 0.16),
-                    CreateColor(0.04, 0.025, 0.01, 0.28), CreateColor(0.04, 0.025, 0.01, 0)}
+                toneColors = toneColors or {CreateColor(0.04, 0.025, 0.01, 0.28),
+                    CreateColor(0.90, 0.73, 0.48, 0.16)}
             end
             for i, texture in ipairs(entry.tones) do
                 texture:SetColorTexture(1, 1, 1, 1)
                 texture:SetBlendMode("BLEND")
                 if toneColors then
-                    texture:SetGradient("VERTICAL", toneColors[i == 1 and 1 or 3], toneColors[i == 1 and 2 or 4])
-                else texture:SetVertexColor(i == 1 and 0.90 or 0.04, i == 1 and 0.73 or 0.025,
-                    i == 1 and 0.48 or 0.01, 0.07) end
+                    texture:SetGradient("VERTICAL", toneColors[1], toneColors[2])
+                else texture:SetVertexColor(0.42, 0.29, 0.14, 0.12) end
             end
         end
         if not entry.tones then return end
         if shown and entry.toneParent ~= bar then
-            local upper, lower = entry.tones[1], entry.tones[2]
-            upper:SetParent(bar); lower:SetParent(bar)
-            upper:ClearAllPoints(); lower:ClearAllPoints()
-            upper:SetAllPoints(bar); lower:SetAllPoints(bar)
+            local material = entry.tones[1]
+            material:SetParent(bar); material:ClearAllPoints(); material:SetAllPoints(bar)
             entry.toneParent = bar
         end
         if entry.tonesShown ~= shown then

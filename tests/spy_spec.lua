@@ -542,10 +542,10 @@ local function Tones(row)
     return result
 end
 local tones=Tones(row)
-assert(#tones==2 and tones[1].allPoints==row.StatusBar and tones[2].allPoints==row.StatusBar,"row material does not cover the surface")
-assert(tones[1].gradient and tones[2].gradient and tones[1].blend=="BLEND","row material paint path missing")
+assert(#tones==1 and tones[1].allPoints==row.StatusBar,"row material does not cover the surface")
+assert(tones[1].gradient and tones[1].blend=="BLEND","row material paint path missing")
 assert(tones[1].parent==row.StatusBar and row.LeftText.drawLayer=="OVERLAY" and row.RightText.drawLayer=="OVERLAY","row bevel can cover text")
-assert(tones[1]:GetTop()<=row.StatusBar:GetTop() and tones[2]:GetBottom()>=row.StatusBar:GetBottom(),"row material escapes native fill")
+assert(tones[1]:GetTop()==row.StatusBar:GetTop() and tones[1]:GetBottom()==row.StatusBar:GetBottom(),"row material escapes native fill")
 assert(row.scripts.OnEnter==originalEnter and row.scripts.OnLeave==originalLeave,"native hover handlers replaced")
 row:Show()
 local nativeColor={table.unpack(row.StatusBar.statusColor)}
@@ -570,7 +570,7 @@ assert(counts.paint==hoverPaint,"duplicate hover repainted")
 row:FireScript("OnLeave")
 assert(not row.nativeTooltip and chrome.regions[1].baseColor[4]==0.60,"native leave did not restore row bevel")
 for i=1,4 do assert(row.StatusBar.statusColor[i]==nativeColor[i],"hover changed meaningful class/status colour") end
-row:Hide();assert(chrome.alpha==0 and Coverage(tones[2])==0,"hidden row retained rendered bevel")
+row:Hide();assert(chrome.alpha==0 and Coverage(tones[1])==0,"hidden row retained rendered bevel")
 row:Show()
 local stableHoverObjects,stableHoverHooks=counts.objects,counts.hooks
 for i=1,1000 do row:FireScript("OnEnter");row:FireScript("OnLeave") end
@@ -717,7 +717,7 @@ assert(counts.objects==stableObjects and counts.hooks==stableHooks and counts.re
 style.set(nil,"standard");flush()
 assert(Spy.MainWindow.CloseButton.standardGlyph.alpha==1 and Spy.MainWindow.LeftButton.standardGlyph.alpha==1,"Standard helper glyph lost")
 assert(row.StatusBar.points[1][4]==0 and row.StatusBar.points[2][4]==0 and row.LeftText.points[1][2]==row.StatusBar and row.RightText.points[1][2]==row.StatusBar,"Standard row geometry not restored")
-assert(not tones[1]:IsShown() and not tones[2]:IsShown(),"Standard retained row material")
+assert(not tones[1]:IsShown(),"Standard retained row material")
 for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"Standard helper border not restored") end
 assert(select(1,Spy.MainWindow:GetResizeBounds())==90,"Standard resize bounds not restored")
 assert(Spy.MainWindow.Title.width==121 and Spy.MainWindow.Title.height==16 and not Spy.MainWindow.Title:GetWordWrap() and not Spy.MainWindow.Title:GetNonSpaceWrap(),"Standard title geometry not restored")
@@ -759,7 +759,7 @@ local retired=Spy.MainWindow.Rows[2];retired:Hide();Spy.MainWindow.Rows[2]=nil
 Spy:CreateRow(2);flush()
 Spy:SetBar(2,"Recycled","60 Hunter",100,"Class","HUNTER",nil,1)
 assert(Spy.MainWindow.Rows[2]~=retired)
-assert(#Tones(retired)==0 and #Tones(Spy.MainWindow.Rows[2])==2,"row bevels accumulated on retired native bars")
+assert(#Tones(retired)==0 and #Tones(Spy.MainWindow.Rows[2])==1,"row bevels accumulated on retired native bars")
 assert(retired.StatusBar.points[1][4]==0 and retired.LeftText.points[1][2]==retired.StatusBar,"retired row retained Forever anchors")
 assert(RowChrome(Spy.MainWindow.Rows[2]) and Spy.MainWindow.Rows[2].StatusBar.points[1][4]==10,"recycled slot lost contained row")
 local settledObjects,settledHooks=counts.objects,counts.hooks
@@ -794,8 +794,8 @@ assert(Spy:AlertWatch()=="native-watch" and alertRim.color[1]==0.6 and alertRim.
 -- Simulate EUI's registered-host texture cleanup; custom art remains outside it.
 for host in pairs(shells) do for _,region in ipairs(host.regions) do region.alpha=0 end end
 assert(rootRim.edge.alpha==1,"EUI cleanup stripped Forever rim")
-assert(#Tones(row)==2 and tones[1]:IsShown() and tones[2]:IsShown()
-    and tones[1].gradient.high[4]==0.16 and tones[2].gradient.low[4]==0.28,"EUI cleanup changed approved row bevels")
+assert(#Tones(row)==1 and tones[1]:IsShown()
+    and tones[1].gradient.high[4]==0.16 and tones[1].gradient.low[4]==0.28,"EUI cleanup changed approved row bevels")
 local plate,grain
 for _,region in ipairs(viewport.regions) do
     if region.drawLayer=="BACKGROUND" and region.sublevel==1 then plate=region end
@@ -940,7 +940,7 @@ enabled=false
 for _,fn in ipairs(looks)do fn()end;flush()
 assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1 and Spy.MainWindow.Background:GetAlpha()==1,"disable did not clean Forever art")
 assert(row.StatusBar.points[1][4]==0 and row.LeftText.points[1][2]==row.StatusBar and chrome.alpha==0,"disable retained custom row geometry")
-assert(not tones[1]:IsShown() and not tones[2]:IsShown(),"disable retained row bevels")
+assert(not tones[1]:IsShown(),"disable retained row bevels")
 assert(Spy.MainWindow.Title.font[1]=="EUI New" and Spy.MainWindow.Title.font[2]==13,"disable retained title emphasis")
 for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"disable retained hidden Standard border") end
 assert(#errors==0,table.concat(errors,"\n"))

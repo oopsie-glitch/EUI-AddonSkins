@@ -120,7 +120,7 @@ jobs:
           mutations=[
               ('e.top:SetColorTexture(0.92, 0.70, 0.38, 0.95)', 'e.top:SetColorTexture(0.62, 0.43, 0.23, 0.60)', 'native hover did not highlight bronze frame'),
               ('rim = Rim(host, f == spy.MainWindow)', 'rim = Rim(host, false)', 'main window did not select supported Heavy Bronze rim'),
-              ('upper:SetAllPoints(bar); lower:SetAllPoints(bar)', 'upper:SetHeight(2); lower:SetHeight(2)', 'row material does not cover the surface'),
+              ('material:SetAllPoints(bar)', 'material:SetHeight(2)', 'row material does not cover the surface'),
               ('local wrapped = available < 24', 'local wrapped = true', 'header did not integrate at normal width'),
               ('if entry.inset then return end', 'if true then return end', 'inset fill was not recessed'),
               ('return ns.IsEnabled(module) and ForeverLook and ForeverLook() and f and', 'return false and ForeverLook and ForeverLook() and f and', 'native helper border leaked into Forever'),

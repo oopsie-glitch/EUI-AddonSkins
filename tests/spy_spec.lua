@@ -788,7 +788,9 @@ for _,a in ipairs({0,35,100,75}) do
 end
 -- Repeat an unchanged slider value: no material/geometry/visibility work.
 local pc,gc,vc,rc=counts.paint,counts.geometry,counts.visibility,counts.reads
+local queuedBefore=#timers
 for i=1,1000 do opacity.set(nil,75) end
+assert(#timers==queuedBefore,"unchanged opacity scheduled cosmetic work")
 flush()
 assert(counts.paint==pc and counts.geometry==gc and counts.visibility==vc and counts.reads==rc,"unchanged opacity repainted or scanned")
 assert(Spy.MainWindow.Background.alpha==0 and Spy.MainWindow:GetBackdrop()==nil and Spy.MainWindow.TitleBar:GetBackdrop()==nil,"native backdrop stacks with Forever")
@@ -797,6 +799,9 @@ for host in pairs(shells) do
         assert(Coverage(host.shellAtlas)==0 and Coverage(host.shellOverlay)==0 and Coverage(host.shellFlat)==0,"EUI Standard shell stacks with Forever")
     end
 end
+-- A queued change followed by the original value must still use latest prefs.
+opacity.set(nil,0);opacity.set(nil,75);opacity.set(nil,75);flush()
+assert(opacity.get()==75 and math.abs(Composite(plate,grain)-0.75)<0.0001,"coalesced opacity reverted saved preference")
 -- Native whole-window fading is independent; the skin never changes its alpha.
 Spy.MainWindow:SetAlpha(0.5)
 local faded=Composite(plate,grain)

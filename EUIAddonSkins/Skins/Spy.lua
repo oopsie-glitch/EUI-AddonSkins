@@ -786,8 +786,10 @@ end, function(S, module)
                         get = function() return math.floor(BackgroundOpacity() * 100 + 0.5) end,
                         set = function(_, value)
                             if type(value) ~= "number" or not SafeValue(value) or value ~= value then return end
-                            SavePreference("opacity", math.max(0, math.min(100, value)) / 100)
-                            H.Queue(opacityKey, ApplyOpacity)
+                            local target = math.max(0, math.min(100, value)) / 100
+                            local current = BackgroundOpacity()
+                            SavePreference("opacity", target)
+                            if target ~= current then H.Queue(opacityKey, ApplyOpacity) end
                         end,
                     },
                     reset = {type = "execute", name = "Reset Skin Settings", order = 3, func = ResetSkinSettings},

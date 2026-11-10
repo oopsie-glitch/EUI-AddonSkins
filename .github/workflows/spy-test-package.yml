@@ -31,6 +31,12 @@ jobs:
           assert hashlib.sha256(data).hexdigest()=='f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec'
           z=zipfile.ZipFile(io.BytesIO(data))
           import re
+          print('SPY NATIVE HEADER GEOMETRY BEGIN')
+          native=z.read('Spy/MainWindow.lua').decode('utf-8-sig')
+          for number,line in enumerate(native.splitlines(),1):
+              if re.search(r'(?:CloseButton|RightButton|LeftButton|ClearButton|StatsButton|CountButton).*Set(?:Width|Height|Point)|function Spy:SetupMainWindowButtons|Spy.MainWindow\[k\]:SetWidth',line):
+                  print(str(number)+': '+line)
+          print('SPY NATIVE HEADER GEOMETRY END')
           print('SPY BACKGROUND SOURCE AUDIT BEGIN')
           for member in ('Spy/Widgets.lua','Spy/Colors.lua'):
               print('REVIEW FILE '+member)

@@ -68,15 +68,22 @@ end, function(S, module)
     local function ShowRim(rim, shown)
         if rim and rim.on ~= shown then _G.EllesmereUI.ForeverBorderShown(rim, shown) end
     end
-    local function Surface(host)
+    local function Surface(host, managed)
         local plate = host:CreateTexture(nil, "BACKGROUND", nil, 1)
         local grain = host:CreateTexture(nil, "BACKGROUND", nil, 2)
         plate:SetAllPoints(host); grain:SetAllPoints(host)
         -- Same material as RestedXP: EUI exports the rim, not its warm fill.
         plate:SetColorTexture(0.165, 0.115, 0.075, 1)
+        local paint = managed and {} or nil
         if plate.SetGradient and CreateColor then
-            plate:SetGradient("VERTICAL", CreateColor(0.120, 0.084, 0.055, 1),
-                CreateColor(0.165, 0.115, 0.075, 1))
+            local low, high = CreateColor(0.120, 0.084, 0.055, 1), CreateColor(0.165, 0.115, 0.075, 1)
+            if paint then paint.low, paint.high = low, high
+            else plate:SetGradient("VERTICAL", low, high) end
+        end
+        if paint then
+            -- Match RestedXP: coverage belongs in gradient/vertex paint, with
+            -- explicit alpha blending, rather than opaque stops plus SetAlpha.
+            plate:SetBlendMode("BLEND"); grain:SetBlendMode("BLEND")
         end
         grain:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background", "REPEAT", "REPEAT")
         grain:SetHorizTile(true); grain:SetVertTile(true)
@@ -89,7 +96,28 @@ end, function(S, module)
             mask:SetTextureSliceMargins(8, 8, 8, 8); mask:SetTextureSliceMode(mode)
             mask:SetAllPoints(host); plate:AddMaskTexture(mask); grain:AddMaskTexture(mask)
         end
-        return plate, grain
+        return plate, grain, paint
+    end
+    local function PaintBackground(entry, target)
+        local paint = entry.paint
+        if paint.alpha ~= target then
+            paint.alpha = target
+            local grainAlpha = target * 0.12
+            local plateAlpha = (target - grainAlpha) / (1 - grainAlpha)
+            if paint.low then
+                paint.low:SetRGBA(0.120, 0.084, 0.055, plateAlpha)
+                paint.high:SetRGBA(0.165, 0.115, 0.075, plateAlpha)
+                entry.plate:SetGradient("VERTICAL", paint.low, paint.high)
+            else
+                entry.plate:SetVertexColor(0.165, 0.115, 0.075, plateAlpha)
+            end
+            entry.grain:SetVertexColor(0.56, 0.44, 0.32, grainAlpha)
+        end
+        local shown = target > 0
+        if paint.shown ~= shown then
+            entry.plate:SetShown(shown); entry.grain:SetShown(shown)
+            paint.shown = shown
+        end
     end
     local function BackgroundOpacity()
         local preferences = EUIAddonSkinsDB and EUIAddonSkinsDB.spy
@@ -315,33 +343,38 @@ end, function(S, module)
         local measure = title.GetUnboundedStringWidth or title.GetStringWidth
         local length = measure and measure(title) or available
         if not SafeValue(length) then length = available end
-        local line = math.max(12, layout.titleHeight)
-        local lines = math.max(1, math.ceil(length / available))
+        local _, fontSize = title:GetFont()
+        local line = type(fontSize) == "number" and math.max(1, fontSize) or layout.titleHeight
+        local titleHeight = line * math.max(1, math.ceil(length / available))
         if title.GetStringHeight then
-            local height = title:GetStringHeight()
-            if SafeValue(height) then lines = math.max(lines, math.ceil(height / line)) end
+            local measured = title:GetStringHeight()
+            if SafeValue(measured) and measured and measured > 0 then titleHeight = math.max(line, measured) end
         end
-        local titleHeight = line * lines
         if title:GetHeight() ~= titleHeight then title:SetHeight(titleHeight) end
-        -- Reuse the native 34-unit header and extend only its decorative top.
-        -- This leaves every secure row, native resize bound and saved size alone.
-        local top = titleHeight
-        Anchor(title, "TOPLEFT", f, "TOPLEFT", 8, top - 4)
-        if counter then Anchor(counter, "TOPRIGHT", f, "TOPRIGHT", -8, top - 4) end
-        if f.CountButton then Anchor(f.CountButton, "TOPRIGHT", f, "TOPRIGHT", -6, top - 4) end
-        local total, number = 0, 0
+        local total, number, tallest = 0, 0, 0
         for _, key in ipairs(controlOrder) do
             local button = f[key]
             if button and (not button.IsShown or button:IsShown()) then
                 total, number = total + button:GetWidth(), number + 1
+                tallest = math.max(tallest, button:GetHeight())
             end
         end
+        -- Keep the row boundary at -34 and every native hitbox unchanged:
+        -- 1 unit below controls, 2 between title and controls, 2 above title.
+        local controlY = -33 + tallest / 2
+        local dividerY = controlY + tallest / 2 + 1
+        local titleTop = dividerY + 1 + titleHeight
+        local top = titleTop + 2
+        Anchor(title, "TOPLEFT", f, "TOPLEFT", 8, titleTop)
+        local firstLine = math.max(line, math.min(titleHeight, counter and counter.GetStringHeight and counter:GetStringHeight() or line))
+        if counter then Anchor(counter, "RIGHT", f, "TOPRIGHT", -8, titleTop - firstLine / 2) end
+        if f.CountButton then Anchor(f.CountButton, "RIGHT", f, "TOPRIGHT", -6, titleTop - firstLine / 2) end
         local gap = number > 1 and math.min(2, math.max(0, (width - 6 - total) / (number - 1))) or 0
-        local offset = 3
+        local offset = (width - total - gap * math.max(0, number - 1)) / 2
         for _, key in ipairs(controlOrder) do
             local button = f[key]
             if button and (not button.IsShown or button:IsShown()) then
-                Anchor(button, "RIGHT", f, "TOPRIGHT", -offset, -21)
+                Anchor(button, "RIGHT", f, "TOPRIGHT", -offset, controlY)
                 offset = offset + button:GetWidth() + gap
             end
         end
@@ -351,10 +384,10 @@ end, function(S, module)
             entry.host:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
             layout.top = top
         end
-        if entry.seam and not layout.seamAnchored then
-            Anchor(entry.seam, "TOPLEFT", f, "TOPLEFT", 4, -8)
-            entry.seam:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -8)
-            layout.seamAnchored = true
+        if entry.seam and layout.dividerY ~= dividerY then
+            Anchor(entry.seam, "TOPLEFT", f, "TOPLEFT", 4, dividerY)
+            entry.seam:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, dividerY)
+            layout.dividerY = dividerY
         end
         layout.active, layout.writing = true, false
     end
@@ -362,8 +395,8 @@ end, function(S, module)
         local entry = foreverWindows[f]
         if not entry and forever and Owned(f) then
             local host = Host(f)
-            local plate, grain = Surface(host)
-            entry = {host = host, plate = plate, grain = grain, rim = Rim(host)}
+            local plate, grain, paint = Surface(host, f == spy.MainWindow)
+            entry = {host = host, plate = plate, grain = grain, paint = paint, rim = Rim(host)}
             foreverWindows[f] = entry
             if f.Background and f.Background.GetAlpha then
                 entry.nativeBackground = f.Background
@@ -393,11 +426,21 @@ end, function(S, module)
         if entry.nativeBackground then Alpha(entry.nativeBackground, forever and 0 or entry.backgroundAlpha) end
         if forever then
             local alpha = f == spy.MainWindow and BackgroundOpacity() or PanelAlpha()
-            local grainAlpha = alpha * 0.12
-            Alpha(entry.grain, grainAlpha)
-            Alpha(entry.plate, grainAlpha < 1 and (alpha - grainAlpha) / (1 - grainAlpha) or 0)
+            if entry.paint then PaintBackground(entry, alpha)
+            else
+                local grainAlpha = alpha * 0.12
+                Alpha(entry.grain, grainAlpha)
+                Alpha(entry.plate, grainAlpha < 1 and (alpha - grainAlpha) / (1 - grainAlpha) or 0)
+            end
             -- The warm plate/grain already cover the header. No stacked fill.
-            if entry.band then Alpha(entry.band, f == spy.MainWindow and 0 or alpha * 0.16); Alpha(entry.seam, 1) end
+            if entry.band then
+                if f == spy.MainWindow then
+                    -- A zero texture-level alpha is not our paint contract.
+                    -- Exclude the unused gradient band from rendering entirely.
+                    if entry.band:IsShown() then entry.band:Hide() end
+                else Alpha(entry.band, alpha * 0.16) end
+                Alpha(entry.seam, 1)
+            end
             -- Alert borders are severity indicators, not neutral bronze trim.
             if alert and entry.rim and f.GetBackdropBorderColor and _G.EllesmereUI.ForeverBorderPaint then
                 local r, g, b, a = f:GetBackdropBorderColor()

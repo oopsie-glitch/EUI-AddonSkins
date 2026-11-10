@@ -27,15 +27,30 @@ artwork, scripts and tooltips are retained; painted insets provide separation
 even where minimum width requires adjacent hitboxes. The native count hitbox
 follows the counter.
 
-A thin bronze separator divides the rows. The existing 34-unit native header
-area accommodates controls; the decorative top extends upward by the title's
-line height (normally 12 units). Long/localized titles wrap within the title
-area at narrow widths and extend that top only as necessary. There is no width
-increase, parent-frame resizing, row relocation, new input overlay or change to
-Spy's saved position/size or resize bounds. This avoids moving secure targeting
-rows or stealing list space. The native title drag/wheel frame continues to
-follow the title. The Forever header is at the top even for inverted profiles;
-switching to Standard restores the original inverted native anchors.
+A thin bronze separator divides the rows. This polish pass removes the previous
+fixed -21 control baseline, seven-unit title/control gap and padded native title
+box. It measures actual wrapped glyph height instead of reserving the old
+FontString box. Existing native button heights determine the row's vertical
+center. The group is horizontally centered, with one consistent gap (up to two
+units, reduced evenly only at native minimum width); no hitbox is resized.
+
+Exact normal 12-unit text / 20-unit tallest-button geometry, relative to the
+native window's top:
+
+- Controls center: -23; top -13; bottom -33 (one unit before native rows at -34).
+- Title bottom: -11; divider: -12; title-to-controls clearance: two units.
+- Title top: +1; decorative top: +3 (two units above actual text).
+- Header height: 37 units, down from 46 (about 20%); wrapped titles add only
+  their measured extra glyph height. With a formerly padded 16-unit title box,
+  the previous 50-unit reservation also collapses to 37 for 12-unit glyphs.
+- Counter and its original hitbox align to the first title line's center.
+
+Only the decorative top moves; outer rim artwork/thickness/colour and all native
+window dimensions, row anchors, sizes, saved position/size and resize bounds
+remain unchanged. This avoids moving secure targeting rows or stealing list
+space. Native title drag/wheel handling follows the title. Inverted profiles use
+the top Forever header and restore their original native anchors in Standard.
+Long/localized titles wrap as needed; screen-edge behavior remains a live check.
 
 Title text changes, counter text/visibility changes and completed native
 resize/setup/profile operations synchronize the existing header only. Native
@@ -69,19 +84,44 @@ No Blizzard/global menu API is replaced. Shared player-unit menus remain native.
 
 ## Background opacity
 
-Only the Forever main-window material uses the skin opacity preference. The
-same warm gradient/grain spans header and body with a composed alpha budget;
-the old overlapping header fill is disabled. Borders, separator, labels and
-buttons remain fully visible at 0%. The slider does not set alpha on the window,
-text or interactive controls. It coalesces bursts and updates existing artwork
-without hierarchy discovery.
+The opacity audit found a paint-contract defect and a regression blind spot:
+the previous main plate and unused header band were initialized with fully
+opaque gradient stops, while subsequent updates changed only texture-level
+alpha. The previous fixture had no SetGradient/CreateColor implementation, so it
+could approve a 75% GetAlpha budget without ever exercising those paint paths.
+The unused band also remained submitted for drawing at a zero texture alpha.
 
-Spy's native overall window/instance fading remains its independent native
-feature. It can fade the entire addon, including its decorative material;
-the skin slider does not compete for those properties. Spy still controls all
-row textures, class/status colours and their appearance. Standard, alerts,
-statistics and menus retain their existing opacity behavior; this iteration
-does not redesign those surfaces.
+The main material now follows RestedXP's SetPaintAlpha/SurfaceAlpha pattern:
+explicit BLEND, cached gradient-stop RGBA for the plate, vertex RGBA for grain,
+and explicit visibility exclusion at zero. The unused header band is hidden
+entirely. The warm RGB/gradient values are unchanged. For a target A, grain paint
+uses 0.12A and plate paint uses (A - 0.12A)/(1 - 0.12A), giving exactly A combined
+coverage over the game world in the unmasked interior at native parent alpha 1.
+No paint alpha is applied a second time via SetAlpha. Tests check actual paint
+values and visibility, not only GetAlpha; zero, 75% and 100% are covered.
+
+The full hierarchy was reviewed: official Spy Widgets creates a body texture and
+an opaque black TitleBar backdrop; the skin suppresses the body texture and
+removes native window/TitleBar backdrops. Its registered EUI Standard shell has
+atlas/black-overlay/flat alternatives, but their host has alpha zero in Forever.
+The extra decorative header band is now excluded from rendering. One warm
+plate/grain pair covers both header and body; the mask only lowers edge coverage.
+No other owned filled header background remains. EUI's engine source has no
+ignore-parent-alpha exception in its shell; its texture cleanup does not register
+the custom Forever hosts.
+
+Spy's native overall window/instance fading remains an independent feature.
+The skin never changes parent alpha or fades interactive controls: native fading
+can still lower the entire addon's final screen opacity, never make this
+background more opaque. Borders, separator, labels and buttons are excluded from
+the background slider. Saved preferences, reset behavior and all bar textures,
+class/status colours and native row appearance remain unchanged. Standard,
+alerts, statistics and menus retain their prior appearance.
+
+These are verified source defects and modeled composition checks, not a captured
+GPU trace from the maintainer's client. Confirm the resulting transparency in WoW;
+the screenshot pixels/another addon modifying these frames cannot be audited
+through GitHub APIs alone.
 
 ## Source and supported surfaces
 

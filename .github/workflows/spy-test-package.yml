@@ -62,6 +62,7 @@ jobs:
       - name: Fresh Lua bootstrap with saved Spy opacity endpoints
         run: |
           SPY_BOOT_OPACITY=0 python3 tests/run_lua.py
+          SPY_BOOT_OPACITY=0.75 python3 tests/run_lua.py
           SPY_BOOT_OPACITY=1 python3 tests/run_lua.py
       - name: Verify regression sensitivity for default opacity and header separation
         run: |
@@ -72,7 +73,9 @@ jobs:
           original=path.read_text()
           mutations=[
               ('return 0.75', 'return 0.92', 'saved/default opacity was overwritten'),
-              ('"TOPRIGHT", -offset, -21)', '"TOPRIGHT", -offset, -2)', 'title/control rows overlap'),
+              ('local dividerY = controlY + tallest / 2 + 1', 'local dividerY = controlY + tallest / 2 + 8', 'header gap is not compact'),
+              ('paint.low:SetRGBA(0.120, 0.084, 0.055, plateAlpha)', 'paint.low:SetRGBA(0.120, 0.084, 0.055, 1)', 'gradient stops retain opaque paint'),
+              ('if entry.band:IsShown() then entry.band:Hide() end', 'if entry.band:IsShown() then Alpha(entry.band, 0) end', 'stacked opaque header fill retained'),
           ]
           try:
               for before,after,message in mutations:

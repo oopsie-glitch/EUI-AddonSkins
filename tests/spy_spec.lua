@@ -5,7 +5,7 @@ local combat, enabled, look, panelAlpha = false, true, "blizzard", 0.8
 local rings, shells = {}, {}
 tinsert=table.insert
 tDeleteItem=function(t,item) for i=#t,1,-1 do if t[i]==item then table.remove(t,i) end end end
-local counts = {objects=0, hooks=0, reads=0, alphaWrites=0, scans=0, geometry=0}
+local counts = {objects=0, hooks=0, reads=0, alphaWrites=0, scans=0, geometry=0, paint=0, visibility=0}
 local function pack(...) return {n=select("#",...), ...} end
 local unpack=table.unpack or unpack
 C_Timer={After=function(_,fn) timers[#timers+1]=fn end}
@@ -27,6 +27,11 @@ local function flush()
         for _,fn in ipairs(batch) do fn() end
         round=round+1; assert(round<30,"Spy refresh loop")
     end
+end
+CreateColor=function(r,g,b,a)
+    local c={}
+    function c:SetRGBA(r,g,b,a) self.r,self.g,self.b,self.a=r,g,b,a end
+    c:SetRGBA(r,g,b,a);return c
 end
 local function frame(kind,parent)
     counts.objects=counts.objects+1
@@ -102,8 +107,9 @@ local function frame(kind,parent)
         assert(not combat,"cosmetic alpha write in combat")
         self.alpha=v; counts.alphaWrites=counts.alphaWrites+1
     end
-    function f:Show() self.shown=true; if self.hooks.OnShow then self.hooks.OnShow(self) end end
-    function f:Hide() self.shown=false; if self.hooks.OnHide then self.hooks.OnHide(self) end end
+    function f:Show() counts.visibility=counts.visibility+1; self.shown=true; if self.hooks.OnShow then self.hooks.OnShow(self) end end
+    function f:Hide() counts.visibility=counts.visibility+1; self.shown=false; if self.hooks.OnHide then self.hooks.OnHide(self) end end
+    function f:SetShown(shown) if shown then self:Show() else self:Hide() end end
     function f:IsShown() return self.shown end
     function f:IsVisible() return self.shown end
     function f:HookScript(key,fn)
@@ -130,8 +136,13 @@ local function frame(kind,parent)
         end
     end
     function f:GetTexture() return self.path end
-    function f:SetColorTexture(...) self.color={...} end
-    function f:SetVertexColor(...) self.color={...} end
+    function f:SetColorTexture(...) self.color={...};counts.paint=counts.paint+1 end
+    function f:SetVertexColor(...) self.color={...};counts.paint=counts.paint+1 end
+    function f:SetBlendMode(mode) self.blend=mode end
+    function f:SetGradient(direction,low,high)
+        self.gradient={direction=direction,low={low.r,low.g,low.b,low.a},high={high.r,high.g,high.b,high.a}}
+        counts.paint=counts.paint+1
+    end
     function f:GetVertexColor() return unpack(self.color) end
     function f:SetHorizTile() end
     function f:SetVertTile() end
@@ -161,10 +172,10 @@ local function frame(kind,parent)
     function f:SetMinMaxValues(a,b) self.min,self.max=a,b end
     function f:SetValue(v) self.value=v end
     function f:CreateTexture()
-        local t=frame("Texture"); self.regions[#self.regions+1]=t; return t
+        local t=frame("Texture");t.parent=self; self.regions[#self.regions+1]=t; return t
     end
     function f:CreateFontString()
-        local t=frame("FontString");self.regions[#self.regions+1]=t;return t
+        local t=frame("FontString");t.parent=self;self.regions[#self.regions+1]=t;return t
     end
     function f:GetFontString() return self.label end
     function f:GetNormalTexture() return self.normal end
@@ -173,6 +184,22 @@ local function frame(kind,parent)
     function f:GetHighlightTexture() return self.highlight end
     if f.kind=="StatusBar" then f.SetVertexColor=nil;f.GetVertexColor=nil end
     return f
+end
+local function Coverage(texture)
+    local alpha=texture.alpha
+    if texture.gradient then alpha=alpha*texture.gradient.low[4]
+    else alpha=alpha*(texture.color[4] or 1) end
+    local region=texture
+    while region do
+        if region.shown==false then return 0 end
+        if region~=texture then alpha=alpha*(region.alpha or 1) end
+        region=region.parent
+    end
+    return alpha
+end
+local function Composite(plate,grain)
+    local a,b=Coverage(plate),Coverage(grain)
+    return a+b*(1-a)
 end
 CreateFrame=function(kind,name,parent,template)
     local f=frame(kind,parent);f.name=name;f.secure=template=="SpySecureActionButtonTemplate"
@@ -205,7 +232,13 @@ ns.RefreshPopupMenusNow=function() end
 ns.StyleTextureDialog=function(_,_,popup,active) popup.skinActive=active end
 local S={OnLooksChanged=function(fn) looks[#looks+1]=fn end,
     GetPanelColor=function() return 0.04,0.04,0.04,panelAlpha end}
-function S.Shell(f,opts) f.standardShell=true;f.shellOptions=opts;shells[f]=true end
+function S.Shell(f,opts)
+    f.standardShell=true;f.shellOptions=opts;shells[f]=true
+    -- Native-shaped EUI shell textures: inherited frame alpha must exclude all.
+    f.shellAtlas=f:CreateTexture();f.shellAtlas:SetTexture("modern_blizz.png")
+    f.shellOverlay=f:CreateTexture();f.shellOverlay:SetColorTexture(0,0,0,0.62)
+    f.shellFlat=f:CreateTexture();f.shellFlat:SetColorTexture(0.04,0.04,0.04,0.92)
+end
 function S.CloseButton(f)
     if f.close then return end
     f.close=true
@@ -248,7 +281,7 @@ local colors={
     Bar={["Bar Text"]={r=1,g=1,b=1,a=1}},
     Alert={["KOS Border"]={r=0.9,g=0.1,b=0.05,a=1},Background={r=0,g=0,b=0,a=1},Icon={r=1,g=1,b=1,a=1},["KOS Text"]={r=1,g=0.1,b=0.1,a=1},["Name Text"]={r=1,g=1,b=1,a=1}},
 }
-Spy={db={profile={MainWindow={RowHeight=16,RowSpacing=1,TextHeight=12},Colors=colors}},
+Spy={db={profile={MainWindow={RowHeight=16,RowSpacing=1,TextHeight=12,Alpha=1,AlphaBG=1},Colors=colors}},
     Colors={},CreateMainWindow=function() end,CreateFrame=function(_,name)
         local f=frame(); _G[name]=f;return f,nil,"native-tail" end,
     SetFontSize=function(_,f,size) f.font[2]=size end,AddFontString=function() end,
@@ -287,6 +320,8 @@ Spy.MainWindow=frame();Spy.MainWindow.Rows={};Spy.MainWindow.protected=true
 _G.Spy_MainWindow=Spy.MainWindow
 Spy.MainWindow.Background=Spy.MainWindow:CreateTexture()
 Spy.MainWindow.TitleBar=frame("Frame",Spy.MainWindow)
+Spy.MainWindow.TitleBar:SetBackdrop({bgFile="native-opaque-title"})
+Spy.MainWindow.TitleBar:SetBackdropColor(0,0,0,1)
 Spy.MainWindow.Title=Spy.MainWindow:CreateFontString()
 Spy.MainWindow.Title:SetText("Kill On Sight")
 Spy.MainWindow.Title.left=8;Spy.MainWindow.Title.width=121
@@ -413,7 +448,7 @@ if bootOpacity then
     for host in pairs(rings) do
         if host.parent==Spy.MainWindow then
             local plate,grain=host.regions[1],host.regions[2]
-            assert(math.abs(plate.alpha+grain.alpha*(1-plate.alpha)-bootOpacity)<0.0001,"fresh bootstrap lost saved opacity")
+            assert(math.abs(Composite(plate,grain)-bootOpacity)<0.0001,"fresh bootstrap lost saved opacity")
         end
     end
     assert(EUIAddonSkinsDB.spy.opacity==bootOpacity,"bootstrap overwrote saved endpoint")
@@ -456,11 +491,17 @@ for _,width in ipairs({90,130,200,300}) do
     assert(text:GetHeight()>=text:GetStringHeight() and text:GetWordWrap(),"full title cannot fit")
     assert(text:GetBottom()>Spy.MainWindow.CloseButton:GetTop(),"title/control rows overlap")
     assert(Spy.MainWindow:GetWidth()==width and Spy.MainWindow:GetHeight()==90,"native window size changed")
+    local close=Spy.MainWindow.CloseButton
+    local clearance=text:GetBottom()-close:GetTop()
+    assert(math.abs(clearance-2)<0.001,"header gap is not compact")
+    assert(math.abs(close:GetBottom()-(Spy.MainWindow:GetTop()-33))<0.001,"controls encroach on native rows")
+    assert(math.abs(text:GetTop()+2-(Spy.MainWindow:GetTop()+text:GetHeight()-9))<0.001,"decorative header top padding grew")
+    assert(math.abs(counter:GetTop()-counter.height/2-(text:GetTop()-6))<0.001,"counter not aligned to first title line")
     local previous
     for _,key in ipairs({"StatsButton","ClearButton","LeftButton","RightButton","CloseButton"}) do
         local button=Spy.MainWindow[key]
         assert(button:GetLeft()>=3 and button:GetRight()<=width-3,"header outside window width")
-        assert(math.abs((button:GetTop()+button:GetBottom())/2-(Spy.MainWindow:GetTop()-21))<0.001,"control baseline mismatch")
+        assert(math.abs((button:GetTop()+button:GetBottom())/2-(Spy.MainWindow:GetTop()-23))<0.001,"control baseline mismatch")
         if previous then assert(previous:GetRight()<=button:GetLeft(),"native hitboxes overlap") end
         previous=button
     end
@@ -471,6 +512,7 @@ for _,width in ipairs({90,130,200,300}) do
         assert(icon<=math.min(art.seat.width,art.seat.height)-3,"icon lacks inner padding")
         assert(art.seat.mouse==false and art.host.mouse==false and art.host.motion==false,"decorative input interception")
     end
+    assert(math.abs(Spy.MainWindow.StatsButton:GetLeft()-(width-Spy.MainWindow.CloseButton:GetRight()))<0.001,"button group not centered")
     local left,right=Control(Spy.MainWindow.LeftButton),Control(Spy.MainWindow.RightButton)
     local lEnd=Spy.MainWindow.LeftButton:GetLeft()+(Spy.MainWindow.LeftButton.width+left.seat.width)/2
     local rStart=Spy.MainWindow.RightButton:GetLeft()+(Spy.MainWindow.RightButton.width-right.seat.width)/2
@@ -490,9 +532,9 @@ counter:Hide()
 assert(title.width==Spy.MainWindow.width-16,"hidden counter kept title reservation")
 counter:Show()
 assert(title:GetRight()+6<=counter:GetLeft(),"reopened counter overlaps title")
-local g,o,h,r,w=counts.geometry,counts.objects,counts.hooks,counts.reads,counts.alphaWrites
+local g,o,h,r,w,p,v=counts.geometry,counts.objects,counts.hooks,counts.reads,counts.alphaWrites,counts.paint,counts.visibility
 for i=1,1000 do title:SetText("Kill On Sight");counter:SetText("|cFF0070DE123|r") end
-assert(counts.geometry==g and counts.objects==o and counts.hooks==h and counts.reads==r and counts.alphaWrites==w and #timers==0,"warm header state repainted/rediscovered")
+assert(counts.geometry==g and counts.objects==o and counts.hooks==h and counts.reads==r and counts.alphaWrites==w and counts.paint==p and counts.visibility==v and #timers==0,"warm header state repainted/rediscovered")
 print("BENCH Spy header: 1000 unchanged title/counter pairs: geometry/alpha writes, new UI objects/hooks, hierarchy reads and queued refreshes=0")
 counter:SetText("|cFF0070DE0|r")
 local b=Spy.MainWindow.ClearButton
@@ -564,22 +606,47 @@ for host in pairs(shells) do for _,region in ipairs(host.regions) do region.alph
 assert(rootRim.edge.alpha==1,"EUI cleanup stripped Forever rim")
 local plate,grain=rootRim.host.regions[1],rootRim.host.regions[2]
 local opacity=settings.args.opacity
+Spy.MainWindow:SetAlpha(1)
+assert(plate.gradient and plate.blend=="BLEND" and grain.blend=="BLEND","managed gradient/blend path not exercised")
 assert(opacity.get()==75,"Forever background default is not 75%")
 for _,a in ipairs({0,35,100,75}) do
     local parentAlpha=Spy.MainWindow.alpha
     opacity.set(nil,a);flush()
-    assert(math.abs((plate.alpha+grain.alpha*(1-plate.alpha))-a/100)<0.0001,"stacked opacity budget")
+    local grainAlpha=a/100*0.12
+    local plateAlpha=(a/100-grainAlpha)/(1-grainAlpha)
+    assert(math.abs(plate.gradient.low[4]-plateAlpha)<0.0001 and math.abs(plate.gradient.high[4]-plateAlpha)<0.0001,"gradient stops retain opaque paint")
+    assert(math.abs(grain.color[4]-grainAlpha)<0.0001,"grain retained opaque paint")
+    assert((a>0)==plate:IsShown() and (a>0)==grain:IsShown(),"zero-opacity surfaces still render")
+    assert(math.abs((Composite(plate,grain))-a/100)<0.0001,"stacked opacity budget")
     assert(Spy.MainWindow.alpha==parentAlpha and rootRim.edge.alpha==1,"background slider faded parent/border")
     assert(Spy.MainWindow.Title.alpha==1 and Spy.MainWindow.CloseButton.alpha==1,"slider faded content")
     local surfaceHost=rootRim.host
     local headerBand
     for _,child in ipairs(surfaceHost.children) do if child.regions[1] and child.regions[2] then headerBand=child.regions[1] end end
-    assert(headerBand and headerBand.alpha==0,"stacked opaque header fill retained")
+    assert(headerBand and not headerBand:IsShown() and Coverage(headerBand)==0,"stacked opaque header fill retained")
     -- SavedVariables reconstruction: explicit endpoints must survive re-reading.
     EUIAddonSkinsDB={spy={style="forever",opacity=a/100},other={preserved=true}}
     module.refresh();flush()
-    assert(opacity.get()==a and math.abs(plate.alpha+grain.alpha*(1-plate.alpha)-a/100)<0.0001,"saved opacity lost")
+    assert(opacity.get()==a and math.abs(Composite(plate,grain)-a/100)<0.0001,"saved opacity lost")
 end
+-- Repeat an unchanged slider value: no material/geometry/visibility work.
+local pc,gc,vc,rc=counts.paint,counts.geometry,counts.visibility,counts.reads
+for i=1,1000 do opacity.set(nil,75) end
+flush()
+assert(counts.paint==pc and counts.geometry==gc and counts.visibility==vc and counts.reads==rc,"unchanged opacity repainted or scanned")
+assert(Spy.MainWindow.Background.alpha==0 and Spy.MainWindow:GetBackdrop()==nil and Spy.MainWindow.TitleBar:GetBackdrop()==nil,"native backdrop stacks with Forever")
+for host in pairs(shells) do
+    if host.parent==Spy.MainWindow then
+        assert(Coverage(host.shellAtlas)==0 and Coverage(host.shellOverlay)==0 and Coverage(host.shellFlat)==0,"EUI Standard shell stacks with Forever")
+    end
+end
+-- Native whole-window fading is independent; the skin never changes its alpha.
+Spy.MainWindow:SetAlpha(0.5)
+local faded=Composite(plate,grain)
+assert(faded>0 and faded<0.75,"native parent fade unexpectedly increases coverage")
+opacity.set(nil,75);flush()
+assert(Spy.MainWindow.alpha==0.5,"skin changed native parent fade")
+Spy.MainWindow:SetAlpha(1)
 local nativeProfile=Spy.db.profile
 settings.args.reset.func();flush()
 assert(style.get()=="auto" and opacity.get()==75 and Spy.db.profile==nativeProfile and EUIAddonSkinsDB.other.preserved,"reset changed unrelated settings")

@@ -73,7 +73,10 @@ end, function(S, module)
         local grain = host:CreateTexture(nil, "BACKGROUND", nil, 2)
         plate:SetAllPoints(host); grain:SetAllPoints(host)
         -- Same material as RestedXP: EUI exports the rim, not its warm fill.
-        plate:SetColorTexture(0.165, 0.115, 0.075, 1)
+        -- A coloured source multiplied by the same gradient squares the tint.
+        -- Use one warm paint pass on a neutral source for the main material.
+        if managed then plate:SetColorTexture(1, 1, 1, 1)
+        else plate:SetColorTexture(0.165, 0.115, 0.075, 1) end
         local paint = managed and {} or nil
         if plate.SetGradient and CreateColor then
             local low, high = CreateColor(0.120, 0.084, 0.055, 1), CreateColor(0.165, 0.115, 0.075, 1)

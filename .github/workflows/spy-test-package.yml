@@ -74,6 +74,7 @@ jobs:
           mutations=[
               ('return 0.75', 'return 0.92', 'saved/default opacity was overwritten'),
               ('local dividerY = controlY + tallest / 2 + 1', 'local dividerY = controlY + tallest / 2 + 8', 'header gap is not compact'),
+              ('if managed then plate:SetColorTexture(1, 1, 1, 1)', 'if managed then plate:SetColorTexture(0.165, 0.115, 0.075, 1)', 'main plate source repeats the warm tint'),
               ('paint.low:SetRGBA(0.120, 0.084, 0.055, plateAlpha)', 'paint.low:SetRGBA(0.120, 0.084, 0.055, 1)', 'gradient stops retain opaque paint'),
               ('if entry.band:IsShown() then entry.band:Hide() end', 'if entry.band:IsShown() then Alpha(entry.band, 0) end', 'stacked opaque header fill retained'),
           ]

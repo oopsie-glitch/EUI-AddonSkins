@@ -84,17 +84,27 @@ No Blizzard/global menu API is replaced. Shared player-unit menus remain native.
 
 ## Background opacity
 
-The opacity audit found a paint-contract defect and a regression blind spot:
-the previous main plate and unused header band were initialized with fully
-opaque gradient stops, while subsequent updates changed only texture-level
-alpha. The previous fixture had no SetGradient/CreateColor implementation, so it
-could approve a 75% GetAlpha budget without ever exercising those paint paths.
-The unused band also remained submitted for drawing at a zero texture alpha.
+The audit found a concrete double-tint defect as well as a paint-contract/test
+blind spot. The main plate used a brown solid source (0.165, 0.115, 0.075) and
+then applied another brown gradient over it. Multiplicative texture colour
+modulation produces near-black RGB: high red becomes 0.165 * 0.165 = 0.027225,
+and low red 0.165 * 0.120 = 0.0198. The screenshot's near-black surface therefore
+did not establish that the saved 75% slider value was wrong.
+
+The previous plate and unused band also kept gradient stops at alpha 1 while
+updates changed texture-level alpha. The old fixture had no SetGradient/
+CreateColor implementation, and merged solid-source and vertex colours, so it
+could approve GetAlpha without checking either the actual paint or multiplied
+RGB. The unused band remained submitted for drawing at zero texture alpha.
+
+The main plate now uses a white source and applies the same warm gradient once.
+This corrects the colour multiplication rather than raising RGB or arbitrarily
+lowering opacity. Auxiliary materials are unchanged.
 
 The main material now follows RestedXP's SetPaintAlpha/SurfaceAlpha pattern:
 explicit BLEND, cached gradient-stop RGBA for the plate, vertex RGBA for grain,
 and explicit visibility exclusion at zero. The unused header band is hidden
-entirely. The warm RGB/gradient values are unchanged. For a target A, grain paint
+entirely. The intended gradient RGB values are unchanged; the duplicate base tint is removed. For a target A, grain paint
 uses 0.12A and plate paint uses (A - 0.12A)/(1 - 0.12A), giving exactly A combined
 coverage over the game world in the unmasked interior at native parent alpha 1.
 No paint alpha is applied a second time via SetAlpha. Tests check actual paint

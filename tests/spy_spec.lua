@@ -136,8 +136,8 @@ local function frame(kind,parent)
         end
     end
     function f:GetTexture() return self.path end
-    function f:SetColorTexture(...) self.color={...};counts.paint=counts.paint+1 end
-    function f:SetVertexColor(...) self.color={...};counts.paint=counts.paint+1 end
+    function f:SetColorTexture(...) self.color={...};self.baseColor={...};counts.paint=counts.paint+1 end
+    function f:SetVertexColor(...) self.color={...};self.vertexColor={...};counts.paint=counts.paint+1 end
     function f:SetBlendMode(mode) self.blend=mode end
     function f:SetGradient(direction,low,high)
         self.gradient={direction=direction,low={low.r,low.g,low.b,low.a},high={high.r,high.g,high.b,high.a}}
@@ -186,9 +186,9 @@ local function frame(kind,parent)
     return f
 end
 local function Coverage(texture)
-    local alpha=texture.alpha
+    local alpha=texture.alpha*(texture.baseColor and texture.baseColor[4] or 1)
     if texture.gradient then alpha=alpha*texture.gradient.low[4]
-    else alpha=alpha*(texture.color[4] or 1) end
+    else alpha=alpha*(texture.vertexColor and texture.vertexColor[4] or 1) end
     local region=texture
     while region do
         if region.shown==false then return 0 end
@@ -608,6 +608,11 @@ local plate,grain=rootRim.host.regions[1],rootRim.host.regions[2]
 local opacity=settings.args.opacity
 Spy.MainWindow:SetAlpha(1)
 assert(plate.gradient and plate.blend=="BLEND" and grain.blend=="BLEND","managed gradient/blend path not exercised")
+local low,high={0.120,0.084,0.055},{0.165,0.115,0.075}
+for i=1,3 do
+    assert(plate.baseColor[i]==1,"main plate source repeats the warm tint")
+    assert(math.abs(plate.baseColor[i]*plate.gradient.low[i]-low[i])<0.0001 and math.abs(plate.baseColor[i]*plate.gradient.high[i]-high[i])<0.0001,"rendered material RGB is double-tinted")
+end
 assert(opacity.get()==75,"Forever background default is not 75%")
 for _,a in ipairs({0,35,100,75}) do
     local parentAlpha=Spy.MainWindow.alpha

@@ -31,6 +31,14 @@ jobs:
           assert hashlib.sha256(data).hexdigest()=='f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec'
           z=zipfile.ZipFile(io.BytesIO(data))
           import re
+          print('SPY NATIVE ROW LIFECYCLE BEGIN')
+          native_rows=z.read('Spy/MainWindow.lua').decode('utf-8-sig')
+          for name in ('CreateRow','SetupBar','SetBar','ResizeMainWindow','ManageBarsDisplayed'):
+              marker='function Spy:'+name+'('
+              start=native_rows.index(marker)
+              end=native_rows.find('\nfunction ',start+len(marker))
+              print(native_rows[start:end if end>=0 else None])
+          print('SPY NATIVE ROW LIFECYCLE END')
           print('SPY NATIVE HEADER GEOMETRY BEGIN')
           native=z.read('Spy/MainWindow.lua').decode('utf-8-sig')
           for number,line in enumerate(native.splitlines(),1):

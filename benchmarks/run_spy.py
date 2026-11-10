@@ -69,12 +69,38 @@ local function measure(label,fn,n)
     output[#output+1]=string.format('"%s":{"iterations":%d,"ms":%.6f,"churn_kib":%.6f,"retained_kib":%.6f,%s}',
         label,n,ms,churn,retained,table.concat(values,","))
 end
-measure("cold",function()
+local profiles={}
+local function profile(label,fn,n)
+    local total,adapter,native,shared,c=0,0,0,0,0
+    local function observe(event)
+        if event~="call" and event~="tail call" then return end
+        local info=debug.getinfo(2,"S")
+        total=total+1
+        local source=info.source or ""
+        if source:find("Skins/Spy.lua",1,true) or source:find("baseline.lua",1,true) then adapter=adapter+1 end
+        if source:find("spy-upstream/",1,true) then native=native+1 end
+        if source:find("EUIAddonSkins/Widgets.lua",1,true) then shared=shared+1 end
+        if info.what=="C" then c=c+1 end
+    end
+    debug.sethook(observe,"c")
+    for i=1,n do fn() end
+    debug.sethook()
+    profiles[#profiles+1]=string.format('"%s":{"iterations":%d,"total":%d,"adapter":%d,"native":%d,"shared":%d,"c":%d}',label,n,total,adapter,native,shared,c)
+end
+
+local function acquire()
     if not BENCH_NATIVE then
         module.install(S,module);flush()
         EUIAddonSkinsDB.spy.style="forever";module.refresh();flush()
     end
-end,1)
+end
+if BENCH_COLD_PROFILE then
+    profile("cold",acquire,1)
+    local f=assert(io.open(BENCH_OUTPUT,"w"))
+    f:write("{",table.concat(profiles,","),"}");f:close()
+    return
+end
+measure("cold",acquire,1)
 local function update() Spy:SetBar(1,"Enemy","60 Druid",75,"Class","DRUID",nil,0.7) end
 local function sync() Spy:SetCurrentList(1) end
 local function enterleave() hover(true);hover(false) end
@@ -114,24 +140,6 @@ Spy.MainWindow:Hide();flush()
 measure("closed_player_updates",update,BENCH_ITERATIONS)
 measure("closed_idle",function() end,BENCH_ITERATIONS)
 -- Separate fixed 10-callback call profile: debug hooks never affect timed passes.
-local profiles={}
-local function profile(label,fn,n)
-    local total,adapter,native,shared,c=0,0,0,0,0
-    local function observe(event)
-        if event~="call" and event~="tail call" then return end
-        local info=debug.getinfo(2,"S")
-        total=total+1
-        local source=info.source or ""
-        if source:find("Skins/Spy.lua",1,true) or source:find("baseline.lua",1,true) then adapter=adapter+1 end
-        if source:find("spy-upstream/",1,true) then native=native+1 end
-        if source:find("EUIAddonSkins/Widgets.lua",1,true) then shared=shared+1 end
-        if info.what=="C" then c=c+1 end
-    end
-    debug.sethook(observe,"c")
-    for i=1,n do fn() end
-    debug.sethook()
-    profiles[#profiles+1]=string.format('"%s":{"iterations":%d,"total":%d,"adapter":%d,"native":%d,"shared":%d,"c":%d}',label,n,total,adapter,native,shared,c)
-end
 profile("closed_player_updates",update,10)
 profile("closed_idle",function() end,10)
 Spy.MainWindow:Show();flush()
@@ -166,7 +174,22 @@ with tempfile.TemporaryDirectory(prefix='spy-bench-') as tmp:
                     raise RuntimeError(lib.lua_tolstring(state,-1,None).decode())
             finally:
                 lib.lua_close(state)
-            trials.append(json.loads(destination.read_text()))
+            trial=json.loads(destination.read_text())
+            # A separate fresh VM profiles first acquisition without contaminating timing.
+            profile_code='BENCH_COLD_PROFILE=true;\n'+settings+configured+tail
+            encoded=profile_code.encode()
+            state=lib.luaL_newstate()
+            lib.luaL_openlibs(state)
+            try:
+                result=lib.luaL_loadbufferx(state,encoded,len(encoded),b"@benchmarks/spy_fixture.lua",None)
+                if result==0:
+                    result=lib.lua_pcallk(state,0,0,0,0,None)
+                if result:
+                    raise RuntimeError(lib.lua_tolstring(state,-1,None).decode())
+            finally:
+                lib.lua_close(state)
+            trial["profiles"]["cold"]=json.loads(destination.read_text())["cold"]
+            trials.append(trial)
         median={name:{key:statistics.median(trial[name][key] for trial in trials)
                       for key in trials[0][name]} for name in trials[0] if name!="profiles"}
         profiles={name:{key:statistics.median(trial["profiles"][name][key] for trial in trials)

@@ -78,7 +78,7 @@ jobs:
           path=Path('EUIAddonSkins/Skins/Spy.lua')
           original=path.read_text()
           mutations=[
-              ('local gap = number > 1 and math.max(0, (width - 2 * toolbarMargin - total) / (number - 1)) or 0', 'local gap = number > 1 and math.min(2, math.max(0, (width - 2 * toolbarMargin - total) / (number - 1))) or 0', 'toolbar does not span available width symmetrically'),
+              ('local gap = number > 1 and math.max(0, (width - 2 * toolbarMargin - total) / (number - 1)) or 0', 'local gap = number > 1 and math.min(2, math.max(0, (width - 2 * toolbarMargin - total) / (number - 1))) or 0', 'hidden control broke full-width margins'),
               ('return 0.75', 'return 0.92', 'saved/default opacity was overwritten'),
               ('local dividerY = controlY + tallest / 2 + 1', 'local dividerY = controlY + tallest / 2 + 8', 'header gap is not compact'),
               ('if managed then plate:SetColorTexture(1, 1, 1, 1)', 'if managed then plate:SetColorTexture(0.165, 0.115, 0.075, 1)', 'main plate source repeats the warm tint'),

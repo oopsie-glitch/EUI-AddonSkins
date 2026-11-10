@@ -347,8 +347,8 @@ end, function(S, module)
                 tallest = math.max(tallest, button:GetHeight())
             end
         end
-        -- Share the title's content edge. At the 90-unit native minimum,
-        -- reduce both rows' inset together rather than shrinking hitboxes.
+        -- Preserve the accepted title inset independently of the toolbar's
+        -- full-width distribution below, including its narrow-width fallback.
         local packedGap = number > 1 and math.min(2, math.max(0, (width - 11 - total) / (number - 1))) or 0
         local contentLeft = math.min(8, math.max(3, width - 3 - total - packedGap * math.max(0, number - 1)))
         local available = math.max(16, width - contentLeft - 8 - counterWidth)

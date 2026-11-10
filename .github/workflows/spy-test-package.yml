@@ -31,6 +31,27 @@ jobs:
           assert hashlib.sha256(data).hexdigest()=='f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec'
           z=zipfile.ZipFile(io.BytesIO(data))
           import re
+          print('SPY SHARED MEDIA SOURCE AUDIT BEGIN')
+          for member in z.namelist():
+              if member.endswith(('/prototypes.lua','/StatusbarWidget.lua','/AceGUI-3.0.lua','/AceGUIWidget-DropDown.lua')) and 'Libs/' in member:
+                  data=z.read(member)
+                  print('LIBRARY FILE '+member+' SHA256 '+hashlib.sha256(data).hexdigest())
+                  for number,line in enumerate(data.decode('utf-8-sig',errors='replace').splitlines(),1):
+                      print(str(number)+': '+line)
+                  target=Path('/tmp/spy-upstream')/member.removeprefix('Spy/')
+                  target.parent.mkdir(parents=True,exist_ok=True)
+                  target.write_bytes(data)
+          for member in z.namelist():
+              if member.count('/')==1 and member.endswith('.lua'):
+                  lines=z.read(member).decode('utf-8-sig',errors='replace').splitlines()
+                  chosen=set()
+                  for i,line in enumerate(lines):
+                      if re.search(r'(LSM30_Statusbar|BarTexture|barTexture|RegisterOptionsTable|AddToBlizOptions|ShowConfig|SetBarTextures)',line):
+                          chosen.update(range(max(0,i-6),min(len(lines),i+32)))
+                  if chosen:
+                      print('SPY OPTIONS FILE '+member)
+                      for i in sorted(chosen): print(str(i+1)+': '+lines[i])
+          print('SPY SHARED MEDIA SOURCE AUDIT END')
           print('SPY NATIVE STATE AUDIT BEGIN')
           for member in z.namelist():
               if member.count('/')==1 and member.endswith(('.lua','.xml')):

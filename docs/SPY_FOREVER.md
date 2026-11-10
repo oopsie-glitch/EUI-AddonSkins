@@ -8,7 +8,7 @@ No merge, version bump, tag or platform publication is authorized.
 
 The chamfered bronze rim, warm window material, compact native rows, class/status
 colours and inset control artwork have passed maintainer in-game review. This
-iteration changes only toolbar width distribution, using a00774c as the
+iteration restores compact right-aligned toolbar placement, using 42ab68d as the
 baseline. Current materials/opacity/settings, rim and button artwork are unchanged.
 
 Spy exclusively owns bar texture paths, region alpha, native colours, text,
@@ -31,21 +31,22 @@ A thin bronze separator divides the rows. This polish pass removes the previous
 fixed -21 control baseline, seven-unit title/control gap and padded native title
 box. It measures actual wrapped glyph height instead of reserving the old
 FontString box. Existing native button heights determine the row's vertical
-center. The five native controls now span the available row with equal edge-to-
-edge gaps and symmetrical native hitbox margins. Button order, icon/rim sizes,
-hitboxes and vertical geometry stay unchanged. Spare width goes entirely into
-spacing, never stretched art or invisible enlarged click targets.
+center. All five controls form one compact group aligned to the right. The
+full-width distribution and single-control centering formulas are removed.
+The existing compact gap calculation is reused: at most two units between
+unchanged native hitboxes, reduced only when the native minimum width requires
+it. The normal right inset is eight units, reducing to three at width 90.
+Hidden native controls close their slot; a lone control stays right-aligned.
+No new layout system, control, artwork, stretched icon or hitbox is introduced.
 
-The native geometry review uses pinned Spy 1.3.8-forever5: close is 20x20;
-previous/next/clear are 16x16; statistics starts 12x12 and native active-button
-setup sets its width to 16, leaving height 12. The five active hitboxes therefore
-total 84 horizontal units. Normally side margins are 8 units and each gap is
-(width - 16 - 84) / 4. At widths too tight for those margins, both margins reduce
-equally, reaching 3 units with zero gaps at the 90-unit native minimum. At widths
-130/200/300, gaps are respectively 7.5/25/50 units. The existing title left inset
-and right counter are preserved independently. Hidden native controls release
-their space and the remaining controls redistribute; a lone visible control is
-centered. No controls or layout-host frames are added.
+The pinned Spy geometry remains close 20x20; previous/next/clear 16x16;
+statistics starts 12x12 and native active-button setup sets width to 16, leaving
+height 12. The usual five active hitboxes total 84 horizontal units. At widths
+130, 200 and 300, the group remains 92 units wide (84 plus four 2-unit gaps),
+ending eight units from the right edge. At native width 90, gaps are zero with
+three units on either side. Runtime uses actual visible control dimensions.
+The title left inset, right-aligned counter and all vertical geometry remain
+unchanged. The remaining space is deliberately left of the cohesive group.
 
 Exact normal 12-unit text / 20-unit tallest-button geometry, relative to the
 native window's top:
@@ -212,24 +213,23 @@ the final commit, CI and temporary sign-in-free nightly.link download.
    reopening/theme cycles and errors. Rendering, real hit-testing/taint, native
    secure behavior and long-session stability still require WoW verification.
 
-## Full-width toolbar review
+## Compact right-aligned toolbar review
 
-This focused pass preserves the preceding compact header/material/opacity
-baseline. The layout uses existing native buttons with space-between placement.
-It moves only their horizontal anchors, rather than resizing native buttons or
-stretching approved artwork. Normal title/counter placement and the compact
-divider/vertical geometry remain unchanged.
+This focused correction restores compact geometry after the alignment/
+distribution experiments. The existing right-to-left anchor loop and compact
+gap calculation seat the original controls at the right inset. Full-width
+spacing and centering calculations are removed. Header height, materials,
+opacity/settings, controls, native rows and Standard restoration are unchanged.
 
 Regressions cover Nearby, Last Hour and Kill On Sight at widths 90, 95, 103, 130,
-200 and 300 with counter values 0, 7 and 123. They require full-width coverage,
-equal gaps, symmetric margins, no overlap, native hitbox/art/icon sizes, original
-click behavior and redistribution after hiding a native control. Existing
-reopen/resize, style/Standard restoration, combat deferral, opacity and warm
-operation-count checks remain. A sensitivity mutation reintroduces the two-unit
-packed gaps and must fail the full-width geometry assertion.
+200 and 300 with counters 0, 7 and 123. They require compact right alignment,
+equal modest gaps, fixed native hitboxes/art sizes, original click behavior,
+title/counter separation, resizing/reopening and hidden/single-control handling.
+Standard restores the original native anchor chain. Existing combat, opacity,
+row and warm operation-count checks remain. Sensitivity mutations restoring
+full-width distribution or centering must fail their geometry assertions.
 
-For live review, provide narrow and wide screenshots with short and longer titles
-(Nearby / Kill On Sight). Verify that the controls visibly span the row, each
-tooltip/hover/pressed/disabled/click remains correct, the counter is clear and
-vertical compactness/materials are unchanged. Actual WoW rendering, input and
-taint behavior are not established by mocked geometry.
+For live review, compare narrow/wide Nearby and Kill On Sight screenshots.
+Confirm the compact group sits on the right, all controls/tooltips/states work,
+the full title and counter stay clear and the two-row height/materials are
+unchanged. Actual rendering, hit-testing and combat taint remain WoW checks.

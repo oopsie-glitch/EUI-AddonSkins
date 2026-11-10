@@ -991,6 +991,80 @@ assert(not tones[1]:IsShown() and not bevels[1]:IsShown() and not bevels[2]:IsSh
 assert(Spy.MainWindow.Title.font[1]=="EUI New" and Spy.MainWindow.Title.font[2]==13,"disable retained title emphasis")
 for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"disable retained hidden Standard border") end
 assert(#errors==0,table.concat(errors,"\n"))
+
+-- Investigation fixture: run the unmodified bundled widget against a modern
+-- frame capability model. An expected failure here documents the reproduction;
+-- it is not evidence that the live regression has been repaired.
+local upstreamRoot = os.getenv("SPY_SOURCE")
+if upstreamRoot then
+    local savedFactory, savedLibStub, savedLists = CreateFrame, LibStub, AceGUIWidgetLSMlists
+    local function ReproduceTexturePopup(active, selectedStyle)
+        enabled = active
+        style.set(nil, selectedStyle); flush()
+        local factoryBefore = CreateFrame
+        module.refresh(); flush()
+        assert(CreateFrame == factoryBefore, "Spy adapter replaced the global frame factory")
+        local created = {}
+        -- Only this test's new frames lose legacy backdrop capabilities. The
+        -- production adapter and the official library files are unmodified.
+        CreateFrame = function(kind, name, parent, template)
+            local f = savedFactory(kind, name, parent, template)
+            local createTexture = f.CreateTexture
+            f.CreateTexture = function(self, ...)
+                local texture = createTexture(self, ...)
+                texture.SetTexCoord = function() end
+                return texture
+            end
+            f.SetClampedToScreen = function() end
+            f.EnableMouseWheel = function() end
+            if not (template and template:find("BackdropTemplate", 1, true)) then
+                f.SetBackdrop, f.GetBackdrop = nil, nil
+                f.SetBackdropColor, f.SetBackdropBorderColor = nil, nil
+            end
+            created[#created+1] = {frame=f, template=template, kind=kind}
+            return f
+        end
+        local ace = {constructors={}}
+        function ace:RegisterWidgetType(name, constructor) self.constructors[name] = constructor end
+        function ace:RegisterAsWidget(widget)
+            function widget:SetWidth(value) self.frame:SetWidth(value) end
+            function widget:SetHeight(value) self.frame:SetHeight(value) end
+            function widget:Fire() end
+        end
+        function ace:SetFocus(widget) self.focus = widget end
+        function ace:ClearFocus() self.focus = nil end
+        local sharedMedia = {}
+        function sharedMedia:HashTable() return {Flat="native-flat", Smooth="native-smooth"} end
+        function sharedMedia:Fetch(_, key) return key end
+        local libraries = {["AceGUI-3.0"]=ace, ["LibSharedMedia-3.0"]=sharedMedia}
+        LibStub = setmetatable({
+            NewLibrary=function(_,name) local lib={};libraries[name]=lib;return lib end,
+        }, {__call=function(_,name) return assert(libraries[name], name) end})
+        assert(loadfile(upstreamRoot .. "/Libs/AceGUI-3.0-SharedMediaWidgets/prototypes.lua"))()
+        assert(loadfile(upstreamRoot .. "/Libs/AceGUI-3.0-SharedMediaWidgets/StatusbarWidget.lua"))()
+        local widget = ace.constructors.LSM30_Statusbar()
+        widget:OnAcquire()
+        widget:SetList(sharedMedia:HashTable("statusbar"))
+        widget:SetValue("Smooth")
+        local ok, err = pcall(function() widget.frame.dropButton:FireScript("OnClick", "LeftButton") end)
+        assert(not ok and tostring(err):find("prototypes.lua:211:", 1, true)
+            and tostring(err):find("SetBackdrop", 1, true), "unexpected texture-dropdown failure: " .. tostring(err))
+        local popup = created[#created]
+        assert(popup.kind == "Frame" and popup.template == nil and popup.frame.SetBackdrop == nil,
+            "official popup did not use the untemplated construction path")
+        CreateFrame, LibStub = savedFactory, savedLibStub
+        print("REPRO ONLY: official Spy texture popup lacks SetBackdrop; skin=" .. tostring(active) ..
+            ", style=" .. selectedStyle .. "; EUI-only trigger remains unverified")
+    end
+    ReproduceTexturePopup(false, "standard")
+    ReproduceTexturePopup(true, "standard")
+    ReproduceTexturePopup(true, "forever")
+    ReproduceTexturePopup(true, "auto")
+    enabled = false
+    module.refresh(); flush()
+    CreateFrame, LibStub, AceGUIWidgetLSMlists = savedFactory, savedLibStub, savedLists
+end
+
 Enum=priorEnum
 print("PASS: Spy Standard/Forever/Automatic restoration, native class/status colours, secure rows, callbacks/truncation, controls, pooling, settings/menu ownership, combat and bounded warm work")
 end

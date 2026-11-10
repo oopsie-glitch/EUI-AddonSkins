@@ -127,7 +127,7 @@ separate header row, remove the fill inset or restore black helper borders and
 must fail focused assertions. Existing opacity/tint/gradient checks remain.
 
 Warm workloads count UI objects/hooks, hierarchy reads and cosmetic writes:
-1,000 native SetBar calls retain zero extra cosmetic work. A separate 1,000
+1,000 native SetBar calls retain zero extra cosmetic work. A separate source-shaped 1,000
 unchanged row synchronization workload checks that cached inset anchors/edges
 do not add objects/hooks/scans/geometry/paint/alpha writes. Existing header/state/
 opacity and repeated theme-cycle workloads remain. These are mock counts,

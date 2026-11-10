@@ -620,10 +620,14 @@ assert(counts.objects==before.objects and counts.hooks==before.hooks,"warm row o
 assert(counts.reads==before.reads and counts.scans==before.scans,"warm row traversed hierarchy")
 assert(counts.alphaWrites==before.writes and #timers==0,"settled rows wrote alpha or queued full work")
 print("BENCH Spy "..(source and "actual-source" or "source-shaped")..": 1000 warm SetBar updates: new UI objects/hooks, hierarchy scans/reads, cosmetic alpha writes and queued refreshes=0")
+-- The full native list dispatcher requires Spy bootstrap/game state; this
+-- additional synchronization workload uses the source-shaped dispatcher only.
+if not source then
 local steady={objects=counts.objects,hooks=counts.hooks,reads=counts.reads,geometry=counts.geometry,paint=counts.paint,alpha=counts.alphaWrites}
 for i=1,1000 do Spy:SetCurrentList(1) end
 assert(counts.objects==steady.objects and counts.hooks==steady.hooks and counts.reads==steady.reads and counts.geometry==steady.geometry and counts.paint==steady.paint and counts.alphaWrites==steady.alpha,"warm row synchronization churned cosmetics")
 print("BENCH Spy Concept A: 1000 unchanged row-sync callbacks: objects/hooks/hierarchy reads/geometry/paint/alpha writes=0")
+end
 -- Native whole-window opacity updates do not schedule a skin repaint.
 Spy.UpdateMainWindow=Spy.UpdateMainWindow or function() Spy.MainWindow.alpha=0.45 end
 local q=#timers;Spy:UpdateMainWindow();assert(#timers==q)

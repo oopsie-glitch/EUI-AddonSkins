@@ -97,6 +97,12 @@ local function frame(kind,parent)
         if a and b and a[1]=="TOPLEFT" and b[1]=="BOTTOMRIGHT" and a[2]==b[2] then
             return a[2]:GetHeight()+(a[5] or 0)-(b[5] or 0)
         end
+        if a and b and a[1]=="TOPLEFT" and b[1]=="BOTTOMRIGHT" then
+            local bottom=b[2]:GetTop()
+            if b[3]:find("BOTTOM") then bottom=bottom-b[2]:GetHeight()
+            elseif not b[3]:find("TOP") then bottom=bottom-b[2]:GetHeight()/2 end
+            return self:GetTop()-bottom-(b[5] or 0)
+        end
         return self.height
     end
     function f:SetMovable() end
@@ -304,7 +310,8 @@ function S.PageButton(f,glyph)
         edge:SetSize(1,16);edge:SetColorTexture(0.055,0.055,0.055,1)
     end
 end
-function S.Font(f,r,g,b) f.font={"EUI",11,""};f:SetTextColor(r or 1,g or 1,b or 1,1) end
+local euiFont={"EUI",11,""}
+function S.Font(f,r,g,b) f.font={table.unpack(euiFont)};f:SetTextColor(r or 1,g or 1,b or 1,1) end
 function S.Button(f) f.button=true end
 function S.EditBox() end
 function S.Checkbox() end
@@ -815,6 +822,7 @@ for _,a in ipairs({0,35,100,75}) do
     assert(hp and hg and hp.parent==header and hp.allPoints==header,"integrated header surface missing")
     assert(math.abs(Composite(hp,hg)-a/100)<0.0001,"header background opacity stacks")
     assert(hp:GetBottom()>=plate:GetTop(),"header/list backgrounds overlap")
+    assert(header.points[2][2]==Spy.MainWindow and header.points[2][3]=="TOPRIGHT" and header.points[2][5]==-32,"header partition anchors drifted")
     -- SavedVariables reconstruction: explicit endpoints must survive re-reading.
     EUIAddonSkinsDB={spy={style="forever",opacity=a/100},other={preserved=true}}
     module.refresh();flush()
@@ -895,6 +903,12 @@ style.set(nil,"forever");flush()
 UIDROPDOWNMENU_MENU_VALUE=nil
 assert(menuBinding.owner==Spy_BarDropDownMenu and menuBinding.module.skin.IsEnabled())
 style.set(nil,"standard");flush();assert(not menuBinding.module.skin.IsEnabled(),"Standard menus no longer native")
+-- EUI font changes must restore the current Standard font, not an old snapshot.
+euiFont={"EUI New",13,"OUTLINE"}
+style.set(nil,"forever");module.refresh();flush()
+assert(Spy.MainWindow.Title.font[1]=="EUI New" and Spy.MainWindow.Title.font[2]==14,"Forever title emphasis lost current EUI font")
+style.set(nil,"standard");flush()
+assert(Spy.MainWindow.Title.font[1]=="EUI New" and Spy.MainWindow.Title.font[2]==13,"Standard restored stale EUI typography")
 -- Combat defers even inherited-protected cosmetics and catches disable cleanup.
 style.set(nil,"forever");flush()
 combat=true
@@ -914,6 +928,7 @@ for _,fn in ipairs(looks)do fn()end;flush()
 assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1 and Spy.MainWindow.Background:GetAlpha()==1,"disable did not clean Forever art")
 assert(row.StatusBar.points[1][4]==0 and row.LeftText.points[1][2]==row.StatusBar and chrome.alpha==0,"disable retained custom row geometry")
 assert(not tones[1]:IsShown() and not tones[2]:IsShown(),"disable retained row bevels")
+assert(Spy.MainWindow.Title.font[1]=="EUI New" and Spy.MainWindow.Title.font[2]==13,"disable retained title emphasis")
 for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"disable retained hidden Standard border") end
 assert(#errors==0,table.concat(errors,"\n"))
 print("PASS: Spy Standard/Forever/Automatic restoration, native class/status colours, secure rows, callbacks/truncation, controls, pooling, settings/menu ownership, combat and bounded warm work")

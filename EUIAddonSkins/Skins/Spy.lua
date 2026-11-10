@@ -329,7 +329,9 @@ end, function(S, module)
                 nonSpaceWrap = f.Title.GetNonSpaceWrap and f.Title:GetNonSpaceWrap()}
             if f.GetResizeBounds and f.SetResizeBounds then
                 local minW, minH, maxW, maxH = f:GetResizeBounds()
-                if SafeValue(minW) and SafeValue(minH) and SafeValue(maxW) and SafeValue(maxH) then
+                if type(minW) == "number" and type(minH) == "number" and type(maxW) == "number" and type(maxH) == "number"
+                    and SafeValue(minW) and SafeValue(minH) and SafeValue(maxW) and SafeValue(maxH)
+                    and minW > 0 and minH > 0 and maxW >= minW and maxH >= minH then
                     layout.bounds = {minW, minH, maxW, maxH}
                 end
             end
@@ -347,7 +349,7 @@ end, function(S, module)
             if layout.active then
                 for region, points in pairs(layout.regions) do RestorePoints(region, points) end
                 f.Title:SetWidth(layout.titleWidth); f.Title:SetHeight(layout.titleHeight)
-                f.Title:SetFont(unpack(layout.titleFont))
+                if layout.fontApplied then f.Title:SetFont(unpack(layout.titleFont)); layout.fontApplied = nil end
                 if layout.boundMin then f:SetResizeBounds(unpack(layout.bounds)); layout.boundMin = nil end
                 if f.Title.SetWordWrap and layout.wordWrap ~= nil then f.Title:SetWordWrap(layout.wordWrap) end
                 if f.Title.SetNonSpaceWrap and layout.nonSpaceWrap ~= nil then f.Title:SetNonSpaceWrap(layout.nonSpaceWrap) end
@@ -359,7 +361,10 @@ end, function(S, module)
         end
         local width, title = f:GetWidth(), f.Title
         local font, size, flags = title:GetFont()
-        if type(size) == "number" and SafeValue(size) and size < 14 then title:SetFont(font, 14, flags) end
+        if type(size) == "number" and SafeValue(size) and size < 14 then
+            layout.titleFont = {font, size, flags}
+            title:SetFont(font, 14, flags); layout.fontApplied = true
+        end
         if not SafeValue(width) then layout.writing = false; return end
         if layout.bounds and (capture or not layout.active) then
             -- Do not clamp an existing custom narrow size; widen the resize
@@ -992,6 +997,8 @@ end, function(S, module)
             if H.Allowed(f.LeftButton) and S.SoftPageButton then S.SoftPageButton(f.LeftButton, "<") end
             if H.Allowed(f.RightButton) and S.SoftPageButton then S.SoftPageButton(f.RightButton, ">") end
         end
+        local composition = foreverWindows[f]
+        if composition and composition.headerLayout then composition.headerLayout.fontApplied = nil end
         if alert and ForeverLook() and f.Title and f.Title.GetTextColor then
             local r, g, b, a = f.Title:GetTextColor()
             H.Font(f.Title, r, g, b)

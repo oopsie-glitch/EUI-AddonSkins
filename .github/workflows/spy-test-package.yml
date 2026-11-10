@@ -86,10 +86,10 @@ jobs:
           path=Path('EUIAddonSkins/Skins/Spy.lua')
           original=path.read_text()
           mutations=[
-              ('local gap = number > 1 and math.min(2, math.max(0, (width - 11 - total) / (number - 1))) or 0', 'local gap = number > 1 and math.max(0, (width - 16 - total) / (number - 1)) or 0', 'hidden control broke compact right alignment'),
-              ('local offset = contentLeft', 'local offset = (width - total - gap * math.max(0, number - 1)) / 2', 'toolbar is not right aligned'),
+              ('local wrapped = available < 24', 'local wrapped = true', 'header did not integrate at normal width'),
+              ('if entry.inset then return end', 'if true then return end', 'inset fill was not recessed'),
+              ('return ns.IsEnabled(module) and ForeverLook and ForeverLook() and f and', 'return false and ForeverLook and ForeverLook() and f and', 'native helper border leaked into Forever'),
               ('return 0.75', 'return 0.92', 'saved/default opacity was overwritten'),
-              ('local dividerY = controlY + tallest / 2 + 1', 'local dividerY = controlY + tallest / 2 + 8', 'header gap is not compact'),
               ('if managed then plate:SetColorTexture(1, 1, 1, 1)', 'if managed then plate:SetColorTexture(0.165, 0.115, 0.075, 1)', 'main plate source repeats the warm tint'),
               ('paint.low:SetRGBA(0.120, 0.084, 0.055, plateAlpha)', 'paint.low:SetRGBA(0.120, 0.084, 0.055, 1)', 'gradient stops retain opaque paint'),
               ('if entry.band:IsShown() then entry.band:Hide() end', 'if entry.band:IsShown() then Alpha(entry.band, 0) end', 'stacked opaque header fill retained'),

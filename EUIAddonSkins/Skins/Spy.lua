@@ -3,8 +3,14 @@ local function DefineSkin()
 ns.RegisterModule("Spy", "Spy", function()
     return _G.Spy and type(_G.Spy.CreateMainWindow) == "function"
 end, function(S, module)
-    S = ns.CreateSoftSkin(S, module)
     local spy = _G.Spy
+    local ForeverLook
+    S = ns.CreateSoftSkin(S, module, function(button)
+        local f = spy.MainWindow
+        return ns.IsEnabled(module) and ForeverLook and ForeverLook() and f and
+            (button == f.CloseButton or button == f.LeftButton or button == f.RightButton
+            or button == f.ClearButton or button == f.StatsButton or button == f.CountButton)
+    end)
     local H = ns.CreateSkinHelper(S, module)
     local windows, styled, layers, options = {}, {}, {}, {}
     local config = LibStub and LibStub("AceConfigDialog-3.0", true)
@@ -26,7 +32,7 @@ end, function(S, module)
     local function Owned(f)
         return f and f.GetObjectType and not (f.IsForbidden and f:IsForbidden())
     end
-    local function ForeverLook()
+    ForeverLook = function()
         local EUI = _G.EllesmereUI
         if not (S.GetPanelColor and EUI and EUI.IS_FOREVER and EUI.ForeverBorder
             and EUI.ForeverBorderSeat and EUI.ForeverBorderShown) then return false end
@@ -311,6 +317,7 @@ end, function(S, module)
             entry.headerLayout = layout
         end
         if layout.writing then return end
+        if entry.well then Alpha(entry.well, f:GetHeight() > 34 and 1 or 0) end
         TrackHeaderRegion(f, layout, f.Title)
         for _, key in ipairs(controls) do TrackHeaderRegion(f, layout, f[key]) end
         local counter = f.CountFrame and f.CountFrame.Text
@@ -347,36 +354,47 @@ end, function(S, module)
                 tallest = math.max(tallest, button:GetHeight())
             end
         end
-        -- Reuse compact native-button spacing and the accepted narrow-width
-        -- inset; the same inset seats the group against the right edge.
         local gap = number > 1 and math.min(2, math.max(0, (width - 11 - total) / (number - 1))) or 0
-        local contentLeft = math.min(8, math.max(3, width - 3 - total - gap * math.max(0, number - 1)))
-        local available = math.max(16, width - contentLeft - 8 - counterWidth)
-        if title:GetWidth() ~= available then title:SetWidth(available) end
-        if title.SetWordWrap and (not title.GetWordWrap or not title:GetWordWrap()) then title:SetWordWrap(true) end
-        if title.SetNonSpaceWrap and (not title.GetNonSpaceWrap or not title:GetNonSpaceWrap()) then title:SetNonSpaceWrap(true) end
-        local measure = title.GetUnboundedStringWidth or title.GetStringWidth
-        local length = measure and measure(title) or available
-        if not SafeValue(length) then length = available end
+        local rightInset = math.min(8, math.max(3, width - 3 - total - gap * math.max(0, number - 1)))
+        local countButton = f.CountButton
+        local countWidth = math.max(counterWidth > 0 and counterWidth - 6 or 0,
+            countButton and countButton:IsShown() and countButton:GetWidth() or 0)
+        local counterSpace = countWidth > 0 and countWidth + 6 or 0
+        local groupWidth = total + gap * math.max(0, number - 1)
+        local available = width - 8 - rightInset - counterSpace - groupWidth - 6
+        -- Prefer one integrated header. A narrow native window cannot fit all
+        -- hitboxes plus title/counter; wrap inside the same header as a fallback.
+        local wrapped = available < 24
         local _, fontSize = title:GetFont()
         local line = type(fontSize) == "number" and math.max(1, fontSize) or layout.titleHeight
-        local titleHeight = line * math.max(1, math.ceil(length / available))
+        local top, controlY, titleY
+        if wrapped then
+            available = math.max(16, width - 16 - counterWidth)
+        end
+        available = math.max(1, available)
+        if title:GetWidth() ~= available then title:SetWidth(available) end
+        if title.SetWordWrap and (not title.GetWordWrap or title:GetWordWrap() ~= wrapped) then title:SetWordWrap(wrapped) end
+        if title.SetNonSpaceWrap and (not title.GetNonSpaceWrap or title:GetNonSpaceWrap() ~= wrapped) then title:SetNonSpaceWrap(wrapped) end
+        local titleHeight = line
         if title.GetStringHeight then
             local measured = title:GetStringHeight()
             if SafeValue(measured) and measured and measured > 0 then titleHeight = math.max(line, measured) end
         end
         if title:GetHeight() ~= titleHeight then title:SetHeight(titleHeight) end
-        -- Keep the row boundary at -34 and every native hitbox unchanged:
-        -- 1 unit below controls, 2 between title and controls, 2 above title.
-        local controlY = -33 + tallest / 2
-        local dividerY = controlY + tallest / 2 + 1
-        local titleTop = dividerY + 1 + titleHeight
-        local top = titleTop + 2
-        Anchor(title, "TOPLEFT", f, "TOPLEFT", contentLeft, titleTop)
+        if wrapped then
+            controlY = -33 + tallest / 2
+            titleY = controlY + tallest / 2 + 2 + titleHeight / 2
+            top = titleY + titleHeight / 2 + 2
+        else
+            controlY, titleY = -20, -20
+            top = controlY + math.max(tallest, titleHeight) / 2 + 3
+        end
+        Anchor(title, "LEFT", f, "TOPLEFT", 8, titleY)
         local firstLine = math.max(line, math.min(titleHeight, counter and counter.GetStringHeight and counter:GetStringHeight() or line))
-        if counter then Anchor(counter, "RIGHT", f, "TOPRIGHT", -8, titleTop - firstLine / 2) end
-        if f.CountButton then Anchor(f.CountButton, "RIGHT", f, "TOPRIGHT", -6, titleTop - firstLine / 2) end
-        local offset = contentLeft
+        local counterY = wrapped and titleY + titleHeight / 2 - firstLine / 2 or titleY
+        if counter then Anchor(counter, "RIGHT", f, "TOPRIGHT", -8, counterY) end
+        if countButton then Anchor(countButton, "RIGHT", f, "TOPRIGHT", -rightInset, counterY) end
+        local offset = rightInset + (wrapped and 0 or counterSpace)
         for _, key in ipairs(controlOrder) do
             local button = f[key]
             if button and (not button.IsShown or button:IsShown()) then
@@ -390,12 +408,33 @@ end, function(S, module)
             entry.host:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
             layout.top = top
         end
-        if entry.seam and layout.dividerY ~= dividerY then
-            Anchor(entry.seam, "TOPLEFT", f, "TOPLEFT", 4, dividerY)
-            entry.seam:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, dividerY)
-            layout.dividerY = dividerY
+        -- One content rule below the integrated header, never a toolbar band.
+        if entry.seam and layout.dividerY ~= -33 then
+            Anchor(entry.seam, "TOPLEFT", f, "TOPLEFT", 2, -33)
+            entry.seam:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -33)
+            layout.dividerY = -33
         end
         layout.active, layout.writing = true, false
+    end
+    local function RowEdges(host, omitTop)
+        if not omitTop then
+        local top = host:CreateTexture(nil, "ARTWORK")
+        top:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+        top:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, 0)
+        top:SetHeight(1); top:SetColorTexture(0.49, 0.33, 0.18, 0.50)
+        end
+        local bottom = host:CreateTexture(nil, "ARTWORK")
+        bottom:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 0)
+        bottom:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
+        bottom:SetHeight(1); bottom:SetColorTexture(0.12, 0.08, 0.045, 0.75)
+        local left = host:CreateTexture(nil, "ARTWORK")
+        left:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -1)
+        left:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 1)
+        left:SetWidth(1); left:SetColorTexture(0.36, 0.24, 0.13, 0.38)
+        local right = host:CreateTexture(nil, "ARTWORK")
+        right:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -1)
+        right:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 1)
+        right:SetWidth(1); right:SetColorTexture(0.23, 0.15, 0.08, 0.50)
     end
     local function SyncWindow(f, alert, standardLayer, forever)
         local entry = foreverWindows[f]
@@ -404,6 +443,14 @@ end, function(S, module)
             local plate, grain, paint = Surface(host, f == spy.MainWindow)
             entry = {host = host, plate = plate, grain = grain, paint = paint, rim = Rim(host)}
             foreverWindows[f] = entry
+            if f == spy.MainWindow then
+                local well = Host(host)
+                well:ClearAllPoints()
+                well:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -33)
+                well:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+                RowEdges(well, true)
+                entry.well = well
+            end
             if f.Background and f.Background.GetAlpha then
                 entry.nativeBackground = f.Background
                 entry.backgroundAlpha = f.Background:GetAlpha()
@@ -462,6 +509,33 @@ end, function(S, module)
         end
         SyncHeader(f, forever)
     end
+    local function RestoreRowGeometry(entry)
+        if not entry.inset then return end
+        for _, saved in ipairs(entry.geometry) do RestorePoints(saved.region, saved.points) end
+        entry.inset = false
+    end
+    local function RowGeometry(entry, row, forever)
+        if not (Owned(row.StatusBar) and Owned(row.LeftText) and Owned(row.RightText)) then return end
+        if entry.bar ~= row.StatusBar or entry.left ~= row.LeftText or entry.right ~= row.RightText then
+            RestoreRowGeometry(entry)
+            entry.bar, entry.left, entry.right = row.StatusBar, row.LeftText, row.RightText
+            entry.geometry = {
+                {region = entry.bar, points = SavePoints(entry.bar)},
+                {region = entry.left, points = SavePoints(entry.left)},
+                {region = entry.right, points = SavePoints(entry.right)},
+            }
+        end
+        if not forever then RestoreRowGeometry(entry); return end
+        if entry.inset then return end
+        entry.bar:ClearAllPoints()
+        entry.bar:SetPoint("TOPLEFT", row, "TOPLEFT", 1, -1)
+        entry.bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -1, 1)
+        -- SetBar computes truncation from row width. Retain those exact text
+        -- coordinates while recessing only the native fill inside the frame.
+        Anchor(entry.left, "LEFT", row, "LEFT", 2, 0)
+        Anchor(entry.right, "RIGHT", row, "RIGHT", -2, 0)
+        entry.inset = true
+    end
     local function SyncRow(row, forever)
         if not Owned(row) then return end
         local entry = rowArt[row] or row.id and rowSlots[row.id]
@@ -470,20 +544,20 @@ end, function(S, module)
             if not root then return end
             -- One reusable sibling per native row slot, below its secure text.
             local host = Host(root, math.max(root:GetFrameLevel(), row:GetFrameLevel() - 1))
-            local rule = host:CreateTexture(nil, "ARTWORK")
-            rule:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 0)
-            rule:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
-            rule:SetHeight(1); rule:SetColorTexture(0.49, 0.33, 0.18, 0.24)
+            RowEdges(host)
             entry = {host = host}
             if row.id then rowSlots[row.id] = entry end
         end
         if not entry then return end
         if entry.row ~= row then
             if entry.row then
+                RestoreRowGeometry(entry)
                 rowArt[entry.row] = nil
             end
             entry.row = row
             local host = entry.host
+            local level = math.max(spy.MainWindow:GetFrameLevel(), row:GetFrameLevel() - 1)
+            if host:GetFrameLevel() ~= level then host:SetFrameLevel(level) end
             if host.GetParent and host:GetParent() ~= spy.MainWindow then host:SetParent(spy.MainWindow) end
             host:ClearAllPoints(); host:SetAllPoints(row)
             rowArt[row] = entry
@@ -503,15 +577,18 @@ end, function(S, module)
             end)
             end
         end
+        RowGeometry(entry, row, forever)
         Alpha(entry.host, forever and (not row.IsShown or row:IsShown()) and 1 or 0)
     end
     local function SyncRows(forever)
         local rows = spy.MainWindow and spy.MainWindow.Rows or {}
         for row, entry in pairs(rowArt) do
             if row.id and rows[row.id] ~= row then
+                RestoreRowGeometry(entry)
                 Alpha(entry.host, 0)
                 rowArt[row] = nil
                 entry.row = nil
+                entry.bar, entry.left, entry.right, entry.geometry = nil, nil, nil, nil
             end
         end
         for _, row in pairs(rows) do
@@ -539,6 +616,7 @@ end, function(S, module)
         for popup in pairs(reasonDialogs) do
             if ns.StyleTextureDialog then ns.StyleTextureDialog(S, module, popup, false) end
         end
+        S.RefreshSoftBorders()
         if ns.RefreshPopupMenusNow then ns.RefreshPopupMenusNow() end
     end
     local opacityKey = {}

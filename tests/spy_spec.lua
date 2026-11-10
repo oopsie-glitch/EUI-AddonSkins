@@ -53,7 +53,11 @@ local function frame(kind,parent)
     function f:GetNumRegions() return #self.regions end
     function f:EnableMouse(v) self.mouse=v end
     function f:SetMouseMotionEnabled(v) self.motion=v end
-    function f:SetAllPoints(v) self.allPoints=v; counts.geometry=counts.geometry+1 end
+    function f:SetAllPoints(v)
+        self.allPoints=v
+        self.points={{"TOPLEFT",v,"TOPLEFT",0,0},{"BOTTOMRIGHT",v,"BOTTOMRIGHT",0,0}}
+        counts.geometry=counts.geometry+1
+    end
     function f:SetPoint(...)
         local point={...}
         for i,old in ipairs(self.points) do
@@ -63,10 +67,22 @@ local function frame(kind,parent)
     end
     function f:ClearAllPoints() self.points={};self.allPoints=nil;counts.geometry=counts.geometry+1 end
     function f:SetHeight(v) self.height=v;counts.geometry=counts.geometry+1 end
-    function f:SetWidth(v) self.width=v;counts.geometry=counts.geometry+1 end
+    function f:SetWidth(v) self.width=v;self.autoWidth=false;counts.geometry=counts.geometry+1 end
     function f:SetSize(w,h) self.width,self.height=w,h;counts.geometry=counts.geometry+1 end
-    function f:GetWidth() return self.width end
-    function f:GetHeight() return self.height end
+    function f:GetWidth()
+        local a,b=self.points[1],self.points[2]
+        if a and b and a[1]=="TOPLEFT" and b[1]=="BOTTOMRIGHT" and a[2]==b[2] then
+            return a[2]:GetWidth()+(b[4] or 0)-(a[4] or 0)
+        end
+        return self.width
+    end
+    function f:GetHeight()
+        local a,b=self.points[1],self.points[2]
+        if a and b and a[1]=="TOPLEFT" and b[1]=="BOTTOMRIGHT" and a[2]==b[2] then
+            return a[2]:GetHeight()+(a[5] or 0)-(b[5] or 0)
+        end
+        return self.height
+    end
     function f:SetMovable() end
     function f:SetScale(v) self.scale=v end
     function f:GetLeft()
@@ -91,8 +107,8 @@ local function frame(kind,parent)
         elseif not p[1]:find("TOP") then y=y+self.height/2 end
         return y
     end
-    function f:GetBottom() return self:GetTop()-self.height end
-    function f:GetRight() return self:GetLeft()+self.width end
+    function f:GetBottom() return self:GetTop()-self:GetHeight() end
+    function f:GetRight() return self:GetLeft()+self:GetWidth() end
     function f:GetNumPoints() return #self.points end
     function f:GetPoint(i) return unpack(self.points[i] or {}) end
     function f:IsEnabled() return self.enabled~=false end
@@ -136,6 +152,7 @@ local function frame(kind,parent)
         end
     end
     function f:GetTexture() return self.path end
+    function f:GetDrawLayer() return self.drawLayer or "ARTWORK" end
     function f:SetColorTexture(...) self.color={...};self.baseColor={...};counts.paint=counts.paint+1 end
     function f:SetVertexColor(...) self.color={...};self.vertexColor={...};counts.paint=counts.paint+1 end
     function f:SetBlendMode(mode) self.blend=mode end
@@ -171,11 +188,11 @@ local function frame(kind,parent)
     function f:GetStatusBarColor() return unpack(self.statusColor or {0.5,0.5,0.5,1}) end
     function f:SetMinMaxValues(a,b) self.min,self.max=a,b end
     function f:SetValue(v) self.value=v end
-    function f:CreateTexture()
-        local t=frame("Texture");t.parent=self; self.regions[#self.regions+1]=t; return t
+    function f:CreateTexture(_,layer)
+        local t=frame("Texture");t.parent=self;t.drawLayer=layer; self.regions[#self.regions+1]=t; return t
     end
     function f:CreateFontString()
-        local t=frame("FontString");t.parent=self;self.regions[#self.regions+1]=t;return t
+        local t=frame("FontString");t.parent=self;t.autoWidth=true;self.regions[#self.regions+1]=t;return t
     end
     function f:GetFontString() return self.label end
     function f:GetNormalTexture() return self.normal end
@@ -253,6 +270,11 @@ function S.PageButton(f,glyph)
     f.standardFill=f:CreateTexture();f.standardFill:SetColorTexture(0.04,0.04,0.04,0.8)
     f.standardGlyph=f:CreateTexture();f.standardGlyph:SetTexture(glyph=="<" and "left" or "right")
     f.standardGlyph:SetSize(14,14)
+    f.standardBorder=frame("Frame",f)
+    for i=1,4 do
+        local edge=f.standardBorder:CreateTexture(nil,"BORDER")
+        edge:SetSize(1,16);edge:SetColorTexture(0.055,0.055,0.055,1)
+    end
 end
 function S.Font(f,r,g,b) f.font={"EUI",11,""};f:SetTextColor(r or 1,g or 1,b or 1,1) end
 function S.Button(f) f.button=true end
@@ -291,8 +313,11 @@ Spy={db={profile={MainWindow={RowHeight=16,RowSpacing=1,TextHeight=12,Alpha=1,Al
     ShowAlert=function(self) self.AlertWindow:SetBackdropBorderColor(0.9,0.1,0.05,1);self.AlertWindow.Title:SetTextColor(1,0.1,0.1,1);return "native-alert" end,BarDropDownOpen=function() end}
 local function makeRow(index)
     local row=frame("Button",Spy.MainWindow);row.secure=true;row.id=index
-    row.StatusBar=frame("StatusBar",row);row.StatusBar:SetStatusBarTexture("native")
+    row:SetPoint("TOPLEFT",Spy.MainWindow,"TOPLEFT",2,-34-17*(index-1))
+    row:SetSize(Spy.MainWindow:GetWidth()-4,16)
+    row.StatusBar=frame("StatusBar",row);row.StatusBar:SetAllPoints(row);row.StatusBar:SetStatusBarTexture("native")
     row.LeftText=row.StatusBar:CreateFontString();row.RightText=row.StatusBar:CreateFontString()
+    row.LeftText:SetPoint("LEFT",row.StatusBar,"LEFT",2,0);row.RightText:SetPoint("RIGHT",row.StatusBar,"RIGHT",-2,0)
     row.attributes={type1="macro",macrotext="/target Enemy"};row.scripts.OnClick=function()return "target" end
     Spy.MainWindow.Rows[index]=row;return row
 end
@@ -397,6 +422,8 @@ row.scripts.PostClick=nativePostClick
 local rawSetBar=Spy.SetBar
 Spy:SetBar(1,"A very long player name","60 Druid",100,"Class","DRUID",nil,1)
 local textWidth=row.LeftText.width
+local nativeLeft,nativeRight=row.LeftText:GetLeft(),row.RightText:GetRight()
+local nativeRowPoint={row:GetPoint(1)}
 local oldSetBarResult=pack(Spy:SetBar(1,"Player","60 Druid",100,"Class","DRUID",nil,1))
 assert(loadfile("EUIAddonSkins/Widgets.lua"))("EUIAddonSkins",ns)
 local realScan=ns.CreateSkinHelper
@@ -434,6 +461,21 @@ assert(row.attributes.macrotext=="/target Enemy" and row.scripts.OnClick()=="tar
 assert(row.scripts.PostClick==nativePostClick and row.scripts.PostClick()=="native-port-postclick")
 assert(Spy.MainWindow.StatsButton.scripts.OnClick()=="StatsButton")
 assert(Spy.MainWindow.StatsButton.width==16 and Spy.MainWindow.StatsButton.height==12,"native header hitbox changed")
+local function RowChrome(row)
+    for _,host in ipairs(Spy.MainWindow.children) do
+        if host.allPoints==row and #host.regions==4 and host.mouse==false then return host end
+    end
+end
+local chrome=assert(RowChrome(row),"contained row frame missing")
+assert(chrome:GetFrameLevel()<row.StatusBar:GetFrameLevel(),"row frame can cover player text")
+assert(row.StatusBar.points[1][4]==1 and row.StatusBar.points[1][5]==-1 and row.StatusBar.points[2][4]==-1 and row.StatusBar.points[2][5]==1,"inset fill was not recessed")
+assert(row.StatusBar:GetWidth()==row:GetWidth()-2 and row.StatusBar:GetHeight()==row:GetHeight()-2,"recess changed row hitbox")
+assert(row.LeftText:GetLeft()==nativeLeft and row.RightText:GetRight()==nativeRight,"recess moved native text/truncation coordinates")
+assert(row.points[1][2]==nativeRowPoint[2] and row.points[1][4]==nativeRowPoint[4] and row.points[1][5]==nativeRowPoint[5],"skin moved secure row")
+assert(row.LeftText.points[1][2]==row and row.RightText.points[1][2]==row,"row labels still follow inset fill")
+for _,button in ipairs({Spy.MainWindow.LeftButton,Spy.MainWindow.RightButton}) do
+    for _,edge in ipairs(button.standardBorder.regions) do assert(edge.baseColor[4]==0,"native helper border leaked into Forever") end
+end
 local function Control(button)
     for host,rim in pairs(rings) do
         if host.parent and host.parent.parent==button then return {host=host,seat=host.parent,rim=rim,icon=host.regions[1],fill=host.regions[2]} end
@@ -481,94 +523,60 @@ assert(row.StatusBar:GetStatusBarTexture():GetTexture()=="saved-profile-texture"
 Spy.MainWindow:Hide();Spy.MainWindow:Show();flush()
 assert(barTexture:GetTexture()=="saved-profile-texture" and barTexture:GetAlpha()==0.73)
 barTexture:SetAlpha(1)
--- Two independent header rows retain native button sizes and secure row anchors.
-for _,width in ipairs({90,95,103,130,200,300}) do
+-- One integrated header at normal widths; responsive safety wrap at minimum.
+for _,width in ipairs({90,130,160,200,240,300}) do
     NativeHeaderLayout(width)
     Spy:ResizeMainWindow();flush()
     for _,label in ipairs({"Nearby","Last Hour","Kill On Sight"}) do
     for _,value in ipairs({0,7,123}) do
-    Spy.MainWindow.CountFrame.Text:SetText("|cFF0070DE"..value.."|r")
-    Spy.MainWindow.Title:SetText(label)
-    local text=Spy.MainWindow.Title
-    local counter=Spy.MainWindow.CountFrame.Text
-    assert(text:GetRight()+6<=counter:GetLeft(),"title overlaps native counter")
-    assert(text:GetHeight()>=text:GetStringHeight() and text:GetWordWrap(),"full title cannot fit")
-    assert(text:GetBottom()>Spy.MainWindow.CloseButton:GetTop(),"title/control rows overlap")
-    assert(Spy.MainWindow:GetWidth()==width and Spy.MainWindow:GetHeight()==90,"native window size changed")
-    local close=Spy.MainWindow.CloseButton
-    local clearance=text:GetBottom()-close:GetTop()
-    assert(math.abs(clearance-2)<0.001,"header gap is not compact")
-    assert(math.abs(close:GetBottom()-(Spy.MainWindow:GetTop()-33))<0.001,"controls encroach on native rows")
-    assert(math.abs(text:GetTop()+2-(Spy.MainWindow:GetTop()+text:GetHeight()-9))<0.001,"decorative header top padding grew")
-    assert(math.abs(counter:GetTop()-counter.height/2-(text:GetTop()-6))<0.001,"counter not aligned to first title line")
-    local previous
-    for _,key in ipairs({"StatsButton","ClearButton","LeftButton","RightButton","CloseButton"}) do
-        local button=Spy.MainWindow[key]
-        assert(button:GetLeft()>=3 and button:GetRight()<=width-3,"header outside window width")
-        assert(math.abs((button:GetTop()+button:GetBottom())/2-(Spy.MainWindow:GetTop()-23))<0.001,"control baseline mismatch")
-        if previous then assert(previous:GetRight()<=button:GetLeft(),"native hitboxes overlap") end
-        previous=button
-    end
-    for _,key in ipairs({"CloseButton","LeftButton","RightButton","ClearButton","StatsButton"}) do
-        local b=Spy.MainWindow[key];local art=assert(Control(b))
-        assert(art.seat.width<=b.width-2 and art.seat.height<=b.height-2,"trim extends beyond native hitbox")
-        local icon=art.icon.width*art.host.scale
-        assert(icon<=math.min(art.seat.width,art.seat.height)-3,"icon lacks inner padding")
-        assert(art.seat.mouse==false and art.host.mouse==false and art.host.motion==false,"decorative input interception")
-    end
-    local compactGap=math.min(2,math.max(0,(width-95)/4))
-    local rightInset=math.min(8,math.max(3,width-87-compactGap*4))
-    assert(math.abs(width-Spy.MainWindow.CloseButton:GetRight()-rightInset)<0.001,"toolbar is not right aligned")
-    assert(math.abs(Spy.MainWindow.StatsButton:GetLeft()-(width-rightInset-84-compactGap*4))<0.001,"toolbar is not a compact group")
-    assert(math.abs(text:GetLeft()-(width==90 and 3 or 8))<0.001,"shared content inset changed")
-    assert(Spy.MainWindow.CloseButton.width==20 and Spy.MainWindow.CloseButton.height==20,"close hitbox changed")
-    assert(Spy.MainWindow.StatsButton.width==16 and Spy.MainWindow.StatsButton.height==12,"statistics hitbox changed")
-    local spacing
-    local previousButton
-    for _,key in ipairs({"StatsButton","ClearButton","LeftButton","RightButton","CloseButton"}) do
-        local button=Spy.MainWindow[key]
-        assert(button.scripts.OnClick()==key,"toolbar native click action changed")
-        if previousButton then
-            local current=button:GetLeft()-previousButton:GetRight()
-            if spacing then assert(math.abs(current-spacing)<0.001,"toolbar gaps are inconsistent") end
-            spacing=current
+        local f=Spy.MainWindow
+        f.CountFrame.Text:SetText("|cFF0070DE"..value.."|r")
+        f.Title:SetText(label)
+        local title,counter=f.Title,f.CountFrame.Text
+        local unified=title.points[1][5]==-20
+        if width>=200 then assert(unified,"header did not integrate at normal width") end
+        if width<=130 then assert(not unified,"narrow header lost safety wrap") end
+        assert(title:GetText()==label and title:GetWidth()>0,"native title changed/vanished")
+        assert(f:GetWidth()==width and f:GetHeight()==90,"skin resized native window")
+        if unified then
+            assert(not title:GetWordWrap(),"single-line header wrapped title")
+            assert(math.abs(title:GetTop()-title:GetHeight()/2-(f:GetTop()-20))<0.001,"title not centered in unified header")
+            assert(title:GetRight()+6<=f.StatsButton:GetLeft(),"title/control overlap")
+            assert(f.CloseButton:GetRight()+6<=f.CountButton:GetLeft(),"control/counter hitboxes overlap")
+        else
+            assert(title:GetBottom()>f.CloseButton:GetTop(),"wrapped header overlaps controls")
+            assert(title:GetRight()+6<=counter:GetLeft(),"wrapped title/counter overlap")
         end
-        previousButton=button
+        local prior,gap
+        for _,key in ipairs({"StatsButton","ClearButton","LeftButton","RightButton","CloseButton"}) do
+            local button=f[key]
+            assert(button:GetLeft()>=3 and button:GetRight()<=width-3,"header outside native width")
+            if prior then
+                local nextGap=button:GetLeft()-prior:GetRight()
+                assert(nextGap>=0 and nextGap<=2,"control spacing is not compact")
+                if gap then assert(math.abs(nextGap-gap)<0.001,"inconsistent control gaps") end
+                gap=nextGap
+            end
+            assert(button.scripts.OnClick()==key,"native click changed")
+            assert(button:GetHeight()==(key=="StatsButton" and 12 or key=="CloseButton" and 20 or 16),"header hitbox changed")
+            prior=button
+        end
+        assert(row.StatusBar:GetWidth()==row:GetWidth()-2,"resize lost inset geometry")
     end
-    assert(math.abs(spacing-compactGap)<0.001 and spacing<=2,"toolbar spacing is not modest")
-    local left,right=Control(Spy.MainWindow.LeftButton),Control(Spy.MainWindow.RightButton)
-    local lEnd=Spy.MainWindow.LeftButton:GetLeft()+(Spy.MainWindow.LeftButton.width+left.seat.width)/2
-    local rStart=Spy.MainWindow.RightButton:GetLeft()+(Spy.MainWindow.RightButton.width-right.seat.width)/2
-    assert(rStart-lEnd>=2,"adjacent painted frames touch")
     end
-    end
-    -- Hidden controls close their slot in the compact right-aligned group.
-    Spy.MainWindow.StatsButton:Hide();module.refresh();flush()
-    assert(math.abs(Spy.MainWindow.ClearButton:GetLeft()-(width-82))<0.001 and math.abs(width-Spy.MainWindow.CloseButton:GetRight()-8)<0.001,"hidden control broke compact right alignment")
-    local gap=Spy.MainWindow.LeftButton:GetLeft()-Spy.MainWindow.ClearButton:GetRight()
-    assert(math.abs(gap-2)<0.001,"hidden control left a stale toolbar gap")
-    Spy.MainWindow.StatsButton:Show();module.refresh();flush()
 end
 NativeHeaderLayout(200);Spy:ResizeMainWindow();flush()
--- A single native control remains on the right, never centered.
-for _,key in ipairs({"StatsButton","ClearButton","LeftButton","RightButton"}) do Spy.MainWindow[key]:Hide() end
-module.refresh();flush()
-assert(Spy.MainWindow.CloseButton:GetRight()==192,"single control drifted from right edge")
-for _,key in ipairs({"StatsButton","ClearButton","LeftButton","RightButton"}) do Spy.MainWindow[key]:Show() end
-module.refresh();flush()
 local title=Spy.MainWindow.Title
 local counter=Spy.MainWindow.CountFrame.Text
 for _,label in ipairs({"Nearby","Last Hour","Ignore","Kill On Sight","A localized title requiring more space"}) do
     title:SetText(label)
-    assert(title:GetHeight()>=title:GetStringHeight() and title:GetBottom()>Spy.MainWindow.CloseButton:GetTop(),"dynamic title clipped/overlapped")
+    assert(title.points[1][5]==-20 and not title:GetWordWrap(),"dynamic title rebuilt separate toolbar")
 end
 title:SetText("Kill On Sight")
 counter:SetText("|cFF0070DE123|r")
-assert(title:GetRight()+6<=counter:GetLeft(),"dynamic counter overlaps title")
-counter:Hide()
-assert(title.width==Spy.MainWindow.width-16,"hidden counter kept title reservation")
-counter:Show()
-assert(title:GetRight()+6<=counter:GetLeft(),"reopened counter overlaps title")
+assert(title:GetRight()+6<=Spy.MainWindow.StatsButton:GetLeft(),"dynamic title overlaps controls")
+counter:Hide();counter:Show()
+assert(Spy.MainWindow.CloseButton:GetRight()+6<=Spy.MainWindow.CountButton:GetLeft(),"counter toggle overlaps hitbox")
 local g,o,h,r,w,p,v=counts.geometry,counts.objects,counts.hooks,counts.reads,counts.alphaWrites,counts.paint,counts.visibility
 for i=1,1000 do title:SetText("Kill On Sight");counter:SetText("|cFF0070DE123|r") end
 assert(counts.geometry==g and counts.objects==o and counts.hooks==h and counts.reads==r and counts.alphaWrites==w and counts.paint==p and counts.visibility==v and #timers==0,"warm header state repainted/rediscovered")
@@ -591,6 +599,8 @@ for i=1,1000 do b:FireScript("OnEnable");b:SetNormalTexture("native-active-on") 
 assert(counts.objects==stableObjects and counts.hooks==stableHooks and counts.reads==stableReads and counts.alphaWrites==stableWrites,"stable control repainted/rediscovered")
 style.set(nil,"standard");flush()
 assert(Spy.MainWindow.CloseButton.standardGlyph.alpha==1 and Spy.MainWindow.LeftButton.standardGlyph.alpha==1,"Standard helper glyph lost")
+assert(row.StatusBar.points[1][4]==0 and row.StatusBar.points[2][4]==0 and row.LeftText.points[1][2]==row.StatusBar and row.RightText.points[1][2]==row.StatusBar,"Standard row geometry not restored")
+for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"Standard helper border not restored") end
 assert(Spy.MainWindow.Title.width==121 and Spy.MainWindow.Title.height==16 and not Spy.MainWindow.Title:GetWordWrap() and not Spy.MainWindow.Title:GetNonSpaceWrap(),"Standard title geometry not restored")
 assert(Spy.MainWindow.Title.points[1][5]==-16 and Spy.MainWindow.CloseButton.points[1][1]=="TOPRIGHT" and Spy.MainWindow.CloseButton.points[1][4]==-4 and Spy.MainWindow.CloseButton.points[1][5]==-12,"Standard native anchors not restored")
 assert(Spy.MainWindow.LeftButton.points[1][2]==Spy.MainWindow.RightButton and Spy.MainWindow.StatsButton.points[1][2]==Spy.MainWindow.ClearButton,"Standard native anchor chain not restored")
@@ -610,6 +620,10 @@ assert(counts.objects==before.objects and counts.hooks==before.hooks,"warm row o
 assert(counts.reads==before.reads and counts.scans==before.scans,"warm row traversed hierarchy")
 assert(counts.alphaWrites==before.writes and #timers==0,"settled rows wrote alpha or queued full work")
 print("BENCH Spy "..(source and "actual-source" or "source-shaped")..": 1000 warm SetBar updates: new UI objects/hooks, hierarchy scans/reads, cosmetic alpha writes and queued refreshes=0")
+local steady={objects=counts.objects,hooks=counts.hooks,reads=counts.reads,geometry=counts.geometry,paint=counts.paint,alpha=counts.alphaWrites}
+for i=1,1000 do Spy:SetCurrentList(1) end
+assert(counts.objects==steady.objects and counts.hooks==steady.hooks and counts.reads==steady.reads and counts.geometry==steady.geometry and counts.paint==steady.paint and counts.alphaWrites==steady.alpha,"warm row synchronization churned cosmetics")
+print("BENCH Spy Concept A: 1000 unchanged row-sync callbacks: objects/hooks/hierarchy reads/geometry/paint/alpha writes=0")
 -- Native whole-window opacity updates do not schedule a skin repaint.
 Spy.UpdateMainWindow=Spy.UpdateMainWindow or function() Spy.MainWindow.alpha=0.45 end
 local q=#timers;Spy:UpdateMainWindow();assert(#timers==q)
@@ -622,6 +636,8 @@ local retired=Spy.MainWindow.Rows[2];retired:Hide();Spy.MainWindow.Rows[2]=nil
 Spy:CreateRow(2);flush()
 Spy:SetBar(2,"Recycled","60 Hunter",100,"Class","HUNTER",nil,1)
 assert(Spy.MainWindow.Rows[2]~=retired)
+assert(retired.StatusBar.points[1][4]==0 and retired.LeftText.points[1][2]==retired.StatusBar,"retired row retained Forever anchors")
+assert(RowChrome(Spy.MainWindow.Rows[2]) and Spy.MainWindow.Rows[2].StatusBar.points[1][4]==1,"recycled slot lost contained row")
 local settledObjects,settledHooks=counts.objects,counts.hooks
 Spy.MainWindow.Rows[2]:Hide();Spy.MainWindow.Rows[2]:Show()
 retired:Hide();retired:Show()
@@ -753,6 +769,8 @@ style.set(nil,"forever");flush()
 enabled=false
 for _,fn in ipairs(looks)do fn()end;flush()
 assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1 and Spy.MainWindow.Background:GetAlpha()==1,"disable did not clean Forever art")
+assert(row.StatusBar.points[1][4]==0 and row.LeftText.points[1][2]==row.StatusBar and chrome.alpha==0,"disable retained custom row geometry")
+for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"disable retained hidden Standard border") end
 assert(#errors==0,table.concat(errors,"\n"))
 print("PASS: Spy Standard/Forever/Automatic restoration, native class/status colours, secure rows, callbacks/truncation, controls, pooling, settings/menu ownership, combat and bounded warm work")
 end

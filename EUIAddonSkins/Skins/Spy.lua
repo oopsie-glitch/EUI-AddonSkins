@@ -349,8 +349,8 @@ end, function(S, module)
         end
         -- Share the title's content edge. At the 90-unit native minimum,
         -- reduce both rows' inset together rather than shrinking hitboxes.
-        local gap = number > 1 and math.min(2, math.max(0, (width - 11 - total) / (number - 1))) or 0
-        local contentLeft = math.min(8, math.max(3, width - 3 - total - gap * math.max(0, number - 1)))
+        local packedGap = number > 1 and math.min(2, math.max(0, (width - 11 - total) / (number - 1))) or 0
+        local contentLeft = math.min(8, math.max(3, width - 3 - total - packedGap * math.max(0, number - 1)))
         local available = math.max(16, width - contentLeft - 8 - counterWidth)
         if title:GetWidth() ~= available then title:SetWidth(available) end
         if title.SetWordWrap and (not title.GetWordWrap or not title:GetWordWrap()) then title:SetWordWrap(true) end
@@ -376,7 +376,11 @@ end, function(S, module)
         local firstLine = math.max(line, math.min(titleHeight, counter and counter.GetStringHeight and counter:GetStringHeight() or line))
         if counter then Anchor(counter, "RIGHT", f, "TOPRIGHT", -8, titleTop - firstLine / 2) end
         if f.CountButton then Anchor(f.CountButton, "RIGHT", f, "TOPRIGHT", -6, titleTop - firstLine / 2) end
-        local offset = width - contentLeft - total - gap * math.max(0, number - 1)
+        -- Distribute spare width between actual native hitboxes, not in art
+        -- scaling or larger clickable backgrounds. Keep equal side margins.
+        local toolbarMargin = math.min(8, math.max(0, (width - total) / 2))
+        local gap = number > 1 and math.max(0, (width - 2 * toolbarMargin - total) / (number - 1)) or 0
+        local offset = number == 1 and (width - total) / 2 or toolbarMargin
         for _, key in ipairs(controlOrder) do
             local button = f[key]
             if button and (not button.IsShown or button:IsShown()) then

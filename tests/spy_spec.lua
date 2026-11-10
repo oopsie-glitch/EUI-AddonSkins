@@ -755,6 +755,8 @@ assert(Spy:AlertWatch()=="native-watch" and alertRim.color[1]==0.6 and alertRim.
 -- Simulate EUI's registered-host texture cleanup; custom art remains outside it.
 for host in pairs(shells) do for _,region in ipairs(host.regions) do region.alpha=0 end end
 assert(rootRim.edge.alpha==1,"EUI cleanup stripped Forever rim")
+assert(#Tones(row)==2 and tones[1]:IsShown() and tones[2]:IsShown()
+    and tones[1].gradient.high[4]==0.14 and tones[2].gradient.low[4]==0.16,"EUI cleanup changed approved row bevels")
 local plate,grain=rootRim.host.regions[1],rootRim.host.regions[2]
 local opacity=settings.args.opacity
 Spy.MainWindow:SetAlpha(1)
@@ -818,6 +820,10 @@ Spy.MainWindow:Hide();Spy.MainWindow:Show();flush()
 assert(Spy.MainWindow.Rows==savedRows and row.scripts.OnClick()=="target")
 style.set(nil,"standard");flush()
 assert(not rootRim.on and not alertRim.on and not statsRim.on,"Standard retained Forever rims")
+local standardPaint=counts.paint
+row:FireScript("OnEnter");row:FireScript("OnLeave")
+assert(counts.paint==standardPaint and chrome.alpha==0,"Standard hover retained Forever paint")
+assert(not row.scripts.OnUpdate and not Spy.MainWindow.scripts.OnUpdate,"skin added polling")
 assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1 and Spy.MainWindow.Background:GetAlpha()==1)
 assert(Spy.MainWindow.CloseButton.normal.color[1]==1,"Standard icon tint not restored")
 -- Automatic follows the current EUI profile; saved overrides survive reconstruction.

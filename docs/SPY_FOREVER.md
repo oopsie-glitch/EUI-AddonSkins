@@ -109,7 +109,9 @@ Mocks cannot establish live taint safety; secure/forbidden APIs are not bypassed
 ## Native states
 
 The pinned Spy.xml secure-row template has native OnEnter/OnLeave callbacks to
-Spy:ShowTooltip and an additive BarFill highlight. Posthooks retain those scripts,
+Spy:ShowTooltip and an additive BarFill highlight. One secure posthook on that
+Spy-local method dispatches only currently owned rows; per-row hover hooks remain
+only as a fallback when the shared method is absent. Native scripts retain their
 click attributes, native hover artwork and tooltips. The four existing copper
 edges brighten only during a real row hover; cached transitions avoid duplicate
 paint. Hide, recycling, Standard and disable clear the cosmetic hover state.
@@ -132,7 +134,7 @@ back to Standard without loading an addon.
 
 Only the existing main decorative plate/grain own background opacity: neutral
 white plate source, warm gradient/vertex paint, explicit BLEND, composed alpha,
-hidden unused header band and excluded zero-opacity draws. New row/list edges
+no allocated main-header band and excluded zero-opacity draws. New row/list edges
 are border chrome, not additional opaque background surfaces. Spy retains native
 whole-window/instance fading and all row textures/colours/alpha. The background
 slider never fades the window or text.
@@ -140,6 +142,17 @@ slider never fades the window or text.
 Nearby, Last Hour, Ignore and KOS share the new list/header. Existing statistics,
 alerts/Watch severity, scoped menus/reason dialogs and settings helpers remain.
 Shared player-unit menus, GameTooltip, map/minimap/target markers remain native.
+
+## Performance audit follow-up
+
+The approved Concept A appearance is unchanged. The native tooltip dispatch
+removes 79 hooks from a 40-slot pool, the always-hidden main band is omitted, and
+unchanged opacity callbacks save explicit preferences without scheduling paint.
+Hover uses the existing applied-row theme cache. Two independent material strips
+per row remain necessary for the approved edges/gradients; no visual feature was
+removed to reduce counts. Complete before/after lifecycle timing, call profiles,
+heap limits and live-client requirements are in
+[SPY_FOREVER_PERFORMANCE.md](SPY_FOREVER_PERFORMANCE.md).
 
 ## Validation and performance
 

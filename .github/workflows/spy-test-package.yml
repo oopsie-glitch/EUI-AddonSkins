@@ -38,7 +38,7 @@ jobs:
                   lines=text.splitlines()
                   chosen=set()
                   for i,line in enumerate(lines):
-                      if re.search(r'(SpySecureActionButtonTemplate|Bar_OnEnter|Bar_OnLeave|OnEnter|OnLeave|[Ss]elected|[Ff]ocused|[Hh]ighlight|Unknown|SetBar\()',line):
+                      if re.search(r'(SpySecureActionButtonTemplate|Bar_OnEnter|Bar_OnLeave|OnEnter|OnLeave|ShowTooltip\(|[Ss]elected|[Ff]ocused|[Hh]ighlight|Unknown|SetBar\()',line):
                           chosen.update(range(max(0,i-3),min(len(lines),i+12)))
                   if chosen:
                       print('STATE FILE '+member)
@@ -126,6 +126,7 @@ jobs:
               ('paint.low:SetRGBA(0.120, 0.084, 0.055, plateAlpha)', 'paint.low:SetRGBA(0.120, 0.084, 0.055, 1)', 'gradient stops retain opaque paint'),
               ('if f ~= spy.MainWindow then', 'if true then', 'unused main header background allocated'),
               ('local nativeHover = type(spy.ShowTooltip) == "function"', 'local nativeHover = false', 'shared native hover still adds per-row hooks'),
+              ('if target ~= current then H.Queue(opacityKey, ApplyOpacity) end', 'if true then H.Queue(opacityKey, ApplyOpacity) end', 'unchanged opacity scheduled cosmetic work'),
           ]
           try:
               for before,after,message in mutations:

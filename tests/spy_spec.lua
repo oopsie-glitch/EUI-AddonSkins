@@ -554,28 +554,34 @@ local function Tones(row)
 end
 local function Bevels(nativeRow)
     local result={}
-    for _,region in ipairs(nativeRow.StatusBar.regions) do
+    local owner=RowChrome(nativeRow)
+    for _,region in ipairs(owner and owner.regions or {}) do
         if region.kind=="Texture" and region.drawLayer=="ARTWORK" and region.sublevel==3 then result[#result+1]=region end
     end
     return result
 end
-local tones=Tones(row)
-local bevels=Bevels(row)
-assert(#bevels==2 and bevels[1].height==2 and bevels[2].height==2,"reused row bevels missing")
-assert(bevels[1].gradient.low[4]==0 and bevels[1].gradient.high[4]==0.45
-    and bevels[2].gradient.low[4]==0.75 and bevels[2].gradient.high[4]==0,"row bevel falloff missing")
-assert(bevels[1].parent==row.StatusBar and bevels[2].parent==row.StatusBar,"bevels do not follow native row visibility")
-assert(#chrome.regions==2 and bevels[1].blend=="BLEND" and bevels[2].blend=="BLEND","bevel ownership/blending is not exclusive")
-assert(#tones==1 and tones[1].allPoints==row.StatusBar,"row material does not cover the surface")
-assert(tones[1].gradient and tones[1].blend=="BLEND","row material paint path missing")
-assert(tones[1].parent==row.StatusBar and tones[1].drawLayer=="BACKGROUND" and row.LeftText.drawLayer=="OVERLAY" and row.RightText.drawLayer=="OVERLAY","row bevel can cover text")
-assert(row.StatusBar:GetStatusBarTexture():GetDrawLayer()~="BACKGROUND","native fill must sit above the material underlay")
-assert(tones[1]:GetTop()==row.StatusBar:GetTop() and tones[1]:GetBottom()==row.StatusBar:GetBottom(),"row material escapes native fill")
+local function AssertRestingEdges(nativeRow)
+    local edges=Bevels(nativeRow)
+    local top,bottom=edges[1],edges[2]
+    assert(top and bottom and top.baseColor and bottom.baseColor
+        and not top.gradient and not bottom.gradient and not top.vertexColor and not bottom.vertexColor
+        and top.baseColor[1]==0.55 and top.baseColor[2]==0.36 and top.baseColor[3]==0.19
+        and bottom.baseColor[1]==0.19 and bottom.baseColor[3]==0.050,"first-visible row lacks resting bronze paint")
+    assert(#edges==2 and top.height==1 and bottom.height==1
+        and top.blend=="BLEND" and bottom.blend=="BLEND","reused row bevels missing")
+    assert(top:GetBottom()>=nativeRow.StatusBar:GetTop() and bottom:GetTop()<=nativeRow.StatusBar:GetBottom(),
+        "row bevel crosses native fill")
+    assert(#Tones(nativeRow)==0 and #nativeRow.StatusBar.regions==2,"decoration attached to native statusbar")
+    return edges
+end
 assert(row.scripts.OnEnter==originalEnter and row.scripts.OnLeave==originalLeave,"native hover handlers replaced")
 row:Show()
+local bevels=AssertRestingEdges(row)
+assert(not row.nativeEnterCalls and not row.nativeTooltip,"first visibility fixture already hovered")
+assert(Coverage(bevels[1])>0,"initial resting bevel is not visible")
 local nativeColor={table.unpack(row.StatusBar.statusColor)}
 row:FireScript("OnEnter")
-assert(row.nativeTooltip and bevels[1].vertexColor[4]==0.95,"native hover did not highlight bronze frame")
+assert(row.nativeTooltip and bevels[1].baseColor[1]==0.92,"native hover did not highlight bronze frame")
 if nativeTooltipFunction then
     assert(not row.hooks.OnEnter and not row.hooks.OnLeave,"shared native hover still adds per-row hooks")
     local foreign={id=99,unit={name="Foreign"}}
@@ -593,10 +599,15 @@ local hoverPaint=counts.paint
 row:FireScript("OnEnter")
 assert(counts.paint==hoverPaint,"duplicate hover repainted")
 row:FireScript("OnLeave")
-assert(not row.nativeTooltip and bevels[1].vertexColor[4]==0.60,"native leave did not restore row bevel")
+assert(not row.nativeTooltip and bevels[1].baseColor[1]==0.55,"native leave did not restore row bevel")
 for i=1,4 do assert(row.StatusBar.statusColor[i]==nativeColor[i],"hover changed meaningful class/status colour") end
-row:Hide();assert(chrome.alpha==0 and Coverage(tones[1])==0 and not bevels[1]:IsVisible() and not bevels[2]:IsVisible(),"hidden row retained rendered bevel")
+row:Hide();assert(chrome.alpha==0 and Coverage(bevels[1])==0 and Coverage(bevels[2])==0,"hidden row retained rendered bevel")
 row:Show()
+Spy.MainWindow:Hide()
+assert(Coverage(bevels[1])==0,"closed window left row bevels visible")
+Spy.MainWindow:Show()
+assert(Coverage(AssertRestingEdges(row)[1])>0,"reopen required hover to restore resting bevel")
+flush()
 local stableHoverObjects,stableHoverHooks=counts.objects,counts.hooks
 for i=1,1000 do row:FireScript("OnEnter");row:FireScript("OnLeave") end
 assert(counts.objects==stableHoverObjects and counts.hooks==stableHoverHooks,"hover accumulated artwork/hooks")
@@ -727,10 +738,10 @@ counter:SetText("|cFF0070DE0|r")
 local b=Spy.MainWindow.ClearButton
 local art=Control(b)
 local callback=b.scripts.OnClick
-b:FireScript("OnEnter");assert(b.tooltipCalls==1 and art.fill.color[1]==0.12)
-b:FireScript("OnMouseDown");assert(art.fill.color[1]==0.035 and art.icon.points[1][5]==-2)
-b:FireScript("OnMouseUp");assert(art.fill.color[1]==0.12)
-b:FireScript("OnLeave");assert(art.fill.color[1]==0.065)
+b:FireScript("OnEnter");assert(b.tooltipCalls==1 and art.fill.color[1]==0.105)
+b:FireScript("OnMouseDown");assert(art.fill.color[1]==0.039 and art.icon.points[1][5]==-2)
+b:FireScript("OnMouseUp");assert(art.fill.color[1]==0.105)
+b:FireScript("OnLeave");assert(art.fill.color[1]==0.075)
 b.enabled=false;b:FireScript("OnDisable");assert(art.icon.color[4]==0.55)
 b.enabled=true;b:FireScript("OnEnable");assert(art.icon.color[4]==1)
 b:SetNormalTexture("native-active-on")
@@ -742,7 +753,7 @@ assert(counts.objects==stableObjects and counts.hooks==stableHooks and counts.re
 style.set(nil,"standard");flush()
 assert(Spy.MainWindow.CloseButton.standardGlyph.alpha==1 and Spy.MainWindow.LeftButton.standardGlyph.alpha==1,"Standard helper glyph lost")
 assert(row.StatusBar.points[1][4]==0 and row.StatusBar.points[2][4]==0 and row.LeftText.points[1][2]==row.StatusBar and row.RightText.points[1][2]==row.StatusBar,"Standard row geometry not restored")
-assert(not tones[1]:IsShown() and not bevels[1]:IsShown() and not bevels[2]:IsShown(),"Standard retained row material")
+assert(Coverage(bevels[1])==0 and Coverage(bevels[2])==0,"Standard retained row material")
 for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"Standard helper border not restored") end
 assert(select(1,Spy.MainWindow:GetResizeBounds())==90,"Standard resize bounds not restored")
 assert(Spy.MainWindow.Title.width==121 and Spy.MainWindow.Title.height==16 and not Spy.MainWindow.Title:GetWordWrap() and not Spy.MainWindow.Title:GetNonSpaceWrap(),"Standard title geometry not restored")
@@ -776,7 +787,13 @@ end
 Spy.UpdateMainWindow=Spy.UpdateMainWindow or function() Spy.MainWindow.alpha=0.45 end
 local q=#timers;Spy:UpdateMainWindow();assert(#timers==q)
 -- New row pools, shrink/removal and same-slot replacement retain native actions.
-Spy:CreateRow(2);flush()
+local pendingBeforeRow=#timers
+Spy:CreateRow(2)
+local firstSlot=Spy.MainWindow.Rows[2]
+firstSlot:Show()
+assert(#timers==pendingBeforeRow,"new row queued a cosmetic refresh")
+assert(not firstSlot.nativeEnterCalls and Coverage(AssertRestingEdges(firstSlot)[1])>0,
+    "new row was not painted before its first show")
 Spy:SetBar(2,"Second","60 Rogue",100,"Class","ROGUE",nil,1)
 local second=Spy.MainWindow.Rows[2];second:Hide();second:Show()
 assert(second.StatusBar:GetStatusBarTexture():GetAlpha()==1)
@@ -784,7 +801,9 @@ local retired=Spy.MainWindow.Rows[2];retired:Hide();Spy.MainWindow.Rows[2]=nil
 Spy:CreateRow(2);flush()
 Spy:SetBar(2,"Recycled","60 Hunter",100,"Class","HUNTER",nil,1)
 assert(Spy.MainWindow.Rows[2]~=retired)
-assert(#Tones(retired)==0 and #Bevels(retired)==0 and #Tones(Spy.MainWindow.Rows[2])==1 and #Bevels(Spy.MainWindow.Rows[2])==2,"row bevels accumulated on retired native bars")
+assert(#Tones(retired)==0 and #Bevels(retired)==0,"row bevels accumulated on retired native bars")
+Spy.MainWindow.Rows[2]:Show()
+AssertRestingEdges(Spy.MainWindow.Rows[2])
 assert(retired.StatusBar.points[1][4]==0 and retired.LeftText.points[1][2]==retired.StatusBar,"retired row retained Forever anchors")
 assert(RowChrome(Spy.MainWindow.Rows[2]) and Spy.MainWindow.Rows[2].StatusBar.points[1][4]==10,"recycled slot lost contained row")
 local settledObjects,settledHooks=counts.objects,counts.hooks
@@ -793,7 +812,7 @@ retired:Hide();retired:Show()
 assert(counts.objects==settledObjects and counts.hooks==settledHooks,"retired row callbacks allocated artwork")
 local currentChrome=RowChrome(Spy.MainWindow.Rows[2]);local beforeRetired=counts.paint
 retired:FireScript("OnEnter");retired:FireScript("OnLeave")
-assert(counts.paint==beforeRetired and Bevels(Spy.MainWindow.Rows[2])[1].vertexColor[4]==0.60,"retired hover restyled current owner")
+assert(counts.paint==beforeRetired and Bevels(Spy.MainWindow.Rows[2])[1].baseColor[1]==0.55,"retired hover restyled current owner")
 -- Native warning severity, stats frame and unregistered art ownership.
 Spy:ShowAlert("kos","Enemy","Source","Location");flush()
 local rootRim,alertRim,statsRim
@@ -835,8 +854,7 @@ assert(Spy:AlertWatch()=="native-watch" and alertRim.color[1]==0.6 and alertRim.
 -- Simulate EUI's registered-host texture cleanup; custom art remains outside it.
 for host in pairs(shells) do for _,region in ipairs(host.regions) do region.alpha=0 end end
 assert(rootRim.edge.alpha==1,"EUI cleanup stripped Forever rim")
-assert(#Tones(row)==1 and tones[1]:IsShown()
-    and tones[1].gradient.high[4]==0.08 and tones[1].gradient.low[4]==0.18,"EUI cleanup changed approved row bevels")
+assert(Coverage(AssertRestingEdges(row)[1])>0,"EUI cleanup changed resting row bevels")
 local plate,grain
 for _,region in ipairs(viewport.regions) do
     if region.drawLayer=="BACKGROUND" and region.sublevel==1 then plate=region end
@@ -880,6 +898,8 @@ for _,a in ipairs({0,35,100,75}) do
         if region.drawLayer=="ARTWORK" and region.height==4 then ledge=region end
     end
     assert(seam and ledge and seam.gradient and ledge.gradient,"header metallic ledge missing")
+    assert(math.abs(hp.gradient.high[1]-hp.gradient.low[1])<=0.091
+        and ledge.gradient.low[4]<0.5 and seam.gradient.high[1]<0.6,"header lighting became harsh")
     assert(math.abs(Composite(hp,hg)-a/100)<0.0001,"header background opacity stacks")
     assert(hp:GetBottom()>=plate:GetTop(),"header/list backgrounds overlap")
     assert(header.points[2][2]==Spy.MainWindow and header.points[2][3]=="TOPRIGHT" and header.points[2][5]==-32,"header partition anchors drifted")
@@ -987,7 +1007,7 @@ enabled=false
 for _,fn in ipairs(looks)do fn()end;flush()
 assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1 and Spy.MainWindow.Background:GetAlpha()==1,"disable did not clean Forever art")
 assert(row.StatusBar.points[1][4]==0 and row.LeftText.points[1][2]==row.StatusBar and chrome.alpha==0,"disable retained custom row geometry")
-assert(not tones[1]:IsShown() and not bevels[1]:IsShown() and not bevels[2]:IsShown(),"disable retained row bevels")
+assert(Coverage(bevels[1])==0 and Coverage(bevels[2])==0,"disable retained row bevels")
 assert(Spy.MainWindow.Title.font[1]=="EUI New" and Spy.MainWindow.Title.font[2]==13,"disable retained title emphasis")
 for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"disable retained hidden Standard border") end
 assert(#errors==0,table.concat(errors,"\n"))

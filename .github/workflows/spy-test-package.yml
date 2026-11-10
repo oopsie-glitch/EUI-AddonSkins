@@ -129,7 +129,7 @@ jobs:
           PY
           SPY_SOURCE=/tmp/spy-upstream python3 tests/run_lua.py
       - name: Compare Spy performance against approved PR baseline
-        run: SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline e7631a3e9fada47474a9bda356f0ce7a0fef1c2c --trials 5 --iterations 1000 --rows 40
+        run: SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline 49cd3a600c140fe2bad31ed89250e8a2a33faa15 --trials 5 --iterations 1000 --rows 40
       - name: Fresh Lua bootstrap with saved Spy opacity endpoints
         run: |
           SPY_BOOT_OPACITY=0 python3 tests/run_lua.py
@@ -151,10 +151,10 @@ jobs:
           path=Path('EUIAddonSkins/Skins/Spy.lua')
           original=path.read_text()
           mutations=[
-              ('e.top:SetVertexColor(0.92, 0.70, 0.38, 0.95)', 'e.top:SetVertexColor(0.62, 0.43, 0.23, 0.60)', 'native hover did not highlight bronze frame'),
+              ('e.top:SetColorTexture(0.92, 0.70, 0.38, 0.86)', 'e.top:SetColorTexture(0.55, 0.36, 0.19, 0.48)', 'native hover did not highlight bronze frame'),
               ('rim = Rim(host, f == spy.MainWindow)', 'rim = Rim(host, false)', 'main window did not select supported Heavy Bronze rim'),
-              ('material:SetAllPoints(bar)', 'material:SetHeight(2)', 'row material does not cover the surface'),
-              ('top:SetHeight(2)', 'top:SetHeight(1)', 'reused row bevels missing'),
+              ('e.top:SetColorTexture(0.55, 0.36, 0.19, 0.48)', 'e.top:SetColorTexture(1, 1, 1, 0.48)', 'first-visible row lacks resting bronze paint'),
+              ('top:SetHeight(1); top:SetBlendMode', 'top:SetHeight(2); top:SetBlendMode', 'reused row bevels missing'),
               ('shadow:SetWidth(5)', 'shadow:SetWidth(3)', 'panel lip shading hidden behind rim'),
               ('local wrapped = available < 24', 'local wrapped = true', 'header did not integrate at normal width'),
               ('if entry.inset then return end', 'if true then return end', 'inset fill was not recessed'),

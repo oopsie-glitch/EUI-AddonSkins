@@ -100,8 +100,8 @@ end, function(S, module)
         if plate.SetGradient and CreateColor then
             local low, high
             if managed then
-                low = header and CreateColor(0.105, 0.062, 0.030, 1) or CreateColor(0.055, 0.037, 0.024, 1)
-                high = header and CreateColor(0.285, 0.185, 0.090, 1) or CreateColor(0.115, 0.075, 0.045, 1)
+                low = header and CreateColor(0.112, 0.073, 0.043, 1) or CreateColor(0.055, 0.037, 0.024, 1)
+                high = header and CreateColor(0.202, 0.130, 0.072, 1) or CreateColor(0.115, 0.075, 0.045, 1)
             else
                 low, high = CreateColor(0.120, 0.084, 0.055, 1), CreateColor(0.165, 0.115, 0.075, 1)
             end
@@ -135,15 +135,15 @@ end, function(S, module)
             local plateAlpha = (target - grainAlpha) / (1 - grainAlpha)
             if paint.low then
                 if paint.header then
-                    paint.low:SetRGBA(0.105, 0.062, 0.030, plateAlpha)
-                    paint.high:SetRGBA(0.285, 0.185, 0.090, plateAlpha)
+                    paint.low:SetRGBA(0.112, 0.073, 0.043, plateAlpha)
+                    paint.high:SetRGBA(0.202, 0.130, 0.072, plateAlpha)
                 else
                     paint.low:SetRGBA(0.055, 0.037, 0.024, plateAlpha)
                     paint.high:SetRGBA(0.115, 0.075, 0.045, plateAlpha)
                 end
                 entry.plate:SetGradient("VERTICAL", paint.low, paint.high)
             else
-                entry.plate:SetVertexColor(paint.header and 0.285 or 0.115, paint.header and 0.185 or 0.075, paint.header and 0.090 or 0.045, plateAlpha)
+                entry.plate:SetVertexColor(paint.header and 0.202 or 0.115, paint.header and 0.130 or 0.075, paint.header and 0.072 or 0.045, plateAlpha)
             end
             entry.grain:SetVertexColor(0.56, 0.44, 0.32, grainAlpha)
         end
@@ -234,7 +234,13 @@ end, function(S, module)
         if fixed then entry.icon:SetVertexColor(0.91, 0.71, 0.43, enabled and 1 or 0.55)
         else entry.icon:SetVertexColor(1, 1, 1, enabled and 1 or 0.55) end
         local shade = pressed and 0.035 or hover and 0.12 or 0.065
-        entry.fill:SetColorTexture(shade, shade * 0.72, shade * 0.48, 0.9)
+        if spy.MainWindow and spy.MainWindow[entry.role] == button then
+            -- Recess the seat into the warm header while keeping the native icon and hitbox.
+            local seat = pressed and 0.039 or hover and 0.105 or 0.075
+            entry.fill:SetColorTexture(seat, seat * 0.64, seat * 0.38, 0.90)
+        else
+            entry.fill:SetColorTexture(shade, shade * 0.72, shade * 0.48, 0.9)
+        end
         local EUI = _G.EllesmereUI
         if entry.rim and EUI.ForeverBorderPaint then
             EUI.ForeverBorderPaint(entry.rim, 1, 1, 1, not enabled and 0.55 or hover and 1 or 0.85)
@@ -466,51 +472,43 @@ end, function(S, module)
         end
         layout.active, layout.writing = true, false
     end
-    local edgeColors
-    local function RowEdges(host, omitTop)
-        if CreateColor then
-            edgeColors = edgeColors or {CreateColor(1, 1, 1, 0), CreateColor(1, 1, 1, 0.45), CreateColor(1, 1, 1, 0.75)}
-        end
-        local top
-        if not omitTop then
-            top = host:CreateTexture(nil, "ARTWORK", nil, 3)
-            top:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
-            top:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, 0)
-            top:SetHeight(2); top:SetColorTexture(1, 1, 1, 1); top:SetBlendMode("BLEND")
-            top:SetVertexColor(0.62, 0.43, 0.23, 0.60)
-            if edgeColors and top.SetGradient then top:SetGradient("VERTICAL", edgeColors[1], edgeColors[2]) end
-        end
+    local function RowEdges(host)
+        local top = host:CreateTexture(nil, "ARTWORK", nil, 3)
+        top:SetPoint("TOPLEFT", host, "TOPLEFT", 1, 0)
+        top:SetPoint("TOPRIGHT", host, "TOPRIGHT", -1, 0)
+        top:SetHeight(1); top:SetBlendMode("BLEND")
         local bottom = host:CreateTexture(nil, "ARTWORK", nil, 3)
-        bottom:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 0)
-        bottom:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
-        bottom:SetHeight(2); bottom:SetColorTexture(1, 1, 1, 1); bottom:SetBlendMode("BLEND")
-        bottom:SetVertexColor(0.20, 0.12, 0.055, 0.75)
-        if edgeColors and bottom.SetGradient then bottom:SetGradient("VERTICAL", edgeColors[3], edgeColors[1]) end
+        bottom:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 1, 0)
+        bottom:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -1, 0)
+        bottom:SetHeight(1); bottom:SetBlendMode("BLEND")
         local left = host:CreateTexture(nil, "ARTWORK")
         left:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -1)
         left:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 1)
-        left:SetWidth(1); left:SetColorTexture(0.38, 0.25, 0.13, 0.18)
+        left:SetWidth(1)
         local right = host:CreateTexture(nil, "ARTWORK")
         right:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -1)
         right:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 1)
-        right:SetWidth(1); right:SetColorTexture(0.25, 0.15, 0.07, 0.18)
+        right:SetWidth(1)
         return {top = top, bottom = bottom, left = left, right = right}
     end
     local function PaintRowHover(entry, hovered)
         if entry.paintedHover == hovered then return end
-        entry.paintedHover = hovered
         local e = entry.edges
+        -- Paint the actual color once. A neutral gradient layered over a vertex
+        -- tint left the first draw dependent on setter order. All four strips
+        -- live in the one-unit gutter, outside Spy's native fill.
         if hovered then
-            e.top:SetVertexColor(0.92, 0.70, 0.38, 0.95)
-            e.bottom:SetVertexColor(0.66, 0.42, 0.19, 0.75)
-            e.left:SetColorTexture(0.78, 0.52, 0.25, 0.90)
-            e.right:SetColorTexture(0.78, 0.52, 0.25, 0.90)
+            e.top:SetColorTexture(0.92, 0.70, 0.38, 0.86)
+            e.bottom:SetColorTexture(0.66, 0.42, 0.19, 0.72)
+            e.left:SetColorTexture(0.78, 0.52, 0.25, 0.82)
+            e.right:SetColorTexture(0.78, 0.52, 0.25, 0.82)
         else
-            e.top:SetVertexColor(0.62, 0.43, 0.23, 0.60)
-            e.bottom:SetVertexColor(0.20, 0.12, 0.055, 0.75)
-            e.left:SetColorTexture(0.38, 0.25, 0.13, 0.18)
-            e.right:SetColorTexture(0.25, 0.15, 0.07, 0.18)
+            e.top:SetColorTexture(0.55, 0.36, 0.19, 0.48)
+            e.bottom:SetColorTexture(0.19, 0.105, 0.050, 0.68)
+            e.left:SetColorTexture(0.34, 0.21, 0.11, 0.16)
+            e.right:SetColorTexture(0.24, 0.14, 0.07, 0.16)
         end
+        entry.paintedHover = hovered
     end
     local function RowHover(entry, row, entered)
         if entry.row ~= row then return end
@@ -527,55 +525,6 @@ end, function(S, module)
             local entry = rowArt[row]
             if entry then RowHover(entry, row, entered) end
         end)
-    end
-    local toneColors
-    local function RowTones(entry, bar, shown)
-        shown = shown and Owned(bar) and true or false
-        if not entry.tones and shown then
-            entry.tones = {bar:CreateTexture(nil, "BACKGROUND", nil, 2), entry.edges.top, entry.edges.bottom}
-            if CreateColor and entry.tones[1].SetGradient then
-                toneColors = toneColors or {CreateColor(0.04, 0.025, 0.01, 0.18),
-                    CreateColor(0.90, 0.73, 0.48, 0.08)}
-            end
-            do
-                local texture = entry.tones[1]
-                texture:SetColorTexture(1, 1, 1, 1)
-                texture:SetBlendMode("BLEND")
-                if toneColors then
-                    texture:SetGradient("VERTICAL", toneColors[1], toneColors[2])
-                else texture:SetVertexColor(0.42, 0.29, 0.14, 0.12) end
-            end
-        end
-        if not entry.tones then return end
-        if shown and entry.toneParent ~= bar then
-            local material = entry.tones[1]
-            material:SetParent(bar); material:ClearAllPoints(); material:SetAllPoints(bar)
-            -- Reuse the old row lines as two soft bevels above the native fill,
-            -- below its text. The broad material itself stays behind Spy art.
-            local upper, lower = entry.edges.top, entry.edges.bottom
-            upper:SetParent(bar); lower:SetParent(bar)
-            upper:ClearAllPoints(); lower:ClearAllPoints()
-            upper:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
-            upper:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
-            lower:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
-            lower:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
-            entry.toneParent = bar
-        end
-        if entry.tonesShown ~= shown then
-            for _, texture in ipairs(entry.tones) do texture:SetShown(shown) end
-            entry.tonesShown = shown
-        end
-    end
-    local function ReleaseTones(entry)
-        RowTones(entry, nil, false)
-        if entry.toneParent then
-            for _, texture in ipairs(entry.tones) do
-                texture:SetParent(entry.host); texture:ClearAllPoints()
-            end
-            entry.toneParent = nil
-        end
-        entry.wantHover = false
-        PaintRowHover(entry, false)
     end
     local function SyncWindow(f, alert, standardLayer, forever)
         local entry = foreverWindows[f]
@@ -682,13 +631,13 @@ end, function(S, module)
                     shade:SetPoint("BOTTOMRIGHT", seam, "TOPRIGHT", 0, 0)
                     shade:SetHeight(4); shade:SetColorTexture(1, 1, 1, 1)
                     if shade.SetGradient and CreateColor then
-                        shade:SetGradient("VERTICAL", CreateColor(0.035, 0.018, 0.008, 0.65), CreateColor(0.035, 0.018, 0.008, 0))
-                    else shade:SetVertexColor(0.035, 0.018, 0.008, 0.35) end
+                        shade:SetGradient("VERTICAL", CreateColor(0.055, 0.029, 0.015, 0.43), CreateColor(0.055, 0.029, 0.015, 0))
+                    else shade:SetVertexColor(0.055, 0.029, 0.015, 0.24) end
                     entry.seamShade = shade
                     seam:SetColorTexture(1, 1, 1, 1)
                     if seam.SetGradient and CreateColor then
-                        seam:SetGradient("VERTICAL", CreateColor(0.23, 0.12, 0.045, 0.80), CreateColor(0.70, 0.47, 0.24, 0.90))
-                    else seam:SetVertexColor(0.58, 0.38, 0.19, 0.75) end
+                        seam:SetGradient("VERTICAL", CreateColor(0.25, 0.14, 0.066, 0.72), CreateColor(0.56, 0.36, 0.19, 0.78))
+                    else seam:SetVertexColor(0.46, 0.29, 0.15, 0.72) end
                 end
                 entry.band, entry.seam = band, seam
             end
@@ -771,14 +720,15 @@ end, function(S, module)
             -- One reusable sibling per native row slot, below its secure text.
             local host = Host(root, math.max(root:GetFrameLevel(), row:GetFrameLevel() - 1))
             local edges = RowEdges(host)
-            entry = {host = host, edges = edges, paintedHover = false}
+            entry = {host = host, edges = edges}
+            PaintRowHover(entry, false)
             if row.id then rowSlots[row.id] = entry end
         end
         if not entry then return end
         if entry.row ~= row then
             if entry.row then
                 RestoreRowGeometry(entry)
-                ReleaseTones(entry)
+                PaintRowHover(entry, false)
                 rowArt[entry.row] = nil
             end
             entry.row = row
@@ -827,10 +777,6 @@ end, function(S, module)
             end
         end
         RowGeometry(entry, row, forever)
-        local tonesShown = forever and entry.inset or false
-        if entry.tonesShown ~= tonesShown or tonesShown and entry.toneParent ~= row.StatusBar then
-            RowTones(entry, row.StatusBar, tonesShown)
-        end
         if not forever then entry.wantHover = false end
         local hovered = forever and entry.wantHover or false
         if entry.paintedHover ~= hovered then PaintRowHover(entry, hovered) end
@@ -841,7 +787,7 @@ end, function(S, module)
         for row, entry in pairs(rowArt) do
             if row.id and rows[row.id] ~= row then
                 RestoreRowGeometry(entry)
-                ReleaseTones(entry)
+                PaintRowHover(entry, false)
                 Alpha(entry.host, 0)
                 rowArt[row] = nil
                 entry.row = nil
@@ -1098,7 +1044,15 @@ end, function(S, module)
     end)
     for _, method in ipairs({"CreateMainWindow", "UpdateAlertWindow", "HandleProfileChanges",
         "SetupMainWindowButtons", "SetFont", "ShowConfig", "SetupOptions"}) do H.Hook(spy, method, refresh) end
-    H.Hook(spy, "CreateRow", function() refresh() end)
+    H.Hook(spy, "CreateRow", function(_, index)
+        if not ns.IsEnabled(module) then return end
+        if Locked() then waiting = true; return end
+        local main = spy.MainWindow
+        local row = main and main.Rows and main.Rows[index]
+        -- Native CreateRow returns with the slot hidden. Prepare the owned
+        -- trim here, before ManageBarsDisplayed can first show the slot.
+        if row and not rowArt[row] and ForeverLook() then SyncRow(row, true) end
+    end)
     H.Hook(spy, "ResizeMainWindow", function()
         if Locked() then waiting = true; return end
         SyncHeader(spy.MainWindow, ns.IsEnabled(module) and ForeverLook(), true)

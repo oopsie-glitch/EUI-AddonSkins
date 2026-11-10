@@ -104,6 +104,8 @@ jobs:
           SPY_BOOT_OPACITY=0 python3 tests/run_lua.py
           SPY_BOOT_OPACITY=0.75 python3 tests/run_lua.py
           SPY_BOOT_OPACITY=1 python3 tests/run_lua.py
+      - name: Verify shared mask clips panel lighting at chamfers
+        run: SPY_SOURCE=/tmp/spy-upstream SPY_MASKED_SURFACES=1 python3 tests/run_lua.py
       - name: Verify older EUI without Heavy Bronze API
         run: SPY_SOURCE=/tmp/spy-upstream SPY_SLIM_BORDER=1 python3 tests/run_lua.py
       - name: Verify native-hover fallback and absent shared method

@@ -594,6 +594,7 @@ end, function(S, module)
                     _G.EllesmereUI.ForeverBorderPaint(entry.innerRim, 0.76, 0.61, 0.42, 1)
                 end
                 -- Recessed lighting belongs to one shared viewport, not each row.
+                local lipShadows = {}
                 for _, edge in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
                     local shadow = well:CreateTexture(nil, "BACKGROUND", nil, 4)
                     if edge == "TOP" or edge == "BOTTOM" then
@@ -612,11 +613,18 @@ end, function(S, module)
                         shadow:SetGradient((edge == "TOP" or edge == "BOTTOM") and "VERTICAL" or "HORIZONTAL",
                             reverse and clear or dark, reverse and dark or clear)
                     else shadow:SetVertexColor(0.025, 0.012, 0.006, 0.20) end
+                    lipShadows[#lipShadows + 1] = shadow
                 end
                 -- Partition the backgrounds: header and list never overlap.
                 plate:SetParent(well); plate:ClearAllPoints(); plate:SetAllPoints(well)
                 grain:SetParent(well); grain:ClearAllPoints(); grain:SetAllPoints(well)
-                if mask then mask:SetParent(well); mask:ClearAllPoints(); mask:SetAllPoints(well) end
+                if mask then
+                    mask:SetParent(well); mask:ClearAllPoints(); mask:SetAllPoints(well)
+                    -- One existing mask also clips the recessed lip at chamfers.
+                    for _, shadow in ipairs(lipShadows) do
+                        if shadow.AddMaskTexture then shadow:AddMaskTexture(mask) end
+                    end
+                end
                 entry.bezel = {}
                 for _, edge in ipairs({"LEFT", "RIGHT", "BOTTOM"}) do
                     local metal = host:CreateTexture(nil, "BACKGROUND", nil, 3)

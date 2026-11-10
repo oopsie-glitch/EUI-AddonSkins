@@ -1,6 +1,9 @@
 -- Spy Forever: native-shaped UI plus optional unmodified official constructors.
 do
 local timers, errors, looks, events = {}, {}, {}, {}
+local priorEnum=Enum
+local maskedSurfaces=os.getenv("SPY_MASKED_SURFACES")
+if maskedSurfaces then Enum={UITextureSliceMode={Stretched="stretched"}} end
 local combat, enabled, look, panelAlpha = false, true, "blizzard", 0.8
 local rings, shells = {}, {}
 tinsert=table.insert
@@ -217,6 +220,14 @@ local function frame(kind,parent)
     function f:SetValue(v) self.value=v end
     function f:CreateTexture(_,layer,_,sublevel)
         local t=frame("Texture");t.parent=self;t.drawLayer=layer;t.sublevel=sublevel; self.regions[#self.regions+1]=t; return t
+    end
+    if maskedSurfaces then
+        function f:CreateMaskTexture()
+            local mask=frame("MaskTexture");mask.parent=self;self.regions[#self.regions+1]=mask;return mask
+        end
+        function f:AddMaskTexture(mask) self.masks=self.masks or {};self.masks[mask]=true end
+        function f:SetTextureSliceMargins(...) self.sliceMargins={...} end
+        function f:SetTextureSliceMode(mode) self.sliceMode=mode end
     end
     function f:CreateFontString(_,layer)
         local t=frame("FontString");t.parent=self;t.autoWidth=true;t.drawLayer=layer or "OVERLAY";self.regions[#self.regions+1]=t;return t
@@ -803,9 +814,15 @@ assert(viewport and viewport.parent==rootRim.host and viewport.mouse==false,"inn
 assert(viewport:GetLeft()==Spy.MainWindow:GetLeft()+7 and viewport:GetRight()==Spy.MainWindow:GetRight()-7,"inner frame geometry follows outer border")
 assert(viewport.points[1][5]==-32 and viewport.points[2][5]==-3,"inner frame changed native row viewport")
 local panelShadows=0
+local sharedMask
+if maskedSurfaces then
+    for _,region in ipairs(viewport.regions) do if region.kind=="MaskTexture" then sharedMask=region end end
+    assert(sharedMask and sharedMask.parent==viewport and sharedMask.allPoints==viewport,"panel mask ownership missing")
+end
 for _,region in ipairs(viewport.regions) do
     if region.drawLayer=="BACKGROUND" and region.sublevel==4 then
         panelShadows=panelShadows+1
+        if maskedSurfaces then assert(region.masks and region.masks[sharedMask],"panel chamfer shadow escapes shared mask") end
         assert(region.width==5 or region.height==5,"panel lip shading hidden behind rim")
         assert(region.points[1][4]==3 or region.points[1][4]==-3,"panel lip shading not inset from rim")
     end
@@ -974,5 +991,6 @@ assert(not tones[1]:IsShown() and not bevels[1]:IsShown() and not bevels[2]:IsSh
 assert(Spy.MainWindow.Title.font[1]=="EUI New" and Spy.MainWindow.Title.font[2]==13,"disable retained title emphasis")
 for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"disable retained hidden Standard border") end
 assert(#errors==0,table.concat(errors,"\n"))
+Enum=priorEnum
 print("PASS: Spy Standard/Forever/Automatic restoration, native class/status colours, secure rows, callbacks/truncation, controls, pooling, settings/menu ownership, combat and bounded warm work")
 end

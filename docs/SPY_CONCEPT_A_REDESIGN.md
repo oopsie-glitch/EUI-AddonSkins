@@ -42,3 +42,24 @@ policy must be validated before delivery.
 The body and header materials must be visibly different from the old flat
 construction. Merely darkening bars or adding thin rules is not completion.
 The first ZIP is a review build, not proof of visual acceptance.
+
+## Implemented resolution
+
+The API review found EUI's native Heavy Bronze window rim, a better material
+match for the main outer window than its thin control rim. It is used only when
+all supported Heavy exports/art are available; older builds retain textured
+chamfers. The inset panel retains the thinner shared rim.
+
+The planned two broad row overlays were simplified to **one directional
+light-to-shadow material texture per slot**, saving one texture per row and
+avoiding two overlapping full-row glazes. This is a redesign of the unapproved
+row surface, not removal of an approved visual feature.
+
+Header/list backgrounds are partitioned instead of stacked; native row hitboxes
+and saved window dimensions stay intact. The guarded 180-unit resize floor is
+never raised above current width. Legacy tiny saved widths retain the existing
+safety reflow; this explicit compatibility exception avoids forcibly widening
+saved windows. Normal-width Concept A uses one horizontal header.
+
+WoW constraints prevent exact mockup geometry/type/GPU rendering certification.
+The visual acceptance gate remains actual in-game screenshots.

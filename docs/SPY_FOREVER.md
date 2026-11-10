@@ -1,235 +1,160 @@
-# Spy Forever — Concept A list build
+# Spy Forever — Concept A composition
 
-Draft PR #77, branch `skin/spy-forever`, based on released v1.6.5. This build uses
-the maintainer's written Concept A direction: a unified header and contained,
-recessed list items. Visual design remains awaiting in-game screenshots.
-All inspection, edits, testing and packaging use GitHub APIs and Actions.
-No merge, version bump, tag or publication is authorized.
+Draft PR #77, based on released v1.6.5. The prior build is functionally stable,
+but its visual appearance is **not approved**. The Concept A image is the visual
+target. This redesign is awaiting real WoW screenshots; tests do not approve it.
+All repository operations/testing/packaging use GitHub cloud APIs and Actions.
 
-## Visual structure
+[Reference comparison recorded before runtime edits](SPY_CONCEPT_A_REDESIGN.md).
+[Performance comparison and limits](SPY_FOREVER_PERFORMANCE.md).
 
-The approved chamfered bronze outer rim, warm matte gradient/grain and composed
-75% Forever background default remain. No new assets or shared runtime helpers
-are introduced.
+## Composition and proportions
 
-### Integrated header
+The public EllesmereUI Heavy Bronze window rim (when supported) encloses a shaded seven-unit
+bronze bezel, a distinct warm header material and a separately recessed list well.
+This is a surface/layout redesign, not additional thin rules around the old bars.
 
-At normal widths title, right-side controls and counter share one header line.
-The title is the native dynamic FontString at the left; controls keep their
-bronze artwork, native sizes/order/actions/tooltips/states; the count indicator
-and its original hitbox remain at the right. One bronze rule separates header
-and content. The separate toolbar divider/band is gone.
+The list well starts seven units inside each side, at native y=-32, and ends
+three units below the native window's bottom. The cosmetic outer rim extends
+nine units below it; this gives the final native row a bottom recess without
+changing row budgets, clipping flags or saved height. The normal cosmetic top
+starts at the native top instead of seven units below it. The visual envelope is
+moderately taller, while native width/height, drag/resize functions and saved
+profile dimensions remain unchanged. Decorative gutter art takes no mouse input.
 
-The compact controls use existing modest gaps (maximum two units). Space for the
-counter includes its invisible native hitbox, avoiding overlap with close or the
-title. The title truncates natively when its available single-line width is
-insufficient; widen the Spy window for longer/localized titles.
+The inner well uses the shared textured chamfered rim with subdued bronze tint
+and three-unit inward shadow gradients. Seven-unit side gutters have directional
+bronze light/dark gradients; their bottom segment does not overlap either side.
+The main rim uses native UI-Frame-Metal artwork through the public Heavy API,
+without its opaque native title-band fill. Older EUI builds retain the textured
+chamfered fallback. This creates a physical bezel and a visibly separate panel rather than a thin
+extra outline. No new artwork asset or copied addon art is bundled.
 
-A native 90-unit window cannot simultaneously fit five unchanged hitboxes
-(normally 84 units), counter and title on one line. If the title would get less
-than 24 units, the same unified header reflows compactly, preserving all native
-controls/counter and readable wrapped title instead of losing functions.
-This minimum-width safety fallback has no separate toolbar background.
-Normal 200+ widths use one line; the exact threshold follows visible controls
-and native counter dimensions. Native window width/height/resize bounds are
-never forced or saved differently. The decorative top fits the content.
+## Header and typography
 
-The shared soft-control helper previously added child black borders around
-page buttons, outside the direct native texture slots. Its existing borderless
-predicate now suppresses only Spy's main-header helper borders in Forever.
-Standard and disable restore them. Native X/arrow/icon replacement artwork
-remains saved/restored as in the approved build; no global stripping/scans.
+At ordinary widths (180+), native title, controls and count remain on one line.
+The title is inset 12 units and controls/count stay toward the right, retaining
+order, size, padding, actions, hitboxes, tooltips and state art. The title gains a
+minimum 14-unit font size using the current EUI font family/flags; larger configured
+EUI typography is retained. Standard/disable restore the current framework font,
+not a stale font snapshot after appearance changes.
 
-### Contained list rows
+A dedicated bronze header gradient/grain ends where the list begins. The upper
+gradient and existing rim provide restrained highlight; a two-unit copper rule
+and two-unit dark ledge make the lower divider substantial. There is no separate
+normal-width toolbar row or decorative button. Existing helper black boxes stay
+suppressed only in Forever.
 
-A hollow inset list surround and stronger header/content rule define the list
-surface. Each native row gains four one-unit matte bronze edges: a restrained
-upper highlight, warm lower edge and subtle side rails. This creates stable
-rectangular items and consistent row rhythm even when the native progress fill
-is partial or empty. There are no stacked opaque row plates.
+Where GetResizeBounds/SetResizeBounds expose valid restorable limits, Forever
+raises the resize floor toward 180 units, **never above current width**. It
+never calls SetWidth/SetHeight on the native main window or writes Spy's saved
+dimensions. Original limits restore in Standard/disable. Missing/unknown bounds
+APIs leave native sizing unchanged. Existing custom widths below 180 are
+preserved and can be widened; once widened, future resizing uses the new floor.
 
-Only the native StatusBar's visual rectangle is recessed two units horizontally
-and one vertically. Native row targeting buttons, heights, spacing, positions, macro
-attributes, sort/data/actions and pooled identity stay unchanged. Spy's chosen
-status-bar texture, vertex/status RGB, region alpha and value are never read or
-overwritten by the skin. Class/status colours stay meaningful; the subdued
-bronze framing provides the refined contrast instead of replacing semantic RGB.
+Five unchanged button hitboxes plus title/counter cannot fit at legacy 90-unit
+width. The existing compact emergency reflow is retained only for such saved
+tiny widths, avoiding forced resizing or lost native functions. This is a
+compatibility compromise: it is not the intended Concept A presentation. At
+normal widths the header is one horizontal band. Roughly 280+ units is recommended
+for the full long/localized title; native text truncates at tighter widths.
 
-The latest material pass adds two reusable two-unit gradient strips per slot:
-a warm upper bevel (maximum alpha 0.14) and a dark lower bevel (0.16). They sit
-on the native StatusBar at ARTWORK sublevel 2, below its OVERLAY text, and do not
-replace the fill, texture, colour, value or alpha. They have no mouse input or
-full-row opaque plate. Existing four-edge chrome supplies the copper separation.
-The inner viewport rails sit three units from the window edge, with four short
-corner ticks; a one-unit warm ledge accompanies the header rule. No native row,
-secure hitbox, text coordinate, pitch, clipping flag or window bounds moves.
-The material strips are decorative chrome independent of Spy's fill alpha;
-Spy's whole-window fading still applies to them.
+Body font size, row height/spacing and list density remain under Spy's native
+settings. Widen the window or increase its native row-height/font setting for
+more of the reference's breathing room; no profile preferences are overwritten.
 
-Native names remain primary on the left, metadata on the right. Their anchors
-are pinned to the same original row coordinates (two-unit text margins), not
-moved with the inset bar. This preserves Spy's exact native truncation formula:
-row width minus right-text string width minus four. No per-player paint hook,
-custom text pipeline or texture selector is needed.
+## Rows and native texture ownership
 
-## Native source and safety
+Each visual row sits inside the panel: chrome is nine units inward from the
+secure row edges, and the native fill ten units inward, with one-unit vertical
+clearance. One reusable full-surface gradient replaces its two short edge strips. Warm
+upper lighting (alpha 0.16) transitions into a controlled dark lower shade
+(alpha 0.28). This gives broad matte curvature and controlled muting while Spy's
+chosen texture remains visible, with no overlapping pair of row glazes.
+Fine existing copper edges and genuine hover emphasis complete the surface.
 
-Pinned official [Spy 1.3.8-forever5](https://www.curseforge.com/wow/addons/spy-forever/files/9501070),
-interface 16001, SHA256
-`f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec`.
-Actions records unmodified CreateRow, SetupBar, SetBar, ResizeMainWindow and
-ManageBarsDisplayed before implementation; Widgets/Colors and Forever/Watch
-UI paths are also reviewed.
+There is **one fewer texture per row, no new per-row frames or hooks**. No full opaque plate replaces
+the native bar and no class/status RGB, status value, texture path or region
+alpha is overwritten. Decorative material layers are distinct from Spy's fill
+opacity, like the existing edge chrome. Their modest coverage is intentionally
+part of the Forever material, not a replacement texture selector.
 
-CreateRow makes a secure targeting button at x=2, y=-34 minus native row pitch.
-SetupBar anchors the StatusBar over that button and labels to the bar.
-SetBar updates native text, value, colours/opacity and truncation width.
-ResizeMainWindow changes row width; it does not reset those child anchors.
-The skin changes only child cosmetic geometry outside combat and reanchors
-text to retain its original coordinates. No secure action, detection data or
-player-name parsing is added.
+Right metadata is anchored four units inside the visual bar. Native name text
+is anchored four units inside the left edge and six units before metadata.
+These constraints use normal FontString truncation, not parsed/custom names.
+Spy's SetBar still runs unmodified and keeps its native width/text writes;
+dual anchors constrain the visual width without a hot-path hook. Right-aligned
+metadata and usable name width update through native geometry.
 
-Row chrome uses one reusable mouse/motion-disabled sibling host per native slot,
-below the StatusBar/text frame level. It contains edge textures only, never a
-raised fill over data. The list surround lives under the existing unregistered
-Forever art host. EUI texture cleanup cannot strip/recreate these custom hosts. Material strips
-on native bars are created once, hidden for Standard, and reparented to the
-reusable cosmetic slot when the native bar is retired. Replacement bars acquire
-the same two textures instead of accumulating new artwork.
+The secure row's original anchor, size, macro/click actions and pool identity
+stay untouched. Original bar/label anchors are captured and restored for
+Standard/disable, retirement and slot transfer. Rows/columns never move on every
+player paint; no texture/RGB hook or hierarchy scan is added to SetBar.
 
-Native child anchors are captured on acquisition and restored on Standard,
-disable, stale-row retirement and slot transfer. New StatusBar/label objects
-are detected at existing discovery boundaries. Retired row callbacks cannot
-affect a host transferred to another row. No detached native geometry or
-growing per-update artwork is retained.
+## Opacity and ownership
 
-Combat gates all cosmetic geometry/paint and defer eligible changes to recovery.
-Mocks cannot establish live taint safety; secure/forbidden APIs are not bypassed.
+Header and list have **separate, non-overlapping** background surfaces. Both use
+the RestedXP-style neutral white plate + warm gradient and grain alpha budget:
+at target t, grain alpha is 0.12t and plate alpha is (t-0.12t)/(1-0.12t).
+Their effective region background is exactly t, including default 75%, saved
+0/100 and Reset. Gutter materials use the same target. Fixed rim/divider/shadow
+edges are cosmetic border lighting, not stacked full-area fills.
 
-## Native states
+The main native background and released Standard shell are excluded in Forever.
+Slider changes affect background materials only, never parent alpha, text, buttons
+or native class fills. At 0 the full-area surfaces are hidden; borders and row
+chrome remain readable. Spy's whole-window fading remains independent.
 
-The pinned Spy.xml secure-row template has native OnEnter/OnLeave callbacks to
-Spy:ShowTooltip and an additive BarFill highlight. One secure posthook on that
-Spy-local method dispatches only currently owned rows; per-row hover hooks remain
-only as a fallback when the shared method is absent. Native scripts retain their
-click attributes, native hover artwork and tooltips. The four existing copper
-edges brighten only during a real row hover; cached transitions avoid duplicate
-paint. Hide, recycling, Standard and disable clear the cosmetic hover state.
-Combat defers cosmetic writes until recovery. No per-player or target scan is
-used to infer focus.
+The list plate/grain and mask belong to the unregistered well host; header
+materials belong to the unregistered header host. Secure rows are excluded from
+generic EUI texture cleanup. Existing native bar/text remain outside filled
+sibling overlays. Art has no mouse/motion input, no global scans and no polling.
 
-No dependable persistent selected/focused row state was found in this upstream
-implementation; statistics tab selection is unrelated. No sticky selection is
-invented. Nearby, Last Hour, Ignore and KOS classifications, unknown-player
-metadata and alert severity remain entirely native. All share the same reusable
-row material; none receives an invented warning or bronze status colour.
+## Lifecycle and supported surfaces
 
-## Settings and unaffected UI
+The existing **single secure posthook on Spy:ShowTooltip** dispatches only current
+owned rows. Forks missing that method retain the existing scoped fallback.
+Native OnEnter/OnLeave scripts, tooltips, additive highlight and targeting remain.
+No persistent selection/threat state is invented.
 
-Automatic / EUI Standard / EUI Forever, `/euispy`, the native row-menu
-EUI AddonSkins submenu, AceConfig dialog, saved `EUIAddonSkinsDB.spy` preferences
-and reset behavior are unchanged. Reset is Automatic / 75% and affects this skin
-only. Saved 0% and 100% values are preserved. Missing Forever engine APIs fall
-back to Standard without loading an addon.
+Nearby, Last Hour, Ignore and KOS share the redesigned main panel. Native unknown
+metadata and warning/class/status colours stay meaningful. Statistics, alerts/
+Watch severity, menus/reason dialogs and native settings retain their prior skin
+treatment; they are not enlarged to imitate the mockup. EUI AddonSkins submenu,
+Automatic/Standard/Forever, /euispy, opacity persistence and Reset are unchanged.
 
-Only the existing main decorative plate/grain own background opacity: neutral
-white plate source, warm gradient/vertex paint, explicit BLEND, composed alpha,
-no allocated main-header band and excluded zero-opacity draws. New row/list edges
-are border chrome, not additional opaque background surfaces. Spy retains native
-whole-window/instance fading and all row textures/colours/alpha. The background
-slider never fades the window or text.
+Acquisition/slot replacement reuse art; retired callbacks cannot repaint a new
+owner. Hide/show, native resize, title/count updates and theme changes use existing
+boundaries. Combat defers geometry/material changes to existing recovery. The
+main native rows already defer protected show/hide in ManageBarsDisplayed.
+Warm updates allocate no new art or hooks. See the comparison for nonzero cold,
+theme, row-transfer and changed-opacity costs.
 
-Nearby, Last Hour, Ignore and KOS share the new list/header. Existing statistics,
-alerts/Watch severity, scoped menus/reason dialogs and settings helpers remain.
-Shared player-unit menus, GameTooltip, map/minimap/target markers remain native.
+## Deliberate compromises and screenshot checklist
 
-## Performance audit follow-up
+Concept A's lighting, bezel, inset panel and broad row surfaces are implemented.
+Its oversized typography, extra heading row, class icons, exact pixel dimensions,
+heavy glow and implied sticky selection are not copied. The native texture can
+vary with the user's chosen texture; do not claim pixel identity to the mockup.
 
-The approved Concept A appearance is unchanged. The native tooltip dispatch
-removes 79 hooks from a 40-slot pool, the always-hidden main band is omitted, and
-unchanged opacity callbacks save explicit preferences without scheduling paint.
-Hover uses the existing applied-row theme cache. Two independent material strips
-per row remain necessary for the approved edges/gradients; no visual feature was
-removed to reduce counts. Complete before/after lifecycle timing, call profiles,
-heap limits and live-client requirements are in
-[SPY_FOREVER_PERFORMANCE.md](SPY_FOREVER_PERFORMANCE.md).
+1. Install the commit-labelled ZIP with existing SavedVariables. Capture **Nearby
+   and KOS at normal and wide widths**, including short and long titles. Use
+   normal UI scale and bright/dark scenery. Judge the substantial bezel, single
+   normal header, separate recessed panel and broad row depth against Concept A.
+2. Include all five class examples plus unknown/status entries, partial/empty
+   fills, long names and metadata. Text must stay readable without column overlap.
+3. Change Spy's own texture/colours/opacity, row height/font and window size.
+   Check clipping, final-row clearance, native row ordering and full-name tooltips.
+4. Hover/leave, target/modifier click, hide/reopen, mode switch and recycle rows.
+   Native buttons/tooltips/states and hover clearing must work.
+5. Cycle Automatic/Standard/Forever and native EUI font changes. Standard must
+   restore anchors/fonts/resize limits with no leftover art or saved-size changes.
+6. Save/reload background 0%, 75%, 100%, then Reset. Header/list transparency must
+   match, controls stay readable and whole-window fading remain native.
+7. Test combat changes/recovery, EUI cleanup and a long session. Watch for taint,
+   retained/stale art, clipping, footer overdraw and unintended resize persistence.
 
-## Validation and performance
-
-The focused Spy suite covers single-line and narrow reflow headers; dynamic
-titles/counters; native actions, hitboxes and state feedback; source-shaped
-native helper child-border suppression/Standard restoration; recessed fill and
-four-edge row chrome and two bevel bands; native tooltip/hover script retention,
-non-sticky hover and stale callback isolation; unchanged row/text coordinates and truncation; selected
-texture/alpha preservation; native widths and row pitch; acquire/recycle/remove;
-Standard/disable restoration; theme/opacity/reset/combat and art cleanup.
-
-Actions runs the full 45-suite package check and an actual-source mode executing
-unmodified Colors/Widgets/MainWindow against mocked client APIs. It also boots
-fresh Lua states with saved 0%, 75%, 100%. Sensitivity checks reintroduce a
-separate header row, remove the fill inset or restore black helper borders and
-must fail focused assertions. Hover-palette and bevel-height mutations must also fail their focused assertions.
-Existing opacity/tint/gradient checks remain.
-
-Warm workloads count UI objects/hooks, hierarchy reads and cosmetic writes:
-1,000 native SetBar calls retain zero extra cosmetic work. A separate source-shaped 1,000
-unchanged row synchronization workload checks that cached inset anchors/edges
-do not add objects/hooks/scans/geometry/paint/alpha writes. Existing header/state/
-opacity and repeated theme-cycle workloads remain. These are mock counts,
-not live CPU/FPS, taint or retained-memory measurements. The additional five-trial
-baseline comparison and explicit cold/hover costs are recorded in
-[SPY_FOREVER_PERFORMANCE.md](SPY_FOREVER_PERFORMANCE.md).
-
-The read-only branch workflow builds and re-downloads the installable artifact:
-66 source-identical runtime files, 43 skin factories, three unchanged v1.6.5 TOCs,
-one EUIAddonSkins folder and exact MIT license. No tests, docs, scripts,
-benchmarks, diagnostics or upstream dependencies are bundled. The PR records
-the final commit, CI, checksum and public sign-in-free nightly.link test ZIP.
-
-## Concept A scope
-
-Implemented: low-contrast bevel depth, warm upper highlights, fine copper row
-separation, a slightly recessed viewport with restrained corner ticks, matched
-header rule/ledge and genuine native hover emphasis. The approved outer rim,
-single-row header geometry/buttons, materials and 75% background compositor
-remain unchanged. The slightly wider visual fill inset reveals the viewport
-rail without narrowing native text or hitboxes.
-
-Intentionally omitted: mockup typography/column headings/class icons, extra row
-height, thick independent borders, full-row opaque plates, heavy shadows/glow,
-additional artwork files and synthetic selected/threat states. Existing Spy
-textures remain user-controlled; the small reusable edge bands provide material
-depth without a new texture selector or per-update texture replacement.
-
-## Exact in-game review checklist
-
-1. Install this PR's ZIP into Interface/AddOns, retaining SavedVariables. Confirm
-   the filename commit; runtime version deliberately remains 1.6.5.
-2. With Spy 1.3.8-forever5/current EUI, inspect Nearby, Last Hour, Ignore and KOS.
-   Provide normal/wide screenshots of Nearby and Kill On Sight. Check unified
-   title/control/counter line, title truncation at tighter widths, the minimum-
-   width fallback, divider, bronze corners and absence of black control boxes.
-3. Compare short/long names, metadata columns, native ordering and truncation.
-   Check rows with full/partial/empty fills, all five requested class identities,
-   custom class/status colours and native hover states. Confirm
-   recessed bodies, bevel strips, copper separators and inner rails remain subtle
-   and readable at normal UI scale. Hover/leave, hide/show and recycled slots must
-   clear the brighter outline while keeping native tooltip/target interactions.
-4. Change Spy's bar texture and native opacity; verify immediate application and
-   after row updates, new detections, list changes, clear/remove/reuse, resize
-   and reopen. Check every target/modifier click, tooltip and header action.
-5. Cycle Automatic/Standard/Forever; compare Standard against released native
-   EUI appearance, full bar anchors and text positions. Reload saved selections.
-   At minimum/maximum width and inverted profiles, verify geometry and dragging.
-6. Test decorative 0%, 75%, 100% over bright/dark scenery; save and reload each,
-   then reset. Text, icons, edges and native semantic fills must stay readable.
-   Native whole-window fading remains independent.
-7. Enter/leave combat while updates occur, reopen/switch lists and request theme
-   changes. Verify native actions and post-combat restoration without errors.
-   Exercise EUI appearance refresh/texture cleanup and repeated mode cycles.
-8. Check unchanged statistics, alerts/Watch warnings, row/reason submenus,
-   Other-reason input and foreign shared popup/menu reuse.
-
-Actual rendering, secure hit-testing/taint, screen-edge positioning, other Spy
-forks/clients and long-session stability remain live checks. Automated tests
-do not approve this visual design.
+The maintainer decides visual acceptance after these WoW screenshots. Mock UI
+counts/timing cannot prove rendering, secure hit-testing, FPS, native/GPU memory,
+taint freedom or behavior in every Spy fork/client. No merge/version/tag or
+publication is authorized.

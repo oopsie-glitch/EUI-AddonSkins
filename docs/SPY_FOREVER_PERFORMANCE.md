@@ -1,243 +1,192 @@
-# Spy Forever — performance and stability audit
+# Spy Forever — Concept A redesign performance comparison
 
-Approved visual baseline: `a8c0e848ad001e1eecf1db7d8246bcd0dff73e1b`,
-draft PR #77. The window, header geometry/buttons, row materials, inner rails,
-outer rim, native textures/colours and 75% opacity design are unchanged.
+The comparison baseline is the optimized, functionally tested PR #77 build
+`b4f2e7b6e4ac86b2b2a1ec9352c93422bdc3abe2`. Its visual design is not approved.
+The new composition and acceptance criteria are in [SPY_FOREVER.md](SPY_FOREVER.md).
 
-## Changes justified by the audit
+Measured runtime: `3fd024ca30105adea100aa61f00c61b81d683e53`.
+[Raw five-trial JSON and checks](https://github.com/oopsie-glitch/EUI-AddonSkins/actions/runs/42882717569).
+The final documentation-only commit has the same runtime.
+[Previous optimization audit](https://github.com/oopsie-glitch/EUI-AddonSkins/blob/b4f2e7b6e4ac86b2b2a1ec9352c93422bdc3abe2/docs/SPY_FOREVER_PERFORMANCE.md)
+remains evidence for that snapshot; historical timings from different runners
+are not used as this comparison's baseline.
 
-1. **One Spy-local native hover posthook replaces 80 per-row posthooks.** The
-   pinned secure-row XML calls `Spy:ShowTooltip(row, true/false)` from native
-   OnEnter/OnLeave. Its audited implementation only displays/hides the tooltip.
-   A secure posthook on that method dispatches through the current `rowArt[row]`
-   ownership map. Native scripts, tooltip body, target macro and return values
-   remain untouched. Foreign/statistics/retired row calls do no skin work.
-   Forks without this method retain the original two scoped row hooks.
-2. **Hover uses the row's applied theme state.** It checks the existing
-   `entry.forever` cache and current skin enabled state instead of resolving
-   the whole EUI theme on every pointer entry. Refresh/Standard/disable update
-   that cache together with the artwork. This follows the currently applied
-   appearance while a queued theme refresh is pending.
-3. **Omit an unused main-header band.** The old main band was created, painted,
-   then hidden unconditionally. It has no visible contribution. Auxiliary
-   header bands remain. This removes one texture and its colour/paint setup;
-   divider, ledge, surface composition and all visible materials remain.
-4. **Unchanged opacity saves no longer queue a cosmetic pass.** Explicit values
-   are still saved, including 0 and 100. A changed value queues the existing
-   coalesced apply; repeated values skip it. A 0 -> 75 -> 75 burst uses the final
-   saved preference. Reset and combat recovery follow the existing paths.
+## Method
 
-The two material textures per row are retained. They are independently anchored,
-two-unit upper/lower strips above the native fill and below its text, with
-different gradients/alpha. A single two-stop gradient cannot reproduce both
-separated bands. Stretching a shared atlas over the row would change edge
-thickness as users change native row height; more slice/mask regions would not
-reduce resources. Reusing the native ADD hover texture would alter Spy's native
-highlight and blend semantics. No such visual trade-off was made.
+`SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline b4f2e7b6e4ac86b2b2a1ec9352c93422bdc3abe2 --trials 5 --iterations 1000 --rows 40`
 
-The four existing edge textures still make eight colour writes for a full
-enter/leave pair. Unchanged states do not repaint. Replacing that palette change
-with another highlight layer would increase textures. Shared list rails/corners
-are already list-level objects. The pre-existing per-row OnShow/OnHide hooks
-remain necessary: their sibling chrome does not inherit row visibility and must
-clear on hide/reuse without polling.
+GitHub Actions downloads pinned official Spy **1.3.8-forever5**, CF9501070,
+SHA256 `f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec`.
+Its unmodified Colors/Widgets/MainWindow constructors, SetBar and ShowTooltip run
+against deterministic mocked client/player/tooltip APIs. Native list dispatch
+and pointer events are shaped; full detection/bootstrap is not run.
 
-## Reproduction
+Five fresh timed VMs per native-only/baseline/candidate, with independent fresh
+cold call-profile VMs. Warm jobs get 100 warm-ups. Most jobs use 1,000 callbacks;
+reopen/theme pairs/four-value opacity cycles use 100. Cold is one adapter
+acquisition over 40 existing rows. Reuse alternates two pre-created native
+identities in slot 2, warmed before measuring, separate from same-row hide/show.
+Closed idle is a no-event loop plus source review for no added polling; it is
+not a game-wide idle profiler.
 
-The package workflow downloads official **Spy 1.3.8-forever5**, CF file 9501070,
-and checks SHA256
-`f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec`.
-Actions records the XML scripts, ShowTooltip, row constructors, paints and
-pool/resize functions before testing. Unmodified Colors/Widgets/MainWindow
-(including the real tooltip function in source mode) execute against mocked
-client APIs and minimal deterministic player/tooltip data.
+CPU uses os.clock. GC is stopped during churn measurement, then collected for
+retained deltas. Total/direct Spy.lua/shared Widgets.lua/native/C calls are
+profiled separately (10 warm callbacks, one cold acquisition), never during
+timing. Fixture source has its own chunk name, avoiding false source matches.
+Every trial is retained in the linked logs.
 
-`SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline a8c0e848ad001e1eecf1db7d8246bcd0dff73e1b --trials 5 --iterations 1000 --rows 40`
+## Five-trial median host timings
 
-Native-only, approved baseline and candidate use the same fixture with five
-fresh VMs each, plus independent cold call-profile VMs. Reported timings are
-five-trial medians. Warm jobs get 100 warm-up callbacks. Player/sync/hover/pool/
-slot-transfer/unchanged-opacity/closed jobs use 1,000 callbacks; reopen/theme
-pairs/four-value opacity cycles use 100. Cold is one adapter acquisition over
-40 already constructed rows. The list dispatcher is shaped, not full detection.
-
-Slot transfer alternates two pre-created native rows at index 2, warming both
-identities before measuring; this tests bounded artwork reuse separately from
-ordinary same-frame hide/show. It does not repeatedly allocate native frames
-and misattribute their cost to the adapter. Closed idle is a no-event loop,
-supported by source review showing no added OnUpdate/polling; it is not a WoW
-idle profiler.
-
-Total/direct-adapter/native/shared-helper/C calls are captured separately with
-debug hooks (10 callbacks per warm job, one independent cold acquisition).
-Timing runs never enable those hooks. The fixture chunk is named explicitly,
-so source matching cannot accidentally classify its embedded code text as the
-adapter or upstream. Total includes fixture dispatch and one hook-removal call;
-direct adapter means Spy.lua only, shared helper means EUI Widgets.lua.
-The raw JSON retains all trials, counters and call profiles.
-
-## Comparable measurements
-
-Runtime snapshot: `1fdc03aecc10be2b3dea1912612f36aa54219f7a`.
-[Full cloud run and raw five-trial JSON](https://github.com/oopsie-glitch/EUI-AddonSkins/actions/runs/42852436288).
-The previous material-pass comparison against pre-Concept-A code remains in
-[its original report](https://github.com/oopsie-glitch/EUI-AddonSkins/blob/a8c0e848ad001e1eecf1db7d8246bcd0dff73e1b/docs/SPY_FOREVER_PERFORMANCE.md).
-Historical timings from another host/run are not used as this audit's baseline.
-
-| Workload | Iterations | Native ms | Approved baseline ms | Candidate ms |
+| Workload | Iterations | Native-only ms | Baseline ms | Redesign ms |
 | --- | ---: | ---: | ---: | ---: |
-| Cold acquisition | 1 | 0.001 | 3.491 | 3.485 |
-| Player updates | 1000 | 5.421 | 5.599 | 5.600 |
-| Whole-pool sync | 1000 | 0.046 | 29.807 | 28.321 |
-| Hover pairs | 1000 | 0.788 | 2.708 | 3.090 |
-| Same-row hide/show | 1000 | 0.098 | 0.957 | 1.035 |
-| Slot transfer (two reused native identities) | 1000 | 0.205 | 41.161 | 40.337 |
-| Reopen | 100 | 0.017 | 14.328 | 14.415 |
-| Standard/Forever pairs | 100 | 0.003 | 49.419 | 49.514 |
-| 0/75/100/75 opacity cycles | 100 | 0.003 | 6.223 | 6.181 |
-| Unchanged opacity | 1000 | 0.018 | 14.510 | 0.439 |
-| Closed player updates | 1000 | 5.450 | 5.585 | 5.860 |
-| Closed no-event idle | 1000 | 0.011 | 0.011 | 0.011 |
+| Cold acquisition | 1 | 0.001 | 4.858 | 4.454 |
+| Native player updates | 1000 | 7.466 | 7.400 | 7.445 |
+| Whole-pool sync | 1000 | 0.051 | 35.932 | 33.736 |
+| Hover enter/leave pairs | 1000 | 1.014 | 3.723 | 3.813 |
+| Same-row hide/show | 1000 | 0.128 | 1.268 | 1.234 |
+| Reused-slot transfer | 1000 | 0.234 | 54.653 | 50.063 |
+| Window reopen | 100 | 0.019 | 19.706 | 19.945 |
+| Standard/Forever pairs | 100 | 0.003 | 73.111 | 70.840 |
+| 0/75/100/75 opacity cycles | 100 | 0.004 | 9.137 | 10.295 |
+| Unchanged opacity | 1000 | 0.018 | 0.596 | 0.574 |
+| Closed native updates | 1000 | 7.518 | 7.568 | 7.598 |
+| Closed no-event idle | 1000 | 0.015 | 0.015 | 0.014 |
 
-**Hover did not become faster in this host benchmark:** 2.708 -> 3.090 ms
-(+14.1%, +0.382 ms per 1,000 pairs). Direct adapter calls decrease, but the mock
-secure-hook return wrapper adds six calls per pair while the cached theme path
-removes one; total rises by five. The fixed eight colour writes remain. The
-justification for the shared hook is the verified 79-hook/closure reduction,
-not an invented CPU/FPS gain. Actual native-hook timing requires WoW.
+Player/sync/hover have identical warm operation/call counts; their small timing
+differences are host variability, not a demonstrated CPU/FPS improvement.
+No new art/hooks/scans/geometry/paint/alpha writes are added to native SetBar.
+Its 1,000 width writes belong to native truncation, as the native-only control
+confirms. Whole-pool warm sync also adds zero cosmetic writes or discovery.
 
-Unchanged opacity falls from 14.510 to 0.439 ms (about 97% here), because the
-callback no longer runs SyncWindow, controls and header layout. It still saves
-the explicit preference. Changed opacity cycles remain comparable. Whole-pool
-sync/player code has unchanged operation counts; their small timing changes
-are not attributed to an optimization. Closed native updates likewise have
-identical call/operation counts despite host timing variation.
+Changed opacity is **12.7% slower here**, +1.158 ms per 100 four-value cycles:
+it now paints separate header/list backgrounds and three bezel segments. Paint
+writes rise 800 -> 2,800 (two -> seven per changed value), visibility writes
+400 -> 800. Unchanged opacity retains the optimized no-work path.
+Theme pairs make 4,200 more geometry writes per 100 pairs for revised anchors/
+title height and restoring native resize bounds. These are explicit lifecycle
+costs, not hidden warm-player work.
 
-### Fixed resources and heap
+## Resources: fixture counts versus real EUI primitives
 
-| Cold adapter acquisition, 40 rows | Baseline | Candidate | Delta |
+| Cold adapter acquisition, 40 rows (mock UI) | Baseline | Redesign | Delta |
 | --- | ---: | ---: | ---: |
 | Frames | 65 | 65 | 0 |
-| Textures | 308 | 307 | -1 |
-| Hooks | 274 | 195 | -79 |
-| Mock Lua retained KiB | 2978.921 | 2955.062 | -23.859 |
-| Mock Lua churn KiB | 3186.244 | 3161.518 | -24.727 |
+| Texture objects | 307 | 270 | -37 |
+| Posthooks | 195 | 195 | 0 |
+| Lua retained KiB | 2989.937 | 2707.030 | -282.906 |
+| Lua churn KiB | 3196.424 | 2908.049 | -288.375 |
 
-These are full adapter acquisition totals, not the Concept A incremental count.
-Relative to the preceding pre-material skin, that incremental cost is now
-**84 textures, one shared hover hook, zero frames** (previously 85/80/0).
-Existing OnShow/OnHide and other adapter hooks are included in the totals.
-Fallback builds without ShowTooltip retain the original per-row hover hooks.
-All warmed lifecycle workloads create **zero new frames/textures/hooks**.
+One full-row material texture replaces two short textures per slot: **40 fewer
+per-row textures** at this pool size, with no new per-row frame/hook. Shared
+header/bezel/inner-panel art adds resources. The single native tooltip posthook
+is retained; missing-ShowTooltip forks keep their existing fallback.
 
-| Workload | Baseline churn KiB | Candidate churn KiB | Baseline retained KiB | Candidate retained KiB |
+**The fixture models each EUI rim as one texture and no internal frame/masks.**
+Do not present its +0 frames/-37 textures as the actual game's complete count.
+The pinned public
+[EUI border implementation](https://github.com/EllesmereGaming/EllesmereUI/blob/d83ffb7db2dc0104d328d4c99cc700c2ea052948/EllesmereUI_RetailAtlas.lua)
+creates one layout frame, eight textures and four corner masks for a normal
+textured rim; Heavy Bronze creates one layout frame/eight textures without
+those masks. Each uses its own OnSizeChanged layout script, not polling.
+
+Static native-primitive accounting for this redesign:
+- Main rim changes textured -> Heavy where supported: same frame/texture count,
+  four fewer corner masks.
+- New inner textured rim: +1 internal layout frame, +8 textures, +4 corner masks.
+- Shared header/bezel/shadows add nine ordinary textures and replace seven old
+  well-edge/tick textures: +2 textures.
+- Replacing two row bands with one material over 40 slots: -40 textures.
+- Header Surface may add one mask when the existing slice-mask API is available.
+
+Thus, for the pinned Heavy-capable API and 40 slots, the expected delta is
+**-30 ordinary textures, +1 EUI-internal layout frame, +1 optional surface mask,
+zero new posthooks**. The new inner layout frame has one owned size script.
+With the textured outer fallback, the expected mask delta is +5 instead of +1.
+These are source-based creation counts, not live client/GPU memory observations;
+future/older EUI implementations can differ. No additional native row objects
+or interactive frame is created by the adapter.
+
+### GPU fill trade-off
+
+The material now shades the row's full height. At a native 16-unit row height,
+one 14-unit-high surface covers roughly 3.5 times the area of two previous
+two-unit bands before horizontal insets, despite using fewer textures. It adds
+bounded fragment coverage; it is not free GPU work. This is the main visual
+benefit (broad surface depth), and actual GPU/FPS cost is unmeasured. One gradient
+was chosen instead of overlapping two full-row glazes to limit overdraw.
+
+## Heap and lifecycle comparison
+
+| Workload | Baseline churn KiB | Redesign churn KiB | Baseline retained KiB | Redesign retained KiB |
 | --- | ---: | ---: | ---: | ---: |
-| Player updates | 500.188 | 500.188 | 0.000 | 0.000 |
+| Native player updates | 500.188 | 500.188 | 0.000 | 0.000 |
 | Whole-pool sync | 125.500 | 125.500 | 0.000 | 0.000 |
-| Hover pairs | 1875.352 | 2031.664 | 0.000 | 0.000 |
+| Hover enter/leave pairs | 2031.664 | 2031.664 | 0.000 | 0.000 |
 | Same-row hide/show | 0.344 | 0.344 | 0.000 | 0.000 |
-| Slot transfer (two reused native identities) | 4024.031 | 4024.031 | 0.000 | 0.000 |
-| Reopen | 4161.590 | 4161.590 | 0.156 | 0.156 |
-| Standard/Forever pairs | 15421.777 | 15421.840 | 0.000 | 0.063 |
-| 0/75/100/75 opacity cycles | 352.871 | 352.871 | 0.000 | 0.000 |
-| Unchanged opacity | 234.902 | 0.250 | 0.000 | 0.063 |
-| Closed player updates | 500.188 | 500.188 | 0.000 | 0.000 |
+| Reused-slot transfer | 4024.031 | 3766.219 | 0.000 | 0.000 |
+| Window reopen | 4161.621 | 4181.934 | 0.156 | 0.156 |
+| Standard/Forever pairs | 15421.777 | 16059.277 | 0.000 | 0.000 |
+| 0/75/100/75 opacity cycles | 352.871 | 880.996 | 0.000 | 0.000 |
+| Unchanged opacity | 0.250 | 0.250 | 0.063 | 0.063 |
+| Closed native updates | 500.188 | 500.188 | 0.000 | 0.000 |
 | Closed no-event idle | 0.000 | 0.000 | 0.000 | 0.000 |
 
-Retained changes no larger than 0.156 KiB in these warmed jobs are small VM/
-measurement residuals, not growing row artwork. Slot reuse makes 28,000 geometry
-writes and 6,000 visibility writes per 1,000 transfers in both versions: native
-child restoration/reacquisition and band reparenting are explicit lifecycle work.
-Ordinary hide/show does not reanchor geometry. Hover churn increases 156.313 KiB
-in the return-preserving Lua hook fixture; it retains zero after collection.
-Unchanged opacity churn falls 234.902 -> 0.250 KiB. These are mock-host values,
-not real native UI/GPU memory estimates.
+Churn is temporary, not retained memory. The fixture implements each UI object
+and its methods as Lua tables and colour setters as argument tables. Secure-hook
+emulation packs returns; WoW's native secure hook does not run that wrapper.
+These heap values do not estimate WoW C-side frames/textures, GPU memory or
+actual retained addon memory. Small post-GC values up to 0.156 KiB are VM/
+measurement residuals; no accumulating art was observed.
 
-### Separate call profiles
+Slot transfer reduces geometry writes 28,000 -> 23,000 and visibility writes
+6,000 -> 4,000 per 1,000 swaps with one material instead of two. Its churn also
+falls. Native row identities are reused; native allocation is not disguised as
+skin cost. Theme/reopen and changed-opacity churn increases are explicit above.
+Ordinary steady updates/hover add no UI objects or hooks.
 
-Warm profile rows below use **10 callbacks** each; cold uses one fresh acquisition.
-Timing and heap measurements above never enable profiling hooks.
+## Separate call profiles
 
-| Workload | Baseline total | Candidate total | Baseline Spy.lua | Candidate Spy.lua | Baseline helpers | Candidate helpers |
+Ten callbacks per warm workload, one cold acquisition. Total includes fixture,
+C and shared calls; Spy.lua is the direct adapter subset.
+
+| Workload | Baseline total | Redesign total | Baseline Spy.lua | Redesign Spy.lua | Baseline helpers | Redesign helpers |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Cold acquisition | 14041 | 13946 | 1197 | 1197 | 593 | 593 |
-| Player updates | 1601 | 1601 | 0 | 0 | 0 | 0 |
+| Cold acquisition | 13951 | 13074 | 1197 | 1164 | 593 | 593 |
+| Native player updates | 1601 | 1601 | 0 | 0 | 0 | 0 |
 | Whole-pool sync | 7791 | 7791 | 3240 | 3240 | 20 | 20 |
-| Hover pairs | 391 | 441 | 90 | 80 | 0 | 0 |
+| Hover enter/leave pairs | 441 | 441 | 80 | 80 | 0 | 0 |
 | Same-row hide/show | 351 | 351 | 120 | 120 | 0 | 0 |
-| Slot transfer (two reused native identities) | 9611 | 9611 | 3540 | 3540 | 20 | 20 |
-| Reopen | 29071 | 29061 | 4810 | 4810 | 3490 | 3490 |
-| Standard/Forever pairs | 100611 | 100601 | 14560 | 14560 | 7300 | 7300 |
-| 0/75/100/75 opacity cycles | 14911 | 15151 | 3640 | 3720 | 120 | 120 |
-| Unchanged opacity | 3661 | 171 | 910 | 50 | 30 | 0 |
-| Closed player updates | 1601 | 1601 | 0 | 0 | 0 | 0 |
+| Reused-slot transfer | 9611 | 9411 | 3540 | 3530 | 20 | 20 |
+| Window reopen | 29081 | 29151 | 4810 | 4830 | 3490 | 3490 |
+| Standard/Forever pairs | 100641 | 98381 | 14560 | 14180 | 7300 | 7300 |
+| 0/75/100/75 opacity cycles | 15151 | 15951 | 3720 | 3800 | 120 | 120 |
+| Unchanged opacity | 171 | 171 | 50 | 50 | 0 | 0 |
+| Closed native updates | 1601 | 1601 | 0 | 0 | 0 | 0 |
 | Closed no-event idle | 11 | 11 | 0 | 0 | 0 | 0 |
 
-Player updates profile 40 actual-source function calls per 10 callbacks in both
-versions, zero direct adapter/helper calls. Hover profiles 20 actual-source
-ShowTooltip calls in both. Remaining native-source and C counts, native-only
-controls and every raw trial are in the linked JSON logs. The total includes
-fixture calls, secure-hook emulation, C calls and shared helpers; it is not the
-number of WoW API calls.
+Raw profiles include native/C counts and native-only controls. Hover/player/sync
+counts are unchanged. The count reduction in slot transfer is a lifecycle
+improvement; no warm FPS claim follows from it.
 
+## Stability and validation limits
 
-## Interpretation and stability findings
+The full suite and actual-source mode preserve native texture paths/RGBA/value,
+secure row anchors/actions, nil-containing callback returns, dynamic metadata
+and normal FontString truncation. The new dual-anchor name constraint adds no
+per-player hook. Current EUI typography and original anchors/bounds restore on
+Standard/disable; no native saved dimensions or row-height settings are written.
+The 180-unit resize floor is guarded and never forced above current width;
+legacy tiny saved windows retain the documented safety reflow.
 
-- Warm native SetBar is not hooked. Its 1,000 geometry writes are native text
-  truncation; the native-only control makes those same writes. Skin scans,
-  cosmetics and UI-object creation stay zero even when the window is closed.
-- The native secure hook is modeled by a Lua wrapper preserving arbitrary,
-  nil-containing returns. That mock wrapper packs returns into a Lua table;
-  WoW's secure hook implementation does not run this fixture. Its temporary
-  churn and call overhead must not be described as a game allocation regression
-  or speedup. Existing edge colour setter tables likewise dominate mock hover
-  churn. All retained/churn measurements below are Lua-host fixture values.
-- Cold heap includes fake UI objects with per-object Lua method tables. It does
-  not estimate WoW C-side textures/frames or GPU storage. No actual CPU/FPS,
-  real retained addon memory or native taint/crash guarantee is established.
-  Changes within host timing variability are not evidence of a game improvement.
-- Secure row positions, sizes, macro attributes, click scripts and native data
-  remain unchanged. Only already-approved child cosmetics change, outside
-  combat. Posthooks do not replace secure/native scripts or protected actions.
-  The combat path records desired state and existing PLAYER_REGEN_ENABLED
-  recovery applies it; no extra event registration or polling was added.
-- Per-slot textures and edge host are reused. Retirement restores native child
-  anchors, detaches material bands, removes the old ownership mapping and hides
-  chrome. Native rows may remain resident in WoW; weak tables do not destroy
-  frames. Row-slot storage follows the high-water native pool, not number of
-  player updates. Growing the native pool legitimately adds fixed slot art.
-- Reopening/theme changes still invoke the existing owned-window refresh and
-  scan boundaries. Their costs are measured, not represented as zero. This
-  audit does not add global discovery or scans to frequent player/hover events.
-- EUI cleanup touches registered shell surfaces; Forever custom hosts stay
-  outside that registry. Native StatusBar bands are retained, not repainted on
-  every cleanup or SetBar. Standard/disable hide them and restore captured native
-  anchors. Native texture, alpha, class/status RGB, sorting/detection, warning
-  logic and targeting remain under Spy's control.
-- No new fill, gradient, font, geometry, asset, user setting or native preference
-  was introduced. Opacity remains confined to decorative background surfaces.
-  Saved 0/75/100 boots, explicit values, queued reversions and Reset are covered.
+Normal/fallback hover and Heavy/slim rim API modes, pool retirement/reuse,
+native resize/mode changes, combat deferral, EUI cleanup, opacity 0/75/100 boots,
+Reset, queued reversions and theme cycling are tested. Mutation checks detect
+reverting the Heavy rim, full-surface material, inset, native-hover route, opacity
+budget and unchanged-value queue suppression. Packaging checks one addon folder,
+66 source-identical runtime files, exact MIT license and unchanged 1.6.5 metadata.
 
-## Regression and remaining live checks
-
-Full package/regression validation plus actual-source mode and fallback boots
-cover normal/fallback hover routing, original scripts and return preservation,
-foreign/retired ownership, duplicate enters, hide/reuse, texture/class colours,
-pool replacement, header geometry, inner frame and layer ordering, resize/list
-changes, Standard/disable, opacity/reset, combat deferral and EUI cleanup.
-Mutation checks must catch reintroduced per-row hooks, the unused main-header
-fill, changed hover/bevel appearance and existing geometry/opacity failures.
-The player ZIP contains only 66 runtime files in one addon folder.
-
-Live checks remain: identical approved materials in Nearby/Last Hour/Ignore/KOS,
-native hover/tooltip/target/modifier actions after hide/reopen and recycling,
-resize and theme switching, saved opacity after reload/Reset, combat recovery
-without taint, EUI cleanup and a long session with pool growth. Client rendering,
-implicit parent show/hide propagation, secure hit-testing and third-party forks
-cannot be certified by this host fixture. The fallback is checked when the
-shared method is absent; a fork that defines it but bypasses it in custom row
-scripts needs separate native-source review. No runtime script inspection or
-polling was added to guess such behavior.
-
-This is an untagged draft-review build. Main, version 1.6.5, release tags and
-publication remain unchanged.
+Mocks do not certify rendered chamfers/lighting, parent visibility propagation,
+native secure hit-testing, taint/crash freedom, actual native resource memory,
+GPU/FPS, every fork or long-session behavior. These require WoW screenshots and
+the [live checklist](SPY_FOREVER.md#deliberate-compromises-and-screenshot-checklist).
+The draft remains unmerged/untagged/unpublished.

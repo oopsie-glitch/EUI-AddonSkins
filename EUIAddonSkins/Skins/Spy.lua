@@ -683,9 +683,13 @@ end, function(S, module)
             end
         end
         RowGeometry(entry, row, forever)
-        RowTones(entry, row.StatusBar, forever and entry.inset or false)
+        local tonesShown = forever and entry.inset or false
+        if entry.tonesShown ~= tonesShown or tonesShown and entry.toneParent ~= row.StatusBar then
+            RowTones(entry, row.StatusBar, tonesShown)
+        end
         if not forever then entry.wantHover = false end
-        PaintRowHover(entry, forever and entry.wantHover or false)
+        local hovered = forever and entry.wantHover or false
+        if entry.paintedHover ~= hovered then PaintRowHover(entry, hovered) end
         Alpha(entry.host, forever and (not row.IsShown or row:IsShown()) and 1 or 0)
     end
     local function SyncRows(forever)

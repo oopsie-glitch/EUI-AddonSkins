@@ -236,8 +236,9 @@ local function Composite(plate,grain)
 end
 MouseIsOver=function(row) return row.mouseOver==true end
 local function NativeRowScripts(row)
-    row.scripts.OnEnter=function(self) self.nativeTooltip=true;self.nativeEnterCalls=(self.nativeEnterCalls or 0)+1 end
-    row.scripts.OnLeave=function(self) self.nativeTooltip=false;self.nativeLeaveCalls=(self.nativeLeaveCalls or 0)+1 end
+    row.unit={name="Fixture-Enemy"}
+    row.scripts.OnEnter=function(self) self.nativeTooltip=true;self.nativeEnterCalls=(self.nativeEnterCalls or 0)+1;if Spy.ShowTooltip then Spy:ShowTooltip(self,true) end end
+    row.scripts.OnLeave=function(self) self.nativeTooltip=false;self.nativeLeaveCalls=(self.nativeLeaveCalls or 0)+1;if Spy.ShowTooltip then Spy:ShowTooltip(self,false) end end
 end
 CreateFrame=function(kind,name,parent,template)
     local f=frame(kind,parent);f.name=name;f.secure=template=="SpySecureActionButtonTemplate"
@@ -355,6 +356,13 @@ function Spy:SetBar(i,name,desc,value,group,class,_,opacity)
 end
 -- Optional exact upstream source, downloaded only on the cloud runner.
 local source=os.getenv("SPY_SOURCE")
+Spy.ShowTooltip=function(_,row,show) return "native-tooltip",nil,show end
+Spy.ButtonName={}
+SpyPerCharDB={PlayerData={},KOSData={}}
+colors.Tooltip={["Title Text"]={r=1,g=1,b=1,a=1}}
+GameTooltip={SetOwner=function(self,owner) self.owner=owner end,
+    SetPoint=function() end,ClearLines=function() end,AddLine=function() end,
+    Show=function(self) self.shown=true end,Hide=function(self) self.shown=false end}
 if source then
     assert(loadfile(source.."/Colors.lua"))()
     assert(loadfile(source.."/Widgets.lua"))()
@@ -363,6 +371,7 @@ if source then
     -- remains source-shaped to avoid opening Blizzard UI in the host fixture.
     Spy.BarDropDownOpen=function() end
 end
+if os.getenv("SPY_HOVER_FALLBACK") then Spy.ShowTooltip=nil end
 Spy.MainWindow=frame();Spy.MainWindow.Rows={};Spy.MainWindow.protected=true
 _G.Spy_MainWindow=Spy.MainWindow
 Spy.MainWindow.Background=Spy.MainWindow:CreateTexture()
@@ -442,6 +451,8 @@ row.scripts.OnClick=function()return "target" end
 local nativePostClick=function()return "native-port-postclick" end
 row.scripts.PostClick=nativePostClick
 local originalEnter,originalLeave=row.scripts.OnEnter,row.scripts.OnLeave
+local nativeTooltipFunction=Spy.ShowTooltip
+local tooltipReturns=nativeTooltipFunction and pack(Spy:ShowTooltip(row,false))
 local rawSetBar=Spy.SetBar
 Spy:SetBar(1,"A very long player name","60 Druid",100,"Class","DRUID",nil,1)
 local textWidth=row.LeftText.width
@@ -516,6 +527,19 @@ row:Show()
 local nativeColor={table.unpack(row.StatusBar.statusColor)}
 row:FireScript("OnEnter")
 assert(row.nativeTooltip and chrome.regions[1].baseColor[4]==0.95,"native hover did not highlight bronze frame")
+if nativeTooltipFunction then
+    assert(not row.hooks.OnEnter and not row.hooks.OnLeave,"shared native hover still adds per-row hooks")
+    local foreign={id=99,unit={name="Foreign"}}
+    local foreignPaint=counts.paint
+    Spy:ShowTooltip(foreign,false)
+    assert(counts.paint==foreignPaint,"foreign tooltip repainted Spy rows")
+    local result=pack(Spy:ShowTooltip(row,false))
+    assert(result.n==tooltipReturns.n,"tooltip return count changed")
+    for i=1,result.n do assert(result[i]==tooltipReturns[i],"tooltip returns changed") end
+    row:FireScript("OnEnter")
+else
+    assert(row.hooks.OnEnter and row.hooks.OnLeave,"missing shared-method fallback")
+end
 local hoverPaint=counts.paint
 row:FireScript("OnEnter")
 assert(counts.paint==hoverPaint,"duplicate hover repainted")
@@ -753,9 +777,10 @@ for _,a in ipairs({0,35,100,75}) do
     assert(Spy.MainWindow.alpha==parentAlpha and rootRim.edge.alpha==1,"background slider faded parent/border")
     assert(Spy.MainWindow.Title.alpha==1 and Spy.MainWindow.CloseButton.alpha==1,"slider faded content")
     local surfaceHost=rootRim.host
-    local headerBand
-    for _,child in ipairs(surfaceHost.children) do if child.regions[1] and child.regions[2] then headerBand=child.regions[1] end end
-    assert(headerBand and not headerBand:IsShown() and Coverage(headerBand)==0,"stacked opaque header fill retained")
+    local header
+    for _,child in ipairs(surfaceHost.children) do if child.allPoints==Spy.MainWindow.TitleBar then header=child end end
+    assert(header and #header.regions==2,"unused main header background allocated")
+    for _,region in ipairs(header.regions) do assert(region.allPoints~=header,"stacked opaque header fill retained") end
     -- SavedVariables reconstruction: explicit endpoints must survive re-reading.
     EUIAddonSkinsDB={spy={style="forever",opacity=a/100},other={preserved=true}}
     module.refresh();flush()

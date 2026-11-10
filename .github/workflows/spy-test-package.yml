@@ -104,6 +104,10 @@ jobs:
           SPY_BOOT_OPACITY=0 python3 tests/run_lua.py
           SPY_BOOT_OPACITY=0.75 python3 tests/run_lua.py
           SPY_BOOT_OPACITY=1 python3 tests/run_lua.py
+      - name: Verify native-hover fallback and absent shared method
+        run: |
+          SPY_HOVER_FALLBACK=1 python3 tests/run_lua.py
+          SPY_SOURCE=/tmp/spy-upstream SPY_HOVER_FALLBACK=1 python3 tests/run_lua.py
       - name: Verify regression sensitivity for default opacity and header separation
         run: |
           python3 - <<'PY'
@@ -120,7 +124,8 @@ jobs:
               ('return 0.75', 'return 0.92', 'saved/default opacity was overwritten'),
               ('if managed then plate:SetColorTexture(1, 1, 1, 1)', 'if managed then plate:SetColorTexture(0.165, 0.115, 0.075, 1)', 'main plate source repeats the warm tint'),
               ('paint.low:SetRGBA(0.120, 0.084, 0.055, plateAlpha)', 'paint.low:SetRGBA(0.120, 0.084, 0.055, 1)', 'gradient stops retain opaque paint'),
-              ('if entry.band:IsShown() then entry.band:Hide() end', 'if entry.band:IsShown() then Alpha(entry.band, 0) end', 'stacked opaque header fill retained'),
+              ('if f ~= spy.MainWindow then', 'if true then', 'unused main header background allocated'),
+              ('local nativeHover = type(spy.ShowTooltip) == "function"', 'local nativeHover = false', 'shared native hover still adds per-row hooks'),
           ]
           try:
               for before,after,message in mutations:
@@ -169,7 +174,11 @@ jobs:
           GH_REPO: oopsie-glitch/EUI-AddonSkins
           ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
         run: |
-          gh api repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip > /tmp/spy-downloadable-test.zip
+          for attempt in 1 2 3 4 5; do
+            if gh api repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip > /tmp/spy-downloadable-test.zip; then break; fi
+            if [ "$attempt" -eq 5 ]; then exit 1; fi
+            sleep 3
+          done
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile

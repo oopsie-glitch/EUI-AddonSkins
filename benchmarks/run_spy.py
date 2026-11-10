@@ -9,7 +9,7 @@ import tempfile
 import urllib.request
 
 parser=argparse.ArgumentParser()
-parser.add_argument('--baseline',default='43beb7c48a1a569964f39e3d4ca2b50e8629a83b')
+parser.add_argument('--baseline',default='a8c0e848ad001e1eecf1db7d8246bcd0dff73e1b')
 parser.add_argument('--trials',type=int,default=5)
 parser.add_argument('--iterations',type=int,default=1000)
 parser.add_argument('--rows',type=int,default=40)
@@ -34,13 +34,17 @@ lib.lua_tolstring.restype=ctypes.c_char_p
 lib.lua_close.argtypes=[ctypes.c_void_p]
 
 tail=r'''
--- Shapes only the list dispatcher; native constructors/SetBar remain upstream.
+-- Only native list dispatch/bootstrap and pointer entry are shaped.
 Spy.SetCurrentList=function(self,list) return list,nil,"native-tail" end
 MouseIsOver=function(row) return row.mouseOver==true end
 for i=2,BENCH_ROWS do
     Spy:CreateRow(i)
     Spy:SetBar(i,"Enemy","60 Druid",75,"Class","DRUID",nil,0.7)
 end
+local originalSlot=Spy.MainWindow.Rows[2]
+Spy.MainWindow.Rows[2]=nil;Spy:CreateRow(2)
+local spareSlot=Spy.MainWindow.Rows[2];spareSlot:Hide()
+Spy.MainWindow.Rows[2]=originalSlot
 for _,nativeRow in pairs(Spy.MainWindow.Rows) do nativeRow:Show() end
 local function hover(entered)
     row.mouseOver=entered
@@ -62,8 +66,8 @@ local function measure(label,fn,n)
     local retained=collectgarbage("count")-heap
     local values={}
     for _,key in ipairs(fields) do values[#values+1]=string.format('"%s":%d',key,(counts[key] or 0)-before[key]) end
-    output[#output+1]=string.format('"%s":{"ms":%.6f,"churn_kib":%.6f,"retained_kib":%.6f,%s}',
-        label,ms,churn,retained,table.concat(values,","))
+    output[#output+1]=string.format('"%s":{"iterations":%d,"ms":%.6f,"churn_kib":%.6f,"retained_kib":%.6f,%s}',
+        label,n,ms,churn,retained,table.concat(values,","))
 end
 measure("cold",function()
     if not BENCH_NATIVE then
@@ -74,16 +78,69 @@ end,1)
 local function update() Spy:SetBar(1,"Enemy","60 Druid",75,"Class","DRUID",nil,0.7) end
 local function sync() Spy:SetCurrentList(1) end
 local function enterleave() hover(true);hover(false) end
-for i=1,100 do update();sync();enterleave() end
-measure("player_updates",update,BENCH_ITERATIONS)
-measure("row_sync",sync,BENCH_ITERATIONS)
-measure("hover_pairs",enterleave,BENCH_ITERATIONS)
+local function pooled() row:Hide();row:Show() end
+local function recycle()
+    local old=Spy.MainWindow.Rows[2]
+    local nextRow=old==originalSlot and spareSlot or originalSlot
+    old:Hide();Spy.MainWindow.Rows[2]=nextRow
+    sync();nextRow:Show()
+end
+local function reopen() Spy.MainWindow:Hide();Spy.MainWindow:Show();flush() end
+local function themes()
+    if BENCH_NATIVE then return end
+    EUIAddonSkinsDB.spy.style="standard";module.refresh();flush()
+    EUIAddonSkinsDB.spy.style="forever";module.refresh();flush()
+end
+local setting
+if not BENCH_NATIVE then
+    SlashCmdList.EUISPYSKIN()
+    setting=registry.tables.EUIAddonSkinsSpy.args.opacity
+end
+local function opacity()
+    if not setting then return end
+    for _,v in ipairs({0,75,100,75}) do setting.set(nil,v);flush() end
+end
+local function opacitySame() if setting then setting.set(nil,75);flush() end end
+local workloads={{"player_updates",update,BENCH_ITERATIONS},
+    {"row_sync",sync,BENCH_ITERATIONS},{"hover_pairs",enterleave,BENCH_ITERATIONS},
+    {"pooled_hide_show",pooled,BENCH_ITERATIONS},{"slot_transfer",recycle,BENCH_ITERATIONS},
+    {"reopen",reopen,100},{"theme_pairs",themes,100},
+    {"opacity_cycles",opacity,100},{"unchanged_opacity",opacitySame,BENCH_ITERATIONS}}
+for _,job in ipairs(workloads) do
+    for i=1,100 do job[2]() end
+    measure(job[1],job[2],job[3])
+end
+Spy.MainWindow:Hide();flush()
+measure("closed_player_updates",update,BENCH_ITERATIONS)
+measure("closed_idle",function() end,BENCH_ITERATIONS)
+-- Separate fixed 10-callback call profile: debug hooks never affect timed passes.
+local profiles={}
+local function profile(label,fn,n)
+    local total,adapter,native,c=0,0,0,0
+    local function observe(event)
+        if event~="call" and event~="tail call" then return end
+        local info=debug.getinfo(2,"S")
+        total=total+1
+        local source=info.source or ""
+        if source:find("Skins/Spy.lua",1,true) or source:find("baseline.lua",1,true) then adapter=adapter+1 end
+        if source:find("spy-upstream/",1,true) then native=native+1 end
+        if info.what=="C" then c=c+1 end
+    end
+    debug.sethook(observe,"c")
+    for i=1,n do fn() end
+    debug.sethook()
+    profiles[#profiles+1]=string.format('"%s":{"iterations":%d,"total":%d,"adapter":%d,"native":%d,"c":%d}',label,n,total,adapter,native,c)
+end
+profile("closed_player_updates",update,10)
+profile("closed_idle",function() end,10)
+Spy.MainWindow:Show();flush()
+for _,job in ipairs(workloads) do profile(job[1],job[2],10) end
 local f=assert(io.open(BENCH_OUTPUT,"w"))
-f:write("{",table.concat(output,","),"}");f:close()
+f:write("{",table.concat(output,","),',"profiles":{',table.concat(profiles,","),"}}");f:close()
 end
 '''
 report={"baseline":args.baseline,"rows":args.rows,"iterations":args.iterations,
-        "trials":args.trials,"warmup":100,"source":bool(os.environ.get("SPY_SOURCE")),
+        "trials":args.trials,"warmup":100,"lifecycle_iterations":100,"profile_iterations":10,"source":bool(os.environ.get("SPY_SOURCE")),
         "limits":"Mock UI/Lua host; actual-source constructors/SetBar, shaped list dispatcher/hover. GC-stopped churn is not retained/native/GPU memory.","modes":{}}
 with tempfile.TemporaryDirectory(prefix='spy-bench-') as tmp:
     tmp=Path(tmp)
@@ -109,8 +166,10 @@ with tempfile.TemporaryDirectory(prefix='spy-bench-') as tmp:
                 lib.lua_close(state)
             trials.append(json.loads(destination.read_text()))
         median={name:{key:statistics.median(trial[name][key] for trial in trials)
-                      for key in trials[0][name]} for name in trials[0]}
-        report["modes"][mode]={"median":median,"trials":trials}
+                      for key in trials[0][name]} for name in trials[0] if name!="profiles"}
+        profiles={name:{key:statistics.median(trial["profiles"][name][key] for trial in trials)
+                        for key in trials[0]["profiles"][name]} for name in trials[0]["profiles"]}
+        report["modes"][mode]={"median":median,"profiles":profiles,"trials":trials}
     report["candidate_minus_baseline"]={
         name:{key:report["modes"]["candidate"]["median"][name][key]-report["modes"]["baseline"]["median"][name][key]
               for key in report["modes"]["candidate"]["median"][name]}

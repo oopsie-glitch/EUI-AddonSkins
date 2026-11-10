@@ -460,6 +460,15 @@ end, function(S, module)
         if Locked() then waiting = true; return end
         PaintRowHover(entry, entry.wantHover)
     end
+    -- The native secure-row scripts already route both pointer transitions
+    -- through this Spy-local method. One secure posthook covers the whole pool.
+    local nativeHover = type(spy.ShowTooltip) == "function"
+    if nativeHover then
+        hooksecurefunc(spy, "ShowTooltip", function(_, row, entered)
+            local entry = rowArt[row]
+            if entry then RowHover(entry, row, entered) end
+        end)
+    end
     local toneColors
     local function RowTones(entry, bar, shown)
         shown = shown and Owned(bar) and true or false
@@ -537,11 +546,14 @@ end, function(S, module)
             if f.TitleBar and not alert then
                 local header = Host(host)
                 header:ClearAllPoints(); header:SetAllPoints(f.TitleBar)
-                local band = header:CreateTexture(nil, "BACKGROUND", nil, 3)
-                band:SetAllPoints(header); band:SetColorTexture(0.185, 0.126, 0.080, 1)
-                if band.SetGradient and CreateColor then
-                    band:SetGradient("VERTICAL", CreateColor(0.095, 0.064, 0.040, 1),
-                        CreateColor(0.185, 0.126, 0.080, 1))
+                local band
+                if f ~= spy.MainWindow then
+                    band = header:CreateTexture(nil, "BACKGROUND", nil, 3)
+                    band:SetAllPoints(header); band:SetColorTexture(0.185, 0.126, 0.080, 1)
+                    if band.SetGradient and CreateColor then
+                        band:SetGradient("VERTICAL", CreateColor(0.095, 0.064, 0.040, 1),
+                            CreateColor(0.185, 0.126, 0.080, 1))
+                    end
                 end
                 local seam = header:CreateTexture(nil, "ARTWORK")
                 seam:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT", 1, 0)
@@ -573,14 +585,8 @@ end, function(S, module)
                 Alpha(entry.plate, grainAlpha < 1 and (alpha - grainAlpha) / (1 - grainAlpha) or 0)
             end
             -- The warm plate/grain already cover the header. No stacked fill.
-            if entry.band then
-                if f == spy.MainWindow then
-                    -- A zero texture-level alpha is not our paint contract.
-                    -- Exclude the unused gradient band from rendering entirely.
-                    if entry.band:IsShown() then entry.band:Hide() end
-                else Alpha(entry.band, alpha * 0.16) end
-                Alpha(entry.seam, 1)
-            end
+            if entry.band then Alpha(entry.band, alpha * 0.16) end
+            if entry.seam then Alpha(entry.seam, 1) end
             -- Alert borders are severity indicators, not neutral bronze trim.
             if alert and entry.rim and f.GetBackdropBorderColor and _G.EllesmereUI.ForeverBorderPaint then
                 local r, g, b, a = f:GetBackdropBorderColor()
@@ -671,8 +677,11 @@ end, function(S, module)
                 entry.wantHover = false
                 if not Locked() then PaintRowHover(entry, false); Alpha(host, 0) else waiting = true end
             end)
-            row:HookScript("OnEnter", function() RowHover(entry, row, true) end)
-            row:HookScript("OnLeave", function() RowHover(entry, row, false) end)
+            -- Older forks without the shared method keep the scoped fallback.
+            if not nativeHover then
+                row:HookScript("OnEnter", function() RowHover(entry, row, true) end)
+                row:HookScript("OnLeave", function() RowHover(entry, row, false) end)
+            end
             end
         end
         if entry.forever ~= forever then

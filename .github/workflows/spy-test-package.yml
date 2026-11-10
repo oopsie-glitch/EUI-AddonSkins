@@ -44,6 +44,17 @@ jobs:
                       print('STATE FILE '+member)
                       for i in sorted(chosen): print(str(i+1)+': '+lines[i])
           print('SPY NATIVE STATE AUDIT END')
+          print('SPY TOOLTIP LIFECYCLE BEGIN')
+          for member in z.namelist():
+              if member.endswith('.lua'):
+                  text=z.read(member).decode('utf-8-sig',errors='replace')
+                  marker='function Spy:ShowTooltip('
+                  start=text.find(marker)
+                  if start>=0:
+                      end=text.find('\\nfunction ',start+len(marker))
+                      print(member)
+                      print(text[start:end if end>=0 else None])
+          print('SPY TOOLTIP LIFECYCLE END')
           print('SPY NATIVE ROW LIFECYCLE BEGIN')
           native_rows=z.read('Spy/MainWindow.lua').decode('utf-8-sig')
           for name in ('CreateRow','SetupBar','SetBar','ResizeMainWindow','ManageBarsDisplayed'):
@@ -87,7 +98,7 @@ jobs:
           PY
           SPY_SOURCE=/tmp/spy-upstream python3 tests/run_lua.py
       - name: Compare Spy performance against approved PR baseline
-        run: SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline 43beb7c48a1a569964f39e3d4ca2b50e8629a83b --trials 5 --iterations 1000 --rows 40
+        run: SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline a8c0e848ad001e1eecf1db7d8246bcd0dff73e1b --trials 5 --iterations 1000 --rows 40
       - name: Fresh Lua bootstrap with saved Spy opacity endpoints
         run: |
           SPY_BOOT_OPACITY=0 python3 tests/run_lua.py

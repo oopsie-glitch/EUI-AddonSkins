@@ -27,7 +27,7 @@ prefix=prefix.replace('counts.objects=counts.objects+1',
 lib=ctypes.CDLL('liblua5.4.so.0')
 lib.luaL_newstate.restype=ctypes.c_void_p
 lib.luaL_openlibs.argtypes=[ctypes.c_void_p]
-lib.luaL_loadstring.argtypes=[ctypes.c_void_p,ctypes.c_char_p]
+lib.luaL_loadbufferx.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.c_size_t,ctypes.c_char_p,ctypes.c_char_p]
 lib.lua_pcallk.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_longlong,ctypes.c_void_p]
 lib.lua_tolstring.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.c_void_p]
 lib.lua_tolstring.restype=ctypes.c_char_p
@@ -116,7 +116,7 @@ measure("closed_idle",function() end,BENCH_ITERATIONS)
 -- Separate fixed 10-callback call profile: debug hooks never affect timed passes.
 local profiles={}
 local function profile(label,fn,n)
-    local total,adapter,native,c=0,0,0,0
+    local total,adapter,native,shared,c=0,0,0,0,0
     local function observe(event)
         if event~="call" and event~="tail call" then return end
         local info=debug.getinfo(2,"S")
@@ -124,12 +124,13 @@ local function profile(label,fn,n)
         local source=info.source or ""
         if source:find("Skins/Spy.lua",1,true) or source:find("baseline.lua",1,true) then adapter=adapter+1 end
         if source:find("spy-upstream/",1,true) then native=native+1 end
+        if source:find("EUIAddonSkins/Widgets.lua",1,true) then shared=shared+1 end
         if info.what=="C" then c=c+1 end
     end
     debug.sethook(observe,"c")
     for i=1,n do fn() end
     debug.sethook()
-    profiles[#profiles+1]=string.format('"%s":{"iterations":%d,"total":%d,"adapter":%d,"native":%d,"c":%d}',label,n,total,adapter,native,c)
+    profiles[#profiles+1]=string.format('"%s":{"iterations":%d,"total":%d,"adapter":%d,"native":%d,"shared":%d,"c":%d}',label,n,total,adapter,native,shared,c)
 end
 profile("closed_player_updates",update,10)
 profile("closed_idle",function() end,10)
@@ -157,7 +158,8 @@ with tempfile.TemporaryDirectory(prefix='spy-bench-') as tmp:
             state=lib.luaL_newstate()
             lib.luaL_openlibs(state)
             try:
-                result=lib.luaL_loadstring(state,code.encode())
+                encoded=code.encode()
+                result=lib.luaL_loadbufferx(state,encoded,len(encoded),b"@benchmarks/spy_fixture.lua",None)
                 if result==0:
                     result=lib.lua_pcallk(state,0,0,0,0,None)
                 if result:

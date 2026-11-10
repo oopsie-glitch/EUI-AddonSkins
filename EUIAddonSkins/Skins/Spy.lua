@@ -456,7 +456,8 @@ end, function(S, module)
     end
     local function RowHover(entry, row, entered)
         if entry.row ~= row then return end
-        entry.wantHover = entered and (not row.IsVisible or row:IsVisible()) and ns.IsEnabled(module) and ForeverLook() or false
+        entry.wantHover = entered and entry.forever and ns.IsEnabled(module)
+            and (not row.IsVisible or row:IsVisible()) or false
         if Locked() then waiting = true; return end
         PaintRowHover(entry, entry.wantHover)
     end

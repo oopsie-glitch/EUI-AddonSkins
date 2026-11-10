@@ -100,8 +100,8 @@ end, function(S, module)
         if plate.SetGradient and CreateColor then
             local low, high
             if managed then
-                low = header and CreateColor(0.135, 0.085, 0.042, 1) or CreateColor(0.100, 0.065, 0.040, 1)
-                high = header and CreateColor(0.250, 0.165, 0.080, 1) or CreateColor(0.175, 0.115, 0.065, 1)
+                low = header and CreateColor(0.105, 0.062, 0.030, 1) or CreateColor(0.055, 0.037, 0.024, 1)
+                high = header and CreateColor(0.285, 0.185, 0.090, 1) or CreateColor(0.115, 0.075, 0.045, 1)
             else
                 low, high = CreateColor(0.120, 0.084, 0.055, 1), CreateColor(0.165, 0.115, 0.075, 1)
             end
@@ -135,15 +135,15 @@ end, function(S, module)
             local plateAlpha = (target - grainAlpha) / (1 - grainAlpha)
             if paint.low then
                 if paint.header then
-                    paint.low:SetRGBA(0.135, 0.085, 0.042, plateAlpha)
-                    paint.high:SetRGBA(0.250, 0.165, 0.080, plateAlpha)
+                    paint.low:SetRGBA(0.105, 0.062, 0.030, plateAlpha)
+                    paint.high:SetRGBA(0.285, 0.185, 0.090, plateAlpha)
                 else
-                    paint.low:SetRGBA(0.100, 0.065, 0.040, plateAlpha)
-                    paint.high:SetRGBA(0.175, 0.115, 0.065, plateAlpha)
+                    paint.low:SetRGBA(0.055, 0.037, 0.024, plateAlpha)
+                    paint.high:SetRGBA(0.115, 0.075, 0.045, plateAlpha)
                 end
                 entry.plate:SetGradient("VERTICAL", paint.low, paint.high)
             else
-                entry.plate:SetVertexColor(paint.header and 0.250 or 0.175, paint.header and 0.165 or 0.115, paint.header and 0.080 or 0.065, plateAlpha)
+                entry.plate:SetVertexColor(paint.header and 0.285 or 0.115, paint.header and 0.185 or 0.075, paint.header and 0.090 or 0.045, plateAlpha)
             end
             entry.grain:SetVertexColor(0.56, 0.44, 0.32, grainAlpha)
         end
@@ -466,26 +466,34 @@ end, function(S, module)
         end
         layout.active, layout.writing = true, false
     end
+    local edgeColors
     local function RowEdges(host, omitTop)
+        if CreateColor then
+            edgeColors = edgeColors or {CreateColor(1, 1, 1, 0), CreateColor(1, 1, 1, 0.45), CreateColor(1, 1, 1, 0.75)}
+        end
         local top
         if not omitTop then
-            top = host:CreateTexture(nil, "ARTWORK")
+            top = host:CreateTexture(nil, "ARTWORK", nil, 3)
             top:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
             top:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, 0)
-            top:SetHeight(1); top:SetColorTexture(0.62, 0.43, 0.23, 0.60)
+            top:SetHeight(2); top:SetColorTexture(1, 1, 1, 1)
+            top:SetVertexColor(0.62, 0.43, 0.23, 0.60)
+            if edgeColors and top.SetGradient then top:SetGradient("VERTICAL", edgeColors[1], edgeColors[2]) end
         end
-        local bottom = host:CreateTexture(nil, "ARTWORK")
+        local bottom = host:CreateTexture(nil, "ARTWORK", nil, 3)
         bottom:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 0)
         bottom:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
-        bottom:SetHeight(1); bottom:SetColorTexture(0.20, 0.12, 0.055, 0.75)
+        bottom:SetHeight(2); bottom:SetColorTexture(1, 1, 1, 1)
+        bottom:SetVertexColor(0.20, 0.12, 0.055, 0.75)
+        if edgeColors and bottom.SetGradient then bottom:SetGradient("VERTICAL", edgeColors[3], edgeColors[1]) end
         local left = host:CreateTexture(nil, "ARTWORK")
         left:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -1)
         left:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 1)
-        left:SetWidth(1); left:SetColorTexture(0.38, 0.25, 0.13, 0.50)
+        left:SetWidth(1); left:SetColorTexture(0.38, 0.25, 0.13, 0.18)
         local right = host:CreateTexture(nil, "ARTWORK")
         right:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -1)
         right:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 1)
-        right:SetWidth(1); right:SetColorTexture(0.25, 0.15, 0.07, 0.55)
+        right:SetWidth(1); right:SetColorTexture(0.25, 0.15, 0.07, 0.18)
         return {top = top, bottom = bottom, left = left, right = right}
     end
     local function PaintRowHover(entry, hovered)
@@ -493,15 +501,15 @@ end, function(S, module)
         entry.paintedHover = hovered
         local e = entry.edges
         if hovered then
-            e.top:SetColorTexture(0.92, 0.70, 0.38, 0.95)
-            e.bottom:SetColorTexture(0.66, 0.42, 0.19, 0.75)
+            e.top:SetVertexColor(0.92, 0.70, 0.38, 0.95)
+            e.bottom:SetVertexColor(0.66, 0.42, 0.19, 0.75)
             e.left:SetColorTexture(0.78, 0.52, 0.25, 0.90)
             e.right:SetColorTexture(0.78, 0.52, 0.25, 0.90)
         else
-            e.top:SetColorTexture(0.62, 0.43, 0.23, 0.60)
-            e.bottom:SetColorTexture(0.20, 0.12, 0.055, 0.75)
-            e.left:SetColorTexture(0.38, 0.25, 0.13, 0.50)
-            e.right:SetColorTexture(0.25, 0.15, 0.07, 0.55)
+            e.top:SetVertexColor(0.62, 0.43, 0.23, 0.60)
+            e.bottom:SetVertexColor(0.20, 0.12, 0.055, 0.75)
+            e.left:SetColorTexture(0.38, 0.25, 0.13, 0.18)
+            e.right:SetColorTexture(0.25, 0.15, 0.07, 0.18)
         end
     end
     local function RowHover(entry, row, entered)
@@ -524,12 +532,13 @@ end, function(S, module)
     local function RowTones(entry, bar, shown)
         shown = shown and Owned(bar) and true or false
         if not entry.tones and shown then
-            entry.tones = {bar:CreateTexture(nil, "ARTWORK", nil, 2)}
+            entry.tones = {bar:CreateTexture(nil, "BACKGROUND", nil, 2), entry.edges.top, entry.edges.bottom}
             if CreateColor and entry.tones[1].SetGradient then
-                toneColors = toneColors or {CreateColor(0.04, 0.025, 0.01, 0.28),
-                    CreateColor(0.90, 0.73, 0.48, 0.16)}
+                toneColors = toneColors or {CreateColor(0.04, 0.025, 0.01, 0.18),
+                    CreateColor(0.90, 0.73, 0.48, 0.08)}
             end
-            for i, texture in ipairs(entry.tones) do
+            do
+                local texture = entry.tones[1]
                 texture:SetColorTexture(1, 1, 1, 1)
                 texture:SetBlendMode("BLEND")
                 if toneColors then
@@ -541,6 +550,15 @@ end, function(S, module)
         if shown and entry.toneParent ~= bar then
             local material = entry.tones[1]
             material:SetParent(bar); material:ClearAllPoints(); material:SetAllPoints(bar)
+            -- Reuse the old row lines as two soft bevels above the native fill,
+            -- below its text. The broad material itself stays behind Spy art.
+            local upper, lower = entry.edges.top, entry.edges.bottom
+            upper:SetParent(bar); lower:SetParent(bar)
+            upper:ClearAllPoints(); lower:ClearAllPoints()
+            upper:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+            upper:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
+            lower:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+            lower:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
             entry.toneParent = bar
         end
         if entry.tonesShown ~= shown then
@@ -573,23 +591,23 @@ end, function(S, module)
                 well:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -7, -3)
                 entry.innerRim = Rim(well)
                 if entry.innerRim and _G.EllesmereUI.ForeverBorderPaint then
-                    _G.EllesmereUI.ForeverBorderPaint(entry.innerRim, 0.86, 0.70, 0.48, 1)
+                    _G.EllesmereUI.ForeverBorderPaint(entry.innerRim, 0.76, 0.61, 0.42, 1)
                 end
                 -- Recessed lighting belongs to one shared viewport, not each row.
                 for _, edge in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
                     local shadow = well:CreateTexture(nil, "BACKGROUND", nil, 4)
                     if edge == "TOP" or edge == "BOTTOM" then
-                        shadow:SetPoint(edge .. "LEFT", well, edge .. "LEFT", 2, 0)
-                        shadow:SetPoint(edge .. "RIGHT", well, edge .. "RIGHT", -2, 0)
-                        shadow:SetHeight(3)
+                        shadow:SetPoint(edge .. "LEFT", well, edge .. "LEFT", 3, edge == "TOP" and -3 or 3)
+                        shadow:SetPoint(edge .. "RIGHT", well, edge .. "RIGHT", -3, edge == "TOP" and -3 or 3)
+                        shadow:SetHeight(5)
                     else
-                        shadow:SetPoint("TOP" .. edge, well, "TOP" .. edge, 0, -2)
-                        shadow:SetPoint("BOTTOM" .. edge, well, "BOTTOM" .. edge, 0, 2)
-                        shadow:SetWidth(3)
+                        shadow:SetPoint("TOP" .. edge, well, "TOP" .. edge, edge == "LEFT" and 3 or -3, -3)
+                        shadow:SetPoint("BOTTOM" .. edge, well, "BOTTOM" .. edge, edge == "LEFT" and 3 or -3, 3)
+                        shadow:SetWidth(5)
                     end
                     shadow:SetColorTexture(1, 1, 1, 1)
                     if shadow.SetGradient and CreateColor then
-                        local dark, clear = CreateColor(0.025, 0.012, 0.006, 0.32), CreateColor(0.025, 0.012, 0.006, 0)
+                        local dark, clear = CreateColor(0.018, 0.010, 0.005, 0.48), CreateColor(0.025, 0.012, 0.006, 0)
                         local reverse = edge == "TOP" or edge == "RIGHT"
                         shadow:SetGradient((edge == "TOP" or edge == "BOTTOM") and "VERTICAL" or "HORIZONTAL",
                             reverse and clear or dark, reverse and dark or clear)
@@ -649,14 +667,20 @@ end, function(S, module)
                 local seam = header:CreateTexture(nil, "ARTWORK")
                 seam:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT", 1, 0)
                 seam:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", -1, 0)
-                seam:SetHeight(f == spy.MainWindow and 2 or 1); seam:SetColorTexture(0.49, 0.33, 0.18, 0.65)
+                seam:SetHeight(f == spy.MainWindow and 3 or 1); seam:SetColorTexture(0.49, 0.33, 0.18, 0.65)
                 if f == spy.MainWindow then
                     local shade = header:CreateTexture(nil, "ARTWORK")
                     shade:SetPoint("BOTTOMLEFT", seam, "TOPLEFT", 0, 0)
                     shade:SetPoint("BOTTOMRIGHT", seam, "TOPRIGHT", 0, 0)
-                    shade:SetHeight(2); shade:SetColorTexture(0.055, 0.032, 0.014, 0.50)
+                    shade:SetHeight(4); shade:SetColorTexture(1, 1, 1, 1)
+                    if shade.SetGradient and CreateColor then
+                        shade:SetGradient("VERTICAL", CreateColor(0.035, 0.018, 0.008, 0.65), CreateColor(0.035, 0.018, 0.008, 0))
+                    else shade:SetVertexColor(0.035, 0.018, 0.008, 0.35) end
                     entry.seamShade = shade
-                    seam:SetColorTexture(0.58, 0.38, 0.19, 0.75)
+                    seam:SetColorTexture(1, 1, 1, 1)
+                    if seam.SetGradient and CreateColor then
+                        seam:SetGradient("VERTICAL", CreateColor(0.23, 0.12, 0.045, 0.80), CreateColor(0.70, 0.47, 0.24, 0.90))
+                    else seam:SetVertexColor(0.58, 0.38, 0.19, 0.75) end
                 end
                 entry.band, entry.seam = band, seam
             end

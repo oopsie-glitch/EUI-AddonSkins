@@ -9,7 +9,7 @@ import tempfile
 import urllib.request
 
 parser=argparse.ArgumentParser()
-parser.add_argument('--baseline',default='a8c0e848ad001e1eecf1db7d8246bcd0dff73e1b')
+parser.add_argument('--baseline',default='b4f2e7b6e4ac86b2b2a1ec9352c93422bdc3abe2')
 parser.add_argument('--trials',type=int,default=5)
 parser.add_argument('--iterations',type=int,default=1000)
 parser.add_argument('--rows',type=int,default=40)

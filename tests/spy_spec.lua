@@ -54,6 +54,8 @@ local function frame(kind,parent)
         list[#list+1]=self
         counts.geometry=counts.geometry+1
     end
+    function f:GetResizeBounds() return unpack(self.resizeBounds or {90,34,1200,1200}) end
+    function f:SetResizeBounds(a,b,c,d) assert(not combat);self.resizeBounds={a,b,c,d};counts.geometry=counts.geometry+1 end
     function f:GetFrameLevel() return self.level end
     function f:SetFrameLevel(v) assert(not combat); self.level=v end
     function f:SetFrameStrata(v) self.strata=v end
@@ -82,6 +84,9 @@ local function frame(kind,parent)
     function f:SetSize(w,h) self.width,self.height=w,h;counts.geometry=counts.geometry+1 end
     function f:GetWidth()
         local a,b=self.points[1],self.points[2]
+        if a and b and a[1]=="LEFT" and b[1]=="RIGHT" then
+            return b[2]:GetLeft()+(b[4] or 0)-(a[2]:GetLeft()+(a[4] or 0))
+        end
         if a and b and a[1]=="TOPLEFT" and b[1]=="BOTTOMRIGHT" and a[2]==b[2] then
             return a[2]:GetWidth()+(b[4] or 0)-(a[4] or 0)
         end
@@ -497,16 +502,17 @@ assert(Spy.MainWindow.StatsButton.scripts.OnClick()=="StatsButton")
 assert(Spy.MainWindow.StatsButton.width==16 and Spy.MainWindow.StatsButton.height==12,"native header hitbox changed")
 local function RowChrome(row)
     for _,host in ipairs(Spy.MainWindow.children) do
-        if host.allPoints==row and #host.regions==4 and host.mouse==false then return host end
+        if host.points[1] and host.points[1][2]==row and #host.regions==4 and host.mouse==false then return host end
     end
 end
 local chrome=assert(RowChrome(row),"contained row frame missing")
 assert(chrome:GetFrameLevel()<row.StatusBar:GetFrameLevel(),"row frame can cover player text")
-assert(row.StatusBar.points[1][4]==2 and row.StatusBar.points[1][5]==-1 and row.StatusBar.points[2][4]==-2 and row.StatusBar.points[2][5]==1,"inset fill was not recessed")
-assert(row.StatusBar:GetWidth()==row:GetWidth()-4 and row.StatusBar:GetHeight()==row:GetHeight()-2,"recess changed row hitbox")
-assert(row.LeftText:GetLeft()==nativeLeft and row.RightText:GetRight()==nativeRight,"recess moved native text/truncation coordinates")
+assert(row.StatusBar.points[1][4]==10 and row.StatusBar.points[1][5]==-1 and row.StatusBar.points[2][4]==-10 and row.StatusBar.points[2][5]==1,"inset fill was not recessed")
+assert(row.StatusBar:GetWidth()==row:GetWidth()-20 and row.StatusBar:GetHeight()==row:GetHeight()-2,"recess changed row hitbox")
+assert(row.LeftText:GetLeft()==row:GetLeft()+14 and row.RightText:GetRight()==row:GetRight()-14,"inset column padding missing")
+assert(row.LeftText:GetRight()+6<=row.RightText:GetLeft(),"native long-name constraint overlaps metadata")
 assert(row.points[1][2]==nativeRowPoint[2] and row.points[1][4]==nativeRowPoint[4] and row.points[1][5]==nativeRowPoint[5],"skin moved secure row")
-assert(row.LeftText.points[1][2]==row and row.RightText.points[1][2]==row,"row labels still follow inset fill")
+assert(row.LeftText.points[1][2]==row.StatusBar and row.LeftText.points[2][2]==row.RightText,"native name constraint missing")
 for _,button in ipairs({Spy.MainWindow.LeftButton,Spy.MainWindow.RightButton}) do
     for _,edge in ipairs(button.standardBorder.regions) do assert(edge.baseColor[4]==0,"native helper border leaked into Forever") end
 end
@@ -518,7 +524,7 @@ local function Tones(row)
     return result
 end
 local tones=Tones(row)
-assert(#tones==2 and tones[1].height==2 and tones[2].height==2,"row bevel bands missing")
+assert(#tones==2 and tones[1].allPoints==row.StatusBar and tones[2].allPoints==row.StatusBar,"row material does not cover the surface")
 assert(tones[1].gradient and tones[2].gradient and tones[1].blend=="BLEND","row material paint path missing")
 assert(tones[1].parent==row.StatusBar and row.LeftText.drawLayer=="OVERLAY" and row.RightText.drawLayer=="OVERLAY","row bevel can cover text")
 assert(tones[1]:GetTop()<=row.StatusBar:GetTop() and tones[2]:GetBottom()>=row.StatusBar:GetBottom(),"row material escapes native fill")
@@ -568,12 +574,24 @@ assert(Spy.MainWindow.CloseButton.standardGlyph.alpha==0,"EUI X stacked beneath 
 assert(Spy.MainWindow.LeftButton.standardFill.alpha==0 and Spy.MainWindow.LeftButton.standardGlyph.alpha==0,"EUI page block/glyph not suppressed")
 assert(Spy.SetBar==rawSetBar,"skin still hooks native per-player bar paint")
 if bootOpacity then
+    local backgrounds=0
     for host in pairs(rings) do
-        if host.parent==Spy.MainWindow then
-            local plate,grain=host.regions[1],host.regions[2]
-            assert(math.abs(Composite(plate,grain)-bootOpacity)<0.0001,"fresh bootstrap lost saved opacity")
+        if host.parent and host.parent.parent==Spy.MainWindow then
+        for _,region in ipairs(host.regions) do
+            if region.drawLayer=="BACKGROUND" and region.sublevel==1 and region.gradient then
+                local grain
+                for _,candidate in ipairs(host.regions) do
+                    if candidate.drawLayer=="BACKGROUND" and candidate.sublevel==2 then grain=candidate end
+                end
+                if grain then
+                    assert(math.abs(Composite(region,grain)-bootOpacity)<0.0001,"fresh bootstrap lost saved opacity")
+                    backgrounds=backgrounds+1
+                end
+            end
         end
     end
+    end
+    assert(backgrounds==1,"fresh list background missing")
     assert(EUIAddonSkinsDB.spy.opacity==bootOpacity,"bootstrap overwrote saved endpoint")
     EUIAddonSkinsDB.spy.opacity=nil
     module.refresh();flush()
@@ -614,14 +632,14 @@ for _,width in ipairs({90,130,160,200,240,300}) do
         f.CountFrame.Text:SetText("|cFF0070DE"..value.."|r")
         f.Title:SetText(label)
         local title,counter=f.Title,f.CountFrame.Text
-        local unified=title.points[1][5]==-20
+        local unified=title.points[1][5]==-18
         if width>=200 then assert(unified,"header did not integrate at normal width") end
         if width<=130 then assert(not unified,"narrow header lost safety wrap") end
         assert(title:GetText()==label and title:GetWidth()>0,"native title changed/vanished")
         assert(f:GetWidth()==width and f:GetHeight()==90,"skin resized native window")
         if unified then
             assert(not title:GetWordWrap(),"single-line header wrapped title")
-            assert(math.abs(title:GetTop()-title:GetHeight()/2-(f:GetTop()-20))<0.001,"title not centered in unified header")
+            assert(math.abs(title:GetTop()-title:GetHeight()/2-(f:GetTop()-18))<0.001,"title not centered in unified header")
             assert(title:GetRight()+6<=f.StatsButton:GetLeft(),"title/control overlap")
             assert(f.CloseButton:GetRight()+6<=f.CountButton:GetLeft(),"control/counter hitboxes overlap")
         else
@@ -642,7 +660,7 @@ for _,width in ipairs({90,130,160,200,240,300}) do
             assert(button:GetHeight()==(key=="StatsButton" and 12 or key=="CloseButton" and 20 or 16),"header hitbox changed")
             prior=button
         end
-        assert(row.StatusBar:GetWidth()==row:GetWidth()-4,"resize lost inset geometry")
+        assert(row.StatusBar:GetWidth()==row:GetWidth()-20,"resize lost inset geometry")
     end
     end
 end
@@ -651,7 +669,7 @@ local title=Spy.MainWindow.Title
 local counter=Spy.MainWindow.CountFrame.Text
 for _,label in ipairs({"Nearby","Last Hour","Ignore","Kill On Sight","A localized title requiring more space"}) do
     title:SetText(label)
-    assert(title.points[1][5]==-20 and not title:GetWordWrap(),"dynamic title rebuilt separate toolbar")
+    assert(title.points[1][5]==-18 and not title:GetWordWrap(),"dynamic title rebuilt separate toolbar")
 end
 title:SetText("Kill On Sight")
 counter:SetText("|cFF0070DE123|r")
@@ -683,6 +701,7 @@ assert(Spy.MainWindow.CloseButton.standardGlyph.alpha==1 and Spy.MainWindow.Left
 assert(row.StatusBar.points[1][4]==0 and row.StatusBar.points[2][4]==0 and row.LeftText.points[1][2]==row.StatusBar and row.RightText.points[1][2]==row.StatusBar,"Standard row geometry not restored")
 assert(not tones[1]:IsShown() and not tones[2]:IsShown(),"Standard retained row material")
 for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"Standard helper border not restored") end
+assert(select(1,Spy.MainWindow:GetResizeBounds())==90,"Standard resize bounds not restored")
 assert(Spy.MainWindow.Title.width==121 and Spy.MainWindow.Title.height==16 and not Spy.MainWindow.Title:GetWordWrap() and not Spy.MainWindow.Title:GetNonSpaceWrap(),"Standard title geometry not restored")
 assert(Spy.MainWindow.Title.points[1][5]==-16 and Spy.MainWindow.CloseButton.points[1][1]=="TOPRIGHT" and Spy.MainWindow.CloseButton.points[1][4]==-4 and Spy.MainWindow.CloseButton.points[1][5]==-12,"Standard native anchors not restored")
 assert(Spy.MainWindow.LeftButton.points[1][2]==Spy.MainWindow.RightButton and Spy.MainWindow.StatsButton.points[1][2]==Spy.MainWindow.ClearButton,"Standard native anchor chain not restored")
@@ -724,7 +743,7 @@ Spy:SetBar(2,"Recycled","60 Hunter",100,"Class","HUNTER",nil,1)
 assert(Spy.MainWindow.Rows[2]~=retired)
 assert(#Tones(retired)==0 and #Tones(Spy.MainWindow.Rows[2])==2,"row bevels accumulated on retired native bars")
 assert(retired.StatusBar.points[1][4]==0 and retired.LeftText.points[1][2]==retired.StatusBar,"retired row retained Forever anchors")
-assert(RowChrome(Spy.MainWindow.Rows[2]) and Spy.MainWindow.Rows[2].StatusBar.points[1][4]==2,"recycled slot lost contained row")
+assert(RowChrome(Spy.MainWindow.Rows[2]) and Spy.MainWindow.Rows[2].StatusBar.points[1][4]==10,"recycled slot lost contained row")
 local settledObjects,settledHooks=counts.objects,counts.hooks
 Spy.MainWindow.Rows[2]:Hide();Spy.MainWindow.Rows[2]:Show()
 retired:Hide();retired:Show()
@@ -747,8 +766,8 @@ for _,child in ipairs(rootRim.host.children) do
     if #child.regions==7 then viewport=child end
 end
 assert(viewport and viewport.parent==rootRim.host and viewport.mouse==false,"inner viewport ownership missing")
-assert(viewport:GetLeft()==Spy.MainWindow:GetLeft()+3 and viewport:GetRight()==Spy.MainWindow:GetRight()-3,"inner frame geometry follows outer border")
-assert(viewport.points[1][5]==-33 and viewport.points[2][5]==1,"inner frame changed native row viewport")
+assert(viewport:GetLeft()==Spy.MainWindow:GetLeft()+7 and viewport:GetRight()==Spy.MainWindow:GetRight()-7,"inner frame geometry follows outer border")
+assert(viewport.points[1][5]==-32 and viewport.points[2][5]==-3,"inner frame changed native row viewport")
 
 assert(alertRim.color[1]==0.9 and Spy.AlertWindow.Title.textColor[1]==1,"alert severity changed")
 assert(Spy:AlertWatch()=="native-watch" and alertRim.color[1]==0.6 and alertRim.color[3]==0.8,"watch alert severity failed to refresh")
@@ -756,12 +775,17 @@ assert(Spy:AlertWatch()=="native-watch" and alertRim.color[1]==0.6 and alertRim.
 for host in pairs(shells) do for _,region in ipairs(host.regions) do region.alpha=0 end end
 assert(rootRim.edge.alpha==1,"EUI cleanup stripped Forever rim")
 assert(#Tones(row)==2 and tones[1]:IsShown() and tones[2]:IsShown()
-    and tones[1].gradient.high[4]==0.14 and tones[2].gradient.low[4]==0.16,"EUI cleanup changed approved row bevels")
-local plate,grain=rootRim.host.regions[1],rootRim.host.regions[2]
+    and tones[1].gradient.high[4]==0.16 and tones[2].gradient.low[4]==0.28,"EUI cleanup changed approved row bevels")
+local plate,grain
+for _,region in ipairs(viewport.regions) do
+    if region.drawLayer=="BACKGROUND" and region.sublevel==1 then plate=region end
+    if region.drawLayer=="BACKGROUND" and region.sublevel==2 then grain=region end
+end
+assert(plate and grain and plate.parent==viewport,"recessed panel background ownership missing")
 local opacity=settings.args.opacity
 Spy.MainWindow:SetAlpha(1)
 assert(plate.gradient and plate.blend=="BLEND" and grain.blend=="BLEND","managed gradient/blend path not exercised")
-local low,high={0.120,0.084,0.055},{0.165,0.115,0.075}
+local low,high={0.100,0.065,0.040},{0.175,0.115,0.065}
 for i=1,3 do
     assert(plate.baseColor[i]==1,"main plate source repeats the warm tint")
     assert(math.abs(plate.baseColor[i]*plate.gradient.low[i]-low[i])<0.0001 and math.abs(plate.baseColor[i]*plate.gradient.high[i]-high[i])<0.0001,"rendered material RGB is double-tinted")
@@ -780,9 +804,17 @@ for _,a in ipairs({0,35,100,75}) do
     assert(Spy.MainWindow.Title.alpha==1 and Spy.MainWindow.CloseButton.alpha==1,"slider faded content")
     local surfaceHost=rootRim.host
     local header
-    for _,child in ipairs(surfaceHost.children) do if child.allPoints==Spy.MainWindow.TitleBar then header=child end end
-    assert(header and #header.regions==2,"unused main header background allocated")
-    for _,region in ipairs(header.regions) do assert(region.allPoints~=header,"stacked opaque header fill retained") end
+    for _,child in ipairs(surfaceHost.children) do
+        if child.points[1] and child.points[1][2]==surfaceHost then header=child end
+    end
+    local hp,hg
+    for _,region in ipairs(assert(header).regions) do
+        if region.drawLayer=="BACKGROUND" and region.sublevel==1 then hp=region end
+        if region.drawLayer=="BACKGROUND" and region.sublevel==2 then hg=region end
+    end
+    assert(hp and hg and hp.parent==header and hp.allPoints==header,"integrated header surface missing")
+    assert(math.abs(Composite(hp,hg)-a/100)<0.0001,"header background opacity stacks")
+    assert(hp:GetBottom()>=plate:GetTop(),"header/list backgrounds overlap")
     -- SavedVariables reconstruction: explicit endpoints must survive re-reading.
     EUIAddonSkinsDB={spy={style="forever",opacity=a/100},other={preserved=true}}
     module.refresh();flush()

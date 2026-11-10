@@ -527,7 +527,7 @@ row:Show()
 local stableHoverObjects,stableHoverHooks=counts.objects,counts.hooks
 for i=1,1000 do row:FireScript("OnEnter");row:FireScript("OnLeave") end
 assert(counts.objects==stableHoverObjects and counts.hooks==stableHoverHooks,"hover accumulated artwork/hooks")
-rawSetBar(1,"Unknown","?? Unknown",0,nil,nil,nil,0.6)
+rawSetBar(Spy,1,"Unknown","?? Unknown",0,nil,nil,nil,0.6)
 local unknownColor={table.unpack(row.StatusBar.statusColor)}
 row:FireScript("OnEnter");row:FireScript("OnLeave")
 assert(row.RightText:GetText()=="?? Unknown" and row.StatusBar.value==0,"unknown player state changed")

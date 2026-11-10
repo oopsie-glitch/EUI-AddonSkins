@@ -32,37 +32,21 @@ jobs:
           z=zipfile.ZipFile(io.BytesIO(data))
           import re
           print('SPY SHARED MEDIA SOURCE AUDIT BEGIN')
-          for member in z.namelist():
-              if member.endswith(('/prototypes.lua','/StatusbarWidget.lua','/AceGUI-3.0.lua','/AceGUIWidget-DropDown.lua')) and 'Libs/' in member:
-                  data=z.read(member)
-                  print('LIBRARY FILE '+member+' SHA256 '+hashlib.sha256(data).hexdigest())
-                  for number,line in enumerate(data.decode('utf-8-sig',errors='replace').splitlines(),1):
-                      print(str(number)+': '+line)
-                  target=Path('/tmp/spy-upstream')/member.removeprefix('Spy/')
-                  target.parent.mkdir(parents=True,exist_ok=True)
-                  target.write_bytes(data)
-          for member in z.namelist():
-              if member.count('/')==1 and member.endswith('.lua'):
-                  lines=z.read(member).decode('utf-8-sig',errors='replace').splitlines()
-                  chosen=set()
-                  for i,line in enumerate(lines):
-                      if re.search(r'(LSM30_Statusbar|BarTexture|barTexture|RegisterOptionsTable|AddToBlizOptions|ShowConfig|SetBarTextures)',line):
-                          chosen.update(range(max(0,i-6),min(len(lines),i+32)))
-                  if chosen:
-                      print('SPY OPTIONS FILE '+member)
-                      for i in sorted(chosen): print(str(i+1)+': '+lines[i])
-          print('SPY BACKDROP COMPAT AUDIT BEGIN')
-          for member in z.namelist():
-              if member.endswith('.lua'):
-                  lines=z.read(member).decode('utf-8-sig',errors='replace').splitlines()
-                  chosen=set()
-                  for i,line in enumerate(lines):
-                      if re.search(r'(BackdropTemplate|BackdropTemplateMixin|GetDropDownFrame|CreateFrame\s*=|CreateFrame\s*\)|SharedMediaWidgets|LSM30_Statusbar|AceGUISharedMedia)',line):
-                          chosen.update(range(max(0,i-5),min(len(lines),i+18)))
-                  if chosen:
-                      print('COMPAT FILE '+member)
-                      for i in sorted(chosen): print(str(i+1)+': '+lines[i])
-          print('SPY BACKDROP COMPAT AUDIT END')
+          widget_sources = {
+              'prototypes.lua': 'b91f176401c605a0a9aa20acba5d7c68be4a92478ee3086a206633d2cfdad327',
+              'StatusbarWidget.lua': '4874591d8c0809f4811d058b9f46088f101a75510e55a743594408f3613a3ae4',
+          }
+          for name, digest in widget_sources.items():
+              member = 'Spy/Libs/AceGUI-3.0-SharedMediaWidgets/' + name
+              source = z.read(member)
+              assert hashlib.sha256(source).hexdigest() == digest, member
+              target = Path('/tmp/spy-upstream') / member.removeprefix('Spy/')
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_bytes(source)
+              print('VERIFIED OFFICIAL WIDGET:', member, 'SHA256', digest)
+              first, last = (203, 245) if name == 'prototypes.lua' else (135, 146)
+              for number, line in enumerate(source.decode('utf-8-sig').splitlines(), 1):
+                  if first <= number <= last: print(str(number) + ': ' + line)
           print('SPY SHARED MEDIA SOURCE AUDIT END')
           print('SPY NATIVE STATE AUDIT BEGIN')
           for member in z.namelist():

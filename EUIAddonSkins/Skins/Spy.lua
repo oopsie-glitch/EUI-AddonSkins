@@ -65,14 +65,27 @@ end, function(S, module)
         if host.SetMouseMotionEnabled then host:SetMouseMotionEnabled(false) end
         return host
     end
-    local function Rim(host)
+    local function Rim(host, window)
         local EUI = _G.EllesmereUI
+        if window and EUI.ForeverHeavyOK and EUI.ForeverHeavyOK() and EUI.ForeverHeavy
+            and EUI.ForeverHeavySeat and EUI.ForeverHeavyShown then
+            local rim = EUI.ForeverHeavy(host, "ARTWORK", 1)
+            if rim then
+                EUI.ForeverHeavySeat(rim, host, "TOPLEFT", 0, 0, 0, 0)
+                rim._euiSpyHeavy = true
+                return rim
+            end
+        end
         local rim = EUI.ForeverBorder(host, "ARTWORK", 1, nil, "textured")
         if rim then EUI.ForeverBorderSeat(rim, host, "TOPLEFT", 0, 0, 0, 0) end
         return rim
     end
     local function ShowRim(rim, shown)
-        if rim and rim.on ~= shown then _G.EllesmereUI.ForeverBorderShown(rim, shown) end
+        if rim and rim.on ~= shown then
+            local EUI = _G.EllesmereUI
+            if rim._euiSpyHeavy then EUI.ForeverHeavyShown(rim, shown)
+            else EUI.ForeverBorderShown(rim, shown) end
+        end
     end
     local function Surface(host, managed, header)
         local plate = host:CreateTexture(nil, "BACKGROUND", nil, 1)
@@ -556,7 +569,7 @@ end, function(S, module)
         if not entry and forever and Owned(f) then
             local host = Host(f)
             local plate, grain, paint, mask = Surface(host, f == spy.MainWindow)
-            entry = {host = host, plate = plate, grain = grain, paint = paint, mask = mask, rim = Rim(host)}
+            entry = {host = host, plate = plate, grain = grain, paint = paint, mask = mask, rim = Rim(host, f == spy.MainWindow)}
             foreverWindows[f] = entry
             if f == spy.MainWindow then
                 local well = Host(host)

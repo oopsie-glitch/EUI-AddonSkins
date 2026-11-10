@@ -104,6 +104,8 @@ jobs:
           SPY_BOOT_OPACITY=0 python3 tests/run_lua.py
           SPY_BOOT_OPACITY=0.75 python3 tests/run_lua.py
           SPY_BOOT_OPACITY=1 python3 tests/run_lua.py
+      - name: Verify older EUI without Heavy Bronze API
+        run: SPY_SOURCE=/tmp/spy-upstream SPY_SLIM_BORDER=1 python3 tests/run_lua.py
       - name: Verify native-hover fallback and absent shared method
         run: |
           SPY_HOVER_FALLBACK=1 python3 tests/run_lua.py
@@ -117,6 +119,7 @@ jobs:
           original=path.read_text()
           mutations=[
               ('e.top:SetColorTexture(0.92, 0.70, 0.38, 0.95)', 'e.top:SetColorTexture(0.62, 0.43, 0.23, 0.60)', 'native hover did not highlight bronze frame'),
+              ('rim = Rim(host, f == spy.MainWindow)', 'rim = Rim(host, false)', 'main window did not select supported Heavy Bronze rim'),
               ('upper:SetAllPoints(bar); lower:SetAllPoints(bar)', 'upper:SetHeight(2); lower:SetHeight(2)', 'row material does not cover the surface'),
               ('local wrapped = available < 24', 'local wrapped = true', 'header did not integrate at normal width'),
               ('if entry.inset then return end', 'if true then return end', 'inset fill was not recessed'),

@@ -328,6 +328,17 @@ EllesmereUI={IS_FOREVER=true,GetActiveProfileData=function() return look end,
     ForeverBorderSeat=function() end,
     ForeverBorderShown=function(r,v) r.on=v end,
     ForeverBorderPaint=function(r,...) r.color={...} end}
+-- Public Heavy Bronze API; the host fixture models one rim object, not its
+-- real eight pieces/masks/internal layout frame (source costs documented).
+if not os.getenv("SPY_SLIM_BORDER") then
+    EllesmereUI.ForeverHeavyOK=function() return true end
+    EllesmereUI.ForeverHeavy=function(host,layer,sub)
+        local rim=EllesmereUI.ForeverBorder(host,layer,sub)
+        rim.heavy=true;return rim
+    end
+    EllesmereUI.ForeverHeavySeat=EllesmereUI.ForeverBorderSeat
+    EllesmereUI.ForeverHeavyShown=EllesmereUI.ForeverBorderShown
+end
 local bootOpacity=tonumber(os.getenv("SPY_BOOT_OPACITY"))
 EUIAddonSkinsDB={spy={style="auto",opacity=bootOpacity},other={preserved=true}}
 SlashCmdList={}
@@ -768,9 +779,11 @@ for host,rim in pairs(rings) do
     if host.parent==SpyStatsFrame then statsRim=rim end
 end
 assert(rootRim and rootRim.on and alertRim and statsRim,"auxiliary Forever frame missing")
+assert((rootRim.heavy==true)==(not os.getenv("SPY_SLIM_BORDER")),"main window did not select supported Heavy Bronze rim")
+assert(not alertRim.heavy and not statsRim.heavy,"Heavy Bronze leaked into auxiliary panels")
 local viewport
 for _,child in ipairs(rootRim.host.children) do
-    if #child.regions==7 then viewport=child end
+    if child.points[1] and child.points[1][2]==Spy.MainWindow and child.points[1][4]==7 then viewport=child end
 end
 assert(viewport and viewport.parent==rootRim.host and viewport.mouse==false,"inner viewport ownership missing")
 assert(viewport:GetLeft()==Spy.MainWindow:GetLeft()+7 and viewport:GetRight()==Spy.MainWindow:GetRight()-7,"inner frame geometry follows outer border")

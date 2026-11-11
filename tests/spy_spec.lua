@@ -747,10 +747,11 @@ title.pendingMetrics=true
 title:SetFont(font,21,flags)
 assert(row.points[1][5]==-31,"unavailable metric lacked safe font fallback")
 title.pendingMetrics=false;title.metricHeight=24
-main:Hide();main:Show();flush()
+main:Hide();main:Show()
 assert(row.points[1][5]==-34,"first show failed to recover pending metrics")
 title.metricHeight=nil
 title:SetFont(font,size,flags)
+flush()
 assert(row.points[1][5]==-30,"return to compact metrics did not lift list")
 local metricReads=counts.metrics
 for i=1,1000 do counter:SetText(tostring(i));title:SetText("Kill On Sight") end

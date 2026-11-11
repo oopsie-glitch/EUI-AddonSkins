@@ -22,6 +22,26 @@ historical, not the visual target.
   attach to the statusbar. No per-row geometry snapshots, bevel gradients,
   underlays, or decorative side rails.
 
+## Content-driven header
+
+Ordinary widths keep one row. The header height is the largest of the rendered
+title, rendered counter, and visible native hitboxes, plus four units above
+and below, rounded up to a physical pixel. Narrow widths still use separate
+title/counter and control bands with a two-unit gap. The separator starts
+at the measured bottom, and the native list starts two units farther down.
+
+Spy reserves 34 units for the native list origin and capacity. The adapter
+offsets only the supported native row anchors, leaves sizes and capacity
+alone, and restores anchors on Standard or retirement. If the measured
+header needs more than the native reservation, the cosmetic top extends
+upward so the last native row still fits. Native row reflow reapplies the
+offset after Spy sets its row spacing.
+
+Height measurements are cached by font, scale, and relevant title geometry.
+The numeric counter can change without remeasuring its single-line height.
+Pending metrics use the font or region height until the next native show,
+font or scale boundary. No polling or delayed layout loop.
+
 ## Functional safeguards kept
 
 Automatic, Standard and Forever, the EUI AddonSkins menu, /euispy, Reset,

@@ -733,7 +733,13 @@ main.effectiveScale=0.73;ScaleEvent()
 local snapped=math.ceil(28*0.73)/0.73
 assert(math.abs(title.points[1][5]+snapped/2)<0.0001 and math.abs(row.points[1][5]+snapped+2)<0.0001,
     "fractional-scale header was not rounded up with list attached")
+row.points[1][5]=row.points[1][5]+0.000003 -- client float readback
 main.effectiveScale=nil;ScaleEvent()
+assert(row.points[1][5]==-30,"fractional anchor readback accumulated an offset")
+main.CloseButton:Hide()
+assert(title.points[1][5]==-12 and row.points[1][5]==-26,"hidden tallest control still reserved height")
+main.CloseButton:Show()
+assert(title.points[1][5]==-14 and row.points[1][5]==-30,"returning control did not restore hitbox clearance")
 local font,size,flags=title:GetFont()
 title:SetFont(font,22,flags)
 assert(title.points[1][5]==-15 and row.points[1][5]==-32,"larger title did not grow header")

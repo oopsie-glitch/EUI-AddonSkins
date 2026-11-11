@@ -279,7 +279,9 @@ end, function(S, module)
     local function Anchor(region, point, relative, relativePoint, x, y)
         if region.GetNumPoints and region:GetNumPoints() == 1 then
             local p, r, rp, px, py = region:GetPoint(1)
-            if p == point and r == relative and rp == relativePoint and px == x and py == y then return end
+            if p == point and r == relative and rp == relativePoint and SafeValue(px) and SafeValue(py)
+                and type(px) == "number" and type(py) == "number"
+                and math.abs(px - x) < 0.001 and math.abs(py - y) < 0.001 then return end
         end
         region:ClearAllPoints(); region:SetPoint(point, relative, relativePoint, x, y)
     end
@@ -294,14 +296,15 @@ end, function(S, module)
             return
         end
         local saved = layout.rowY[row]
-        if nativeStride and type(row.id) == "number" and y == -NATIVE_LIST_TOP - nativeStride * (row.id - 1) then
+        if nativeStride and type(row.id) == "number" and math.abs(y + NATIVE_LIST_TOP + nativeStride * (row.id - 1)) < 0.001 then
             -- BarsChanged just rewrote the native anchor; it can numerically
             -- coincide with the previous shifted anchor at a different stride.
             saved, layout.rowY[row] = nil, nil
         end
-        local nativeY = saved and y == saved.applied and saved.native or y
+        -- Client anchor readback can round fractional offsets.
+        local nativeY = saved and math.abs(y - saved.applied) < 0.001 and saved.native or y
         local target = nativeY + shift
-        if target ~= y then row:SetPoint(p, parent, rp, x, target) end
+        if math.abs(target - y) >= 0.001 then row:SetPoint(p, parent, rp, x, target) end
         if shift ~= 0 then
             if not saved then saved = {}; layout.rowY[row] = saved end
             saved.native, saved.applied = nativeY, target

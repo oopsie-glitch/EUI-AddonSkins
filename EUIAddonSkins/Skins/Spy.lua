@@ -338,26 +338,31 @@ end, function(S, module)
     local function TrackHeaderRegion(f, layout, region)
             if not region or layout.regions[region] then return end
             layout.regions[region] = SavePoints(region)
-            if region == f.Title or region == (f.CountFrame and f.CountFrame.Text) then
+            local isCounter = region == (f.CountFrame and f.CountFrame.Text)
+            if region == f.Title or isCounter then
                 layout.lastText[region] = region:GetText()
                 H.Hook(region, "SetText", function()
                     if layout.writing then return end
                     local value, previous = region:GetText(), layout.lastText[region]
                     if SafeValue(value) and SafeValue(previous) and value == previous then return end
                     layout.lastText[region] = SafeValue(value) and value or nil
+                    if isCounter and layout.active and layout.counterTextWidth then
+                        local width = region:GetStringWidth()
+                        if SafeValue(width) and width == layout.counterTextWidth then return end
+                    end
                     SyncHeader(f, ns.IsEnabled(module) and ForeverLook())
                 end)
                 H.Hook(region, "SetFont", function()
                     if not layout.writing then SyncHeader(f, ns.IsEnabled(module) and ForeverLook(), false, true) end
                 end)
             end
-            if region == (f.CountFrame and f.CountFrame.Text) then
+            if isCounter then
                 local function CounterChanged() SyncHeader(f, ns.IsEnabled(module) and ForeverLook()) end
                 H.Hook(region, "SetAlpha", CounterChanged)
                 H.Hook(region, "Show", CounterChanged)
                 H.Hook(region, "Hide", CounterChanged)
             end
-            if region ~= f.Title and region ~= (f.CountFrame and f.CountFrame.Text) and region.HookScript then
+            if region ~= f.Title and not isCounter and region.HookScript then
                 local function ControlChanged()
                     if not layout.writing then SyncHeader(f, ns.IsEnabled(module) and ForeverLook()) end
                 end
@@ -413,10 +418,12 @@ end, function(S, module)
         if not SafeValue(width) then layout.writing = false; return end
         local scale = f.GetEffectiveScale and Positive(f:GetEffectiveScale(), 1) or 1
         local counterWidth, counterHeight = 0, 0
+        layout.counterTextWidth = nil
         if counter and (not counter.IsShown or counter:IsShown()) then
             local alpha = counter.GetAlpha and counter:GetAlpha() or 1
             local size = counter:GetStringWidth()
             if SafeValue(alpha) and SafeValue(size) and alpha > 0 and size > 0 then
+                layout.counterTextWidth = size
                 counterWidth = size + 6
                 counterHeight = MeasureHeight(counter, layout.counterMetric, scale, nil, false, retry)
             end

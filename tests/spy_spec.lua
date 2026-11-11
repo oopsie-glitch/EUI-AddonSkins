@@ -762,6 +762,10 @@ assert(row.points[1][5]==-30,"return to compact metrics did not lift list")
 local metricReads=counts.metrics
 for i=1,1000 do counter:SetText(tostring(i));title:SetText("Kill On Sight") end
 assert(counts.metrics==metricReads,"warm counter values repeated font-height measurement")
+counter:SetText("100")
+local sameWidthGeometry=counts.geometry
+for i=101,199 do counter:SetText(tostring(i)) end
+assert(counts.geometry==sameWidthGeometry and counts.metrics==metricReads,"same-width counter invalidated header")
 counter:SetText("|cFF0070DE0|r")
 local b=Spy.MainWindow.ClearButton
 local art=Control(b)

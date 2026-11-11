@@ -51,7 +51,7 @@ local function hover(entered)
     row.mouseOver=entered
     row:FireScript(entered and "OnEnter" or "OnLeave")
 end
-local fields={"objects","frames","textures","hooks","reads","scans","geometry","paint","alphaWrites","visibility"}
+local fields={"objects","frames","textures","hooks","reads","scans","geometry","paint","alphaWrites","visibility","metrics"}
 local output={}
 local function measure(label,fn,n)
     collectgarbage("collect");collectgarbage("collect")
@@ -128,7 +128,13 @@ local function opacity()
     for _,v in ipairs({0,75,100,75}) do setting.set(nil,v);flush() end
 end
 local function opacitySame() if setting then setting.set(nil,75);flush() end end
+local title=Spy.MainWindow.Title
+local counter=Spy.MainWindow.CountFrame.Text
+local value=0
+local function sameHeader() title:SetText("Kill On Sight");counter:SetText("0") end
+local function changingCounter() value=(value+1)%1000;counter:SetText(tostring(value)) end
 local workloads={{"player_updates",update,BENCH_ITERATIONS},
+    {"unchanged_header",sameHeader,BENCH_ITERATIONS},{"changing_counter",changingCounter,BENCH_ITERATIONS},
     {"row_sync",sync,BENCH_ITERATIONS},{"hover_pairs",enterleave,BENCH_ITERATIONS},
     {"pooled_hide_show",pooled,BENCH_ITERATIONS},{"slot_transfer",recycle,BENCH_ITERATIONS},
     {"reopen",reopen,100},{"theme_pairs",themes,100},

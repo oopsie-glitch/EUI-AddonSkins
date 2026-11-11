@@ -110,6 +110,7 @@ local function frame(kind,parent)
     end
     function f:SetMovable() end
     function f:SetScale(v) self.scale=v end
+    function f:GetEffectiveScale() return self.effectiveScale or self.scale or 1 end
     function f:GetLeft()
         local p=self.points[1]
         if not p or type(p[2])~="table" then return self.left or 0 end
@@ -207,7 +208,11 @@ local function frame(kind,parent)
     function f:SetNonSpaceWrap(v) self.nonSpaceWrap=v end
     function f:GetNonSpaceWrap() return self.nonSpaceWrap or false end
     function f:GetStringHeight()
-        return 12 * (self.wordWrap and math.max(1,math.ceil(self:GetStringWidth()/self.width)) or 1)
+        counts.metrics=(counts.metrics or 0)+1
+        if self.pendingMetrics then return 0 end
+        if self.metricHeight then return self.metricHeight end
+        local line=self.font[2] or 12
+        return line * (self.wordWrap and math.max(1,math.ceil(self:GetStringWidth()/self.width)) or 1)
     end
     function f:SetStatusBarTexture(v)
         if not self.texture then self.texture=frame("Texture"); self.texture.alpha=1 end
@@ -539,7 +544,8 @@ assert(chrome:GetFrameLevel()<row.StatusBar:GetFrameLevel(),"row frame can cover
 assert(row.StatusBar.allPoints==row and row.StatusBar:GetWidth()==row:GetWidth()
     and row.StatusBar:GetHeight()==row:GetHeight(),"Forever changed native list geometry")
 assert(row.LeftText:GetLeft()==nativeLeft and row.RightText:GetRight()==nativeRight,"Forever moved native row columns")
-assert(row.points[1][2]==nativeRowPoint[2] and row.points[1][4]==nativeRowPoint[4] and row.points[1][5]==nativeRowPoint[5],"skin moved secure row")
+assert(row.points[1][2]==nativeRowPoint[2] and row.points[1][4]==nativeRowPoint[4]
+    and row.points[1][5]==-30,"first row did not follow the compact header")
 assert(row.LeftText.points[1][2]==row.StatusBar and #row.LeftText.points==1,"native name anchors changed")
 for _,button in ipairs({Spy.MainWindow.LeftButton,Spy.MainWindow.RightButton}) do
     for _,edge in ipairs(button.standardBorder.regions) do assert(edge.baseColor[4]==0,"native helper border leaked into Forever") end
@@ -666,14 +672,14 @@ for _,width in ipairs({90,130,160,200,240,300}) do
         f.CountFrame.Text:SetText("|cFF0070DE"..value.."|r")
         f.Title:SetText(label)
         local title,counter=f.Title,f.CountFrame.Text
-        local unified=title.points[1][5]==-18
+        local unified=title.points[1][5]==f.CloseButton.points[1][5]
         if width>=200 then assert(unified,"header did not integrate at normal width") end
         if width<=130 then assert(not unified,"narrow header lost safety wrap") end
         assert(title:GetText()==label and title:GetWidth()>0,"native title changed/vanished")
         assert(f:GetWidth()==width and f:GetHeight()==90,"skin resized native window")
         if unified then
             assert(not title:GetWordWrap(),"single-line header wrapped title")
-            assert(math.abs(title:GetTop()-title:GetHeight()/2-(f:GetTop()-18))<0.001,"title not centered in unified header")
+            assert(math.abs(title:GetTop()-title:GetHeight()/2-(f:GetTop()-14))<0.001,"title not centered in unified header")
             assert(title:GetRight()+6<=f.StatsButton:GetLeft(),"title/control overlap")
             assert(f.CloseButton:GetRight()+6<=f.CountButton:GetLeft(),"control/counter hitboxes overlap")
         else
@@ -703,7 +709,7 @@ local title=Spy.MainWindow.Title
 local counter=Spy.MainWindow.CountFrame.Text
 for _,label in ipairs({"Nearby","Last Hour","Ignore","Kill On Sight","A localized title requiring more space"}) do
     title:SetText(label)
-    assert(title.points[1][5]==-18 and not title:GetWordWrap(),"dynamic title rebuilt separate toolbar")
+    assert(title.points[1][5]==-14 and not title:GetWordWrap(),"dynamic title rebuilt separate toolbar")
 end
 title:SetText("Kill On Sight")
 counter:SetText("|cFF0070DE123|r")
@@ -714,6 +720,41 @@ local g,o,h,r,w,p,v=counts.geometry,counts.objects,counts.hooks,counts.reads,cou
 for i=1,1000 do title:SetText("Kill On Sight");counter:SetText("|cFF0070DE123|r") end
 assert(counts.geometry==g and counts.objects==o and counts.hooks==h and counts.reads==r and counts.alphaWrites==w and counts.paint==p and counts.visibility==v and #timers==0,"warm header state repainted/rediscovered")
 print("BENCH Spy header: 1000 unchanged title/counter pairs: geometry/alpha/paint/visibility writes, new UI objects/hooks, hierarchy reads and queued refreshes=0")
+counter:SetText("|cFF0070DE0|r")
+local main=Spy.MainWindow
+local rowHeight=row:GetHeight()
+local function ScaleEvent()
+    for _,f in ipairs(events) do
+        if f.events and f.events.UI_SCALE_CHANGED then f.scripts.OnEvent(f,"UI_SCALE_CHANGED") end
+    end
+end
+assert(title.points[1][5]==-14 and row.points[1][5]==-30,"20-unit control plus 4-unit padding did not produce 28-unit header")
+main.effectiveScale=0.73;ScaleEvent()
+local snapped=math.ceil(28*0.73)/0.73
+assert(math.abs(title.points[1][5]+snapped/2)<0.0001 and math.abs(row.points[1][5]+snapped+2)<0.0001,
+    "fractional-scale header was not rounded up with list attached")
+main.effectiveScale=nil;ScaleEvent()
+local font,size,flags=title:GetFont()
+title:SetFont(font,22,flags)
+assert(title.points[1][5]==-15 and row.points[1][5]==-32,"larger title did not grow header")
+counter:SetFont(font,23,flags)
+assert(title.points[1][5]==-15.5 and row.points[1][5]==-33,"counter did not grow header")
+title:SetFont(font,30,flags)
+assert(row.points[1][5]==-34 and main:GetHeight()==90 and row:GetHeight()==rowHeight,
+    "large header changed native dimensions or capacity")
+counter:SetFont(font,12,flags)
+title.pendingMetrics=true
+title:SetFont(font,21,flags)
+assert(row.points[1][5]==-31,"unavailable metric lacked safe font fallback")
+title.pendingMetrics=false;title.metricHeight=24
+main:Hide();main:Show();flush()
+assert(row.points[1][5]==-34,"first show failed to recover pending metrics")
+title.metricHeight=nil
+title:SetFont(font,size,flags)
+assert(row.points[1][5]==-30,"return to compact metrics did not lift list")
+local metricReads=counts.metrics
+for i=1,1000 do counter:SetText(tostring(i));title:SetText("Kill On Sight") end
+assert(counts.metrics==metricReads,"warm counter values repeated font-height measurement")
 counter:SetText("|cFF0070DE0|r")
 local b=Spy.MainWindow.ClearButton
 local art=Control(b)
@@ -732,6 +773,7 @@ for i=1,1000 do b:FireScript("OnEnable");b:SetNormalTexture("native-active-on") 
 assert(counts.objects==stableObjects and counts.hooks==stableHooks and counts.reads==stableReads and counts.alphaWrites==stableWrites,"stable control repainted/rediscovered")
 style.set(nil,"standard");flush()
 assert(Spy.MainWindow.CloseButton.standardGlyph.alpha==1 and Spy.MainWindow.LeftButton.standardGlyph.alpha==1,"Standard helper glyph lost")
+assert(row.points[1][5]==nativeRowPoint[5],"Standard did not restore native row origin")
 assert(row.StatusBar.points[1][4]==0 and row.StatusBar.points[2][4]==0 and row.LeftText.points[1][2]==row.StatusBar and row.RightText.points[1][2]==row.StatusBar,"Standard row geometry not restored")
 assert(Coverage(rule)==0,"Standard retained row material")
 for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"Standard helper border not restored") end
@@ -772,6 +814,18 @@ Spy:CreateRow(2)
 local firstSlot=Spy.MainWindow.Rows[2]
 firstSlot:Show()
 assert(#timers==pendingBeforeRow,"new row queued a cosmetic refresh")
+assert(firstSlot.points[1][5]==row.points[1][5]-17,"new slot did not follow dynamic list origin")
+if source and Spy.BarsChanged then
+    local cfg=Spy.db.profile.MainWindow
+    local height=cfg.RowHeight
+    cfg.RowHeight=height-4
+    Spy:BarsChanged();flush()
+    assert(firstSlot.points[1][5]==row.points[1][5]-13 and firstSlot:GetHeight()==height-4,
+        "native row reflow lost the header offset")
+    cfg.RowHeight=height
+    Spy:BarsChanged();flush()
+    assert(firstSlot.points[1][5]==row.points[1][5]-17,"native row stride was not restored")
+end
 assert(not firstSlot.nativeEnterCalls and Coverage(AssertRestingRule(firstSlot))>0,
     "new row was not painted before its first show")
 Spy:SetBar(2,"Second","60 Rogue",100,"Class","ROGUE",nil,1)
@@ -781,6 +835,7 @@ local retired=Spy.MainWindow.Rows[2];retired:Hide();Spy.MainWindow.Rows[2]=nil
 Spy:CreateRow(2);flush()
 Spy:SetBar(2,"Recycled","60 Hunter",100,"Class","HUNTER",nil,1)
 assert(Spy.MainWindow.Rows[2]~=retired)
+assert(retired.points[1][5]==-51,"retired slot retained header offset")
 assert(not RowChrome(retired) and #retired.StatusBar.regions==2,"row trim retained on retired native bars")
 Spy.MainWindow.Rows[2]:Show()
 AssertRestingRule(Spy.MainWindow.Rows[2])
@@ -823,7 +878,7 @@ for _,region in ipairs(rootRim.host.regions) do
     if region.kind=="Texture" and region.height==1 then seam=region end
     if region.kind=="MaskTexture" then mask=region end
 end
-assert(seam and seam.points[1][5]==-32,"compact header separator missing")
+assert(seam and seam.points[1][5]==row.points[1][5]+2,"separator did not move with the list")
 if maskedSurfaces then assert(mask and plate.masks[mask] and grain.masks[mask],"compact mask lost surface coverage") end
 local opacity=settings.args.opacity
 Spy.MainWindow:SetAlpha(1)

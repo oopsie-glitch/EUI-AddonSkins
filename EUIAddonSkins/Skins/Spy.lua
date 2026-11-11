@@ -17,6 +17,8 @@ end, function(S, module)
     local refresh, waiting
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
+    events:RegisterEvent("UI_SCALE_CHANGED")
+    events:RegisterEvent("DISPLAY_SIZE_CHANGED")
 
 
     -- Keep the released Standard primitives intact; Forever art lives on
@@ -281,12 +283,69 @@ end, function(S, module)
         end
         region:ClearAllPoints(); region:SetPoint(point, relative, relativePoint, x, y)
     end
+    -- Spy uses 34 units both for its native row origin and its visible-row
+    -- budget. Move only supported native TOPLEFT row anchors, never the budget.
+    local NATIVE_LIST_TOP, HEADER_PADDING, LIST_GAP = 34, 4, 2
+    local function OffsetRow(f, layout, row, shift, nativeStride)
+        local p, parent, rp, x, y = row:GetPoint(1)
+        if row:GetNumPoints() ~= 1 or p ~= "TOPLEFT" or parent ~= f or rp ~= "TOPLEFT"
+            or not SafeValue(x) or not SafeValue(y) or type(x) ~= "number" or type(y) ~= "number" then
+            layout.rowY[row] = nil
+            return
+        end
+        local saved = layout.rowY[row]
+        if nativeStride and type(row.id) == "number" and y == -NATIVE_LIST_TOP - nativeStride * (row.id - 1) then
+            -- BarsChanged just rewrote the native anchor; it can numerically
+            -- coincide with the previous shifted anchor at a different stride.
+            saved, layout.rowY[row] = nil, nil
+        end
+        local nativeY = saved and y == saved.applied and saved.native or y
+        local target = nativeY + shift
+        if target ~= y then row:SetPoint(p, parent, rp, x, target) end
+        if shift ~= 0 then
+            if not saved then saved = {}; layout.rowY[row] = saved end
+            saved.native, saved.applied = nativeY, target
+        else layout.rowY[row] = nil end
+    end
+    local function ShiftList(f, layout, shift, force, nativeStride)
+        if layout.shift == shift and not force then return end
+        layout.shift = shift
+        for _, row in pairs(f.Rows or {}) do
+            if Owned(row) and row.GetNumPoints then OffsetRow(f, layout, row, shift, nativeStride) end
+        end
+    end
+    local function Positive(value, fallback)
+        if SafeValue(value) and type(value) == "number" and value > 0 and value < math.huge then return value end
+        return fallback
+    end
+    local function MeasureHeight(region, cache, scale, width, wrapped, retry)
+        local font, size, flags = region:GetFont()
+        local value = width and region:GetText() -- counter digits share a single-line font metric
+        if not SafeValue(value) then value = nil end
+        if cache.height and cache.font == font and cache.size == size and cache.flags == flags
+            and cache.scale == scale and cache.width == width and cache.wrapped == wrapped
+            and cache.text == value and not (retry and cache.pending) then return cache.height end
+        local actual = region.GetStringHeight and Positive(region:GetStringHeight())
+        local height = actual or Positive(size, Positive(region:GetHeight(), 1))
+        cache.font, cache.size, cache.flags = font, size, flags
+        cache.scale, cache.width, cache.wrapped, cache.text = scale, width, wrapped, value
+        cache.height, cache.pending = height, not actual
+        return height
+    end
     local function TrackHeaderRegion(f, layout, region)
             if not region or layout.regions[region] then return end
             layout.regions[region] = SavePoints(region)
             if region == f.Title or region == (f.CountFrame and f.CountFrame.Text) then
+                layout.lastText[region] = region:GetText()
                 H.Hook(region, "SetText", function()
+                    if layout.writing then return end
+                    local value, previous = region:GetText(), layout.lastText[region]
+                    if SafeValue(value) and SafeValue(previous) and value == previous then return end
+                    layout.lastText[region] = SafeValue(value) and value or nil
                     SyncHeader(f, ns.IsEnabled(module) and ForeverLook())
+                end)
+                H.Hook(region, "SetFont", function()
+                    if not layout.writing then SyncHeader(f, ns.IsEnabled(module) and ForeverLook(), false, true) end
                 end)
             end
             if region == (f.CountFrame and f.CountFrame.Text) then
@@ -295,26 +354,37 @@ end, function(S, module)
                 H.Hook(region, "Show", CounterChanged)
                 H.Hook(region, "Hide", CounterChanged)
             end
-            -- Only observe owned native anchors. Never touch row anchors or a
-            -- global frame/menu factory. Ignore the adapter's own writes.
+            if region ~= f.Title and region ~= (f.CountFrame and f.CountFrame.Text) and region.HookScript then
+                local function ControlChanged()
+                    if not layout.writing then SyncHeader(f, ns.IsEnabled(module) and ForeverLook()) end
+                end
+                region:HookScript("OnShow", ControlChanged)
+                region:HookScript("OnHide", ControlChanged)
+                region:HookScript("OnSizeChanged", ControlChanged)
+            end
+            -- Observe only owned native header anchors and ignore our writes.
             H.Hook(region, "SetPoint", function()
                 if layout.writing then return end
                 layout.regions[region] = SavePoints(region)
                 SyncHeader(f, ns.IsEnabled(module) and ForeverLook())
             end)
     end
-    SyncHeader = function(f, forever, capture)
-        if f ~= spy.MainWindow or not f.Title then return end
+    SyncHeader = function(f, forever, capture, retry)
+        if not f or f ~= spy.MainWindow or not f.Title then return end
         if Locked() then waiting = true; return end
         local entry = foreverWindows[f]
         if not entry then return end
         local layout = entry.headerLayout
         if not layout then
             if not forever then return end
-            layout = {regions = {}, titleWidth = f.Title:GetWidth(), titleHeight = f.Title:GetHeight(),
+            layout = {regions = {}, lastText = {}, titleMetric = {}, counterMetric = {},
+                rowY = setmetatable({}, {__mode = "k"}), titleWidth = f.Title:GetWidth(), titleHeight = f.Title:GetHeight(),
                 wordWrap = f.Title.GetWordWrap and f.Title:GetWordWrap(),
                 nonSpaceWrap = f.Title.GetNonSpaceWrap and f.Title:GetNonSpaceWrap()}
             entry.headerLayout = layout
+            H.Hook(f, "SetScale", function()
+                SyncHeader(f, ns.IsEnabled(module) and ForeverLook(), false, true)
+            end)
         end
         if layout.writing then return end
         TrackHeaderRegion(f, layout, f.Title)
@@ -329,6 +399,7 @@ end, function(S, module)
                 f.Title:SetWidth(layout.titleWidth); f.Title:SetHeight(layout.titleHeight)
                 if f.Title.SetWordWrap and layout.wordWrap ~= nil then f.Title:SetWordWrap(layout.wordWrap) end
                 if f.Title.SetNonSpaceWrap and layout.nonSpaceWrap ~= nil then f.Title:SetNonSpaceWrap(layout.nonSpaceWrap) end
+                ShiftList(f, layout, 0, true)
                 entry.host:ClearAllPoints(); entry.host:SetAllPoints(f)
                 layout.active = false
             end
@@ -337,12 +408,14 @@ end, function(S, module)
         end
         local width, title = f:GetWidth(), f.Title
         if not SafeValue(width) then layout.writing = false; return end
-        local counterWidth = 0
-        if counter and (not counter.IsVisible or counter:IsVisible()) then
+        local scale = f.GetEffectiveScale and Positive(f:GetEffectiveScale(), 1) or 1
+        local counterWidth, counterHeight = 0, 0
+        if counter and (not counter.IsShown or counter:IsShown()) then
             local alpha = counter.GetAlpha and counter:GetAlpha() or 1
             local size = counter:GetStringWidth()
             if SafeValue(alpha) and SafeValue(size) and alpha > 0 and size > 0 then
                 counterWidth = size + 6
+                counterHeight = MeasureHeight(counter, layout.counterMetric, scale, nil, false, retry)
             end
         end
         local total, number, tallest = 0, 0, 0
@@ -364,33 +437,32 @@ end, function(S, module)
         -- Prefer one integrated header. A narrow native window cannot fit all
         -- hitboxes plus title/counter; wrap inside the same header as a fallback.
         local wrapped = available < 24
-        local _, fontSize = title:GetFont()
-        local line = type(fontSize) == "number" and math.max(1, fontSize) or layout.titleHeight
-        local top, controlY, titleY
-        if wrapped then
-            available = math.max(1, width - 24 - counterWidth)
-        end
+        if wrapped then available = math.max(1, width - 24 - counterWidth) end
         available = math.max(1, available)
         if title:GetWidth() ~= available then title:SetWidth(available) end
         if title.SetWordWrap and (not title.GetWordWrap or title:GetWordWrap() ~= wrapped) then title:SetWordWrap(wrapped) end
         if title.SetNonSpaceWrap and (not title.GetNonSpaceWrap or title:GetNonSpaceWrap() ~= wrapped) then title:SetNonSpaceWrap(wrapped) end
-        local titleHeight = line
-        if title.GetStringHeight then
-            local measured = title:GetStringHeight()
-            if SafeValue(measured) and measured and measured > 0 then titleHeight = math.max(line, measured) end
-        end
+        local titleHeight = MeasureHeight(title, layout.titleMetric, scale, wrapped and available or 0, wrapped, retry)
         if title:GetHeight() ~= titleHeight then title:SetHeight(titleHeight) end
+        local countHeight = countButton and countButton:IsShown() and countButton:GetHeight() or 0
+        local textBand = math.max(titleHeight, counterHeight, countHeight)
+        local contentHeight = wrapped and textBand + 2 + tallest or math.max(textBand, tallest)
+        -- Round up to a whole physical pixel, never down into the hitboxes.
+        local headerHeight = math.ceil((contentHeight + 2 * HEADER_PADDING) * scale) / scale
+        local listDepth = headerHeight + LIST_GAP
+        -- Keep the bottom row and native capacity when a tall font or the
+        -- narrow fallback needs extra room. Only the cosmetic top grows.
+        local top = math.max(0, listDepth - NATIVE_LIST_TOP)
+        local listTop = listDepth - top
+        local titleY = top - headerHeight / 2
+        local controlY = titleY
         if wrapped then
-            controlY = -33 + tallest / 2
-            titleY = controlY + tallest / 2 + 2 + titleHeight / 2
-            top = titleY + titleHeight / 2 + 2
-        else
-            controlY, titleY = -18, -18
-            top = 0
+            local upper = top - (headerHeight - contentHeight) / 2
+            titleY = upper - textBand / 2
+            controlY = upper - textBand - 2 - tallest / 2
         end
         Anchor(title, "LEFT", f, "TOPLEFT", 12, titleY)
-        local firstLine = math.max(line, math.min(titleHeight, counter and counter.GetStringHeight and counter:GetStringHeight() or line))
-        local counterY = wrapped and titleY + titleHeight / 2 - firstLine / 2 or titleY
+        local counterY = titleY
         if counter then Anchor(counter, "RIGHT", f, "TOPRIGHT", -12, counterY) end
         if countButton then Anchor(countButton, "RIGHT", f, "TOPRIGHT", -rightInset, counterY) end
         local offset = rightInset + (wrapped and 0 or counterSpace)
@@ -408,11 +480,13 @@ end, function(S, module)
             layout.top = top
         end
         -- One content rule below the integrated header, never a toolbar band.
-        if entry.seam and layout.dividerY ~= -33 then
-            Anchor(entry.seam, "TOPLEFT", f, "TOPLEFT", 5, -32)
-            entry.seam:SetPoint("TOPRIGHT", f, "TOPRIGHT", -5, -32)
-            layout.dividerY = -33
+        local dividerY = LIST_GAP - listTop
+        if entry.seam and layout.dividerY ~= dividerY then
+            Anchor(entry.seam, "TOPLEFT", f, "TOPLEFT", 5, dividerY)
+            entry.seam:SetPoint("TOPRIGHT", f, "TOPRIGHT", -5, dividerY)
+            layout.dividerY = dividerY
         end
+        ShiftList(f, layout, NATIVE_LIST_TOP - listTop)
         layout.active, layout.writing = true, false
     end
     local function PaintRowHover(entry, hovered)
@@ -504,6 +578,12 @@ end, function(S, module)
         end
         SyncHeader(f, forever)
     end
+    local function RestoreRetiredRow(row)
+        local f = spy.MainWindow
+        local entry = f and foreverWindows[f]
+        local layout = entry and entry.headerLayout
+        if layout and layout.rowY[row] and Owned(row) then OffsetRow(f, layout, row, 0) end
+    end
     local function SyncRow(row, forever)
         if not Owned(row) then return end
         local entry = rowArt[row] or row.id and rowSlots[row.id]
@@ -523,10 +603,15 @@ end, function(S, module)
         if not entry then return end
         if entry.row ~= row then
             if entry.row then
+                RestoreRetiredRow(entry.row)
                 PaintRowHover(entry, false)
                 rowArt[entry.row] = nil
             end
             entry.row = row
+            local root = spy.MainWindow
+            local window = foreverWindows[root]
+            local layout = window and window.headerLayout
+            if forever and layout and layout.active and row.GetNumPoints then OffsetRow(root, layout, row, layout.shift or 0) end
             entry.forever, entry.wantHover = nil, false
             local host = entry.host
             local level = math.max(spy.MainWindow:GetFrameLevel(), row:GetFrameLevel() - 1)
@@ -578,6 +663,7 @@ end, function(S, module)
         local rows = spy.MainWindow and spy.MainWindow.Rows or {}
         for row, entry in pairs(rowArt) do
             if row.id and rows[row.id] ~= row then
+                RestoreRetiredRow(row)
                 PaintRowHover(entry, false)
                 Alpha(entry.host, 0)
                 rowArt[row] = nil
@@ -755,7 +841,12 @@ end, function(S, module)
             ns.AttachAccent(S, bg)
             layers[f] = bg
             if f.HookScript then
-                f:HookScript("OnShow", function() if ns.IsEnabled(module) then refresh() end end)
+                f:HookScript("OnShow", function()
+                    if ns.IsEnabled(module) then
+                        SyncHeader(f, ForeverLook(), false, true)
+                        refresh()
+                    end
+                end)
             end
         end
         if f.SetBackdrop then f:SetBackdrop(nil) end
@@ -845,6 +936,20 @@ end, function(S, module)
         if Locked() then waiting = true; return end
         SyncHeader(spy.MainWindow, ns.IsEnabled(module) and ForeverLook(), true)
     end)
+    H.Hook(spy, "BarsChanged", function()
+        if not ns.IsEnabled(module) then return end
+        if Locked() then waiting = true; return end
+        local f = spy.MainWindow
+        local entry = f and foreverWindows[f]
+        local layout = entry and entry.headerLayout
+        if layout and layout.active then
+            local profile = spy.db and spy.db.profile and spy.db.profile.MainWindow
+            local height = profile and Positive(profile.RowHeight)
+            local spacing = profile and profile.RowSpacing
+            local stride = height and SafeValue(spacing) and type(spacing) == "number" and height + spacing or nil
+            ShiftList(f, layout, layout.shift or 0, true, stride)
+        end
+    end)
     H.Hook(spy, "SetCurrentList", function()
         if not ns.IsEnabled(module) then return end
         if Locked() then waiting = true; return end
@@ -864,7 +969,19 @@ end, function(S, module)
     H.Hook(spy, "ShowStatsDropDown", function() BindMenu(_G.StatsDropDownMenu, false) end)
     H.Hook(spy.Colors, "UpdateColor", refresh)
     if _G.SpyStats then H.Hook(_G.SpyStats, "Show", refresh) end
-    events:SetScript("OnEvent", function() if waiting then refresh() end end)
+    events:SetScript("OnEvent", function(_, event)
+        if event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then
+            if ns.IsEnabled(module) then SyncHeader(spy.MainWindow, ForeverLook(), false, true) end
+        elseif waiting then
+            local f = spy.MainWindow
+            local entry = f and foreverWindows[f]
+            local layout = entry and entry.headerLayout
+            if not Locked() and layout and layout.active and ns.IsEnabled(module) and ForeverLook() then
+                ShiftList(f, layout, layout.shift or 0, true)
+            end
+            refresh()
+        end
+    end)
     module.refresh = refresh
     if S.OnLooksChanged then S.OnLooksChanged(refresh) end
     refresh()

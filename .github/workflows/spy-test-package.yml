@@ -129,7 +129,7 @@ jobs:
           PY
           SPY_SOURCE=/tmp/spy-upstream python3 tests/run_lua.py
       - name: Compare Spy performance against approved PR baseline
-        run: SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline 9fc957c10331a512ee66d7d40e10f5d21422e588 --historical 01c099e6cdfbdea5ea77c9f53e50e2f585c016e4 --trials 5 --iterations 1000 --rows 40
+        run: SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline ff49ee926d64d0c99a301955afb7bc17a2555666 --trials 5 --iterations 1000 --rows 40
       - name: Fresh Lua bootstrap with saved Spy opacity endpoints
         run: |
           SPY_BOOT_OPACITY=0 python3 tests/run_lua.py
@@ -153,6 +153,7 @@ jobs:
           mutations=[
               ('entry.rule:SetColorTexture(0.73, 0.49, 0.26, 0.55)', 'entry.rule:SetColorTexture(0.49, 0.33, 0.18, 0.24)', 'native hover did not highlight bronze frame'),
               ('else entry.rule:SetColorTexture(0.49, 0.33, 0.18, 0.24) end', 'else entry.rule:SetColorTexture(1, 1, 1, 0.24) end', 'first-visible row lacks resting bronze paint'),
+              ('local NATIVE_LIST_TOP, HEADER_PADDING, LIST_GAP = 34, 4, 2', 'local NATIVE_LIST_TOP, HEADER_PADDING, LIST_GAP = 34, 6, 2', 'first row did not follow the compact header'),
               ('local wrapped = available < 24', 'local wrapped = true', 'header did not integrate at normal width'),
               ('return ns.IsEnabled(module) and ForeverLook and ForeverLook() and f and', 'return false and ForeverLook and ForeverLook() and f and', 'native helper border leaked into Forever'),
               ('return 0.75', 'return 0.92', 'saved/default opacity was overwritten'),

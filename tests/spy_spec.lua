@@ -1099,6 +1099,25 @@ do
         Spy.ListAmountDisplayed=displayed
         UIParent.top=parentTop
     end
+    -- A newly detected player and a replacement in the same slot both
+    -- keep the native top-left order, even though the controls are below.
+    Spy:CreateRow(3)
+    local third=f.Rows[3]
+    Spy:SetBar(3,"New player","60 Rogue",100,"Class","ROGUE",nil,1)
+    third:Show()
+    local thirdChrome=RowChrome(third)
+    assert(third.points[1][5]==-68 and not third.nativeEnterCalls
+        and Coverage(AssertRestingRule(third))>0,"new Inverted row was misplaced or unpainted")
+    third:Hide();f.Rows[3]=nil
+    Spy:CreateRow(3)
+    local replacement=f.Rows[3]
+    replacement:Show()
+    assert(replacement~=third and replacement.points[1][5]==-68 and RowChrome(replacement)==thirdChrome
+        and Coverage(AssertRestingRule(replacement))>0,"Inverted slot did not reuse its resting artwork")
+    replacement:Hide();f.Rows[3]=nil
+    module.refresh();flush()
+    assert(thirdChrome.alpha==0,"removed Inverted row left visible trim")
+
     combat=true
     local geometry=counts.geometry
     ScaleEvent();f.Title:SetText("Nearby")

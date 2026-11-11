@@ -65,29 +65,16 @@ end, function(S, module)
         if host.SetMouseMotionEnabled then host:SetMouseMotionEnabled(false) end
         return host
     end
-    local function Rim(host, window)
+    local function Rim(host)
         local EUI = _G.EllesmereUI
-        if window and EUI.ForeverHeavyOK and EUI.ForeverHeavyOK() and EUI.ForeverHeavy
-            and EUI.ForeverHeavySeat and EUI.ForeverHeavyShown then
-            local rim = EUI.ForeverHeavy(host, "ARTWORK", 1)
-            if rim then
-                EUI.ForeverHeavySeat(rim, host, "TOPLEFT", 0, 0, 0, 0)
-                rim._euiSpyHeavy = true
-                return rim
-            end
-        end
         local rim = EUI.ForeverBorder(host, "ARTWORK", 1, nil, "textured")
         if rim then EUI.ForeverBorderSeat(rim, host, "TOPLEFT", 0, 0, 0, 0) end
         return rim
     end
     local function ShowRim(rim, shown)
-        if rim and rim.on ~= shown then
-            local EUI = _G.EllesmereUI
-            if rim._euiSpyHeavy then EUI.ForeverHeavyShown(rim, shown)
-            else EUI.ForeverBorderShown(rim, shown) end
-        end
+        if rim and rim.on ~= shown then _G.EllesmereUI.ForeverBorderShown(rim, shown) end
     end
-    local function Surface(host, managed, header)
+    local function Surface(host, managed)
         local plate = host:CreateTexture(nil, "BACKGROUND", nil, 1)
         local grain = host:CreateTexture(nil, "BACKGROUND", nil, 2)
         plate:SetAllPoints(host); grain:SetAllPoints(host)
@@ -96,15 +83,9 @@ end, function(S, module)
         -- Use one warm paint pass on a neutral source for the main material.
         if managed then plate:SetColorTexture(1, 1, 1, 1)
         else plate:SetColorTexture(0.165, 0.115, 0.075, 1) end
-        local paint = managed and {header = header} or nil
+        local paint = managed and {} or nil
         if plate.SetGradient and CreateColor then
-            local low, high
-            if managed then
-                low = header and CreateColor(0.112, 0.073, 0.043, 1) or CreateColor(0.055, 0.037, 0.024, 1)
-                high = header and CreateColor(0.202, 0.130, 0.072, 1) or CreateColor(0.115, 0.075, 0.045, 1)
-            else
-                low, high = CreateColor(0.120, 0.084, 0.055, 1), CreateColor(0.165, 0.115, 0.075, 1)
-            end
+            local low, high = CreateColor(0.120, 0.084, 0.055, 1), CreateColor(0.165, 0.115, 0.075, 1)
             if paint then paint.low, paint.high = low, high
             else plate:SetGradient("VERTICAL", low, high) end
         end
@@ -116,16 +97,15 @@ end, function(S, module)
         grain:SetTexture("Interface\\Tooltips\\UI-Tooltip-Background", "REPEAT", "REPEAT")
         grain:SetHorizTile(true); grain:SetVertTile(true)
         grain:SetVertexColor(0.56, 0.44, 0.32, 1)
-        local mask
         local mode = Enum and Enum.UITextureSliceMode and Enum.UITextureSliceMode.Stretched
         if mode and host.CreateMaskTexture and plate.AddMaskTexture then
-            mask = host:CreateMaskTexture()
+            local mask = host:CreateMaskTexture()
             mask:SetTexture("Interface\\AddOns\\EUIAddonSkins\\Media\\RestedXPFill.tga",
                 "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
             mask:SetTextureSliceMargins(8, 8, 8, 8); mask:SetTextureSliceMode(mode)
             mask:SetAllPoints(host); plate:AddMaskTexture(mask); grain:AddMaskTexture(mask)
         end
-        return plate, grain, paint, mask
+        return plate, grain, paint
     end
     local function PaintBackground(entry, target)
         local paint = entry.paint
@@ -134,16 +114,11 @@ end, function(S, module)
             local grainAlpha = target * 0.12
             local plateAlpha = (target - grainAlpha) / (1 - grainAlpha)
             if paint.low then
-                if paint.header then
-                    paint.low:SetRGBA(0.112, 0.073, 0.043, plateAlpha)
-                    paint.high:SetRGBA(0.202, 0.130, 0.072, plateAlpha)
-                else
-                    paint.low:SetRGBA(0.055, 0.037, 0.024, plateAlpha)
-                    paint.high:SetRGBA(0.115, 0.075, 0.045, plateAlpha)
-                end
+                paint.low:SetRGBA(0.120, 0.084, 0.055, plateAlpha)
+                paint.high:SetRGBA(0.165, 0.115, 0.075, plateAlpha)
                 entry.plate:SetGradient("VERTICAL", paint.low, paint.high)
             else
-                entry.plate:SetVertexColor(paint.header and 0.202 or 0.115, paint.header and 0.130 or 0.075, paint.header and 0.072 or 0.045, plateAlpha)
+                entry.plate:SetVertexColor(0.165, 0.115, 0.075, plateAlpha)
             end
             entry.grain:SetVertexColor(0.56, 0.44, 0.32, grainAlpha)
         end
@@ -234,13 +209,7 @@ end, function(S, module)
         if fixed then entry.icon:SetVertexColor(0.91, 0.71, 0.43, enabled and 1 or 0.55)
         else entry.icon:SetVertexColor(1, 1, 1, enabled and 1 or 0.55) end
         local shade = pressed and 0.035 or hover and 0.12 or 0.065
-        if spy.MainWindow and spy.MainWindow[entry.role] == button then
-            -- Recess the seat into the warm header while keeping the native icon and hitbox.
-            local seat = pressed and 0.039 or hover and 0.105 or 0.075
-            entry.fill:SetColorTexture(seat, seat * 0.64, seat * 0.38, 0.90)
-        else
-            entry.fill:SetColorTexture(shade, shade * 0.72, shade * 0.48, 0.9)
-        end
+        entry.fill:SetColorTexture(shade, shade * 0.72, shade * 0.48, 0.9)
         local EUI = _G.EllesmereUI
         if entry.rim and EUI.ForeverBorderPaint then
             EUI.ForeverBorderPaint(entry.rim, 1, 1, 1, not enabled and 0.55 or hover and 1 or 0.85)
@@ -342,22 +311,12 @@ end, function(S, module)
         local layout = entry.headerLayout
         if not layout then
             if not forever then return end
-            local font, size, flags = f.Title:GetFont()
-            layout = {regions = {}, titleFont = {font, size, flags}, titleWidth = f.Title:GetWidth(), titleHeight = f.Title:GetHeight(),
+            layout = {regions = {}, titleWidth = f.Title:GetWidth(), titleHeight = f.Title:GetHeight(),
                 wordWrap = f.Title.GetWordWrap and f.Title:GetWordWrap(),
                 nonSpaceWrap = f.Title.GetNonSpaceWrap and f.Title:GetNonSpaceWrap()}
-            if f.GetResizeBounds and f.SetResizeBounds then
-                local minW, minH, maxW, maxH = f:GetResizeBounds()
-                if type(minW) == "number" and type(minH) == "number" and type(maxW) == "number" and type(maxH) == "number"
-                    and SafeValue(minW) and SafeValue(minH) and SafeValue(maxW) and SafeValue(maxH)
-                    and minW > 0 and minH > 0 and maxW >= minW and maxH >= minH then
-                    layout.bounds = {minW, minH, maxW, maxH}
-                end
-            end
             entry.headerLayout = layout
         end
         if layout.writing then return end
-        if entry.well then Alpha(entry.well, f:GetHeight() > 34 and 1 or 0) end
         TrackHeaderRegion(f, layout, f.Title)
         for _, key in ipairs(controls) do TrackHeaderRegion(f, layout, f[key]) end
         local counter = f.CountFrame and f.CountFrame.Text
@@ -368,8 +327,6 @@ end, function(S, module)
             if layout.active then
                 for region, points in pairs(layout.regions) do RestorePoints(region, points) end
                 f.Title:SetWidth(layout.titleWidth); f.Title:SetHeight(layout.titleHeight)
-                if layout.fontApplied then f.Title:SetFont(unpack(layout.titleFont)); layout.fontApplied = nil end
-                if layout.boundMin then f:SetResizeBounds(unpack(layout.bounds)); layout.boundMin = nil end
                 if f.Title.SetWordWrap and layout.wordWrap ~= nil then f.Title:SetWordWrap(layout.wordWrap) end
                 if f.Title.SetNonSpaceWrap and layout.nonSpaceWrap ~= nil then f.Title:SetNonSpaceWrap(layout.nonSpaceWrap) end
                 entry.host:ClearAllPoints(); entry.host:SetAllPoints(f)
@@ -379,21 +336,7 @@ end, function(S, module)
             return
         end
         local width, title = f:GetWidth(), f.Title
-        local font, size, flags = title:GetFont()
-        if type(size) == "number" and SafeValue(size) and size < 14 then
-            layout.titleFont = {font, size, flags}
-            title:SetFont(font, 14, flags); layout.fontApplied = true
-        end
         if not SafeValue(width) then layout.writing = false; return end
-        if layout.bounds and (capture or not layout.active) then
-            -- Do not clamp an existing custom narrow size; widen the resize
-            -- floor only once the native window already accommodates it.
-            local minimum = math.max(layout.bounds[1], math.min(180, width))
-            if layout.boundMin ~= minimum then
-                f:SetResizeBounds(minimum, layout.bounds[2], layout.bounds[3], layout.bounds[4])
-                layout.boundMin = minimum
-            end
-        end
         local counterWidth = 0
         if counter and (not counter.IsVisible or counter:IsVisible()) then
             local alpha = counter.GetAlpha and counter:GetAlpha() or 1
@@ -461,7 +404,7 @@ end, function(S, module)
         if layout.top ~= top or not layout.active then
             entry.host:ClearAllPoints()
             entry.host:SetPoint("TOPLEFT", f, "TOPLEFT", 0, top)
-            entry.host:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, -9)
+            entry.host:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
             layout.top = top
         end
         -- One content rule below the integrated header, never a toolbar band.
@@ -472,42 +415,12 @@ end, function(S, module)
         end
         layout.active, layout.writing = true, false
     end
-    local function RowEdges(host)
-        local top = host:CreateTexture(nil, "ARTWORK", nil, 3)
-        top:SetPoint("TOPLEFT", host, "TOPLEFT", 1, 0)
-        top:SetPoint("TOPRIGHT", host, "TOPRIGHT", -1, 0)
-        top:SetHeight(1); top:SetBlendMode("BLEND")
-        local bottom = host:CreateTexture(nil, "ARTWORK", nil, 3)
-        bottom:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 1, 0)
-        bottom:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -1, 0)
-        bottom:SetHeight(1); bottom:SetBlendMode("BLEND")
-        local left = host:CreateTexture(nil, "ARTWORK")
-        left:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -1)
-        left:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 1)
-        left:SetWidth(1)
-        local right = host:CreateTexture(nil, "ARTWORK")
-        right:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -1)
-        right:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 1)
-        right:SetWidth(1)
-        return {top = top, bottom = bottom, left = left, right = right}
-    end
     local function PaintRowHover(entry, hovered)
         if entry.paintedHover == hovered then return end
-        local e = entry.edges
-        -- Paint the actual color once. A neutral gradient layered over a vertex
-        -- tint left the first draw dependent on setter order. All four strips
-        -- live in the one-unit gutter, outside Spy's native fill.
-        if hovered then
-            e.top:SetColorTexture(0.92, 0.70, 0.38, 0.86)
-            e.bottom:SetColorTexture(0.66, 0.42, 0.19, 0.72)
-            e.left:SetColorTexture(0.78, 0.52, 0.25, 0.82)
-            e.right:SetColorTexture(0.78, 0.52, 0.25, 0.82)
-        else
-            e.top:SetColorTexture(0.55, 0.36, 0.19, 0.48)
-            e.bottom:SetColorTexture(0.19, 0.105, 0.050, 0.68)
-            e.left:SetColorTexture(0.34, 0.21, 0.11, 0.16)
-            e.right:SetColorTexture(0.24, 0.14, 0.07, 0.16)
-        end
+        -- One compact copper separator. First acquisition and hover exit use
+        -- the same solid paint; there are no neutral gradients or bar overlays.
+        if hovered then entry.rule:SetColorTexture(0.73, 0.49, 0.26, 0.55)
+        else entry.rule:SetColorTexture(0.49, 0.33, 0.18, 0.24) end
         entry.paintedHover = hovered
     end
     local function RowHover(entry, row, entered)
@@ -530,115 +443,30 @@ end, function(S, module)
         local entry = foreverWindows[f]
         if not entry and forever and Owned(f) then
             local host = Host(f)
-            local plate, grain, paint, mask = Surface(host, f == spy.MainWindow)
-            entry = {host = host, plate = plate, grain = grain, paint = paint, mask = mask, rim = Rim(host, f == spy.MainWindow)}
+            local plate, grain, paint = Surface(host, f == spy.MainWindow)
+            entry = {host = host, plate = plate, grain = grain, paint = paint, rim = Rim(host)}
             foreverWindows[f] = entry
-            if f == spy.MainWindow then
-                local well = Host(host)
-                well:ClearAllPoints()
-                well:SetPoint("TOPLEFT", f, "TOPLEFT", 7, -32)
-                well:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -7, -3)
-                entry.innerRim = Rim(well)
-                if entry.innerRim and _G.EllesmereUI.ForeverBorderPaint then
-                    _G.EllesmereUI.ForeverBorderPaint(entry.innerRim, 0.76, 0.61, 0.42, 1)
-                end
-                -- Recessed lighting belongs to one shared viewport, not each row.
-                local lipShadows = {}
-                for _, edge in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
-                    local shadow = well:CreateTexture(nil, "BACKGROUND", nil, 4)
-                    if edge == "TOP" or edge == "BOTTOM" then
-                        shadow:SetPoint(edge .. "LEFT", well, edge .. "LEFT", 3, edge == "TOP" and -3 or 3)
-                        shadow:SetPoint(edge .. "RIGHT", well, edge .. "RIGHT", -3, edge == "TOP" and -3 or 3)
-                        shadow:SetHeight(5)
-                    else
-                        shadow:SetPoint("TOP" .. edge, well, "TOP" .. edge, edge == "LEFT" and 3 or -3, -3)
-                        shadow:SetPoint("BOTTOM" .. edge, well, "BOTTOM" .. edge, edge == "LEFT" and 3 or -3, 3)
-                        shadow:SetWidth(5)
-                    end
-                    shadow:SetColorTexture(1, 1, 1, 1)
-                    if shadow.SetGradient and CreateColor then
-                        local dark, clear = CreateColor(0.018, 0.010, 0.005, 0.48), CreateColor(0.025, 0.012, 0.006, 0)
-                        local reverse = edge == "TOP" or edge == "RIGHT"
-                        shadow:SetGradient((edge == "TOP" or edge == "BOTTOM") and "VERTICAL" or "HORIZONTAL",
-                            reverse and clear or dark, reverse and dark or clear)
-                    else shadow:SetVertexColor(0.025, 0.012, 0.006, 0.20) end
-                    lipShadows[#lipShadows + 1] = shadow
-                end
-                -- Partition the backgrounds: header and list never overlap.
-                plate:SetParent(well); plate:ClearAllPoints(); plate:SetAllPoints(well)
-                grain:SetParent(well); grain:ClearAllPoints(); grain:SetAllPoints(well)
-                if mask then
-                    mask:SetParent(well); mask:ClearAllPoints(); mask:SetAllPoints(well)
-                    -- One existing mask also clips the recessed lip at chamfers.
-                    for _, shadow in ipairs(lipShadows) do
-                        if shadow.AddMaskTexture then shadow:AddMaskTexture(mask) end
-                    end
-                end
-                entry.bezel = {}
-                for _, edge in ipairs({"LEFT", "RIGHT", "BOTTOM"}) do
-                    local metal = host:CreateTexture(nil, "BACKGROUND", nil, 3)
-                    if edge == "BOTTOM" then
-                        metal:SetPoint("TOPLEFT", well, "BOTTOMLEFT", 0, 0)
-                        metal:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -7, 0)
-                    else
-                        metal:SetPoint("TOP" .. edge, f, "TOP" .. edge, 0, -32)
-                        metal:SetPoint("BOTTOM" .. edge, host, "BOTTOM" .. edge, 0, 0)
-                        metal:SetWidth(7)
-                    end
-                    metal:SetColorTexture(0.24, 0.145, 0.065, 1)
-                    metal:SetBlendMode("BLEND")
-                    if metal.SetGradient and CreateColor then
-                        local light, dark = CreateColor(0.34, 0.22, 0.10, 1), CreateColor(0.075, 0.040, 0.018, 1)
-                        metal:SetColorTexture(1, 1, 1, 1)
-                        metal:SetGradient(edge == "BOTTOM" and "VERTICAL" or "HORIZONTAL",
-                            edge == "RIGHT" and dark or light, edge == "RIGHT" and light or dark)
-                    end
-                    entry.bezel[#entry.bezel + 1] = metal
-                end
-                entry.well = well
-            end
             if f.Background and f.Background.GetAlpha then
                 entry.nativeBackground = f.Background
                 entry.backgroundAlpha = f.Background:GetAlpha()
             end
-            if f.TitleBar and not alert then
+            if f == spy.MainWindow then
+                local seam = host:CreateTexture(nil, "ARTWORK")
+                seam:SetHeight(1); seam:SetColorTexture(0.49, 0.33, 0.18, 0.65)
+                entry.seam = seam
+            elseif f.TitleBar and not alert then
                 local header = Host(host)
                 header:ClearAllPoints(); header:SetAllPoints(f.TitleBar)
-                if f == spy.MainWindow then
-                    header:ClearAllPoints()
-                    header:SetPoint("TOPLEFT", host, "TOPLEFT", 2, -2)
-                    header:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", -2, -32)
-                    local hp, hg, paint = Surface(header, true, true)
-                    entry.headerSurface = {plate = hp, grain = hg, paint = paint}
-                    entry.headerHost = header
-                end
-                local band
-                if f ~= spy.MainWindow then
-                    band = header:CreateTexture(nil, "BACKGROUND", nil, 3)
-                    band:SetAllPoints(header); band:SetColorTexture(0.185, 0.126, 0.080, 1)
-                    if band.SetGradient and CreateColor then
-                        band:SetGradient("VERTICAL", CreateColor(0.095, 0.064, 0.040, 1),
-                            CreateColor(0.185, 0.126, 0.080, 1))
-                    end
+                local band = header:CreateTexture(nil, "BACKGROUND", nil, 3)
+                band:SetAllPoints(header); band:SetColorTexture(0.185, 0.126, 0.080, 1)
+                if band.SetGradient and CreateColor then
+                    band:SetGradient("VERTICAL", CreateColor(0.095, 0.064, 0.040, 1),
+                        CreateColor(0.185, 0.126, 0.080, 1))
                 end
                 local seam = header:CreateTexture(nil, "ARTWORK")
                 seam:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT", 1, 0)
                 seam:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", -1, 0)
-                seam:SetHeight(f == spy.MainWindow and 3 or 1); seam:SetColorTexture(0.49, 0.33, 0.18, 0.65)
-                if f == spy.MainWindow then
-                    local shade = header:CreateTexture(nil, "ARTWORK")
-                    shade:SetPoint("BOTTOMLEFT", seam, "TOPLEFT", 0, 0)
-                    shade:SetPoint("BOTTOMRIGHT", seam, "TOPRIGHT", 0, 0)
-                    shade:SetHeight(4); shade:SetColorTexture(1, 1, 1, 1)
-                    if shade.SetGradient and CreateColor then
-                        shade:SetGradient("VERTICAL", CreateColor(0.055, 0.029, 0.015, 0.43), CreateColor(0.055, 0.029, 0.015, 0))
-                    else shade:SetVertexColor(0.055, 0.029, 0.015, 0.24) end
-                    entry.seamShade = shade
-                    seam:SetColorTexture(1, 1, 1, 1)
-                    if seam.SetGradient and CreateColor then
-                        seam:SetGradient("VERTICAL", CreateColor(0.25, 0.14, 0.066, 0.72), CreateColor(0.56, 0.36, 0.19, 0.78))
-                    else seam:SetVertexColor(0.46, 0.29, 0.15, 0.72) end
-                end
+                seam:SetHeight(1); seam:SetColorTexture(0.49, 0.33, 0.18, 0.65)
                 entry.band, entry.seam = band, seam
             end
         end
@@ -650,13 +478,6 @@ end, function(S, module)
         if entry.nativeBackground then Alpha(entry.nativeBackground, forever and 0 or entry.backgroundAlpha) end
         if forever then
             local alpha = f == spy.MainWindow and BackgroundOpacity() or PanelAlpha()
-            if entry.headerSurface then
-                PaintBackground(entry.headerSurface, alpha)
-                if entry.bezelAlpha ~= alpha then
-                    for _, metal in ipairs(entry.bezel) do metal:SetVertexColor(1, 1, 1, alpha) end
-                    entry.bezelAlpha = alpha
-                end
-            end
             if entry.paint then PaintBackground(entry, alpha)
             else
                 local grainAlpha = alpha * 0.12
@@ -664,8 +485,10 @@ end, function(S, module)
                 Alpha(entry.plate, grainAlpha < 1 and (alpha - grainAlpha) / (1 - grainAlpha) or 0)
             end
             -- The warm plate/grain already cover the header. No stacked fill.
-            if entry.band then Alpha(entry.band, alpha * 0.16) end
-            if entry.seam then Alpha(entry.seam, 1) end
+            if entry.band then
+                Alpha(entry.band, alpha * 0.16)
+                Alpha(entry.seam, 1)
+            end
             -- Alert borders are severity indicators, not neutral bronze trim.
             if alert and entry.rim and f.GetBackdropBorderColor and _G.EllesmereUI.ForeverBorderPaint then
                 local r, g, b, a = f:GetBackdropBorderColor()
@@ -681,36 +504,6 @@ end, function(S, module)
         end
         SyncHeader(f, forever)
     end
-    local function RestoreRowGeometry(entry)
-        if not entry.inset then return end
-        for _, saved in ipairs(entry.geometry) do RestorePoints(saved.region, saved.points) end
-        entry.inset = false
-    end
-    local function RowGeometry(entry, row, forever)
-        if not (Owned(row.StatusBar) and Owned(row.LeftText) and Owned(row.RightText)) then return end
-        if entry.bar ~= row.StatusBar or entry.left ~= row.LeftText or entry.right ~= row.RightText then
-            RestoreRowGeometry(entry)
-            entry.bar, entry.left, entry.right = row.StatusBar, row.LeftText, row.RightText
-            entry.geometry = {
-                {region = entry.bar, points = SavePoints(entry.bar)},
-                {region = entry.left, points = SavePoints(entry.left)},
-                {region = entry.right, points = SavePoints(entry.right)},
-            }
-        end
-        if not forever then RestoreRowGeometry(entry); return end
-        if entry.inset then return end
-        entry.bar:ClearAllPoints()
-        entry.bar:SetPoint("TOPLEFT", row, "TOPLEFT", 10, -1)
-        entry.bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -10, 1)
-        -- Constrain the native FontString between inset columns. Native SetBar
-        -- still owns its text/width writes; dual anchors provide clipping
-        -- without a per-player skin hook or custom name parsing.
-        Anchor(entry.right, "RIGHT", entry.bar, "RIGHT", -4, 0)
-        entry.left:ClearAllPoints()
-        entry.left:SetPoint("LEFT", entry.bar, "LEFT", 4, 0)
-        entry.left:SetPoint("RIGHT", entry.right, "LEFT", -6, 0)
-        entry.inset = true
-    end
     local function SyncRow(row, forever)
         if not Owned(row) then return end
         local entry = rowArt[row] or row.id and rowSlots[row.id]
@@ -719,15 +512,17 @@ end, function(S, module)
             if not root then return end
             -- One reusable sibling per native row slot, below its secure text.
             local host = Host(root, math.max(root:GetFrameLevel(), row:GetFrameLevel() - 1))
-            local edges = RowEdges(host)
-            entry = {host = host, edges = edges}
+            local rule = host:CreateTexture(nil, "ARTWORK")
+            rule:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 0)
+            rule:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
+            rule:SetHeight(1)
+            entry = {host = host, rule = rule}
             PaintRowHover(entry, false)
             if row.id then rowSlots[row.id] = entry end
         end
         if not entry then return end
         if entry.row ~= row then
             if entry.row then
-                RestoreRowGeometry(entry)
                 PaintRowHover(entry, false)
                 rowArt[entry.row] = nil
             end
@@ -737,9 +532,7 @@ end, function(S, module)
             local level = math.max(spy.MainWindow:GetFrameLevel(), row:GetFrameLevel() - 1)
             if host:GetFrameLevel() ~= level then host:SetFrameLevel(level) end
             if host.GetParent and host:GetParent() ~= spy.MainWindow then host:SetParent(spy.MainWindow) end
-            host:ClearAllPoints()
-            host:SetPoint("TOPLEFT", row, "TOPLEFT", 9, 0)
-            host:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -9, 0)
+            host:ClearAllPoints(); host:SetAllPoints(row)
             rowArt[row] = entry
             entry.hookedRows = entry.hookedRows or setmetatable({}, {__mode = "k"})
             if not entry.hookedRows[row] then
@@ -776,7 +569,6 @@ end, function(S, module)
                 if SafeValue(hovered) then entry.wantHover = hovered and true or false end
             end
         end
-        RowGeometry(entry, row, forever)
         if not forever then entry.wantHover = false end
         local hovered = forever and entry.wantHover or false
         if entry.paintedHover ~= hovered then PaintRowHover(entry, hovered) end
@@ -786,12 +578,10 @@ end, function(S, module)
         local rows = spy.MainWindow and spy.MainWindow.Rows or {}
         for row, entry in pairs(rowArt) do
             if row.id and rows[row.id] ~= row then
-                RestoreRowGeometry(entry)
                 PaintRowHover(entry, false)
                 Alpha(entry.host, 0)
                 rowArt[row] = nil
                 entry.row = nil
-                entry.bar, entry.left, entry.right, entry.geometry = nil, nil, nil, nil
             end
         end
         for _, row in pairs(rows) do
@@ -983,8 +773,6 @@ end, function(S, module)
             if H.Allowed(f.LeftButton) and S.SoftPageButton then S.SoftPageButton(f.LeftButton, "<") end
             if H.Allowed(f.RightButton) and S.SoftPageButton then S.SoftPageButton(f.RightButton, ">") end
         end
-        local composition = foreverWindows[f]
-        if composition and composition.headerLayout then composition.headerLayout.fontApplied = nil end
         if alert and ForeverLook() and f.Title and f.Title.GetTextColor then
             local r, g, b, a = f.Title:GetTextColor()
             H.Font(f.Title, r, g, b)
@@ -1058,6 +846,7 @@ end, function(S, module)
         SyncHeader(spy.MainWindow, ns.IsEnabled(module) and ForeverLook(), true)
     end)
     H.Hook(spy, "SetCurrentList", function()
+        if not ns.IsEnabled(module) then return end
         if Locked() then waiting = true; return end
         SyncRows(ForeverLook())
     end)

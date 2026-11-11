@@ -10,6 +10,7 @@ import urllib.request
 
 parser=argparse.ArgumentParser()
 parser.add_argument('--baseline',default='e7631a3e9fada47474a9bda356f0ce7a0fef1c2c')
+parser.add_argument('--historical',help='optional pre-redesign revision for a third-way comparison')
 parser.add_argument('--trials',type=int,default=5)
 parser.add_argument('--iterations',type=int,default=1000)
 parser.add_argument('--rows',type=int,default=40)
@@ -77,7 +78,7 @@ local function profile(label,fn,n)
         local info=debug.getinfo(2,"S")
         total=total+1
         local source=info.source or ""
-        if source:find("Skins/Spy.lua",1,true) or source:find("baseline.lua",1,true) then adapter=adapter+1 end
+        if source:find("Skins/Spy.lua",1,true) or source:find("baseline.lua",1,true) or source:find("historical.lua",1,true) then adapter=adapter+1 end
         if source:find("spy-upstream/",1,true) then native=native+1 end
         if source:find("EUIAddonSkins/Widgets.lua",1,true) then shared=shared+1 end
         if info.what=="C" then c=c+1 end
@@ -148,7 +149,7 @@ local f=assert(io.open(BENCH_OUTPUT,"w"))
 f:write("{",table.concat(output,","),',"profiles":{',table.concat(profiles,","),"}}");f:close()
 end
 '''
-report={"baseline":args.baseline,"rows":args.rows,"iterations":args.iterations,
+report={"baseline":args.baseline,"historical":args.historical,"rows":args.rows,"iterations":args.iterations,
         "trials":args.trials,"warmup":100,"lifecycle_iterations":100,"profile_iterations":10,"source":bool(os.environ.get("SPY_SOURCE")),
         "limits":"Mock UI/Lua host; actual-source constructors/SetBar, shaped list dispatcher/hover. GC-stopped churn is not retained/native/GPU memory.","modes":{}}
 with tempfile.TemporaryDirectory(prefix='spy-bench-') as tmp:
@@ -156,7 +157,15 @@ with tempfile.TemporaryDirectory(prefix='spy-bench-') as tmp:
     baseline=tmp/'baseline.lua'
     baseline.write_bytes(urllib.request.urlopen(
         f'https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/{args.baseline}/EUIAddonSkins/Skins/Spy.lua').read())
-    for mode,skin in (("native",Path("EUIAddonSkins/Skins/Spy.lua")),("baseline",baseline),("candidate",Path("EUIAddonSkins/Skins/Spy.lua"))):
+    skin=Path("EUIAddonSkins/Skins/Spy.lua")
+    variants=[("native",skin),("baseline",baseline)]
+    if args.historical:
+        historical=tmp/'historical.lua'
+        historical.write_bytes(urllib.request.urlopen(
+            f'https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/{args.historical}/EUIAddonSkins/Skins/Spy.lua').read())
+        variants.append(("historical",historical))
+    variants.append(("candidate",skin))
+    for mode,skin in variants:
         trials=[]
         for number in range(args.trials):
             destination=tmp/f'{mode}-{number}.json'

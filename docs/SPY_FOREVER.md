@@ -22,25 +22,39 @@ historical, not the visual target.
   attach to the statusbar. No per-row geometry snapshots, bevel gradients,
   underlays, or decorative side rails.
 
-## Content-driven header
+## Compact header and native Inverted layout
 
-Ordinary widths keep one row. The header height is the largest of the rendered
-title, rendered counter, and visible native hitboxes, plus four units above
-and below, rounded up to a physical pixel. Narrow widths still use separate
-title/counter and control bands with a two-unit gap. The separator starts
-at the measured bottom, and the native list starts two units farther down.
+At ordinary widths the title, five native controls, and counter share one
+horizontal row. The height fits measured text and visible bronze seats with
+two units of visual padding, and native hitboxes with at least one unit of
+clearance at either edge. Round up at the effective scale. With the native
+20-unit Close hitbox, this is 22 units at scale 1, versus 28 previously.
+The native hitbox determines the minimum; the existing 14-unit bronze seat
+has four units of visible clearance in that case. Very narrow windows keep
+the existing title/counter and control bands so hitboxes do not overlap.
 
-Spy reserves 34 units for the native list origin and capacity. The adapter
-offsets only the supported native row anchors, leaves sizes and capacity
-alone, and restores anchors on Standard or retirement. If the measured
-header needs more than the native reservation, the cosmetic top extends
-upward so the last native row still fits. Native row reflow reapplies the
-offset after Spy sets its row spacing.
+Normal layout keeps the divider and first row together, with the native
+row origin restored in Standard. If text needs more than Spy's 34-unit
+reservation, the decorative top can extend without reducing capacity.
 
-Height measurements are cached by font, scale, and relevant title geometry.
-The numeric counter can change without remeasuring its single-line height.
-Pending metrics use the font or region height until the next native show,
-font or scale boundary. No polling or delayed layout loop.
+Spy 1.3.8-forever5 keeps rows top-left anchored at -34 in either mode.
+Inverted changes the resize/save pivot to the native bottom and puts the
+native title and controls below it. Forever follows that constructed title
+anchor: its same rim covers the body from just above the first row down
+through the footer, and the divider sits at the native bottom. Inverted
+rows retain native anchors and ordering. The skin does not move or resize
+the native window, edit saved positions, or change Spy's row budget.
+
+The pinned option setter only saves the preference and provides a Reload
+button; the skin does not preempt native reconstruction. If a supported
+fork reanchors the native title live, the existing header anchor observer
+reuses the same artwork and switches edge without a reload. Standard
+restores the captured native anchors on either edge.
+
+Height measurements remain cached by font, scale and relevant title layout.
+Identical text and same-width counter changes skip layout. Pending metrics
+use a safe fallback until a native show, font, or scale boundary. No polling
+or extra layout timers.
 
 ## Functional safeguards kept
 

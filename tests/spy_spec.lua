@@ -506,7 +506,30 @@ ns.CreateSkinHelper=function(...)
     return h
 end
 assert(loadfile("EUIAddonSkins/Skins/Spy.lua"))("EUIAddonSkins",ns)
+local function NativeOrientation(inverted)
+    local f=Spy.MainWindow
+    Spy.db.profile.InvertSpy=inverted
+    local left,right=inverted and "BOTTOMLEFT" or "TOPLEFT",inverted and "BOTTOMRIGHT" or "TOPRIGHT"
+    f.Title:ClearAllPoints();f.Title:SetPoint(left,f,left,8,inverted and -15 or -16)
+    f.CloseButton:ClearAllPoints();f.CloseButton:SetPoint(right,f,right,-4,inverted and -19 or -12)
+    f.RightButton:ClearAllPoints();f.RightButton:SetPoint(right,f,right,-23,inverted and -16.5 or -14.5)
+end
+local bootInverted=os.getenv("SPY_BOOT_INVERTED")
+if bootInverted then NativeOrientation(true); EUIAddonSkinsDB.spy.style="forever" end
 module.install(S,module);flush()
+if bootInverted then
+    assert(Spy.MainWindow.Title.points[1][3]=="BOTTOMLEFT" and row.points[1][5]==-34,
+        "fresh Inverted did not keep footer and native row origin")
+    row:Show()
+    local trim
+    for _,child in ipairs(Spy.MainWindow.children) do
+        if child.allPoints==row and #child.regions==1 then trim=child.regions[1] end
+    end
+    assert(trim and trim.baseColor[1]==0.49 and Coverage(trim)>0 and not row.nativeEnterCalls,
+        "fresh Inverted row required hover")
+    EUIAddonSkinsDB.spy.style="auto";module.refresh();flush()
+    NativeOrientation(false)
+end
 Spy.testFirstMenu=true
 local firstA,firstB,firstC=Spy:BarDropDownOpen()
 assert(firstA=="native-first-menu" and firstB==nil and firstC==7 and #firstOpeningEntries==1,"first menu opening lost submenu/returns")
@@ -545,7 +568,7 @@ assert(row.StatusBar.allPoints==row and row.StatusBar:GetWidth()==row:GetWidth()
     and row.StatusBar:GetHeight()==row:GetHeight(),"Forever changed native list geometry")
 assert(row.LeftText:GetLeft()==nativeLeft and row.RightText:GetRight()==nativeRight,"Forever moved native row columns")
 assert(row.points[1][2]==nativeRowPoint[2] and row.points[1][4]==nativeRowPoint[4]
-    and row.points[1][5]==-30,"first row did not follow the compact header")
+    and row.points[1][5]==-24,"first row did not follow the compact header")
 assert(row.LeftText.points[1][2]==row.StatusBar and #row.LeftText.points==1,"native name anchors changed")
 for _,button in ipairs({Spy.MainWindow.LeftButton,Spy.MainWindow.RightButton}) do
     for _,edge in ipairs(button.standardBorder.regions) do assert(edge.baseColor[4]==0,"native helper border leaked into Forever") end
@@ -679,7 +702,7 @@ for _,width in ipairs({90,130,160,200,240,300}) do
         assert(f:GetWidth()==width and f:GetHeight()==90,"skin resized native window")
         if unified then
             assert(not title:GetWordWrap(),"single-line header wrapped title")
-            assert(math.abs(title:GetTop()-title:GetHeight()/2-(f:GetTop()-14))<0.001,"title not centered in unified header")
+            assert(math.abs(title:GetTop()-title:GetHeight()/2-(f:GetTop()-11))<0.001,"title not centered in unified header")
             assert(title:GetRight()+6<=f.StatsButton:GetLeft(),"title/control overlap")
             assert(f.CloseButton:GetRight()+6<=f.CountButton:GetLeft(),"control/counter hitboxes overlap")
         else
@@ -709,7 +732,7 @@ local title=Spy.MainWindow.Title
 local counter=Spy.MainWindow.CountFrame.Text
 for _,label in ipairs({"Nearby","Last Hour","Ignore","Kill On Sight","A localized title requiring more space"}) do
     title:SetText(label)
-    assert(title.points[1][5]==-14 and not title:GetWordWrap(),"dynamic title rebuilt separate toolbar")
+    assert(title.points[1][5]==-11 and not title:GetWordWrap(),"dynamic title rebuilt separate toolbar")
 end
 title:SetText("Kill On Sight")
 counter:SetText("|cFF0070DE123|r")
@@ -728,37 +751,37 @@ local function ScaleEvent()
         if f.events and f.events.UI_SCALE_CHANGED then f.scripts.OnEvent(f,"UI_SCALE_CHANGED") end
     end
 end
-assert(title.points[1][5]==-14 and row.points[1][5]==-30,"20-unit control plus 4-unit padding did not produce 28-unit header")
+assert(title.points[1][5]==-11 and row.points[1][5]==-24,"20-unit control plus clearance did not produce 22-unit header")
 main.effectiveScale=0.73;ScaleEvent()
-local snapped=math.ceil(28*0.73)/0.73
+local snapped=math.ceil(22*0.73)/0.73
 assert(math.abs(title.points[1][5]+snapped/2)<0.0001 and math.abs(row.points[1][5]+snapped+2)<0.0001,
     "fractional-scale header was not rounded up with list attached")
 row.points[1][5]=row.points[1][5]+0.000003 -- client float readback
 main.effectiveScale=nil;ScaleEvent()
-assert(row.points[1][5]==-30,"fractional anchor readback accumulated an offset")
+assert(row.points[1][5]==-24,"fractional anchor readback accumulated an offset")
 main.CloseButton:Hide()
-assert(title.points[1][5]==-12 and row.points[1][5]==-26,"hidden tallest control still reserved height")
+assert(title.points[1][5]==-9 and row.points[1][5]==-20,"hidden tallest control still reserved height")
 main.CloseButton:Show()
-assert(title.points[1][5]==-14 and row.points[1][5]==-30,"returning control did not restore hitbox clearance")
+assert(title.points[1][5]==-11 and row.points[1][5]==-24,"returning control did not restore hitbox clearance")
 local font,size,flags=title:GetFont()
 title:SetFont(font,22,flags)
-assert(title.points[1][5]==-15 and row.points[1][5]==-32,"larger title did not grow header")
+assert(title.points[1][5]==-13 and row.points[1][5]==-28,"larger title did not grow header")
 counter:SetFont(font,23,flags)
-assert(title.points[1][5]==-15.5 and row.points[1][5]==-33,"counter did not grow header")
+assert(title.points[1][5]==-13.5 and row.points[1][5]==-29,"counter did not grow header")
 title:SetFont(font,30,flags)
 assert(row.points[1][5]==-34 and main:GetHeight()==90 and row:GetHeight()==rowHeight,
     "large header changed native dimensions or capacity")
 counter:SetFont(font,12,flags)
 title.pendingMetrics=true
 title:SetFont(font,21,flags)
-assert(row.points[1][5]==-31,"unavailable metric lacked safe font fallback")
+assert(row.points[1][5]==-27,"unavailable metric lacked safe font fallback")
 title.pendingMetrics=false;title.metricHeight=24
 main:Hide();main:Show()
-assert(row.points[1][5]==-34,"first show failed to recover pending metrics")
+assert(row.points[1][5]==-30,"first show failed to recover pending metrics")
 title.metricHeight=nil
 title:SetFont(font,size,flags)
 flush()
-assert(row.points[1][5]==-30,"return to compact metrics did not lift list")
+assert(row.points[1][5]==-24,"return to compact metrics did not lift list")
 local metricReads=counts.metrics
 for i=1,1000 do counter:SetText(tostring(i));title:SetText("Kill On Sight") end
 assert(counts.metrics==metricReads,"warm counter values repeated font-height measurement")
@@ -1011,6 +1034,91 @@ combat=false
 for _,f in ipairs(events)do if f.events and f.events.PLAYER_REGEN_ENABLED then f.scripts.OnEvent()end end
 flush();assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1)
 style.set(nil,"forever");flush()
+-- Pinned Spy saves InvertSpy and expects Reload. Simulate that write alone,
+-- then simulate a native live-capable fork applying its constructed anchors.
+do
+    local f=Spy.MainWindow
+    local profile=Spy.db.profile
+    local rootPoints={f:GetPoint(1)}
+    local storedPosition=profile.MainWindow.Position
+    local initialHeight=f:GetHeight()
+    local displayed=Spy.ListAmountDisplayed
+    profile.MainWindow.Position={}
+    profile.InvertSpy=true
+    module.refresh();flush()
+    assert(f.Title.points[1][3]=="TOPLEFT","preference write flipped header before native reanchor")
+    NativeOrientation(true)
+    module.refresh();flush()
+    local function CheckFooter()
+        assert(f.Title.points[1][3]=="BOTTOMLEFT" and f.CloseButton.points[1][3]=="BOTTOMRIGHT"
+            and counter.points[1][3]=="BOTTOMRIGHT","Inverted kept top header anchors")
+        assert(row.points[1][5]==-34 and Spy.MainWindow.Rows[2].points[1][5]==-51,
+            "Inverted changed native row order or origin")
+        assert(seam.points[1][3]=="BOTTOMLEFT" and seam.points[1][5]==0,"footer divider is not on native bottom")
+        assert(rootRim.host.points[1][5]==-32 and rootRim.host:GetBottom()<f:GetBottom(),
+            "bronze frame does not enclose native body and footer")
+        assert(f.CloseButton:GetTop()<=f:GetBottom() and f.CloseButton:GetBottom()>=rootRim.host:GetBottom(),
+            "footer hitbox crosses divider or rim")
+        assert(f.CloseButton.scripts.OnClick()=="CloseButton","Inverted changed native control action")
+    end
+    CheckFooter()
+    assert(f:GetHeight()==initialHeight and profile.MainWindow.Position.x==nil,
+        "inverting the skin wrote native window size or saved position")
+    local objectCount,hookCount=counts.objects,counts.hooks
+    for _,label in ipairs({"Nearby","Kill On Sight"}) do
+        f.Title:SetText(label)
+        f:Hide();f:Show();flush()
+        CheckFooter()
+    end
+    f.effectiveScale=0.73;ScaleEvent();CheckFooter()
+    NativeHeaderLayout(90);Spy:ResizeMainWindow();flush()
+    CheckFooter()
+    assert(f.Title:GetBottom()>f.CloseButton:GetTop(),"narrow footer title overlaps controls")
+    f.effectiveScale=nil;ScaleEvent()
+    NativeHeaderLayout(200);Spy:ResizeMainWindow();flush()
+    assert(counts.objects==objectCount and counts.hooks==hookCount,"Inverted reflow accumulated resources")
+
+    if source then
+        local parentTop=UIParent.top
+        UIParent.top=UIParent:GetHeight()
+        Spy:RestoreMainWindowPosition(20,40,200,90)
+        local bottom=f:GetBottom()
+        Spy.ListAmountDisplayed=0;Spy:AutomaticallyResize();Spy:ManageBarsDisplayed()
+        assert(f:GetBottom()==bottom and f:GetHeight()==35 and not row:IsShown(),"empty native Inverted window changed pivot")
+        local emptyTop=f:GetTop()
+        Spy.ListAmountDisplayed=2;Spy:AutomaticallyResize();Spy:ManageBarsDisplayed()
+        assert(f:GetBottom()==bottom and f:GetTop()>emptyTop and row:IsShown(),"native Inverted did not grow upward")
+        assert(f.CurRows==2 and f.Rows[2]:GetBottom()>=f:GetBottom(),"native row crossed footer or capacity changed")
+        assert(Coverage(AssertRestingRule(row))>0,"first populated Inverted row needed hover")
+        Spy:SaveMainWindowPosition()
+        assert(profile.MainWindow.Position.y==bottom and profile.MainWindow.Position.h==f:GetHeight(),
+            "saved native Inverted position no longer uses bottom")
+        f:ClearAllPoints()
+        if rootPoints[1] then f:SetPoint(unpack(rootPoints)) end
+        f:SetHeight(initialHeight)
+        Spy.ListAmountDisplayed=displayed
+        UIParent.top=parentTop
+    end
+    combat=true
+    local geometry=counts.geometry
+    ScaleEvent();f.Title:SetText("Nearby")
+    assert(counts.geometry==geometry,"Inverted header wrote geometry during combat")
+    combat=false
+    for _,eventFrame in ipairs(events) do
+        if eventFrame.events and eventFrame.events.PLAYER_REGEN_ENABLED then eventFrame.scripts.OnEvent() end
+    end
+    flush();CheckFooter()
+    style.set(nil,"standard");flush()
+    assert(f.Title.points[1][1]=="BOTTOMLEFT" and f.Title.points[1][5]==-15
+        and f.CloseButton.points[1][1]=="BOTTOMRIGHT" and f.CloseButton.points[1][5]==-19
+        and f.LeftButton.points[1][2]==f.RightButton and row.points[1][5]==-34,
+        "Standard did not restore native Inverted anchors")
+    style.set(nil,"forever");flush();CheckFooter()
+    NativeOrientation(false);module.refresh();flush()
+    assert(f.Title.points[1][3]=="TOPLEFT" and row.points[1][5]==-24
+        and rootRim.host:GetBottom()==f:GetBottom(),"live native reanchor left a stale footer")
+    profile.MainWindow.Position=storedPosition
+end
 enabled=false
 for _,fn in ipairs(looks)do fn()end;flush()
 assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1 and Spy.MainWindow.Background:GetAlpha()==1,"disable did not clean Forever art")

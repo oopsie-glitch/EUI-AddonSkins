@@ -143,7 +143,7 @@ end, function(S, module)
         if type(alpha) ~= "number" or not SafeValue(alpha) or alpha ~= alpha then return 0.92 end
         return math.max(0, math.min(1, alpha))
     end
-    local CONTROL_SCALE = 0.5
+    local CONTROL_SCALE, CONTROL_SEAT_LIMIT = 0.5, 14
     local fixedIcons = {
         CloseButton = {"atlas", "uitools-icon-close"},
         LeftButton = {"file", "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-left.png"},
@@ -171,7 +171,7 @@ end, function(S, module)
         end
         local w, h = button:GetWidth(), button:GetHeight()
         if not (SafeValue(w) and SafeValue(h)) then return end
-        local width, height = math.min(14, w - 2), math.min(14, h - 2)
+        local width, height = math.min(CONTROL_SEAT_LIMIT, w - 2), math.min(CONTROL_SEAT_LIMIT, h - 2)
         if width <= 0 or height <= 0 then Alpha(entry.seat, 0); return end
         local geometry = entry.w ~= w or entry.h ~= h
         if geometry then
@@ -287,7 +287,12 @@ end, function(S, module)
     end
     -- Spy uses 34 units both for its native row origin and its visible-row
     -- budget. Move only supported native TOPLEFT row anchors, never the budget.
-    local NATIVE_LIST_TOP, HEADER_PADDING, LIST_GAP = 34, 4, 2
+    local NATIVE_LIST_TOP, VISUAL_PADDING, HITBOX_CLEARANCE, LIST_GAP = 34, 2, 1, 2
+    local function HeaderBand(textHeight, hitboxHeight)
+        local seat = math.min(CONTROL_SEAT_LIMIT, math.max(0, hitboxHeight - 2))
+        return math.max(math.max(textHeight, seat) + 2 * VISUAL_PADDING,
+            hitboxHeight + 2 * HITBOX_CLEARANCE)
+    end
     local function OffsetRow(f, layout, row, shift, nativeStride)
         local p, parent, rp, x, y = row:GetPoint(1)
         if row:GetNumPoints() ~= 1 or p ~= "TOPLEFT" or parent ~= f or rp ~= "TOPLEFT"
@@ -455,48 +460,62 @@ end, function(S, module)
         local titleHeight = MeasureHeight(title, layout.titleMetric, scale, wrapped and available or 0, wrapped, retry)
         if title:GetHeight() ~= titleHeight then title:SetHeight(titleHeight) end
         local countHeight = countButton and countButton:IsShown() and countButton:GetHeight() or 0
-        local textBand = math.max(titleHeight, counterHeight, countHeight)
-        local contentHeight = wrapped and textBand + 2 + tallest or math.max(textBand, tallest)
-        -- Round up to a whole physical pixel, never down into the hitboxes.
-        local headerHeight = math.ceil((contentHeight + 2 * HEADER_PADDING) * scale) / scale
+        -- The native title anchors identify the constructed layout. The pinned
+        -- Spy option only saves a preference; do not flip the skin ahead of
+        -- native reconstruction, or override a fork's live reanchoring.
+        local titlePoints = layout.regions[title]
+        local nativeTitle = titlePoints and titlePoints[1]
+        local inverted = nativeTitle and nativeTitle[2] == f and nativeTitle[3] == "BOTTOMLEFT"
+        local leftEdge, rightEdge = "TOPLEFT", "TOPRIGHT"
+        if inverted then leftEdge, rightEdge = "BOTTOMLEFT", "BOTTOMRIGHT" end
+
+        local textHeight = math.max(titleHeight, counterHeight)
+        local textBand = HeaderBand(textHeight, countHeight)
+        local controlBand = HeaderBand(0, tallest)
+        local required = wrapped and textBand + LIST_GAP + controlBand
+            or HeaderBand(textHeight, math.max(tallest, countHeight))
+        -- Round up to a whole physical pixel, never into the hitboxes.
+        local headerHeight = math.ceil(required * scale) / scale
         local listDepth = headerHeight + LIST_GAP
-        -- Keep the bottom row and native capacity when a tall font or the
-        -- narrow fallback needs extra room. Only the cosmetic top grows.
-        local top = math.max(0, listDepth - NATIVE_LIST_TOP)
-        local listTop = listDepth - top
-        local titleY = top - headerHeight / 2
+        local start = inverted and 0 or math.max(0, listDepth - NATIVE_LIST_TOP)
+        local listTop = listDepth - start
+        local titleY = start - headerHeight / 2
         local controlY = titleY
         if wrapped then
-            local upper = top - (headerHeight - contentHeight) / 2
+            local upper = start - (headerHeight - required) / 2
             titleY = upper - textBand / 2
-            controlY = upper - textBand - 2 - tallest / 2
+            controlY = upper - textBand - LIST_GAP - controlBand / 2
         end
-        Anchor(title, "LEFT", f, "TOPLEFT", 12, titleY)
-        local counterY = titleY
-        if counter then Anchor(counter, "RIGHT", f, "TOPRIGHT", -12, counterY) end
-        if countButton then Anchor(countButton, "RIGHT", f, "TOPRIGHT", -rightInset, counterY) end
+        Anchor(title, "LEFT", f, leftEdge, 12, titleY)
+        if counter then Anchor(counter, "RIGHT", f, rightEdge, -12, titleY) end
+        if countButton then Anchor(countButton, "RIGHT", f, rightEdge, -rightInset, titleY) end
         local offset = rightInset + (wrapped and 0 or counterSpace)
         for _, key in ipairs(controlOrder) do
             local button = f[key]
             if button and (not button.IsShown or button:IsShown()) then
-                Anchor(button, "RIGHT", f, "TOPRIGHT", -offset, controlY)
+                Anchor(button, "RIGHT", f, rightEdge, -offset, controlY)
                 offset = offset + button:GetWidth() + gap
             end
         end
-        if layout.top ~= top or not layout.active then
+        -- Inverted Spy still orders its rows from the native top-left -34
+        -- reservation, and places the controls below the native bottom.
+        -- Fit the existing bronze host around that body and footer. Keep
+        -- the native root, resize grips, row anchors and capacity untouched.
+        local frameTop = inverted and LIST_GAP - NATIVE_LIST_TOP or start
+        local frameBottom = inverted and -headerHeight or 0
+        if layout.frameTop ~= frameTop or layout.frameBottom ~= frameBottom or not layout.active then
             entry.host:ClearAllPoints()
-            entry.host:SetPoint("TOPLEFT", f, "TOPLEFT", 0, top)
-            entry.host:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
-            layout.top = top
+            entry.host:SetPoint("TOPLEFT", f, "TOPLEFT", 0, frameTop)
+            entry.host:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, frameBottom)
+            layout.frameTop, layout.frameBottom = frameTop, frameBottom
         end
-        -- One content rule below the integrated header, never a toolbar band.
-        local dividerY = LIST_GAP - listTop
-        if entry.seam and layout.dividerY ~= dividerY then
-            Anchor(entry.seam, "TOPLEFT", f, "TOPLEFT", 5, dividerY)
-            entry.seam:SetPoint("TOPRIGHT", f, "TOPRIGHT", -5, dividerY)
-            layout.dividerY = dividerY
+        local dividerY = inverted and 0 or LIST_GAP - listTop
+        if entry.seam and (layout.dividerY ~= dividerY or layout.dividerEdge ~= leftEdge) then
+            Anchor(entry.seam, "TOPLEFT", f, leftEdge, 5, dividerY)
+            entry.seam:SetPoint("TOPRIGHT", f, rightEdge, -5, dividerY)
+            layout.dividerY, layout.dividerEdge = dividerY, leftEdge
         end
-        ShiftList(f, layout, NATIVE_LIST_TOP - listTop)
+        ShiftList(f, layout, inverted and 0 or NATIVE_LIST_TOP - listTop)
         layout.active, layout.writing = true, false
     end
     local function PaintRowHover(entry, hovered)

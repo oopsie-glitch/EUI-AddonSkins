@@ -101,6 +101,21 @@ local function Enabled(row)
     return not row.option.enabled or row.option.enabled()
 end
 
+local function CloseDropdown()
+    if ui.dropdown then ui.dropdown:Hide() end
+end
+
+local function MarkDropdownSelection(dropdown, value)
+    for _, item in ipairs(dropdown.items) do
+        if item.choice then
+            local selected = item.choice.value == value
+            item.mark:SetShown(selected)
+            item.fill:SetColorTexture(selected and 0.16 or 0.08, selected and 0.22 or 0.09,
+                selected and 0.21 or 0.10, 1)
+        end
+    end
+end
+
 local function SyncRow(row)
     local option = row.option
     if not option then return end
@@ -114,8 +129,9 @@ local function SyncRow(row)
         value = value or option.min
         if not control.GetValue or control:GetValue() ~= value then control:SetValue(value) end
         row.title:SetText(option.label .. ": " .. tostring(value) .. (option.unit or ""))
-    elseif option.kind == "choice" then
+    elseif option.kind == "choice" or option.kind == "dropdown" then
         control.label:SetText(FindValue(option, value) or (value ~= nil and "Unavailable" or "Choose"))
+        if ui.dropdown and ui.dropdown.row == row then MarkDropdownSelection(ui.dropdown, value) end
     else control.label:SetText(option.buttonLabel or option.label) end
     if option.status then row.description:SetText(option.status()) end
 end
@@ -125,6 +141,93 @@ local function Write(row, value)
     local option = row.option
     if option.get() == value then return end
     option.set(value) -- Provider notifies after committing the shared preference.
+end
+
+-- A single canvas-owned popup sits outside the scrolling list. It observes
+-- mouse input only while visible and lets the original outside click continue.
+local function CreateDropdown()
+    local popup = CreateFrame("Frame", nil, ui.root)
+    popup:SetFrameStrata("FULLSCREEN_DIALOG")
+    popup:SetClampedToScreen(true)
+    popup:EnableMouse(true)
+    popup.items = {}
+    Fill(popup, 0.25, 0.27, 0.29, 1)
+    local inset = popup:CreateTexture(nil, "BACKGROUND", nil, 1)
+    inset:SetPoint("TOPLEFT", popup, "TOPLEFT", 1, -1)
+    inset:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -1, 1)
+    inset:SetColorTexture(0.06, 0.07, 0.08, 1)
+    popup:Hide()
+    popup:SetScript("OnEvent", function(self)
+        local row = self.row
+        if row and not self:IsMouseOver() and not row.control:IsMouseOver() then self:Hide() end
+    end)
+    popup:SetScript("OnKeyDown", function(self, key)
+        if Combat() then self:Hide(); return end
+        self:SetPropagateKeyboardInput(key ~= "ESCAPE")
+        if key == "ESCAPE" then self:Hide() end
+    end)
+    popup:SetScript("OnHide", function(self)
+        self:UnregisterEvent("GLOBAL_MOUSE_DOWN")
+        self.row = nil
+        self:ClearAllPoints()
+        for _, item in ipairs(self.items) do item.choice = nil; item:Hide() end
+    end)
+    return popup
+end
+
+local function DropdownItem(popup, index)
+    local item = popup.items[index]
+    if item then return item end
+    item = Button(popup)
+    item.mark = item:CreateTexture(nil, "ARTWORK")
+    item.mark:SetPoint("TOPLEFT", item, "TOPLEFT", 1, -3)
+    item.mark:SetPoint("BOTTOMLEFT", item, "BOTTOMLEFT", 1, 3)
+    item.mark:SetWidth(2)
+    item.mark:SetColorTexture(0.43, 0.78, 0.68, 1)
+    item:SetScript("OnClick", function(self)
+        local row, choice = popup.row, self.choice
+        popup:Hide()
+        if row and choice and (not choice.available or choice.available()) then Write(row, choice.value) end
+    end)
+    popup.items[index] = item
+    return item
+end
+
+local function OpenDropdown(row)
+    if not Enabled(row) then return end
+    local popup = ui.dropdown
+    local wasOpen = popup and popup.row == row
+    CloseDropdown()
+    if wasOpen then return end
+    if not popup then popup = CreateDropdown(); ui.dropdown = popup end
+    local option, owner = row.option, row.control
+    local width, count = owner:GetWidth(), 0
+    for _, choice in ipairs(option.values or {}) do
+        if not choice.available or choice.available() then
+            count = count + 1
+            local item = DropdownItem(popup, count)
+            item.choice = choice
+            item.label:SetText(choice.label)
+            Place(item, popup, 2, 2 + (count - 1) * 23, width - 4, 23)
+            item:Show()
+        end
+    end
+    if count == 0 then return end
+    popup.row = row
+    MarkDropdownSelection(popup, option.get())
+    local height = count * 23 + 4
+    popup:SetSize(width, height)
+    local bottom = owner:GetBottom()
+    if bottom and bottom * owner:GetEffectiveScale() < (height + 2) * popup:GetEffectiveScale() then
+        popup:SetPoint("BOTTOMRIGHT", owner, "TOPRIGHT", 0, 2)
+    else
+        popup:SetPoint("TOPRIGHT", owner, "BOTTOMRIGHT", 0, -2)
+    end
+    ui.search:ClearFocus()
+    popup:RegisterEvent("GLOBAL_MOUSE_DOWN")
+    popup:EnableKeyboard(true)
+    popup:SetPropagateKeyboardInput(true)
+    popup:Show()
 end
 
 local function MakeRow(kind)
@@ -147,6 +250,16 @@ local function MakeRow(kind)
         Fill(control, 0.19, 0.21, 0.23, 1)
         if control.SetObeyStepOnDrag then control:SetObeyStepOnDrag(true) end
         control:SetScript("OnValueChanged", function(_, value) Write(row, value) end)
+    elseif kind == "dropdown" then
+        control = Button(frame)
+        control.label:SetPoint("RIGHT", control, "RIGHT", -20, 0)
+        local arrow = control:CreateTexture(nil, "OVERLAY")
+        arrow:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-arrow-right.png")
+        arrow:SetSize(10, 10)
+        arrow:SetPoint("RIGHT", control, "RIGHT", -6, 0)
+        arrow:SetRotation(-math.pi / 2)
+        arrow:SetVertexColor(0.75, 0.75, 0.78, 1)
+        control:SetScript("OnClick", function() OpenDropdown(row) end)
     else
         control = Button(frame)
         control:SetScript("OnClick", function()
@@ -167,6 +280,7 @@ local function MakeRow(kind)
 end
 
 local function BindDetails()
+    CloseDropdown()
     ui.updating = true
     for _, pool in pairs(ui.pools) do
         for _, row in ipairs(pool) do row.option, row.id = nil, nil; row.frame:Hide() end
@@ -199,6 +313,7 @@ local function BindDetails()
                 row.title:SetText(option.label)
                 row.description:SetText(option.status and option.status() or option.description or "")
                 local controlWidth = kind == "toggle" and 24 or math.min(150, math.floor(width * 0.38))
+                if kind == "dropdown" then controlWidth = math.min(width - 16, math.max(118, controlWidth)) end
                 local stacked = width < 225 and kind ~= "toggle"
                 row.title:SetWidth(math.max(40, width - (stacked and 16 or controlWidth + 24)))
                 row.description:SetWidth(width - 16)
@@ -349,6 +464,7 @@ local function Build(root)
     end)
     ui.listScroll, ui.listContent = Scroll(root, "EUIAddonSkinsSidebarScroll")
     ui.detailScroll, ui.detailContent = Scroll(root, "EUIAddonSkinsOptionsScroll")
+    ui.detailScroll:HookScript("OnVerticalScroll", CloseDropdown)
     ui.heading = Text(ui.detailContent, "GameFontNormalLarge")
     ui.heading:SetPoint("TOPLEFT", ui.detailContent, "TOPLEFT", 0, -2)
     ui.heading:SetWordWrap(true)
@@ -385,7 +501,7 @@ local function RegisterCanvas()
     local root = CreateFrame("Frame", "EUIAddonSkinsSettingsCanvas", UIParent)
     root.name = "EUI AddonSkins"
     root:Hide()
-    ui = {root=root, pools={toggle={},choice={},slider={},action={}}, entries={}, buttons={}}
+    ui = {root=root, pools={toggle={},choice={},dropdown={},slider={},action={}}, entries={}, buttons={}}
     root:SetScript("OnShow", function()
         if ui.open then return end
         if not ui.built then Build(root) end
@@ -399,6 +515,7 @@ local function RegisterCanvas()
     root:SetScript("OnHide", function()
         if not ui.open then return end
         ui.open = false
+        CloseDropdown()
         root:UnregisterAllEvents()
         ui.search:ClearFocus(); ui.search:SetText("")
         for _, pool in pairs(ui.pools) do
@@ -466,7 +583,7 @@ local function ForeverAvailable()
 end
 
 local function SkinStyle(available, unsupportedText)
-    local option = Appearance("choice", "style", "Skin Style")
+    local option = Appearance("dropdown", "style", "Skin Style")
     option.values = {
         {value="auto", label="Automatic"},
         {value="standard", label="EUI Standard"},
@@ -517,7 +634,10 @@ ns.RegisterSettingsProvider("KiwiFarm", {label="KiwiFarm",
 local spyReset = Reset("Restores Spy's AddonSkins style and opacity. Keeps native Spy settings.")
 spyReset.label = "Reset Appearance"
 ns.RegisterSettingsProvider("Spy", {label="Spy", options={
-    SkinStyle(nil, "EUI Forever rendering is unavailable on this client or EUI version."),
+    SkinStyle(function()
+        local handler = Handler()
+        return handler and handler.supportsForever()
+    end, "EUI Forever rendering is unavailable on this client or EUI version."),
     Appearance("slider", "opacity", "Background Opacity", "Changes only the Forever decorative background. Spy controls its own bar textures and window fading."),
 }, reset=spyReset})
 

@@ -2519,12 +2519,19 @@ end, function(S, module)
         UpdateTheme()
         if ns.RefreshPopupMenusNow then ns.RefreshPopupMenusNow() end
     end
+    local function NotifyAppearance(key)
+        if ns.SettingsPreferenceChanged then ns.SettingsPreferenceChanged("RXPGuides", key) end
+    end
+    local function NotifyOpacityDialog()
+        local registry = LibStub and LibStub("AceConfigRegistry-3.0", true)
+        if settingsRegistered and registry and registry.NotifyChange then registry:NotifyChange(settingsKey) end
+    end
     local function ResetSkinSettings()
         if EUIAddonSkinsDB then EUIAddonSkinsDB.restedXP = nil end
         SettingsChanged()
         refreshOptions()
-        local registry = LibStub and LibStub("AceConfigRegistry-3.0", true)
-        if settingsRegistered and registry and registry.NotifyChange then registry:NotifyChange(settingsKey) end
+        NotifyOpacityDialog()
+        NotifyAppearance("style")
     end
     local function ApplyOpacity()
         if CombatLocked() then themeWaiting = true; return end
@@ -2561,6 +2568,37 @@ end, function(S, module)
             V2FooterFill(window, forever)
         end
     end
+    local function GetOpacity()
+        local alpha = ForeverLook() and ForeverBackgroundOpacity()
+            or BackgroundOverride() or select(4, S.GetPanelColor()) or 0.92
+        return math.floor(alpha * 100 + 0.5)
+    end
+    local function SetOpacity(value)
+        if type(value) ~= "number" or value ~= value then return end
+        SavePreference("opacity", math.max(0, math.min(100, value)) / 100)
+        H.Queue(settingsKey, ApplyOpacity)
+        NotifyAppearance("opacity")
+    end
+    local function GetStyle()
+        local preferences = SkinPreferences()
+        return preferences and preferences.style or "auto"
+    end
+    local function SetStyle(value)
+        SavePreference("style", value)
+        SettingsChanged()
+        refreshOptions()
+        NotifyOpacityDialog()
+        NotifyAppearance("style")
+    end
+    module.settingsAppearance = {
+        get = function(key) if key == "style" then return GetStyle() end; return GetOpacity() end,
+        set = function(key, value)
+            if key == "style" then SetStyle(value)
+            else SetOpacity(value); NotifyOpacityDialog() end
+        end,
+        effectiveStyle = function() return ForeverLook() and "EUI Forever" or "EUI Standard" end,
+        reset = ResetSkinSettings,
+    }
     local function OpenOpacitySettings()
         if CombatLocked() then return end
         local registry = LibStub and LibStub("AceConfigRegistry-3.0", true)
@@ -2572,17 +2610,8 @@ end, function(S, module)
                     opacity = {
                         type = "range", name = "Background Opacity", order = 1,
                         width = "full", min = 0, max = 100, step = 1, bigStep = 5,
-                        get = function()
-                            local alpha = ForeverLook() and ForeverBackgroundOpacity()
-                                or BackgroundOverride() or select(4, S.GetPanelColor()) or 0.92
-                            return math.floor(alpha * 100 + 0.5)
-                        end,
-                        set = function(_, value)
-                            if type(value) ~= "number" or value ~= value then return end
-                            SavePreference("opacity", math.max(0, math.min(100, value)) / 100)
-                            -- Coalesce slider changes and use the existing combat-safe refresh.
-                            H.Queue(settingsKey, ApplyOpacity)
-                        end,
+                        get = GetOpacity,
+                        set = function(_, value) SetOpacity(value) end,
                     },
                     reset = {type = "execute", name = "Reset Skin Settings", order = 2, func = ResetSkinSettings},
                 },
@@ -2594,14 +2623,8 @@ end, function(S, module)
         dialog:Open(settingsKey)
     end
     local function StyleChoice(label, value)
-        return {text = label, isNotRadio = false, checked = function()
-            local preferences = SkinPreferences()
-            return (preferences and preferences.style or "auto") == value
-        end, func = function()
-            SavePreference("style", value)
-            SettingsChanged()
-            refreshOptions()
-        end}
+        return {text = label, isNotRadio = false, checked = function() return GetStyle() == value end,
+            func = function() SetStyle(value) end}
     end
     local settingsMenu = {
         text = "EUI AddonSkins", notCheckable = true, hasArrow = true, padding = 28,
@@ -2683,7 +2706,10 @@ end, function(S, module)
         if S.OnLooksChanged then S.OnLooksChanged(ns.RefreshPopupMenus) end
     end
     module.refresh = function() refreshOptions(); UpdateTheme() end
-    if S.OnLooksChanged then S.OnLooksChanged(UpdateTheme); S.OnLooksChanged(refreshOptions) end
+    if S.OnLooksChanged then
+        S.OnLooksChanged(function() UpdateTheme(); NotifyAppearance("style") end)
+        S.OnLooksChanged(refreshOptions)
+    end
     refreshOptions()
     UpdateTheme()
 end)

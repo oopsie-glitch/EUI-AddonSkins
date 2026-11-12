@@ -1,5 +1,5 @@
 local ADDON, ns = ...
-ns.VERSION = "1.6.5"
+ns.VERSION = "1.6.6"
 ns.modules = {}
 
 local function Print(message)
@@ -19,7 +19,8 @@ local function TryModules()
             module.attempted = true
             local ok, err = pcall(module.install, module.skin, module)
             module.active = ok
-            if not ok then geterrorhandler()(ADDON .. " / " .. module.label .. ": " .. tostring(err)) end
+            if not ok then geterrorhandler()(ADDON .. " / " .. module.label .. ": " .. tostring(err))
+            elseif ns.SettingsAvailabilityChanged then ns.SettingsAvailabilityChanged(module.id) end
         end
     end
 end
@@ -90,6 +91,7 @@ SlashCmdList.EUIADDONSKINS = function(message)
     EUIAddonSkinsDB = EUIAddonSkinsDB or {}
     if command == "off" or command == "on" then
         EUIAddonSkinsDB.disabled = command == "off"
+        if ns.SettingsAvailabilityChanged then ns.SettingsAvailabilityChanged() end
         Print((command == "off" and "Disabled." or "Enabled.") .. " Run /reload to apply.")
     elseif command == "diagnostics" and ns.ShowLoaderDiagnostics then
         ns.ShowLoaderDiagnostics()

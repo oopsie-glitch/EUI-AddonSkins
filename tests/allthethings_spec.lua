@@ -167,6 +167,12 @@ if not ATT_PERF_FIXTURE then assert(settings.appearancePage, "appearance options
 local opacity=settings.appearancePage and settings.appearancePage.backgroundOpacity
 if opacity then
 assert(opacity and opacity:GetValue()==65 and Surface(prime):GetAlpha()==0.65)
+assert(EUIAddonSkinsDB.allTheThings==nil, "binding the native slider wrote a default")
+for _, percent in ipairs({0, 75, 100}) do
+    module.settingsAppearance.set("opacity", percent)
+    assert(opacity:GetValue()==percent and module.settingsAppearance.get("opacity")==percent)
+    assert(Surface(prime):GetAlpha()==percent/100 and EUIAddonSkinsDB.allTheThings.opacity==percent/100)
+end
 assert(prime:GetAlpha()==1 and prime.Container.rows[1].Label:GetAlpha()==1)
 local opacityObjects,opacityHooks,opacityFonts=allocated,hookCount,fontWrites
 for percent=0,100 do opacity:SetValue(percent) end

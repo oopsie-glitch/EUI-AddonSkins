@@ -349,6 +349,11 @@ assert(displayOptions.args.euiAddonSkinsBackgroundOpacity==savedOpacity and regi
 displayOptions={type='group',args={scale=nativeScale}}
 targetApp:SetupOptions();opacity=displayOptions.args.euiAddonSkinsBackgroundOpacity
 assert(opacity.get()==35 and displayOptions.args.scale==nativeScale)
+for _, percent in ipairs({0, 75, 100}) do
+    module.settingsAppearance.set("opacity", percent)
+    assert(opacity.get()==percent and module.settingsAppearance.get("opacity")==percent)
+    assert(EUIAddonSkinsDB.rareScanner.backgroundOpacity==percent/100 and mainFill.color[4]==percent/100)
+end
 opacity.set(nil,80)
 assert(EUIAddonSkinsDB.rareScanner.backgroundOpacity==.8)
 local ac,ar,aa,ah,af=childReads,regionReads,allocated,hookCount,fontWrites

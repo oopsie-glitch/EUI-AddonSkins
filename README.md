@@ -62,12 +62,13 @@ Install the addons you want to skin separately. Client support varies by target 
 ## Settings
 
 Toggle individual skins in **Blizzard Skins+ > Window Skins > Third-Party Addons**.
-Details appearance is opt-in. Hover its settings icon > **EUI AddonSkins** for independent Details meter, Tiny Threat and menus/options switches. The same controls are available through `/euidetails`.
 
-AllTheThings window opacity is under **Options > AddOns > All The Things > EUI AddonSkins**. Nova Instance Tracker windows use 80% background opacity.
+Open **Options > AddOns > EUI AddonSkins** for a searchable list of active configurable addons. The panel shows only the controls each integration supports. **Legacy options** remains available for the original shared page.
 
-RestedXP's navigation-arrow skin can be toggled in **Options > AddOns > EUI AddonSkins**.
-KiwiFarm skin options are under **Appearance > AddonSkins** in its right-click menu, including separate stats/menu opacity and background style.
+- Details! keeps its independent meter, Tiny Threat and menus/options switches. Use the meter settings icon or `/euidetails` for quick access.
+- Spy offers Automatic, EUI Standard and EUI Forever, decorative background opacity and Reset Appearance. Use its right-click **EUI AddonSkins** menu or `/euispy` for quick access. The Forever look requires the supported Forever client and EUI appearance API.
+- RestedXP offers style, opacity and its separate navigation-arrow toggle. Appearance Reset preserves the arrow preference.
+- AllTheThings, RareScanner and KiwiFarm expose their existing appearance controls. KiwiFarm can also restore its native statistics font. Nova Instance Tracker windows retain their 80% background opacity.
 
 Skins follow EUI's theme and accent settings. Run `/reload` after disabling a skin.
 

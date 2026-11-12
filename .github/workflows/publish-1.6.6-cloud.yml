@@ -1,0 +1,138 @@
+name: Publish approved v1.6.6 from cloud
+on:
+  push:
+    branches: [chore/publish-1.6.6-cloud]
+    paths: [.github/workflows/publish-1.6.6-cloud.yml]
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: publish-approved-v1.6.6
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: oopsie-glitch/EUI-AddonSkins
+      RELEASE_COMMIT: d5bb81b70d42422dacc9c8b4b199273406cbc4f9
+      APPROVED_HEAD: d07ff6b403e783f249ff13b7840a0ef5c9ed2cb5
+      APPROVED_TREE: 9e6e35429d7cd279e3e1ec3a2a877affe03a0f3b
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: d5bb81b70d42422dacc9c8b4b199273406cbc4f9
+          persist-credentials: false
+      - name: Verify approved tree, main, CI and release exclusivity
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
+          test "$(gh api repos/$GH_REPO/git/ref/heads/main --jq .object.sha)" = "$RELEASE_COMMIT"
+          test "$(gh api repos/$GH_REPO/git/commits/$RELEASE_COMMIT --jq .tree.sha)" = "$APPROVED_TREE"
+          test "$(gh api repos/$GH_REPO/git/commits/$APPROVED_HEAD --jq .tree.sha)" = "$APPROVED_TREE"
+          test "$(gh api repos/$GH_REPO/pulls/82 --jq .head.sha)" = "$APPROVED_HEAD"
+          test "$(gh api repos/$GH_REPO/pulls/82 --jq .merge_commit_sha)" = "$RELEASE_COMMIT"
+          test "$(gh api repos/$GH_REPO/pulls/82 --jq .merged)" = "true"
+          test "$(gh api repos/$GH_REPO/actions/runs/43287698166 --jq .conclusion)" = "success"
+          test "$(gh api repos/$GH_REPO/releases/latest --jq .tag_name)" = "v1.6.5"
+          if gh api repos/$GH_REPO/git/ref/tags/v1.6.6 >/dev/null 2>&1 || gh release view v1.6.6 >/dev/null 2>&1; then
+            echo "v1.6.6 already exists; stop without changing it"
+            exit 1
+          fi
+      - name: Install Lua test runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Run complete regressions and build installable ZIP
+        run: python3 scripts/package.py
+      - name: Verify distribution and prepare approved notes
+        run: |
+          gh api repos/$GH_REPO/pulls/82 --jq .body > /tmp/release-pr-body.md
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import hashlib
+          import re
+          addon = Path('EUIAddonSkins')
+          changelog = Path('CHANGELOG.md').read_text()
+          assert changelog == (addon/'CHANGELOG.md').read_text()
+          assert re.search(r'^## 1\.6\.6 ', changelog, re.M)
+          assert 'ns.VERSION = "1.6.6"' in (addon/'Core.lua').read_text()
+          with ZipFile('EUIAddonSkins-1.6.6.zip') as z:
+              names = z.namelist()
+              assert z.testzip() is None and len(names) == len(set(names)) == 67
+              expected = {p.as_posix() for p in addon.rglob('*') if p.is_file()
+                          and p.name not in ('README.md','CHANGELOG.md')}
+              assert set(names) == expected
+              assert len([p for p in names if p.startswith('EUIAddonSkins/Skins/')]) == 43
+              assert z.read('EUIAddonSkins/LICENSE') == Path('LICENSE').read_bytes()
+              for name in names:
+                  assert z.read(name) == Path(name).read_bytes()
+              for name in ('EUIAddonSkins.toc','EUIAddonSkins_Camelot.toc','EUIAddonSkins_Mainline.toc'):
+                  toc = z.read('EUIAddonSkins/'+name)
+                  assert b'## Version: 1.6.6' in toc and b'## X-Wago-ID: aN0a2M6j' in toc
+                  assert b'## Interface: 16001, 120000, 120001, 120005, 120007, 120100, 120105' in toc
+          body = Path('/tmp/release-pr-body.md').read_text()
+          notes = body.split('## Draft release notes\n\n', 1)[1].split('\n## Validation', 1)[0].strip()
+          notes = notes.replace(' Final integrated WoW smoke testing is pending.', '')
+          assert notes.count('\n- ') == 3 and notes.startswith('- Spy')
+          approved = changelog.split('\n## 1.6.6 ',1)[1].split('\n## 1.6.5 ',1)[0].split('\n\n',1)[1].strip()
+          assert notes.startswith(approved), 'Release notes differ from the approved changelog'
+          notes += ('\n\nFinal integrated in-game testing was approved. Requires EllesmereUI with Blizzard Skins+ enabled. '
+                    'Extract the EUIAddonSkins folder from the installable ZIP into Interface/AddOns and restart the game. '
+                    'Keep SavedVariables to retain your settings.\n')
+          Path('/tmp/release-notes.md').write_text(notes)
+          print('Verified release ZIP SHA256:', hashlib.sha256(Path('EUIAddonSkins-1.6.6.zip').read_bytes()).hexdigest())
+          print('Verified 67 runtime files, 43 skins, three TOCs and exact MIT license')
+          PY
+      - name: Confirm merged main CI before tagging
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 25); do
+            result=$(gh api "repos/$GH_REPO/commits/$RELEASE_COMMIT/check-runs" --jq '[.check_runs[] | select(.name == "validate" and .conclusion == "success")] | length')
+            if [ "$result" -ge 1 ]; then exit 0; fi
+            sleep 5
+          done
+          echo "Merged main CI has not passed"
+          exit 1
+      - name: Create official annotated tag
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/$GH_REPO/git/ref/heads/main --jq .object.sha)" = "$RELEASE_COMMIT"
+          test "$(gh api repos/$GH_REPO/releases/latest --jq .tag_name)" = "v1.6.5"
+          if gh api repos/$GH_REPO/git/ref/tags/v1.6.6 >/dev/null 2>&1; then exit 1; fi
+          tag_sha=$(gh api --method POST repos/$GH_REPO/git/tags -f tag=v1.6.6 -f message="EUI AddonSkins 1.6.6" -f object="$RELEASE_COMMIT" -f type=commit --jq .sha)
+          gh api --method POST repos/$GH_REPO/git/refs -f ref=refs/tags/v1.6.6 -f sha="$tag_sha" --jq '{ref: .ref, type: .object.type, object: .object.sha}'
+          test "$(gh api repos/$GH_REPO/git/tags/$tag_sha --jq .object.sha)" = "$RELEASE_COMMIT"
+      - name: Stage GitHub release and verify uploaded ZIP
+        run: |
+          set -euo pipefail
+          gh release create v1.6.6 EUIAddonSkins-1.6.6.zip --verify-tag --draft --title "EUI AddonSkins 1.6.6 — Spy, Addon Settings and DungeonJournal" --notes-file /tmp/release-notes.md
+          mkdir /tmp/release-upload-verification
+          gh release download v1.6.6 --pattern EUIAddonSkins-1.6.6.zip --dir /tmp/release-upload-verification
+          cmp EUIAddonSkins-1.6.6.zip /tmp/release-upload-verification/EUIAddonSkins-1.6.6.zip
+      - name: Publish verified GitHub release
+        run: |
+          gh release edit v1.6.6 --draft=false --latest
+          gh release view v1.6.6 --json url,tagName,isDraft,assets
+      - name: Dispatch established Wago workflow if configured
+        env:
+          WAGO_CONFIGURED: ${{ secrets.WAGO_API_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          if [ "$WAGO_CONFIGURED" != "true" ]; then
+            echo "Wago pending: repository publication credential unavailable to this workflow"
+            exit 0
+          fi
+          state=$(gh api "repos/$GH_REPO/actions/workflows/wago-release.yml" --jq .state)
+          if [ "$state" != "active" ]; then
+            echo "Wago pending: existing publication workflow is not active"
+            exit 0
+          fi
+          existing=$(gh api "repos/$GH_REPO/actions/workflows/wago-release.yml/runs?head_sha=$RELEASE_COMMIT" --jq .total_count)
+          if [ "$existing" -gt 0 ]; then
+            echo "An existing Wago workflow run already targets the released commit"
+            exit 0
+          fi
+          gh workflow run wago-release.yml --ref main -f release_tag=v1.6.6

@@ -36,6 +36,7 @@ Skins\ForeverDungeonJournal.lua
 Skins\Gargul.lua
 Skins\GTFO.lua
 Skins\GuildRosterManager.lua
+Skins\Guildy.lua
 Skins\HandyNotes.lua
 Skins\HekiLight.lua
 Skins\HomeBound.lua

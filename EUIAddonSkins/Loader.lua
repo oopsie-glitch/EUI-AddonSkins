@@ -20,6 +20,7 @@ ns.skinCatalog = {
     {id = "Gargul", label = "Gargul", targets = {"Gargul"}},
     {id = "GTFO", label = "GTFO", targets = {"GTFO"}},
     {id = "GuildRosterManager", label = "Guild Roster Manager", targets = {"Guild_Roster_Manager"}},
+    {id = "Guildy", label = "Guildy", targets = {"Guildy"}},
     {id = "HandyNotes", label = "HandyNotes", targets = {"HandyNotes"}},
     {id = "HekiLight", label = "HekiLight", targets = {"HekiLight"}},
     {id = "HomeBound", label = "Home Bound", targets = {"HomeBound"}},

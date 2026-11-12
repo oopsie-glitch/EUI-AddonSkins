@@ -1,0 +1,378 @@
+name: Validate and package 1.6.6 release candidate
+on:
+  push:
+    branches: [test/release-1.6.6-package]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: release-1.6.6-test-package
+  cancel-in-progress: true
+jobs:
+  test-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: d07ff6b403e783f249ff13b7840a0ef5c9ed2cb5
+      - name: Install Lua test runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0 lua5.4
+      - name: Compare settings artwork and navigation on one runner
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from statistics import median
+          from subprocess import check_output
+          from urllib.request import urlopen
+          import re
+          import sys
+
+          baseline = 'https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/f9de2375024bb7d5a942fc74e0800c4f1fb7eed0/'
+          renderer = Path('EUIAddonSkins/SettingsUI.lua')
+          fixture = Path('tests/settings_ui_spec.lua')
+          candidate_source = renderer.read_bytes()
+          candidate_fixture = fixture.read_bytes()
+
+          def read_baseline(path):
+              with urlopen(baseline + str(path), timeout=30) as response:
+                  return response.read()
+
+          before_source = read_baseline(renderer)
+          original_fixture = read_baseline(fixture)
+          measurements = {'before': [], 'after': []}
+          pattern = re.compile(r'BENCH (Skin Style dropdown|Combined Spy/RestedXP): '
+                               r'(\d+) frames/(\d+) regions settled, 200 .* cycles ([\d.]+) ms')
+          try:
+              # Keep instrumentation and workloads identical across both renderers.
+              fixture.write_bytes(original_fixture)
+              for trial in range(5):
+                  pair = [('before', before_source), ('after', candidate_source)]
+                  for label, source in pair if trial % 2 == 0 else reversed(pair):
+                      renderer.write_bytes(source)
+                      output = check_output([sys.executable, 'tests/run_lua.py'], text=True)
+                      rows = pattern.findall(output)
+                      assert len(rows) == 2, output
+                      measurements[label].append(rows)
+                      print(label, trial + 1, rows, flush=True)
+          finally:
+              renderer.write_bytes(candidate_source)
+              fixture.write_bytes(candidate_fixture)
+
+          for label, samples in measurements.items():
+              for index, (name, frames, regions, _) in enumerate(samples[0]):
+                  assert all(rows[index][:3] == (name, frames, regions) for rows in samples)
+                  duration = median(float(rows[index][3]) for rows in samples)
+                  print(f'PAIRED SETTINGS {label}: {name}: {frames} frames/{regions} regions, '
+                        f'{duration:.3f} ms median of five 200-cycle trials')
+          PY
+      - name: Validate and build installation ZIP
+        run: python3 scripts/package.py
+      - name: Verify against pinned official Spy Forever source
+        run: |
+          python3 - <<'PY'
+          from hashlib import sha256
+          from io import BytesIO
+          from pathlib import Path
+          from urllib.request import urlopen
+          from zipfile import ZipFile
+
+          url = 'https://edge.forgecdn.net/files/9501/070/Spy-1.3.8-forever5.zip'
+          with urlopen(url, timeout=30) as response:
+              data = response.read()
+          assert sha256(data).hexdigest() == 'f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec'
+          root = Path('/tmp/spy-upstream')
+          members = (
+              'Spy.lua', 'MainWindow.lua', 'Colors.lua', 'Widgets.lua',
+              'Libs/AceGUI-3.0/AceGUI-3.0.lua',
+              'Libs/AceGUI-3.0-SharedMediaWidgets/prototypes.lua',
+              'Libs/AceGUI-3.0-SharedMediaWidgets/StatusbarWidget.lua',
+          )
+          with ZipFile(BytesIO(data)) as source:
+              for member in members:
+                  destination = root / member
+                  destination.parent.mkdir(parents=True, exist_ok=True)
+                  destination.write_bytes(source.read('Spy/' + member))
+          PY
+          export SPY_SOURCE=/tmp/spy-upstream
+          python3 tests/run_lua.py
+          SPY_BOOT_INVERTED=1 python3 tests/run_lua.py
+          SPY_BOOT_STANDARD_INVERTED=1 python3 tests/run_lua.py
+      - name: Verify fresh bootstrap with saved Spy opacity
+        run: |
+          for opacity in 0 0.75 1; do
+            SPY_BOOT_OPACITY="$opacity" python3 tests/run_lua.py
+          done
+      - name: Check exact release metadata and published baseline
+        run: |
+          test "$(git rev-parse HEAD)" = "d07ff6b403e783f249ff13b7840a0ef5c9ed2cb5"
+          test "$(git rev-parse 'v1.6.5^{commit}')" = "b4fa58940f86e48171188adde09e1514d2a7c674"
+          git merge-base --is-ancestor 17916c43d95e108c6f4e082e83b8556a9bbffadc HEAD
+          git merge-base --is-ancestor 5907a0cd7ab1ffd300f1285480cf627824b9079d HEAD
+          git merge-base --is-ancestor 758a1efb33f9fbc9edc8e4bad8304c1f87dcbf92 HEAD
+          ! git merge-base --is-ancestor f9de2375024bb7d5a942fc74e0800c4f1fb7eed0 HEAD
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          tag = 'v1.6.6'
+          assert re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag)
+          version = tag[1:]
+          addon = Path('EUIAddonSkins')
+          changelog = Path('CHANGELOG.md').read_text()
+          assert re.search(r'^## ' + re.escape(version) + r'(?:\s|$)', changelog, re.M)
+          assert changelog == (addon / 'CHANGELOG.md').read_text()
+          assert f'ns.VERSION = "{version}"' in (addon / 'Core.lua').read_text()
+          manifest = (addon / 'EUIAddonSkins.toc').read_text()
+          assert re.search(r'^## Version: ' + re.escape(version) + r'$', manifest, re.M)
+          assert '## X-Wago-ID: aN0a2M6j' in manifest
+          interfaces = [int(v) for v in re.search(r'^## Interface: (.+)$', manifest, re.M).group(1).split(',')]
+          assert [v for v in interfaces if 16000 <= v < 17000] == [16001]
+          assert [v for v in interfaces if v >= 100000] == [120000,120001,120005,120007,120100,120105]
+          for name in ('Camelot', 'Mainline'):
+              assert (addon / ('EUIAddonSkins_'+name+'.toc')).read_text() == manifest
+          settings = (addon / 'SettingsUI.lua').read_text()
+          for provider in ('Details','RXPGuides','AllTheThings','RareScanner','KiwiFarm','Spy'):
+              assert settings.count('ns.RegisterSettingsProvider("'+provider+'"') == 1
+          assert 'Fill(root, 0.045' not in settings and 'Legacy options' in settings
+          spy = (addon / 'Skins/Spy.lua').read_text()
+          assert 'Concept A' not in spy and 'HeavyBronze' not in spy
+          print('Validated stable-version metadata, client interfaces, and provider uniqueness without tags or credentials')
+          PY
+      - name: Verify published DungeonJournal Share source contract
+        run: |
+          python3 - <<'PY'
+          from hashlib import sha256
+          from io import BytesIO
+          from urllib.request import urlopen
+          from zipfile import ZipFile
+          with urlopen('https://edge.forgecdn.net/files/9567/829/DungeonJournal-2.0.3.zip', timeout=45) as response:
+              data = response.read()
+          assert sha256(data).hexdigest() == '24be354fa8a585cc258f9efe8d1b13500f532b41816ad4d471cc29c6765e2a30'
+          with ZipFile(BytesIO(data)) as z:
+              source = z.read('ForeverDungeonJournal/Core/Journal.lua').decode('utf-8-sig')
+          i = source.index('frame.questShareButton = CreateFrame')
+          j = source.index('frame.questShareButton:Hide()', i)
+          share = source[i:j]
+          assert '"BackdropTemplate"' in share and 'SetHighlightTexture' in share
+          assert 'self:SetBackdropColor(0.22, 0.22, 0.22' in share
+          assert 'self:SetBackdropColor(0.13, 0.40, 0.19' in share
+          assert 'self._fdjShareEnabled and self.questID' in share
+          assert 'FDJ.SetQuestShareButtonVisual(self' in share
+          print('Verified official DungeonJournal 2.0.3 backdrop, hover and click contracts')
+          PY
+      - name: Verify the shared package manifest with uploads disabled
+        run: |
+          curl --fail --silent --show-error --location https://raw.githubusercontent.com/BigWigsMods/packager/e50a250f8705041e40f2fa1ddcb280a686d65aa0/release.sh -o /tmp/bigwigs-release.sh
+          bash /tmp/bigwigs-release.sh -d -p 0 -w 0 -a 0 -l -e -u -m .pkgmeta -r /tmp/manifest-package -n EUIAddonSkins-1.6.6-manifest-check
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          packages = list(Path('/tmp/manifest-package').glob('*.zip'))
+          assert len(packages) == 1, packages
+          with ZipFile(packages[0]) as actual, ZipFile('EUIAddonSkins.zip') as expected:
+              assert actual.testzip() is None
+              files = {item.filename for item in actual.infolist() if not item.is_dir()}
+              assert files == set(expected.namelist()), (files-set(expected.namelist()), set(expected.namelist())-files)
+              for name in files:
+                  a, b = actual.read(name), expected.read(name)
+                  if not name.endswith('.tga'):
+                      a, b = a.replace(b'\r\n', b'\n'), b.replace(b'\r\n', b'\n')
+                  assert a == b, name
+              print('Manifest dry run verified', len(files), 'runtime files; uploads disabled')
+          PY
+      - name: Measure canvas construction and retained resources
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import re
+          from statistics import median
+          from subprocess import check_output
+          import sys
+          from urllib.request import urlopen
+
+          def download(path):
+              url = 'https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/f9de2375024bb7d5a942fc74e0800c4f1fb7eed0/' + str(path)
+              with urlopen(url, timeout=30) as response:
+                  return response.read()
+          renderer = Path('EUIAddonSkins/SettingsUI.lua')
+          fixture = Path('tests/settings_ui_spec.lua')
+          candidate, current_fixture = renderer.read_bytes(), fixture.read_bytes()
+          before = download(renderer)
+          spec = download(fixture).decode()
+          def instrument(start, finish):
+              global spec
+              assert spec.count(start) == 1, start
+              spec = spec.replace(start, finish)
+          instrument('local function Setup(modern, oldInfo, db)\n',
+                     'local function Setup(modern, oldInfo, db)\n    local auditStart = os.clock()\n')
+          instrument('local h={frames={},categories={},counts={frames=0,art=0,info=0,writes=0},',
+                     'local h={frames={},categories={},counts={frames=0,art=0,info=0,writes=0,textures=0,fonts=0,scripts=0,hooks=0},')
+          instrument('function f:CreateTexture()\n', 'function f:CreateTexture()\n            h.counts.textures=h.counts.textures+1\n')
+          instrument('function f:CreateFontString()\n', 'function f:CreateFontString()\n            h.counts.fonts=h.counts.fonts+1\n')
+          instrument('function f:SetScript(event, fn) self.scripts[event]=fn end',
+                     'function f:SetScript(event, fn) self.scripts[event]=fn; h.counts.scripts=h.counts.scripts+1 end')
+          instrument('function f:HookScript(event,fn)\n',
+                     'function f:HookScript(event,fn)\n            h.counts.hooks=h.counts.hooks+1\n')
+          instrument('    h:Event("PLAYER_LOGIN")\n    return h',
+                     '    h:Event("PLAYER_LOGIN")\n    h.auditLogin=(os.clock()-auditStart)*1000\n    return h')
+          instrument('    SlashCmdList.EUIDETAILS()\n    assert(h.opened==root',
+                     '    local auditFirst=os.clock()\n    SlashCmdList.EUIDETAILS()\n'
+                     '    if not oldInfo then print(("AUDIT COLD %.6f %.6f %d %d %d"):format('
+                     'h.auditLogin,(os.clock()-auditFirst)*1000,h.counts.frames,h.counts.textures,h.counts.fonts)) end\n'
+                     '    assert(h.opened==root')
+          instrument('local combinedWrites, combinedStart = writes, os.clock()',
+                     'collectgarbage("collect"); collectgarbage("collect")\n'
+                     'local auditHeap=collectgarbage("count")\n'
+                     'local combinedWrites, combinedStart = writes, os.clock()')
+          instrument('local combinedElapsed = (os.clock()-combinedStart)*1000',
+                     'local combinedElapsed = (os.clock()-combinedStart)*1000\n'
+                     'collectgarbage("collect"); collectgarbage("collect")\n'
+                     'print(("AUDIT WARM %.6f %.6f %d %d %d %d %d"):format(combinedElapsed,collectgarbage("count")-auditHeap,'
+                     'app.counts.frames,app.counts.textures,app.counts.fonts,app.counts.scripts,app.counts.hooks))')
+          results = {'before': [], 'after': []}
+          try:
+              fixture.write_text(spec)
+              for trial in range(5):
+                  versions = [('before', before), ('after', candidate)]
+                  for label, source in versions if trial % 2 == 0 else reversed(versions):
+                      renderer.write_bytes(source)
+                      output = check_output([sys.executable,'tests/run_lua.py'], text=True)
+                      cold = re.search(r'^AUDIT COLD (.+)$', output, re.M).group(1)
+                      warm = re.search(r'^AUDIT WARM (.+)$', output, re.M).group(1)
+                      results[label].append([float(x) for x in (cold+' '+warm).split()])
+          finally:
+              renderer.write_bytes(candidate)
+              fixture.write_bytes(current_fixture)
+          fields = ('setup_ms','first_show_ms','first_frames','first_textures','first_fonts',
+                    'navigation_ms','warm_retained_kib','warm_frames','warm_textures','warm_fonts','set_scripts','hook_scripts')
+          for label, trials in results.items():
+              print('SETTINGS AUDIT',label,json.dumps(dict(zip(fields,map(median,zip(*trials))))))
+          PY
+      - name: Exercise unmodified RestedXP resolver and payload functions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          root = 'https://raw.githubusercontent.com/RestedXP/RXPGuides/b4a0f99a2ceac856f75a11594bcaa19886236a01/'
+          def source(name):
+              with urlopen(root + name, timeout=30) as response:
+                  return response.read().decode()
+          def section(text, start, end):
+              assert text.count(start) == 1 and text.count(end) == 1
+              return text[text.index(start):text.index(end)]
+          functions = source('functions.lua')
+          guide = source('GuideWindow.lua')
+          Path('/tmp/rxp-pinned-functions.lua').write_text(
+              'local addon = ...\n' +
+              section(functions, 'local NPCNames = {}', 'function addon.GetItemName(id)') +
+              section(guide, 'function addon.v2:GetActiveStepText(step)', 'function addon.v2:EncodePlayerActiveSteps(payload)') +
+              section(guide, 'function addon.v2:UpdateActiveStepsFrame(steps, questId)',
+                      'function addon.v2:UpdateActivePartyStepsFrame(encodedPayload, player)'))
+          PY
+          cat > /tmp/rxp-source-probe.lua <<'LUA'
+          C_Timer = {}
+          local fixture = assert(loadfile("tests/collection_spec.lua"))("rxp-benchmark")
+          local addon, v2 = fixture.addon, fixture.addon.v2
+          addon.settings.profile.enableBetaFeatures = true
+          addon.player = {name="Probe"}
+          addon.comms = {grouping={CanBroadcastCurrentStep=function() return false end}}
+          v2.state.player = {}
+          function v2:IsGuideWindowEnabled() return false end
+          function v2:ClearActiveStepEventWatchers() end
+          assert(loadfile("/tmp/rxp-pinned-functions.lua"))(addon)
+          local getName, replace, getText, update = addon.GetNpcName, addon.ReplaceNpcIds, v2.GetActiveStepText, v2.UpdateActiveStepsFrame
+          local reads, restricted = 0, false
+          GetTime = function() return 100 end
+          GameTooltip = {SetOwner=function() end, ClearLines=function() end, SetHyperlink=function() end,
+              IsShown=function() return true end, Hide=function() end}
+          GameTooltipTextLeft1 = {GetText=function()
+              reads = reads + 1
+              if restricted then return setmetatable({}, {__index=function() error("restricted tooltip stand-in") end}) end
+              return "|cffffffffScout|r"
+          end}
+          if arg[1] == "installed" then
+              fixture.module.install(fixture.api,fixture.module)
+              fixture.flush()
+              for _=1,20 do fixture.module.refresh();fixture.flush() end
+              assert(reads == 0, "skin refresh read NPC tooltip")
+          end
+          assert(getName == addon.GetNpcName and replace == addon.ReplaceNpcIds and
+              getText == v2.GetActiveStepText and update == v2.UpdateActiveStepsFrame)
+          local failures = 0
+          for i=1,60 do
+              restricted = i%2==0
+              local step={active=true}
+              step.elements={{step=step,rawtext="Speak to npc:Scout:"..(100+i)}}
+              local ok,err=pcall(v2.UpdateActiveStepsFrame,v2,{step})
+              if not ok then
+                  assert(restricted and tostring(err):find("restricted tooltip stand-in",1,true), tostring(err))
+                  failures=failures+1
+              else
+                  assert(not restricted)
+              end
+          end
+          assert(reads==60 and failures==30)
+          print("RXP SOURCE PROBE",arg[1],"reads",reads,"restricted failures",failures,"identities unchanged")
+          LUA
+          lua5.4 /tmp/rxp-source-probe.lua absent
+          lua5.4 /tmp/rxp-source-probe.lua installed
+      - name: Compare standalone and combined Spy adapters
+        run: |
+          SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline 17916c43d95e108c6f4e082e83b8556a9bbffadc --style forever --trials 5 --iterations 1000 --rows 40 --summary > /tmp/spy-forever.json
+          SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline 17916c43d95e108c6f4e082e83b8556a9bbffadc --style standard --trials 5 --iterations 1000 --rows 40 --summary > /tmp/spy-standard.json
+          python3 - <<'PY'
+          from pathlib import Path
+          for style in ('forever','standard'):
+              print('SPY AUDIT',style,Path('/tmp/spy-'+style+'.json').read_text().replace('\n',' '))
+          PY
+      - name: Compare published RestedXP audit baseline and combined adapter
+        run: |
+          git fetch --no-tags --depth=1 origin f71c8a8cf30c43aa984d69d43d58e7de46789aa5
+          python3 benchmarks/run_rxp.py --baseline f71c8a8cf30c43aa984d69d43d58e7de46789aa5 --output /tmp/rxp-before.json > /dev/null
+          python3 benchmarks/run_rxp.py --output /tmp/rxp-after.json > /dev/null
+          python3 - <<'PY'
+          import json
+          for name in ('before','after'):
+              with open('/tmp/rxp-'+name+'.json') as f:
+                  data = json.load(f)
+              print('RXP AUDIT',name,json.dumps(data['medians']))
+          PY
+      - name: Prepare addon-only test artifact
+        run: python3 -m zipfile -e EUIAddonSkins.zip /tmp/release-1.6.6
+      - name: Store temporary Actions artifact
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-1.6.6-d07ff6b4-test
+          path: /tmp/release-1.6.6/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Verify downloaded artifact against the validated installation ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if gh api "repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/release-1.6.6-download.zip; then break; fi
+            if [ "$attempt" -eq 5 ]; then exit 1; fi
+            sleep 3
+          done
+          python3 - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          from zipfile import ZipFile
+          path = Path('/tmp/release-1.6.6-download.zip')
+          with ZipFile(path) as actual, ZipFile('EUIAddonSkins.zip') as expected:
+              assert actual.testzip() is None
+              assert sorted(actual.namelist()) == sorted(expected.namelist())
+              assert all(actual.read(name) == expected.read(name) for name in expected.namelist())
+              assert {name.split('/')[0] for name in actual.namelist()} == {'EUIAddonSkins'}
+              print('Verified install artifact:', len(actual.namelist()), 'runtime files; one EUIAddonSkins folder')
+          print('Install artifact SHA256:', sha256(path.read_bytes()).hexdigest())
+          PY

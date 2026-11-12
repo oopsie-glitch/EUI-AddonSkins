@@ -65,6 +65,8 @@ local function frame(kind, name, parent)
     function f:SetEnabled(v) self.disabled = not v; local h = self.hooks[v and 'OnEnable' or 'OnDisable']; if h then h(self) end end
     function f:GetName() return self.name end
     function f:SetAlpha(v) self.alpha = v end
+    function f:SetFrameLevel(v) self.level = v end
+    function f:GetFrameLevel() return self.level or 1 end
     function f:EnableMouse(v) self.mouse = v end
     function f:GetAlpha() return self.alpha or 1 end
     function f:GetParent() return self.parent end
@@ -164,13 +166,10 @@ function SetLargeGuildTabardTextures(unit, emblem, background, border)
     emblem:SetTexture('guild-emblem'); background:SetVertexColor(0.2, 0.3, 0.9)
     border:SetTexture('guild-border'); border:SetVertexColor(0.9, 0.8, 0.1); border:Show()
 end
-local resized = {}
-function PanelTemplates_TabResize(tab, padding)
-    resized[tab] = (resized[tab] or 0) + 1; tab.label.width = tab.label.stringWidth + (padding or 0)
-end
 function ToggleGuildFrame() toggles = toggles + 1; return 'native-toggle' end
-function PanelTemplates_SelectTab(tab) tab.nativeSelected = true end
-function PanelTemplates_DeselectTab(tab) tab.nativeSelected = false end
+-- Blizzard's select/deselect resets the label's font object: its text colour comes back opaque.
+function PanelTemplates_SelectTab(tab) tab.nativeSelected = true; tab.label:SetTextColor(1, 1, 1, 1) end
+function PanelTemplates_DeselectTab(tab) tab.nativeSelected = false; tab.label:SetTextColor(1, 0.82, 0, 1) end
 CommunitiesGuildTextEditFrame = frame('Frame', 'CommunitiesGuildTextEditFrame')
 local container = frame('Frame', nil, CommunitiesGuildTextEditFrame)
 CommunitiesGuildTextEditFrame.Container = container
@@ -201,9 +200,6 @@ main.OptionsButton:SetScript('OnClick', function() main.optionsClicked = true en
 local side = frame('Frame', nil, main); side.sideTab = true; local sideArt = side:CreateTexture()
 local tab1, tab2 = Button(main, 'Chat', 'GuildyFrameTab1'), Button(main, 'Members', 'GuildyFrameTab2')
 tab1:SetID(1); tab2:SetID(2); main.selectedTab = 1
--- tab1 was sized before its font loaded: its label is wider than its room
-tab1.label.stringWidth, tab1.label.width = 40, 22
-tab2.label.stringWidth, tab2.label.width = 30, 44
 local grip = frame('Button', nil, main); grip.normal = grip:CreateTexture()
 grip.normal.path = 'Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up'
 local content = frame('Frame', nil, main)
@@ -231,12 +227,17 @@ container.parent = panel; panel.children[#panel.children + 1] = container
 assert(ToggleGuildFrame() == 'native-toggle' and toggles == 1); flush()
 assert(main.shell and main.shellOptions.noAccent, 'Guildy window not shelled on first open')
 assert(ring.alpha == 0 and main.PortraitContainer.portrait.alpha == 0, 'round portrait art remained')
-local titleIcon; for _, t in ipairs(main.regions) do if t.path == 'Interface/Icons/INV_Shirt_GuildTabard_01' then titleIcon = t end end
-assert(titleIcon and titleIcon.alpha == 1 and titleIcon.width == 28 and titleIcon.crop, 'square title icon missing')
+local holder = main.euiGuildyTabard and main.euiGuildyTabard.Frame
+assert(holder and holder.parent == main and holder.width == 60 and holder.height == 60, 'corner emblem not at Guildy size')
+assert(holder.points[1][1] == 'TOPLEFT' and holder.points[1][4] == -5 and holder.points[1][5] == 8, 'corner emblem not at Guildy position')
+assert(holder.level == main:GetFrameLevel() + 300, 'corner emblem below the window chrome')
+local titleIcon = main.euiGuildyTabard.Logo
+assert(titleIcon.path == 'Interface/Icons/INV_Shirt_GuildTabard_01' and titleIcon.alpha == 1 and titleIcon.crop, 'square logo missing')
 assert(main.Emblem.alpha == 0, 'round guild emblem still drawn in the corner')
 local tabard = main.euiGuildyTabard
 assert(tabard and tabard.ok and tabard.Emblem.path == 'guild-emblem' and tabard.Emblem:IsShown(), 'guild tabard not drawn in the title icon')
-assert(tabard.Emblem.width == 24 and tabard.Emblem.height == 27 and tabard.Background.width == 28 and tabard.Background.height == 28, 'tabard not fitted to the square')
+assert(tabard.Emblem.width == 52 and tabard.Emblem.height == 58 and tabard.Background.parent == holder, 'tabard not fitted to the square')
+for _, e in ipairs(tabard.Edges) do assert(e.parent == holder, 'tabard edge not on the emblem frame') end
 assert(tabard.Background.path == 'Interface' .. string.char(92) .. 'Buttons' .. string.char(92) .. 'WHITE8X8' and tabard.Background.color[3] == 0.9 and tabard.Background:IsShown(), 'tabard background colour not filling the square')
 assert(tabard.Border.hidden, 'round tabard border art shown in the square icon')
 assert(titleIcon == tabard.Logo and tabard.Logo.shown == false, 'Guildy logo still shown under the tabard')
@@ -252,8 +253,7 @@ assert(emblemArt.alpha == 1 and emblemText.font == 'native', 'guild emblem inter
 assert(main.OptionsButton.button and main.OptionsButton.Icon.alpha == 1, 'options cog lost its icon')
 assert(not side.button and sideArt.alpha == 1, 'side tab art changed')
 assert(tab1.tab and tab1.selected == true and tab2.tab and tab2.selected == false, 'bottom tabs not styled with selection')
-assert(tab1.label.wrap == false and tab2.label.wrap == false, 'tab labels can still wrap')
-assert(resized[tab1] == 1 and tab1.label.width == 40 and not resized[tab2], 'overflowing tab label not refitted, or a fitting tab resized')
+assert(tab1.label.alpha == 0 and tab2.label.alpha == 0, 'Blizzard tab labels still drawn under the EUI labels')
 assert(grip.normal.alpha == 0, 'resize grip art remained')
 assert(search.input and check.checkbox and reset.button and reset.label.font == 'eui')
 assert(reset.label.textColor[2] == 0.82, 'button label colour not preserved')
@@ -319,7 +319,9 @@ local hooked, regions = ToggleGuildFrame, #box.regions
 local mainRegions, mainHooks = #main.regions, main.Emblem.Update
 for _ = 1, 10 do modules.Guildy.refresh(); flush() end
 assert(#main.regions == mainRegions and main.Emblem.Update == mainHooks, 'title icon or tabard recreated on refresh')
-assert(resized[tab1] == 1, 'a fitted tab was resized again on refresh')
+PanelTemplates_SelectTab(tab1); PanelTemplates_DeselectTab(tab2)
+assert(tab1.label.alpha == 0 and tab2.label.alpha == 0, 'a tab font reset brought the wrapping Blizzard label back')
+tab1.label:SetAlpha(1); assert(tab1.label.alpha == 0, 'Blizzard tab label came back after a native alpha write')
 assert(ToggleGuildFrame == hooked and #box.regions == regions, 'duplicate hooks or objects')
 assert(nativeToggle == ToggleGuildFrame)
 
@@ -352,10 +354,10 @@ box:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
 assert(box.border[1] == 0.8 and box.border[3] == 0.9, 'lit border not in the guild accent')
 assert(railTrack.color[1] == 0.8 and thumbFill.color[3] == 0.9, 'timeline rail not in the guild accent')
 PanelTemplates_SelectTab(tab1); PanelTemplates_DeselectTab(tab2)
-assert(tab1.selected == false and tab2.selected == false, 'EUI underline still drawn with guild colours')
+assert(tab1.selected == true and tab2.selected == false, 'EUI tab selection lost with guild colours')
 assert(tab1.euiGuildyLine.shown == true and tab1.euiGuildyLine.color[1] == 0.8, 'selected tab has no guild underline')
 assert(tab2.euiGuildyLine.shown == false, 'unselected tab kept the guild underline')
-assert(tab1.label.textColor[1] == 1 and tab2.label.textColor[1] == 0.65, 'tab labels do not show the selection')
+assert(tab1.label.alpha == 0 and tab2.label.alpha == 0, 'guild colours made the Blizzard tab labels visible')
 -- A dark emblem is unreadable: the border colour becomes the accent.
 tabardInfo.emblemColor = Color(0.05, 0.05, 0.05); main.Emblem:Update(); flush()
 box:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
@@ -373,4 +375,4 @@ box:SetBackdropBorderColor(GOLD[1] * 0.5, GOLD[2] * 0.5, GOLD[3] * 0.5)
 assert(box.border[1] == GOLD[1] * 0.5, 'disabled skin still repainted borders')
 local after = Button(panel, 'Late'); modules.Guildy.refresh(); flush()
 assert(not after.button, 'disabled skin styled new controls')
-print('PASS: Guildy lazy window, square title icon with guild tabard, guild colour accent/tabs/edges, tab label fitting, title/version trim, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')
+print('PASS: Guildy lazy window, 60px square corner emblem with guild tabard, guild colour accent/tabs/edges, hidden native tab labels, title/version trim, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')

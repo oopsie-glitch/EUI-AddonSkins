@@ -69,38 +69,42 @@ local function PaintEdges(edges, color)
     end
 end
 
--- The square title-bar icon: the guild's tabard when the client supplies it
--- (SetLargeGuildTabardTextures, as Guildy's own emblem uses), otherwise Guildy's
--- logo. Never both: a tabard without colours has a transparent background, so
--- the logo is hidden rather than covered. Square treatment: the tabard's
--- background colour fills the square, its border colour edges it and the
--- emblem sits centred on it. The round border art, which needs Guildy's
--- circular mask, is never shown.
+-- The corner emblem at Guildy's own size and spot (60px, overhanging the top
+-- left corner), drawn square instead of round: the guild's tabard when the
+-- client supplies it (SetLargeGuildTabardTextures, as Guildy's own emblem uses),
+-- otherwise Guildy's logo, never both. The tabard's background colour fills the
+-- square, its border colour edges it and the emblem sits centred on it. The
+-- round ring art and circular mask Guildy uses are never shown. It lives on its
+-- own frame at Guildy's emblem level, above the window's title bar and panels.
 local LOGO = "Interface\\Icons\\INV_Shirt_GuildTabard_01"
+local EMBLEM_SIZE = 60
 local function Tabard(C, main, logoPath)
     local colors = GuildColors()
     local changed = (colors and colors.key) ~= (C.guild and C.guild.key)
     C.guild = colors
     local tabard = main.euiGuildyTabard
     if not tabard then
-        tabard = {}
-        tabard.Logo = main:CreateTexture(nil, "OVERLAY", nil, 5)
-        tabard.Logo:SetSize(28, 28)
-        tabard.Logo:SetPoint("TOPLEFT", main, "TOPLEFT", 8, -6)
+        local holder = CreateFrame("Frame", nil, main)
+        holder:SetSize(EMBLEM_SIZE, EMBLEM_SIZE)
+        holder:SetPoint("TOPLEFT", main, "TOPLEFT", -5, 8)
+        holder:SetFrameLevel(main:GetFrameLevel() + 300)
+        tabard = {Frame = holder}
+        tabard.Logo = holder:CreateTexture(nil, "ARTWORK", nil, 1)
+        tabard.Logo:SetAllPoints(holder)
         tabard.Logo:SetTexture(logoPath or LOGO)
         if C.S.SquareIcon then C.S.SquareIcon(tabard.Logo) end
-        tabard.Background = main:CreateTexture(nil, "OVERLAY", nil, 6)
-        tabard.Background:SetSize(28, 28)
-        tabard.Background:SetPoint("TOPLEFT", main, "TOPLEFT", 8, -6)
-        tabard.Emblem = main:CreateTexture(nil, "OVERLAY", nil, 7)
-        -- Guildy's emblem proportions (56 x 64 in a 60 holder), scaled to the square.
-        tabard.Emblem:SetSize(24, 27)
-        tabard.Emblem:SetPoint("CENTER", tabard.Background, "CENTER", 0, -1)
-        tabard.Border = main:CreateTexture(nil, "OVERLAY", nil, 5)
+        tabard.Background = holder:CreateTexture(nil, "ARTWORK", nil, 2)
+        tabard.Background:SetAllPoints(holder)
+        tabard.Emblem = holder:CreateTexture(nil, "ARTWORK", nil, 3)
+        -- Guildy's emblem proportions (56 x 64 in its 60px holder), kept inside the square.
+        tabard.Emblem:SetSize(EMBLEM_SIZE * 52 / 60, EMBLEM_SIZE * 58 / 60)
+        tabard.Emblem:SetPoint("CENTER", holder, "CENTER", 0, -1)
+        -- Receives the API's ring art; never shown.
+        tabard.Border = holder:CreateTexture(nil, "ARTWORK", nil, 0)
         tabard.Border:SetSize(1, 1)
-        tabard.Border:SetPoint("TOPLEFT", main, "TOPLEFT", 8, -6)
+        tabard.Border:SetPoint("TOPLEFT", holder, "TOPLEFT")
         tabard.Border:SetAlpha(0)
-        tabard.Edges = Edges(main, tabard.Background, 2)
+        tabard.Edges = Edges(holder, holder, 2)
         main.euiGuildyTabard = tabard
         -- Guildy redraws its emblem when the guild or its tabard changes
         -- (UpdateTitle); new colours repaint the whole window.
@@ -129,47 +133,32 @@ local function Tabard(C, main, logoPath)
     tabard.ok = ok
     return changed
 end
--- Selected tab: with guild colours, every Guildy tab looks unselected to EUI
--- and the skin draws its own underline in the guild accent.
+-- Tabs: EUI's S.Tab hides Blizzard's label (transparent text colour) and draws
+-- its own unwrapped one. Blizzard's tab select/deselect resets that label's
+-- font object, which brings it back as a second, wrapping copy; keep it faded
+-- by region alpha, which a font reset never changes. With guild colours the
+-- skin lays a 2px underline in the guild accent over EUI's own.
 local function PaintTab(C, tab, on)
     local H = C.H
-    local accent = C.guild and C.guild.accent
-    local label = (tab.GetFontString and tab:GetFontString()) or tab.Text
-    if not accent then
-        if tab.euiGuildyLine then tab.euiGuildyLine:SetShown(false) end
-        return H.Tab(tab, on)
+    local styled = H.Tab(tab, on)
+    if styled then
+        local native = tab.Text or (tab.GetFontString and tab:GetFontString())
+        if native then H.Fade(native) end
     end
-    local styled = H.Tab(tab, false)
+    local accent = C.guild and C.guild.accent
     local line = tab.euiGuildyLine
-    if not line and tab.CreateTexture then
+    if accent and not line and tab.CreateTexture then
         line = tab:CreateTexture(nil, "OVERLAY", nil, 7)
         line:SetHeight(2)
-        line:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 1, 1)
-        line:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -1, 1)
+        line:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, 0)
+        line:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, 0)
         tab.euiGuildyLine = line
     end
     if line then
-        line:SetColorTexture(accent[1], accent[2], accent[3], 1)
-        line:SetShown(on and true or false)
-    end
-    if label then
-        local shade = on and 1 or 0.65
-        H.Font(label, shade, shade, shade)
+        if accent then line:SetColorTexture(accent[1], accent[2], accent[3], 1) end
+        line:SetShown((accent and on) and true or false)
     end
     return styled
-end
--- Bottom/top tab labels: never wrap. When the label is wider than the tab Guildy
--- sized (for instance measured before the font finished loading), let Blizzard's
--- tab sizing fit it again, exactly as Guildy does when it builds the tab.
-local function FitTab(tab)
-    local text = (tab.GetFontString and tab:GetFontString()) or tab.Text
-    if not text or not text.GetStringWidth then return end
-    if text.SetWordWrap then text:SetWordWrap(false) end
-    local width = text:GetStringWidth() or 0
-    local room = text.GetWidth and text:GetWidth() or 0
-    if width > 0 and room > 0 and width > room + 1 and _G.PanelTemplates_TabResize then
-        pcall(_G.PanelTemplates_TabResize, tab, 0)
-    end
 end
 -- "<guild> · Guildy" becomes "<guild>"; a bare "Guildy" (no guild) stays.
 local function TrimTitle(C, text)
@@ -360,10 +349,7 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
                 local owner = f.GetParent and f:GetParent()
                 value = owner and owner.selectedTab ~= nil and f.GetID and owner.selectedTab == f:GetID() or false
             end
-            H.Font((f.GetFontString and f:GetFontString()) or f.Text)
-            local styled = PaintTab(C, f, value)
-            FitTab(f)
-            return styled
+            return PaintTab(C, f, value)
         end
         if f.sideTab then return true end -- profession-style side tabs keep their native art
         if kind == "Frame" and f.GetBackdrop then

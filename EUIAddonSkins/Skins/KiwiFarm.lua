@@ -221,6 +221,7 @@ ns.RegisterScopedSkin("KiwiFarm", "KiwiFarm", {
         context = C
         if not C.module.settingsAppearance then
             C.module.settingsAppearance = {get=ReadSetting, set=WriteSetting, reset=Reset}
+            if ns.SettingsAvailabilityChanged then ns.SettingsAvailabilityChanged("KiwiFarm") end
         end
         if not nativeCaptured and _G.KiwiFarm.GetBackdropColor then
             local _, _, _, alpha = _G.KiwiFarm:GetBackdropColor()

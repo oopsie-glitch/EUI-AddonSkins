@@ -16,33 +16,35 @@ local function Combat()
     return InCombatLockdown and InCombatLockdown()
 end
 
-local function Installed(entry)
+local function TargetAvailable(entry)
     local info = C_AddOns and C_AddOns.GetAddOnInfo or GetAddOnInfo
-    if not info or not entry then return false end
+    local loaded = C_AddOns and C_AddOns.IsAddOnLoaded or IsAddOnLoaded
+    if not (entry and info and loaded) then return false end
     for _, target in ipairs(entry.targets) do
-        local ok, name = pcall(info, target)
-        if ok and name then return true end
+        if loaded(target) then
+            local ok, name = pcall(info, target)
+            if ok and name then return ns.TargetEnabled(entry) end
+        end
     end
     return false
 end
 
-local function Availability(id)
+local function ActiveModule(id)
+    local provider = providers[id]
+    if not provider or #provider.options == 0 or not ns.IsEnabled() then return end
     local entry = ns.skinCatalogByID and ns.skinCatalogByID[id]
-    if not Installed(entry) then return nil end
-    if not ns.IsEnabled() then return "AddonSkins is disabled." end
-    if ns.TargetEnabled and not ns.TargetEnabled(entry) then return "This addon is disabled for this character." end
-    local module
-    for _, candidate in ipairs(ns.modules or {}) do
-        if candidate.id == id then module = candidate; break end
+    if not entry or entry.failed or entry.skin and not ns.IsEnabled(entry) then return end
+    for _, module in ipairs(ns.modules) do
+        if module.id == id and module.active and ns.IsEnabled(module)
+            and (not provider.ready or provider.ready(module)) and TargetAvailable(entry) then
+            return module
+        end
     end
-    if entry.skin and not ns.IsEnabled(entry) or module and module.skin and not ns.IsEnabled(module) then
-        return "Enable this integration in EllesmereUI skin settings.", module
-    end
-    if entry.failed or module and module.attempted and not module.active then
-        return "The skin did not initialize. See /euiskins diagnostics.", module
-    end
-    if not module or not module.active then return "The skin is not active in this session.", module end
-    return false, module
+end
+
+-- Core calls this after successful activation, including deferred loads.
+function ns.SettingsAvailabilityChanged(id)
+    if ui and ui.open and (not id or providers[id]) then Refresh() end
 end
 
 local function Text(parent, template)
@@ -93,8 +95,7 @@ end
 
 local function Enabled(row)
     if not ui.open or ui.updating or not row.option or row.id ~= ui.selected or Combat() then return false end
-    if ui.reason ~= false or not ns.IsEnabled() then return false end
-    if ui.module and ui.module.skin and not ns.IsEnabled(ui.module) then return false end
+    if not ui.module or not ns.IsEnabled(ui.module) then return false end
     local entry = ns.skinCatalogByID and ns.skinCatalogByID[row.id]
     if entry and ns.TargetEnabled and not ns.TargetEnabled(entry) then return false end
     return not row.option.enabled or row.option.enabled()
@@ -105,7 +106,7 @@ local function SyncRow(row)
     if not option then return end
     local value = option.get and option.get()
     local control = row.control
-    local enabled = ui.reason == false and not Combat() and (not option.enabled or option.enabled())
+    local enabled = not Combat() and (not option.enabled or option.enabled())
     if control.SetEnabled then control:SetEnabled(enabled)
     elseif enabled then control:Enable() else control:Disable() end
     if option.kind == "toggle" then control:SetChecked(value == true)
@@ -171,9 +172,9 @@ local function BindDetails()
         for _, row in ipairs(pool) do row.option, row.id = nil, nil; row.frame:Hide() end
     end
     local provider = providers[ui.selected]
-    local title = provider and provider.label or "No configurable addons"
-    local notice = not provider and "Install a supported addon, or open Legacy options."
-        or ui.reason or (Combat() and "Settings are unavailable during combat.") or ""
+    local title = provider and provider.label or "No active configurable addons"
+    local notice = not provider and "Enable and load a supported addon with configurable settings, or open Legacy options."
+        or (Combat() and "Settings are unavailable during combat.") or ""
     ui.heading:SetText(title)
     ui.notice:SetText(notice)
     local width = ui.detailWidth
@@ -256,18 +257,17 @@ local function Sidebar()
         end
     end
     for i = shown + 1, #ui.buttons do ui.buttons[i].id = nil; ui.buttons[i]:Hide() end
-    ui.empty:SetText(#ui.entries == 0 and "No installed providers" or "No matching addons")
+    ui.empty:SetText(#ui.entries == 0 and "No active addons" or "No matching addons")
     ui.empty:SetShown(shown == 0)
     ui.listContent:SetHeight(math.max(25, shown * 25))
     ui.listScroll:SetVerticalScroll(math.min(ui.listScroll:GetVerticalScroll(), ui.listScroll:GetVerticalScrollRange()))
 end
 
 Select = function(id, remember)
-    local reason, module
-    if id then reason, module = Availability(id) end
-    if reason == nil then id = nil end
+    local module = id and ui.activeModules[id]
+    if not module then id = nil end
     local changed = ui.selected ~= id
-    ui.selected, ui.reason, ui.module = id, reason, module
+    ui.selected, ui.module = id, module
     if remember and id then
         EUIAddonSkinsDB = EUIAddonSkinsDB or {}
         local db = EUIAddonSkinsDB
@@ -281,17 +281,23 @@ end
 
 Refresh = function()
     ui.entries = {}
+    ui.activeModules = {}
     for id, provider in pairs(providers) do
-        if #provider.options > 0 and Availability(id) ~= nil then
+        local module = ActiveModule(id)
+        if module then
+            ui.activeModules[id] = module
             ui.entries[#ui.entries+1] = {id = id, label = provider.label}
         end
     end
     table.sort(ui.entries, function(a, b) return a.label:lower() < b.label:lower()
         or a.label:lower() == b.label:lower() and a.id < b.id end)
     local db = EUIAddonSkinsDB and EUIAddonSkinsDB.settingsUI
-    local id = requested or ui.selected or (type(db) == "table" and db.lastAddonID)
+    local saved = type(db) == "table" and db.lastAddonID
+    local id = ui.activeModules[requested] and requested
+        or ui.activeModules[ui.selected] and ui.selected
+        or ui.activeModules[saved] and saved
+        or ui.entries[1] and ui.entries[1].id
     requested = nil
-    if not providers[id] or Availability(id) == nil then id = ui.entries[1] and ui.entries[1].id end
     Select(id)
 end
 
@@ -385,7 +391,6 @@ local function RegisterCanvas()
         if not ui.built then Build(root) end
         Layout()
         ui.open = true
-        root:RegisterEvent("ADDON_LOADED")
         root:RegisterEvent("PLAYER_REGEN_DISABLED")
         root:RegisterEvent("PLAYER_REGEN_ENABLED")
         root:RegisterEvent("UI_SCALE_CHANGED")
@@ -400,27 +405,21 @@ local function RegisterCanvas()
             for _, row in ipairs(pool) do row.option, row.id = nil, nil end
         end
     end)
-    root:SetScript("OnEvent", function(_, event, target)
+    root:SetScript("OnEvent", function(_, event)
         if not ui.open then return end
         if event == "UI_SCALE_CHANGED" then Layout() end
-        if event ~= "ADDON_LOADED" then Refresh(); return end
-        for id in pairs(providers) do
-            local entry = ns.skinCatalogByID and ns.skinCatalogByID[id]
-            for _, addon in ipairs(entry and entry.targets or {}) do
-                if addon == target then Refresh(); return end
-            end
-        end
+        Refresh()
     end)
     category = Settings.RegisterCanvasLayoutCategory(root, root.name)
     Settings.RegisterAddOnCategory(category)
 end
 
 function ns.OpenAddonSettings(id)
-    if not ns.SupportsAddonSettingsCanvas() or id and (not providers[id] or Availability(id) == nil) then return false end
+    if not ns.SupportsAddonSettingsCanvas() or id and not ActiveModule(id) then return false end
     RegisterCanvas()
     if not category then return false end
     requested = id
-    if ui.open and id then requested = nil; Select(id) end
+    if ui.open and id then Refresh() end
     Settings.OpenToCategory(category:GetID())
     return true
 end
@@ -438,8 +437,7 @@ ns.RegisterSettingsProvider("RXPGuides", {label="RestedXP", options={
     Toggle("arrow", "Skin navigation arrow", "Turn off to restore RestedXP's original arrow. Separate from guide style and opacity.", ns.ReadRXPSetting, ns.SetRXPSetting),
 }})
 
--- Appearance providers delegate to the installed adapter. Inactive integrations
--- have no writer and do not need to initialize a target just to list its options.
+-- Appearance providers delegate to the active adapter.
 local function Handler()
     return ui.module and ui.module.settingsAppearance
 end
@@ -503,7 +501,8 @@ local kiwiOpacity = Appearance("slider", "backgroundOpacity", "Background Opacit
 kiwiOpacity.enabled = function() return kiwiSource.get() == "custom" end
 local kiwiTreatment = Appearance("choice", "backgroundStyle", "Background Style")
 kiwiTreatment.values = {{value="soft", label="Soft highlight"}, {value="flat", label="Flat charcoal"}}
-ns.RegisterSettingsProvider("KiwiFarm", {label="KiwiFarm", options={
+ns.RegisterSettingsProvider("KiwiFarm", {label="KiwiFarm",
+    ready=function(module) return module.settingsAppearance ~= nil end, options={
     kiwiTreatment,
     Appearance("toggle", "useEUIFont", "Use EUI Font", "Applies to KiwiFarm statistics. Turn off to restore the original font and outline."),
     kiwiSource,

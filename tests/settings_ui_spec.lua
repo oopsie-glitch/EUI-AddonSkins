@@ -2,13 +2,13 @@
 -- including the OnValueChanged events that SetValue can fire during binding.
 do
 local saved = {}
-for _,key in ipairs({"CreateFrame","Settings","C_AddOns","GetAddOnInfo","InterfaceOptions_AddCategory",
+for _,key in ipairs({"CreateFrame","Settings","C_AddOns","GetAddOnInfo","IsAddOnLoaded","LoadAddOn","InterfaceOptions_AddCategory",
     "InterfaceOptionsFrame_OpenToCategory","InCombatLockdown","EUIAddonSkinsDB","UIParent","SlashCmdList","EllesmereUI"}) do
     saved[#saved+1]={key,_G[key]}
 end
 local function Setup(modern, oldInfo, db)
     local h={frames={},categories={},counts={frames=0,art=0,info=0,writes=0},
-        installed={Details=true,RXPGuides=true},targetsEnabled=true,combat=false}
+        installed={Details=true,RXPGuides=true},loaded={Details=true,RXPGuides=true},disabled={},combat=false}
     EUIAddonSkinsDB=db;SlashCmdList={}
     local function object(kind,parent)
         local f={kind=kind,parent=parent,shown=true,scripts={},events={},enabled=true,text="",width=640,height=440}
@@ -96,8 +96,12 @@ local function Setup(modern, oldInfo, db)
         return f
     end
     local function Info(id) h.counts.info=h.counts.info+1; if h.installed[id] then return id end end
-    C_AddOns=not oldInfo and {GetAddOnInfo=Info} or nil
+    local function Loaded(id) h.counts.info=h.counts.info+1; return h.loaded[id] end
+    local function ForceLoad() error("opening settings force-loaded an addon") end
+    C_AddOns=not oldInfo and {GetAddOnInfo=Info,IsAddOnLoaded=Loaded,LoadAddOn=ForceLoad} or nil
     GetAddOnInfo=oldInfo and Info or nil
+    IsAddOnLoaded=oldInfo and Loaded or nil
+    LoadAddOn=ForceLoad
     InCombatLockdown=function() return h.combat end
     local function Open(f)
         if h.opened and h.opened~=f then h.opened:Hide() end
@@ -118,8 +122,8 @@ local function Setup(modern, oldInfo, db)
         Details={targets={"Details"}},RXPGuides={targets={"RXPGuides"}},
         Fixture={targets={"Fixture"}},Empty={targets={"Empty"}},
     },modules={{id="Details",active=true},{id="RXPGuides",active=true},{id="Fixture",active=true}}}
-    ns.IsEnabled=function() return not (EUIAddonSkinsDB and EUIAddonSkinsDB.disabled) end
-    ns.TargetEnabled=function() return h.targetsEnabled end
+    ns.IsEnabled=function(module) return not (EUIAddonSkinsDB and EUIAddonSkinsDB.disabled or module and module.disabled) end
+    ns.TargetEnabled=function(entry) return not h.disabled[entry.targets[1]] end
     assert(loadfile("EUIAddonSkins/DetailsSettings.lua"))("EUIAddonSkins",ns)
     assert(loadfile("EUIAddonSkins/SettingsUI.lua"))("EUIAddonSkins",ns)
     function h:Event(event, ...)
@@ -192,9 +196,18 @@ for _,oldInfo in ipairs({false,true}) do
     assert(not db.rxp.arrow and arrowCalls==2,"combat wrote preferences")
     h.combat=false;h:Event("PLAYER_REGEN_ENABLED")
     assert(Checks()[1].enabled and not Checks()[1].checked)
-    h.targetsEnabled=false;h:Event("ADDON_LOADED","RXPGuides")
-    assert(#Buttons("RestedXP")==1 and not Checks()[1].enabled,"installed inactive addon disappeared")
-    h.targetsEnabled=true;h:Event("ADDON_LOADED","RXPGuides")
+    h.disabled.RXPGuides=true; ns.SettingsAvailabilityChanged("RXPGuides")
+    assert(#Buttons("RestedXP")==0 and #Checks()==3,"disabled addon stayed visible or selection did not fall back")
+    assert(db.settingsUI.lastAddonID=="RXPGuides","temporary fallback overwrote saved selection")
+    h.disabled.RXPGuides=nil; h.loaded.RXPGuides=false
+    ns.SettingsAvailabilityChanged("RXPGuides")
+    assert(#Buttons("RestedXP")==0 and not ns.OpenAddonSettings("RXPGuides"),"load-on-demand addon appeared before loading")
+    h.loaded.RXPGuides=true; ns.modules[2].active=false
+    ns.SettingsAvailabilityChanged("RXPGuides")
+    assert(#Buttons("RestedXP")==0,"registered provider without an active module appeared")
+    ns.modules[2].active=true; ns.SettingsAvailabilityChanged("RXPGuides")
+    assert(#Buttons("RestedXP")==1 and #Checks()==3,"late activation displaced valid selection or failed to list")
+    Choose("RestedXP")
     assert(Checks()[1].enabled)
 
     root:SetSize(340,440)
@@ -220,6 +233,7 @@ for _,oldInfo in ipairs({false,true}) do
         h:Event("ADDON_LOADED","RXPGuides")
         h:Event("UI_SCALE_CHANGED")
         ns.SettingsPreferenceChanged("RXPGuides","arrow")
+        ns.SettingsAvailabilityChanged("RXPGuides")
     end
     assert(next(root.events)==nil and h.counts.info==reads and h.counts.writes==writes,"closed panel did work")
     assert(not db.rxp.arrow and db.unrelated.kept)
@@ -229,12 +243,13 @@ for _,oldInfo in ipairs({false,true}) do
     Choose("Legacy options")
     assert(h.opened.name=="EUI AddonSkins (Legacy)" and #h.categories==2,"legacy fallback was not available")
     SlashCmdList.EUIDETAILS();assert(h.opened==root and #Checks()==3 and #h.categories==2)
-    h.installed.Details=false;h.installed.RXPGuides=false;h:Event("ADDON_LOADED","Details")
+    h.installed.Details=false;h.installed.RXPGuides=false;ns.SettingsAvailabilityChanged()
     assert(#Checks()==0 and #Buttons("Details!")==0 and #Buttons("RestedXP")==0,"absent providers leaked into sidebar")
 
     -- Future renderer types are exercised by a synthetic provider only.
     local value,choice,actions,sets=75,"a",0,0
     h.installed.Fixture=true;h.installed.Empty=true
+    h.loaded.Fixture=true;h.loaded.Empty=true
     ns.RegisterSettingsProvider("Empty",{label="Empty",options={}})
     assert(#Buttons("Empty")==0,"empty provider appeared")
     ns.RegisterSettingsProvider("Fixture",{label="Fixture",options={
@@ -269,7 +284,7 @@ rxp.settingsAppearance = {
     reset=function() appearanceDB.restedXP={}; writes=writes+1 end,
 }
 ns.skinCatalogByID.KiwiFarm={targets={"KiwiFarm"}}
-app.installed.KiwiFarm=true
+app.installed.KiwiFarm=true;app.loaded.KiwiFarm=true
 local kiwiValues = {opacitySource="native", backgroundOpacity=60, backgroundStyle="soft", menuOpacity=95, accent=false,
     useEUIFont=appearanceDB.kiwiFarm.useEUIFont}
 local kiwi = {id="KiwiFarm",active=true,settingsAppearance={

@@ -30,6 +30,7 @@ local function texture(kind, parent)
     function t:SetAllPoints() end
     function t:ClearAllPoints() self.points = {} end
     function t:SetShown(v) self.shown = v end
+    function t:IsShown() return self.shown ~= false end
     function t:SetSize(w, h) self.width, self.height = w, h end
     function t:SetHeight(h) self.height = h end
     function t:SetWidth(w) self.width = w end
@@ -62,6 +63,7 @@ local function frame(kind, name, parent)
     function f:SetEnabled(v) self.disabled = not v; local h = self.hooks[v and 'OnEnable' or 'OnDisable']; if h then h(self) end end
     function f:GetName() return self.name end
     function f:SetAlpha(v) self.alpha = v end
+    function f:EnableMouse(v) self.mouse = v end
     function f:GetAlpha() return self.alpha or 1 end
     function f:GetParent() return self.parent end
     function f:IsForbidden() return false end
@@ -148,6 +150,12 @@ assert(modules.Guildy.available())
 
 -- Blizzard globals Guildy relies on.
 local toggles = 0
+local inGuild = true
+function IsInGuild() return inGuild end
+function SetLargeGuildTabardTextures(unit, emblem, background, border)
+    assert(unit == 'player'); if not inGuild then error('no tabard') end
+    emblem:SetTexture('guild-emblem'); background:SetVertexColor(0.2, 0.3, 0.9); border:SetVertexColor(0.9, 0.8, 0.1)
+end
 function ToggleGuildFrame() toggles = toggles + 1; return 'native-toggle' end
 function PanelTemplates_SelectTab(tab) tab.nativeSelected = true end
 function PanelTemplates_DeselectTab(tab) tab.nativeSelected = false end
@@ -169,6 +177,11 @@ main.PortraitContainer.portrait = main.PortraitContainer:CreateTexture()
 main.PortraitContainer.portrait.path = 'Interface/Icons/INV_Shirt_GuildTabard_01'
 main.CloseButton = Button(main, '', 'GuildyFrameCloseButton')
 main.Emblem = frame('Frame', nil, main)
+function main.Emblem:Update() self.updates = (self.updates or 0) + 1 end
+main.Version = frame('Frame', nil, main); main.Version:EnableMouse(true)
+main.Version.Text = label(main.Version, 'Guildy v1.5.0')
+main.TitleContainer = frame('Frame', nil, main)
+main.TitleContainer.TitleText = label(main.TitleContainer, 'Two Trolls One Orc \194\183 Guildy')
 local emblemArt = main.Emblem:CreateTexture(); local emblemText = main.Emblem:CreateFontString()
 main.OptionsButton = Button(main, '')
 main.OptionsButton.Icon = main.OptionsButton:CreateTexture()
@@ -190,7 +203,7 @@ local heat = cell:CreateTexture(); heat:SetColorTexture(0.2, 0.8, 0.1, 0.6)
 local header = frame('Button', nil, panel); header.Text = label(header, 'Name')
 header:SetScript('OnClick', function() header.sorted = true end)
 -- the chat timeline rail: 2px gold track and a gold thumb button
-local rail = frame('Button', nil, panel)
+local rail = frame('Button', nil, box)
 local railTrack = rail:CreateTexture(); railTrack.layer = 'BACKGROUND'; railTrack:SetWidth(2); railTrack:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 0.35)
 local thumb = frame('Button', nil, rail)
 local thumbEdge = thumb:CreateTexture(); thumbEdge.layer = 'BACKGROUND'; thumbEdge:SetColorTexture(0, 0, 0, 1)
@@ -206,6 +219,14 @@ assert(ring.alpha == 0 and main.PortraitContainer.portrait.alpha == 0, 'round po
 local titleIcon; for _, t in ipairs(main.regions) do if t.path == 'Interface/Icons/INV_Shirt_GuildTabard_01' then titleIcon = t end end
 assert(titleIcon and titleIcon.alpha == 1 and titleIcon.width == 28 and titleIcon.crop, 'square title icon missing')
 assert(main.Emblem.alpha == 0, 'round guild emblem still drawn in the corner')
+local tabard = main.euiGuildyTabard
+assert(tabard and tabard.ok and tabard.Emblem.path == 'guild-emblem' and tabard.Emblem.width == 28 and tabard.Emblem:IsShown(), 'guild tabard not drawn in the title icon')
+assert(main.Version.alpha == 0 and main.Version.mouse == false, 'version line still shown or still catching the mouse')
+assert(main.TitleContainer.TitleText.text == 'Two Trolls One Orc', 'Guildy suffix not removed from the title')
+main.TitleContainer.TitleText:SetText('Other Guild - Guildy'); assert(main.TitleContainer.TitleText.text == 'Other Guild', 'retitle kept the suffix')
+main.TitleContainer.TitleText:SetText('Guildy'); assert(main.TitleContainer.TitleText.text == 'Guildy', 'bare title emptied')
+inGuild = false; main.Emblem:Update(); assert(not tabard.ok and not tabard.Emblem:IsShown(), 'tabard kept after leaving the guild')
+inGuild = true; main.Emblem:Update(); assert(tabard.ok and tabard.Emblem:IsShown(), 'tabard not restored after joining')
 main.Emblem:SetAlpha(1); assert(main.Emblem.alpha == 0, 'emblem came back after a native alpha write')
 assert(main.CloseButton.close)
 assert(emblemArt.alpha == 1 and emblemText.font == 'native', 'guild emblem internals were styled')
@@ -274,9 +295,9 @@ assert(confirm.shell and ok.button, 'confirmation popup not styled')
 
 -- Repeated refreshes add no hooks or objects.
 local hooked, regions = ToggleGuildFrame, #box.regions
-local mainRegions = #main.regions
+local mainRegions, mainHooks = #main.regions, main.Emblem.Update
 for _ = 1, 10 do modules.Guildy.refresh(); flush() end
-assert(#main.regions == mainRegions, 'title icon recreated on refresh')
+assert(#main.regions == mainRegions and main.Emblem.Update == mainHooks, 'title icon or tabard recreated on refresh')
 assert(ToggleGuildFrame == hooked and #box.regions == regions, 'duplicate hooks or objects')
 assert(nativeToggle == ToggleGuildFrame)
 
@@ -301,4 +322,4 @@ box:SetBackdropBorderColor(GOLD[1] * 0.5, GOLD[2] * 0.5, GOLD[3] * 0.5)
 assert(box.border[1] == GOLD[1] * 0.5, 'disabled skin still repainted borders')
 local after = Button(panel, 'Late'); modules.Guildy.refresh(); flush()
 assert(not after.button, 'disabled skin styled new controls')
-print('PASS: Guildy lazy window, square title icon, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')
+print('PASS: Guildy lazy window, square title icon with guild tabard, title/version trim, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')

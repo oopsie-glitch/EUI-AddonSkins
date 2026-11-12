@@ -15,6 +15,47 @@ end
 local function Tooltip(path)
     return type(path) == "string" and path:lower():find("ui%-tooltip%-border") ~= nil
 end
+-- The guild's tabard (emblem, background, border) in the square title-bar icon
+-- spot, drawn over Guildy's logo when the client supplies it. Same API and
+-- GuildFrame art as Guildy's own emblem (UI/Main.lua GuildEmblem).
+local GUILD_ART = "Interface\\GuildFrame\\GuildFrame"
+local function Tabard(C, main)
+    local tabard = main.euiGuildyTabard
+    if not tabard then
+        tabard = {}
+        tabard.Background = main:CreateTexture(nil, "OVERLAY", nil, 7)
+        tabard.Background:SetTexture(GUILD_ART)
+        tabard.Background:SetTexCoord(0.63183594, 0.69238281, 0.61914063, 0.74023438)
+        tabard.Emblem = main:CreateTexture(nil, "OVERLAY", nil, 7)
+        tabard.Border = main:CreateTexture(nil, "OVERLAY", nil, 7)
+        tabard.Border:SetTexture(GUILD_ART)
+        tabard.Border:SetTexCoord(0.63183594, 0.69238281, 0.74414063, 0.86523438)
+        for _, t in ipairs({tabard.Background, tabard.Emblem, tabard.Border}) do
+            t:SetSize(28, 28); t:SetPoint("TOPLEFT", main, "TOPLEFT", 8, -6)
+        end
+        main.euiGuildyTabard = tabard
+        -- Guildy redraws its emblem when the guild changes (UpdateTitle).
+        if main.Emblem then C.H.Hook(main.Emblem, "Update", function() Tabard(C, main) end) end
+    end
+    local set = _G.SetLargeGuildTabardTextures
+    local ok = set ~= nil and IsInGuild and IsInGuild()
+        and pcall(set, "player", tabard.Emblem, tabard.Background, tabard.Border) or false
+    for _, t in ipairs({tabard.Background, tabard.Emblem, tabard.Border}) do t:SetShown(ok and true or false) end
+    tabard.ok = ok
+end
+-- "<guild> · Guildy" becomes "<guild>"; a bare "Guildy" (no guild) stays.
+local function TrimTitle(C, text)
+    local guard = false
+    local function Trim(_, value)
+        if guard or type(value) ~= "string" then return end
+        -- Guildy joins them with its locale separator (" · "); match any short
+        -- token between spaces, independent of the client's character classes.
+        local trimmed, separator = value:match("^(.-%S)%s+(%S+)%s+Guildy%s*$")
+        if trimmed and #separator <= 3 then guard = true; text:SetText(trimmed); guard = false end
+    end
+    C.H.Hook(text, "SetText", Trim)
+    Trim(nil, text:GetText())
+end
 -- Guildy's dark boxes (W.Box): keep the backdrop so its own border-colour
 -- updates still show selection and hover, but redraw it as a flat EUI panel.
 local function Box(C, f)
@@ -63,11 +104,13 @@ end
 -- thumb button (black edge, gold fill, highlight). Returns its textures once found.
 local rails = setmetatable({}, {__mode = "k"})
 local function Rail(C, f)
-    if rails[f] ~= nil then return rails[f] end
+    if rails[f] then return rails[f] end
     local H, found = C.H, false
     local regions = H.Regions(f)
     local track = #regions == 1 and H.Texture(regions[1])
-    if track and track:GetDrawLayer() == "BACKGROUND" and track:GetWidth() == 2 then
+    -- The client reports the 2px track's width in scaled units, not exactly 2.
+    local width = track and track:GetWidth()
+    if track and track:GetDrawLayer() == "BACKGROUND" and width and width > 0 and width < 4 then
         for _, child in ipairs(H.Children(f)) do
             if H.Allowed(child) and child:GetObjectType() == "Button" then
                 local layers = {}
@@ -81,7 +124,7 @@ local function Rail(C, f)
             end
         end
     end
-    rails[f] = found
+    if found then rails[f] = found end
     return found
 end
 local function PaintRail(C, rail)
@@ -137,6 +180,16 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
             -- round portrait and the 60px guild emblem Guildy draws over it.
             H.Portrait(f, false, true)
             if H.Allowed(f.Emblem) then H.Fade(f.Emblem) end
+            Tabard(C, f)
+            -- No version line or "· Guildy" suffix in the title bar. Guildy still
+            -- announces newer releases in chat.
+            if H.Allowed(f.Version) and not f.euiGuildyVersion then
+                f.euiGuildyVersion = true
+                H.Fade(f.Version)
+                if f.Version.EnableMouse then f.Version:EnableMouse(false) end
+            end
+            local title = (f.TitleContainer and f.TitleContainer.TitleText) or f.TitleText
+            if H.Allowed(title) and title:GetObjectType() == "FontString" then TrimTitle(C, title) end
             return
         end
         if f == _G.GuildyOptions then
@@ -181,7 +234,7 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
             -- Only real template buttons are controls. Guildy's custom buttons are
             -- data: sort headers, overview cells, bar rows, cards and timeline marks.
             if not (f.GetFontString and f:GetFontString()) then
-                local rail = Rail(C, f)
+                local rail = boxes[f:GetParent()] and Rail(C, f)
                 if rail then PaintRail(C, rail); return true end
                 -- The window's resize grip (W.ResizeGrip) is its only direct anonymous button.
                 if main and f.GetParent and f:GetParent() == main then H.Resize(f) end

@@ -93,7 +93,10 @@ local function Setup(modern, oldInfo, db)
         function f:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
         function f:CreateTexture()
             h.counts.art=h.counts.art+1
-            return object("Texture",self)
+            self.textures=self.textures or {}
+            local texture=object("Texture",self)
+            self.textures[#self.textures+1]=texture
+            return texture
         end
         function f:CreateFontString()
             h.counts.art=h.counts.art+1
@@ -186,6 +189,14 @@ for _,oldInfo in ipairs({false,true}) do
     assert(#check==3 and not check[1].checked and check[2].checked and not check[3].checked)
     assert(calls==0 and arrowCalls==0 and not db.settingsUI and db.restedXP.opacity==0,"opening wrote preferences")
     local firstShow=h.counts.frames
+    assert(#root.textures==1 and not root.textures[1].allPoints,"settings canvas covers the native background")
+    for _, control in ipairs(check) do
+        assert(not control.parent.textures,"setting row painted a card behind the text")
+    end
+    local sidebar=h:Find(function(f) return f.name=="EUIAddonSkinsSidebarScroll" end,true)[1]
+    assert(not sidebar.textures and not sidebar.child.textures,"sidebar covers the native background")
+    assert(Buttons("Details!")[1].fill:IsVisible() and Buttons("Details!")[1].fill.color[4]<0.4
+        and not Buttons("RestedXP")[1].fill:IsVisible(),"sidebar selection is opaque or paints unselected rows")
     ns.SetDetailsSetting("meter",false) -- same entry point as native quick menu
     assert(not check[2].checked and calls==1,"quick menu and modular checkbox did not synchronize")
     check[2]:SetChecked(true);h:Press(check[2])
@@ -194,6 +205,7 @@ for _,oldInfo in ipairs({false,true}) do
     search:SetText("xP")
     assert(#Buttons("Details!")==0 and #Buttons("RestedXP")==1 and #Checks()==3,"search changed active detail")
     search.scripts.OnEnterPressed(search)
+    assert(Buttons("RestedXP")[1].fill:IsVisible(),"sidebar selection highlight did not follow search")
     check=Checks()
     assert(#check==1 and not check[1].checked and db.settingsUI.lastAddonID=="RXPGuides")
     check[1]:SetChecked(true);h:Press(check[1])
@@ -396,8 +408,11 @@ end
 assert(app.counts.frames==warmFrames and app.counts.art==warmArt and writes==warmWrites)
 print(string.format("BENCH Skin Style dropdown: %d frames/%d regions settled, 200 open/dismiss cycles %.3f ms; zero new objects or preference writes",
     warmFrames,warmArt,(os.clock()-warmStart)*1000))
+local slider = Controls("Slider")[1]
+assert(not slider.parent.textures and #slider.textures==1 and slider.textures[1]:GetHeight()==3
+    and slider:GetHeight()==18, "slider track changed its hitbox or painted a card")
 for _,percent in ipairs({75,100,0}) do
-    Controls("Slider")[1]:SetValue(percent)
+    slider:SetValue(percent)
     assert(appearanceDB.restedXP.opacity==percent)
 end
 rxp.settingsAppearance.set("opacity",75)

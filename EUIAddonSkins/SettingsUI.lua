@@ -62,7 +62,7 @@ end
 
 local function Button(parent)
     local button = CreateFrame("Button", nil, parent)
-    button.fill = Fill(button, 0.10, 0.11, 0.12, 0.95)
+    button.fill = Fill(button, 0.54, 0.58, 0.62, 0.13)
     local hover = button:CreateTexture(nil, "HIGHLIGHT")
     hover:SetAllPoints(button); hover:SetColorTexture(1, 1, 1, 0.075)
     button:SetHighlightTexture(hover)
@@ -232,7 +232,6 @@ end
 
 local function MakeRow(kind)
     local frame = CreateFrame("Frame", nil, ui.detailContent)
-    Fill(frame, 0.09, 0.10, 0.11, 0.65)
     local row = {frame = frame, title = Text(frame), description = Text(frame, "GameFontHighlightSmall")}
     row.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -7)
     row.title:SetWordWrap(true)
@@ -247,7 +246,11 @@ local function MakeRow(kind)
         control:SetOrientation("HORIZONTAL")
         control:EnableMouse(true)
         control:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
-        Fill(control, 0.19, 0.21, 0.23, 1)
+        local track = control:CreateTexture(nil, "BACKGROUND")
+        track:SetPoint("LEFT", control, "LEFT", 0, 0)
+        track:SetPoint("RIGHT", control, "RIGHT", 0, 0)
+        track:SetHeight(3)
+        track:SetColorTexture(0.61, 0.65, 0.69, 0.38)
         if control.SetObeyStepOnDrag then control:SetObeyStepOnDrag(true) end
         control:SetScript("OnValueChanged", function(_, value) Write(row, value) end)
     elseif kind == "dropdown" then
@@ -320,7 +323,7 @@ local function BindDetails()
                 local titleHeight = math.max(18, row.title:GetStringHeight())
                 local descHeight = (option.status or option.description) and math.max(14, row.description:GetStringHeight()) + 5 or 0
                 local lineHeight = stacked and titleHeight + 29 or math.max(24, titleHeight)
-                Place(row.frame, ui.detailContent, 0, y, width, lineHeight + descHeight + 12)
+                Place(row.frame, ui.detailContent, 0, y, width, lineHeight + descHeight + 8)
                 Place(row.control, row.frame, width - controlWidth - 8, stacked and titleHeight + 9 or 3,
                     controlWidth, kind == "slider" and 18 or 24)
                 row.description:ClearAllPoints()
@@ -330,7 +333,7 @@ local function BindDetails()
                     row.control:SetValueStep(option.step or 1)
                 end
                 SyncRow(row); row.frame:Show()
-                y = y + lineHeight + descHeight + 16
+                y = y + lineHeight + descHeight + 12
             end
         end
     end
@@ -360,12 +363,13 @@ local function Sidebar()
             end
             button.id = entry.id
             button.label:SetText(entry.label)
-            if entry.id == ui.selected then
-                button.fill:SetColorTexture(r * 0.33, g * 0.33, b * 0.33, 1)
+            local selected = entry.id == ui.selected
+            button.fill:SetShown(selected)
+            if selected then
+                button.fill:SetColorTexture(r, g, b, 0.27)
                 button.label:SetTextColor(0.95, 0.98, 0.98)
             else
-                button.fill:SetColorTexture(0.10, 0.11, 0.12, 0.95)
-                button.label:SetTextColor(0.77, 0.81, 0.83)
+                button.label:SetTextColor(0.86, 0.88, 0.90)
             end
             Place(button, ui.listContent, 0, (shown - 1) * 25, ui.listWidth, 24)
             button:Show()
@@ -442,7 +446,7 @@ local function Layout()
 end
 
 local function Build(root)
-    Fill(root, 0.045, 0.052, 0.059, 0.97)
+    -- The native Settings canvas supplies the backdrop, as on the legacy page.
     local name = Text(root, "GameFontNormalLarge")
     name:SetPoint("TOPLEFT", root, "TOPLEFT", 12, -10); name:SetText("EUI AddonSkins")
     local legacy = Button(root)
@@ -473,7 +477,7 @@ local function Build(root)
     ui.empty = Text(ui.listContent, "GameFontHighlightSmall")
     ui.empty:SetPoint("TOPLEFT", ui.listContent, "TOPLEFT", 5, -5)
     ui.divider = root:CreateTexture(nil, "ARTWORK")
-    ui.divider:SetColorTexture(0.22, 0.25, 0.28, 0.7)
+    ui.divider:SetColorTexture(0.54, 0.58, 0.62, 0.24)
     ui.built = true
     root:SetScript("OnSizeChanged", function()
         if not ui.open then return end

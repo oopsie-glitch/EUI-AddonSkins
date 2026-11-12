@@ -1,0 +1,86 @@
+name: Pinned RestedXP source compatibility probe
+on:
+  push:
+    branches: [audit/settings-spy-rxp-final]
+permissions:
+  contents: read
+jobs:
+  source-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install Lua executable
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lua5.4
+      - name: Exercise unmodified RestedXP resolver and payload functions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          root = 'https://raw.githubusercontent.com/RestedXP/RXPGuides/b4a0f99a2ceac856f75a11594bcaa19886236a01/'
+          def source(name):
+              with urlopen(root + name, timeout=30) as response:
+                  return response.read().decode()
+          def section(text, start, end):
+              assert text.count(start) == 1 and text.count(end) == 1
+              return text[text.index(start):text.index(end)]
+          functions = source('functions.lua')
+          guide = source('GuideWindow.lua')
+          Path('/tmp/rxp-pinned-functions.lua').write_text(
+              'local addon = ...\n' +
+              section(functions, 'local NPCNames = {}', 'function addon.GetItemName(id)') +
+              section(guide, 'function addon.v2:GetActiveStepText(step)', 'function addon.v2:EncodePlayerActiveSteps(payload)') +
+              section(guide, 'function addon.v2:UpdateActiveStepsFrame(steps, questId)',
+                      'function addon.v2:UpdateActivePartyStepsFrame(encodedPayload, player)'))
+          PY
+          cat > /tmp/rxp-source-probe.lua <<'LUA'
+          C_Timer = {}
+          local fixture = assert(loadfile("tests/collection_spec.lua"))("rxp-benchmark")
+          local addon, v2 = fixture.addon, fixture.addon.v2
+          addon.settings.profile.enableBetaFeatures = true
+          addon.player = {name="Probe"}
+          addon.comms = {grouping={CanBroadcastCurrentStep=function() return false end}}
+          v2.state.player = {}
+          function v2:IsGuideWindowEnabled() return false end
+          function v2:ClearActiveStepEventWatchers() end
+          assert(loadfile("/tmp/rxp-pinned-functions.lua"))(addon)
+          local getName, replace, getText, update = addon.GetNpcName, addon.ReplaceNpcIds, v2.GetActiveStepText, v2.UpdateActiveStepsFrame
+          local reads, restricted = 0, false
+          GetTime = function() return 100 end
+          GameTooltip = {SetOwner=function() end, ClearLines=function() end, SetHyperlink=function() end,
+              IsShown=function() return true end, Hide=function() end}
+          GameTooltipTextLeft1 = {GetText=function()
+              reads = reads + 1
+              if restricted then return setmetatable({}, {__index=function() error("restricted tooltip stand-in") end}) end
+              return "|cffffffffScout|r"
+          end}
+          if arg[1] == "installed" then
+              fixture.module.install(fixture.api,fixture.module)
+              fixture.flush()
+              for _=1,20 do fixture.module.refresh();fixture.flush() end
+              assert(reads == 0, "skin refresh read NPC tooltip")
+          end
+          assert(getName == addon.GetNpcName and replace == addon.ReplaceNpcIds and
+              getText == v2.GetActiveStepText and update == v2.UpdateActiveStepsFrame)
+          local failures = 0
+          for i=1,60 do
+              restricted = i%2==0
+              local step={active=true}
+              step.elements={{step=step,rawtext="Speak to npc:Scout:"..(100+i)}}
+              local ok,err=pcall(v2.UpdateActiveStepsFrame,v2,{step})
+              if not ok then
+                  assert(restricted and tostring(err):find("restricted tooltip stand-in",1,true), tostring(err))
+                  failures=failures+1
+              else
+                  assert(not restricted)
+              end
+          end
+          assert(reads==60 and failures==30)
+          print("RXP SOURCE PROBE",arg[1],"reads",reads,"restricted failures",failures,"identities unchanged")
+          LUA
+          lua5.4 /tmp/rxp-source-probe.lua absent
+          lua5.4 /tmp/rxp-source-probe.lua installed

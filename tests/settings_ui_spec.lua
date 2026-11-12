@@ -371,6 +371,27 @@ assert(Controls("Slider")[1]:GetValue()==100)
 Click("Reset"); assert(spyValues.style=="auto" and Controls("Slider")[1]:GetValue()==75)
 assert(appearanceDB.rxp.arrow==false and appearanceDB.kiwiFarm.useEUIFont==false)
 
+local combinedFrames, combinedArt = app.counts.frames, app.counts.art
+local combinedWrites, combinedStart = writes, os.clock()
+for _=1,200 do
+    Click("RestedXP"); Click("Spy")
+    app.opened:Hide(); app.opened:Show()
+end
+local combinedElapsed = (os.clock()-combinedStart)*1000
+assert(app.counts.frames==combinedFrames and app.counts.art==combinedArt and writes==combinedWrites,
+    "Spy/RestedXP navigation allocated or saved preferences")
+app.opened:Hide()
+local closedReads, closedWrites = app.counts.info, app.counts.writes
+for _=1,1000 do
+    ns.SettingsPreferenceChanged("Spy","style")
+    ns.SettingsPreferenceChanged("RXPGuides","opacity")
+    ns.SettingsAvailabilityChanged("Spy")
+end
+assert(next(app.opened.events)==nil and app.counts.info==closedReads and app.counts.writes==closedWrites,
+    "closed combined panel processed notifications")
+print(string.format("BENCH Combined Spy/RestedXP: %d frames/%d regions settled, 200 navigation/reopen cycles %.3f ms; zero new objects or preference writes, zero closed reads or writes",
+    combinedFrames, combinedArt, combinedElapsed))
+
 local legacy=Setup(false,true,nil)
 SlashCmdList.EUIDETAILS()
 assert(#legacy.categories==1 and legacy.opened.name=="EUI AddonSkins" and legacy.opened.menus,

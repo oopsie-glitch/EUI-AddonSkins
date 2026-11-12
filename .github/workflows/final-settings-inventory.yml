@@ -1,0 +1,87 @@
+name: Final settings resource inventory
+on:
+  push:
+    branches: [audit/settings-spy-rxp-final]
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install host Lua
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Measure canvas construction and retained resources
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import re
+          from statistics import median
+          from subprocess import check_output
+          import sys
+          from urllib.request import urlopen
+
+          def download(path):
+              url = 'https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/7969b352a23aed96d87b23cb7d12419e6b20fef9/' + str(path)
+              with urlopen(url, timeout=30) as response:
+                  return response.read()
+          renderer = Path('EUIAddonSkins/SettingsUI.lua')
+          fixture = Path('tests/settings_ui_spec.lua')
+          candidate, current_fixture = renderer.read_bytes(), fixture.read_bytes()
+          before = download(renderer)
+          spec = download(fixture).decode()
+          def instrument(start, finish):
+              global spec
+              assert spec.count(start) == 1, start
+              spec = spec.replace(start, finish)
+          instrument('local function Setup(modern, oldInfo, db)\n',
+                     'local function Setup(modern, oldInfo, db)\n    local auditStart = os.clock()\n')
+          instrument('local h={frames={},categories={},counts={frames=0,art=0,info=0,writes=0},',
+                     'local h={frames={},categories={},counts={frames=0,art=0,info=0,writes=0,textures=0,fonts=0,scripts=0,hooks=0},')
+          instrument('function f:CreateTexture()\n', 'function f:CreateTexture()\n            h.counts.textures=h.counts.textures+1\n')
+          instrument('function f:CreateFontString()\n', 'function f:CreateFontString()\n            h.counts.fonts=h.counts.fonts+1\n')
+          instrument('function f:SetScript(event, fn) self.scripts[event]=fn end',
+                     'function f:SetScript(event, fn) self.scripts[event]=fn; h.counts.scripts=h.counts.scripts+1 end')
+          instrument('function f:HookScript(event,fn)\n',
+                     'function f:HookScript(event,fn)\n            h.counts.hooks=h.counts.hooks+1\n')
+          instrument('    h:Event("PLAYER_LOGIN")\n    return h',
+                     '    h:Event("PLAYER_LOGIN")\n    h.auditLogin=(os.clock()-auditStart)*1000\n    return h')
+          instrument('    SlashCmdList.EUIDETAILS()\n    assert(h.opened==root',
+                     '    local auditFirst=os.clock()\n    SlashCmdList.EUIDETAILS()\n'
+                     '    if not oldInfo then print(("AUDIT COLD %.6f %.6f %d %d %d"):format('
+                     'h.auditLogin,(os.clock()-auditFirst)*1000,h.counts.frames,h.counts.textures,h.counts.fonts)) end\n'
+                     '    assert(h.opened==root')
+          instrument('local combinedWrites, combinedStart = writes, os.clock()',
+                     'collectgarbage("collect"); collectgarbage("collect")\n'
+                     'local auditHeap=collectgarbage("count")\n'
+                     'local combinedWrites, combinedStart = writes, os.clock()')
+          instrument('local combinedElapsed = (os.clock()-combinedStart)*1000',
+                     'local combinedElapsed = (os.clock()-combinedStart)*1000\n'
+                     'collectgarbage("collect"); collectgarbage("collect")\n'
+                     'print(("AUDIT WARM %.6f %.6f %d %d %d %d %d"):format(combinedElapsed,collectgarbage("count")-auditHeap,'
+                     'app.counts.frames,app.counts.textures,app.counts.fonts,app.counts.scripts,app.counts.hooks))')
+          results = {'before': [], 'after': []}
+          try:
+              fixture.write_text(spec)
+              for trial in range(5):
+                  versions = [('before', before), ('after', candidate)]
+                  for label, source in versions if trial % 2 == 0 else reversed(versions):
+                      renderer.write_bytes(source)
+                      output = check_output([sys.executable,'tests/run_lua.py'], text=True)
+                      cold = re.search(r'^AUDIT COLD (.+)$', output, re.M).group(1)
+                      warm = re.search(r'^AUDIT WARM (.+)$', output, re.M).group(1)
+                      results[label].append([float(x) for x in (cold+' '+warm).split()])
+          finally:
+              renderer.write_bytes(candidate)
+              fixture.write_bytes(current_fixture)
+          fields = ('setup_ms','first_show_ms','first_frames','first_textures','first_fonts',
+                    'navigation_ms','warm_retained_kib','warm_frames','warm_textures','warm_fonts','set_scripts','hook_scripts')
+          for label, trials in results.items():
+              print('SETTINGS AUDIT',label,json.dumps(dict(zip(fields,map(median,zip(*trials))))))
+          PY

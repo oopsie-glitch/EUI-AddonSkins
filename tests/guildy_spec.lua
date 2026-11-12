@@ -153,6 +153,11 @@ assert(modules.Guildy.available())
 -- Blizzard globals Guildy relies on.
 local toggles = 0
 local inGuild = true
+-- Tabard colours (C_GuildInfo.GetGuildTabardInfo); nil until the guild designs one.
+local tabardInfo
+function GetGuildLogoInfo() if tabardInfo then return 0, 0, 0, 0, 0, 0, 0, 0, 0, 123 end end
+C_GuildInfo = {GetGuildTabardInfo = function(unit) assert(unit == 'player'); return tabardInfo end}
+local function Color(r, g, b) return {GetRGB = function() return r, g, b end} end
 function IsInGuild() return inGuild end
 function SetLargeGuildTabardTextures(unit, emblem, background, border)
     assert(unit == 'player'); if not inGuild then error('no tabard') end
@@ -333,10 +338,39 @@ accent = 0.9; for _, look in ipairs(looks) do look() end; flush()
 assert(box.border[1] == 0.9, 'accent change not applied to a lit border')
 assert(railTrack.color[1] == 0.9 and thumbFill.color[1] == 0.9, 'accent change not applied to the timeline rail')
 
+-- No tabard design: the EUI look, no guild edges or underlines.
+for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == false, 'window edge drawn without tabard colours') end
+assert(not tab1.euiGuildyLine or not tab1.euiGuildyLine.shown, 'guild underline without tabard colours')
+
+-- Tabard colours drive Guildy's accent, tabs, title icon and window edge.
+tabardInfo = {backgroundColor = Color(0.1, 0.05, 0.2), borderColor = Color(0.6, 0.5, 0.1), emblemColor = Color(0.8, 0.2, 0.9)}
+main.Emblem:Update(); flush()
+assert(tabard.Background.color[1] == 0.1 and tabard.Background.color[3] == 0.2 and tabard.Background.path == 'solid', 'title icon not filled with the tabard background colour')
+for _, e in ipairs(tabard.Edges) do assert(e.shown == true and e.color[1] == 0.6, 'title icon not edged in the tabard border colour') end
+for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == true and e.color[1] == 0.6, 'window edge not in the tabard border colour') end
+box:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
+assert(box.border[1] == 0.8 and box.border[3] == 0.9, 'lit border not in the guild accent')
+assert(railTrack.color[1] == 0.8 and thumbFill.color[3] == 0.9, 'timeline rail not in the guild accent')
+PanelTemplates_SelectTab(tab1); PanelTemplates_DeselectTab(tab2)
+assert(tab1.selected == false and tab2.selected == false, 'EUI underline still drawn with guild colours')
+assert(tab1.euiGuildyLine.shown == true and tab1.euiGuildyLine.color[1] == 0.8, 'selected tab has no guild underline')
+assert(tab2.euiGuildyLine.shown == false, 'unselected tab kept the guild underline')
+assert(tab1.label.textColor[1] == 1 and tab2.label.textColor[1] == 0.65, 'tab labels do not show the selection')
+-- A dark emblem is unreadable: the border colour becomes the accent.
+tabardInfo.emblemColor = Color(0.05, 0.05, 0.05); main.Emblem:Update(); flush()
+box:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
+assert(box.border[1] == 0.6, 'dark emblem colour used as the accent')
+-- Unchanged colours add no refresh work.
+local queued = #timers; main.Emblem:Update(); assert(#timers == queued, 'unchanged tabard queued a refresh')
+-- The design removed again: back to the EUI accent.
+tabardInfo = nil; main.Emblem:Update(); flush()
+for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == false, 'window edge kept after the tabard design went away') end
+assert(railTrack.color[1] == accent and tab1.selected == true and not tab1.euiGuildyLine.shown, 'EUI accent not restored')
+
 -- Disabled skin stops processing.
 enabled = false
 box:SetBackdropBorderColor(GOLD[1] * 0.5, GOLD[2] * 0.5, GOLD[3] * 0.5)
 assert(box.border[1] == GOLD[1] * 0.5, 'disabled skin still repainted borders')
 local after = Button(panel, 'Late'); modules.Guildy.refresh(); flush()
 assert(not after.button, 'disabled skin styled new controls')
-print('PASS: Guildy lazy window, square title icon with guild tabard, tab label fitting, title/version trim, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')
+print('PASS: Guildy lazy window, square title icon with guild tabard, guild colour accent/tabs/edges, tab label fitting, title/version trim, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')

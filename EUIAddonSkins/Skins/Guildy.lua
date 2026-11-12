@@ -15,14 +15,72 @@ end
 local function Tooltip(path)
     return type(path) == "string" and path:lower():find("ui%-tooltip%-border") ~= nil
 end
+-- Guild colours ----------------------------------------------------------------
+-- The guild tabard's background, border and emblem colours. Guildy's window
+-- uses them in place of the EUI accent; nil (no guild, or a tabard without a
+-- design) keeps the EUI look.
+local function RGB(color)
+    if type(color) ~= "table" then return end
+    if type(color.GetRGB) == "function" then return color:GetRGB() end
+    if color.r then return color.r, color.g, color.b end
+end
+local function Luminance(c) return 0.299 * c[1] + 0.587 * c[2] + 0.114 * c[3] end
+local function GuildColors()
+    if not (IsInGuild and IsInGuild()) then return end
+    -- No emblem file: the guild has not designed a tabard yet.
+    if GetGuildLogoInfo and select(10, GetGuildLogoInfo()) == nil then return end
+    local api = C_GuildInfo and C_GuildInfo.GetGuildTabardInfo
+    if not api then return end
+    local ok, info = pcall(api, "player")
+    if not ok or type(info) ~= "table" then return end
+    local colors = {}
+    for key, field in pairs({background = "backgroundColor", border = "borderColor", emblem = "emblemColor"}) do
+        local r, g, b = RGB(info[field])
+        if not r then return end
+        colors[key] = {r, g, b}
+    end
+    -- Accent: the emblem colour, else the border, else the background; a colour
+    -- too dark to read on the dark panels falls through to the next one.
+    for _, key in ipairs({"emblem", "border", "background"}) do
+        if Luminance(colors[key]) >= 0.2 then colors.accent = colors[key]; break end
+    end
+    colors.key = table.concat({colors.background[1], colors.background[2], colors.background[3],
+        colors.border[1], colors.border[2], colors.border[3], colors.emblem[1], colors.emblem[2], colors.emblem[3]}, ",")
+    return colors
+end
+-- Four inner edge textures of size px around anchor, drawn on owner.
+local function Edges(owner, anchor, size)
+    local edges = {}
+    for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+        local t = owner:CreateTexture(nil, "OVERLAY", nil, 7)
+        if side == "TOP" or side == "BOTTOM" then
+            t:SetPoint(side .. "LEFT", anchor, side .. "LEFT"); t:SetPoint(side .. "RIGHT", anchor, side .. "RIGHT"); t:SetHeight(size)
+        else
+            t:SetPoint("TOP" .. side, anchor, "TOP" .. side); t:SetPoint("BOTTOM" .. side, anchor, "BOTTOM" .. side); t:SetWidth(size)
+        end
+        edges[i] = t
+    end
+    return edges
+end
+local function PaintEdges(edges, color)
+    for _, t in ipairs(edges) do
+        if color then t:SetColorTexture(color[1], color[2], color[3], 1) end
+        t:SetShown(color ~= nil)
+    end
+end
+
 -- The square title-bar icon: the guild's tabard when the client supplies it
 -- (SetLargeGuildTabardTextures, as Guildy's own emblem uses), otherwise Guildy's
 -- logo. Never both: a tabard without colours has a transparent background, so
 -- the logo is hidden rather than covered. Square treatment: the tabard's
--- background colour fills the square and the emblem sits centred on it; the
--- round border art, which needs Guildy's circular mask, is never shown.
+-- background colour fills the square, its border colour edges it and the
+-- emblem sits centred on it. The round border art, which needs Guildy's
+-- circular mask, is never shown.
 local LOGO = "Interface\\Icons\\INV_Shirt_GuildTabard_01"
 local function Tabard(C, main, logoPath)
+    local colors = GuildColors()
+    local changed = (colors and colors.key) ~= (C.guild and C.guild.key)
+    C.guild = colors
     local tabard = main.euiGuildyTabard
     if not tabard then
         tabard = {}
@@ -42,9 +100,15 @@ local function Tabard(C, main, logoPath)
         tabard.Border:SetSize(1, 1)
         tabard.Border:SetPoint("TOPLEFT", main, "TOPLEFT", 8, -6)
         tabard.Border:SetAlpha(0)
+        tabard.Edges = Edges(main, tabard.Background, 2)
         main.euiGuildyTabard = tabard
-        -- Guildy redraws its emblem when the guild changes (UpdateTitle).
-        if main.Emblem then C.H.Hook(main.Emblem, "Update", function() Tabard(C, main) end) end
+        -- Guildy redraws its emblem when the guild or its tabard changes
+        -- (UpdateTitle); new colours repaint the whole window.
+        if main.Emblem then
+            C.H.Hook(main.Emblem, "Update", function()
+                if Tabard(C, main) and C.refresh then C.refresh() end
+            end)
+        end
     end
     -- A white square takes the tabard background colour the API applies.
     tabard.Background:SetTexture(WHITE)
@@ -52,11 +116,47 @@ local function Tabard(C, main, logoPath)
     local set = _G.SetLargeGuildTabardTextures
     local ok = set ~= nil and IsInGuild and IsInGuild()
         and pcall(set, "player", tabard.Emblem, tabard.Background, tabard.Border) or false
+    if ok and colors then
+        local c = colors.background
+        tabard.Background:SetVertexColor(1, 1, 1, 1) -- the API's tint would multiply the fill
+        tabard.Background:SetColorTexture(c[1], c[2], c[3], 1)
+    end
     tabard.Background:SetShown(ok and true or false)
     tabard.Emblem:SetShown(ok and true or false)
     tabard.Border:Hide()
+    PaintEdges(tabard.Edges, ok and colors and colors.border or nil)
     tabard.Logo:SetShown(not ok)
     tabard.ok = ok
+    return changed
+end
+-- Selected tab: with guild colours, every Guildy tab looks unselected to EUI
+-- and the skin draws its own underline in the guild accent.
+local function PaintTab(C, tab, on)
+    local H = C.H
+    local accent = C.guild and C.guild.accent
+    local label = (tab.GetFontString and tab:GetFontString()) or tab.Text
+    if not accent then
+        if tab.euiGuildyLine then tab.euiGuildyLine:SetShown(false) end
+        return H.Tab(tab, on)
+    end
+    local styled = H.Tab(tab, false)
+    local line = tab.euiGuildyLine
+    if not line and tab.CreateTexture then
+        line = tab:CreateTexture(nil, "OVERLAY", nil, 7)
+        line:SetHeight(2)
+        line:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 1, 1)
+        line:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -1, 1)
+        tab.euiGuildyLine = line
+    end
+    if line then
+        line:SetColorTexture(accent[1], accent[2], accent[3], 1)
+        line:SetShown(on and true or false)
+    end
+    if label then
+        local shade = on and 1 or 0.65
+        H.Font(label, shade, shade, shade)
+    end
+    return styled
 end
 -- Bottom/top tab labels: never wrap. When the label is wider than the tab Guildy
 -- sized (for instance measured before the font finished loading), let Blizzard's
@@ -173,16 +273,29 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
     available = function() return SlashCmdList ~= nil and SlashCmdList.GUILDY ~= nil end,
     hooks = function(C, refresh)
         local H = C.H
+        C.refresh = refresh
+        if not C.guildAccent then
+            -- Guildy-only accent: this skin's own getter (lit borders, timeline
+            -- rail, segment selection) returns the guild colour when there is
+            -- one. EUI's own primitives and every other window keep the EUI accent.
+            C.guildAccent = true
+            local base = C.S.GetAccentColor
+            C.S.GetAccentColor = function()
+                local accent = C.guild and C.guild.accent
+                if accent then return accent[1], accent[2], accent[3] end
+                return base()
+            end
+        end
         -- Guildy builds its window the first time Blizzard's guild window opens
         -- (Blizzard_Communities loads on demand) and lives inside it.
         H.Hook(_G, "ToggleGuildFrame", refresh)
         H.Hook(_G, "ToggleCommunitiesFrame", refresh)
         if _G.CommunitiesFrame then H.Script(_G.CommunitiesFrame, "OnShow", refresh) end
         H.Hook(_G, "PanelTemplates_SelectTab", function(tab)
-            if OwnedTab(tab) then selected[tab] = true; H.Tab(tab, true) end
+            if OwnedTab(tab) then selected[tab] = true; PaintTab(C, tab, true) end
         end)
         H.Hook(_G, "PanelTemplates_DeselectTab", function(tab)
-            if OwnedTab(tab) then selected[tab] = false; H.Tab(tab, false) end
+            if OwnedTab(tab) then selected[tab] = false; PaintTab(C, tab, false) end
         end)
     end,
     roots = function(C)
@@ -216,6 +329,9 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
             if H.Texture(portrait) then H.Fade(portrait) end
             if H.Allowed(f.Emblem) then H.Fade(f.Emblem) end
             Tabard(C, f, logoPath)
+            -- The window's outer edge in the tabard's border colour.
+            if not f.euiGuildyEdges then f.euiGuildyEdges = Edges(f, f, 1) end
+            PaintEdges(f.euiGuildyEdges, C.guild and C.guild.border or nil)
             -- No version line or "· Guildy" suffix in the title bar. Guildy still
             -- announces newer releases in chat.
             if H.Allowed(f.Version) and not f.euiGuildyVersion then
@@ -244,8 +360,8 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
                 local owner = f.GetParent and f:GetParent()
                 value = owner and owner.selectedTab ~= nil and f.GetID and owner.selectedTab == f:GetID() or false
             end
-            local styled = H.Tab(f, value)
             H.Font((f.GetFontString and f:GetFontString()) or f.Text)
+            local styled = PaintTab(C, f, value)
             FitTab(f)
             return styled
         end

@@ -15,15 +15,22 @@ end
 local function Tooltip(path)
     return type(path) == "string" and path:lower():find("ui%-tooltip%-border") ~= nil
 end
--- The guild's tabard in the square title-bar icon spot, drawn over Guildy's
--- logo when the client supplies it (SetLargeGuildTabardTextures, as Guildy's
--- own emblem uses). Square treatment: the tabard's background colour fills the
--- square and the emblem sits centred on it. The round border art, which needs
--- Guildy's circular mask, is never shown.
-local function Tabard(C, main)
+-- The square title-bar icon: the guild's tabard when the client supplies it
+-- (SetLargeGuildTabardTextures, as Guildy's own emblem uses), otherwise Guildy's
+-- logo. Never both: a tabard without colours has a transparent background, so
+-- the logo is hidden rather than covered. Square treatment: the tabard's
+-- background colour fills the square and the emblem sits centred on it; the
+-- round border art, which needs Guildy's circular mask, is never shown.
+local LOGO = "Interface\\Icons\\INV_Shirt_GuildTabard_01"
+local function Tabard(C, main, logoPath)
     local tabard = main.euiGuildyTabard
     if not tabard then
         tabard = {}
+        tabard.Logo = main:CreateTexture(nil, "OVERLAY", nil, 5)
+        tabard.Logo:SetSize(28, 28)
+        tabard.Logo:SetPoint("TOPLEFT", main, "TOPLEFT", 8, -6)
+        tabard.Logo:SetTexture(logoPath or LOGO)
+        if C.S.SquareIcon then C.S.SquareIcon(tabard.Logo) end
         tabard.Background = main:CreateTexture(nil, "OVERLAY", nil, 6)
         tabard.Background:SetSize(28, 28)
         tabard.Background:SetPoint("TOPLEFT", main, "TOPLEFT", 8, -6)
@@ -48,6 +55,7 @@ local function Tabard(C, main)
     tabard.Background:SetShown(ok and true or false)
     tabard.Emblem:SetShown(ok and true or false)
     tabard.Border:Hide()
+    tabard.Logo:SetShown(not ok)
     tabard.ok = ok
 end
 -- Bottom/top tab labels: never wrap. When the label is wider than the tab Guildy
@@ -198,9 +206,16 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
         if f == _G.GuildyFrame then
             -- A small square title-bar icon like other EUI windows, instead of the
             -- round portrait and the 60px guild emblem Guildy draws over it.
-            H.Portrait(f, false, true)
+            local pc = f.PortraitContainer
+            local portrait = pc and pc.portrait or f.portrait
+            local logoPath = H.Texture(portrait) and portrait:GetTexture() or nil
+            if type(logoPath) ~= "string" and type(logoPath) ~= "number" then logoPath = nil end
+            if pc and pc.GetRegions then
+                for _, region in ipairs(H.Regions(pc)) do if H.Texture(region) then H.Fade(region) end end
+            end
+            if H.Texture(portrait) then H.Fade(portrait) end
             if H.Allowed(f.Emblem) then H.Fade(f.Emblem) end
-            Tabard(C, f)
+            Tabard(C, f, logoPath)
             -- No version line or "· Guildy" suffix in the title bar. Guildy still
             -- announces newer releases in chat.
             if H.Allowed(f.Version) and not f.euiGuildyVersion then

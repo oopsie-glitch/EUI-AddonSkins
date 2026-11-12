@@ -16,7 +16,7 @@ jobs:
           from io import BytesIO
           from urllib.request import urlopen
           from zipfile import ZipFile
-          url = 'https://edge.forgecdn.net/files/9567/829/DungeonJournal2.0.3.zip'
+          url = 'https://edge.forgecdn.net/files/9567/829/DungeonJournal-2.0.3.zip'
           with urlopen(url, timeout=35) as response:
               data = response.read()
           print('PACKAGE SHA256', sha256(data).hexdigest())

@@ -132,8 +132,15 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
     end,
     visit = function(C, f, kind, refresh)
         local H, S = C.H, C.S
-        if f == _G.GuildyFrame or f == _G.GuildyOptions then
-            -- Guildy draws the guild emblem over the portrait; drop only the ring art.
+        if f == _G.GuildyFrame then
+            -- A small square title-bar icon like other EUI windows, instead of the
+            -- round portrait and the 60px guild emblem Guildy draws over it.
+            H.Portrait(f, false, true)
+            if H.Allowed(f.Emblem) then H.Fade(f.Emblem) end
+            return
+        end
+        if f == _G.GuildyOptions then
+            -- The options window hides its portrait; drop any leftover ring art.
             local pc = f.PortraitContainer
             if pc and pc.GetRegions then
                 local portrait = pc.portrait

@@ -61,6 +61,8 @@ local function frame(kind, name, parent)
     function f:IsEnabled() return not self.disabled end
     function f:SetEnabled(v) self.disabled = not v; local h = self.hooks[v and 'OnEnable' or 'OnDisable']; if h then h(self) end end
     function f:GetName() return self.name end
+    function f:SetAlpha(v) self.alpha = v end
+    function f:GetAlpha() return self.alpha or 1 end
     function f:GetParent() return self.parent end
     function f:IsForbidden() return false end
     function f:IsProtected() return self.protected end
@@ -164,6 +166,7 @@ local main = frame('Frame', 'GuildyFrame')
 main.PortraitContainer = frame('Frame', nil, main)
 local ring = main.PortraitContainer:CreateTexture()
 main.PortraitContainer.portrait = main.PortraitContainer:CreateTexture()
+main.PortraitContainer.portrait.path = 'Interface/Icons/INV_Shirt_GuildTabard_01'
 main.CloseButton = Button(main, '', 'GuildyFrameCloseButton')
 main.Emblem = frame('Frame', nil, main)
 local emblemArt = main.Emblem:CreateTexture(); local emblemText = main.Emblem:CreateFontString()
@@ -199,9 +202,13 @@ container.parent = panel; panel.children[#panel.children + 1] = container
 
 assert(ToggleGuildFrame() == 'native-toggle' and toggles == 1); flush()
 assert(main.shell and main.shellOptions.noAccent, 'Guildy window not shelled on first open')
-assert(ring.alpha == 0 and main.PortraitContainer.portrait.alpha == 1, 'portrait ring not removed or portrait hidden')
+assert(ring.alpha == 0 and main.PortraitContainer.portrait.alpha == 0, 'round portrait art remained')
+local titleIcon; for _, t in ipairs(main.regions) do if t.path == 'Interface/Icons/INV_Shirt_GuildTabard_01' then titleIcon = t end end
+assert(titleIcon and titleIcon.alpha == 1 and titleIcon.width == 28 and titleIcon.crop, 'square title icon missing')
+assert(main.Emblem.alpha == 0, 'round guild emblem still drawn in the corner')
+main.Emblem:SetAlpha(1); assert(main.Emblem.alpha == 0, 'emblem came back after a native alpha write')
 assert(main.CloseButton.close)
-assert(emblemArt.alpha == 1 and emblemText.font == 'native', 'guild emblem was styled')
+assert(emblemArt.alpha == 1 and emblemText.font == 'native', 'guild emblem internals were styled')
 assert(main.OptionsButton.button and main.OptionsButton.Icon.alpha == 1, 'options cog lost its icon')
 assert(not side.button and sideArt.alpha == 1, 'side tab art changed')
 assert(tab1.tab and tab1.selected == true and tab2.tab and tab2.selected == false, 'bottom tabs not styled with selection')
@@ -267,7 +274,9 @@ assert(confirm.shell and ok.button, 'confirmation popup not styled')
 
 -- Repeated refreshes add no hooks or objects.
 local hooked, regions = ToggleGuildFrame, #box.regions
+local mainRegions = #main.regions
 for _ = 1, 10 do modules.Guildy.refresh(); flush() end
+assert(#main.regions == mainRegions, 'title icon recreated on refresh')
 assert(ToggleGuildFrame == hooked and #box.regions == regions, 'duplicate hooks or objects')
 assert(nativeToggle == ToggleGuildFrame)
 
@@ -292,4 +301,4 @@ box:SetBackdropBorderColor(GOLD[1] * 0.5, GOLD[2] * 0.5, GOLD[3] * 0.5)
 assert(box.border[1] == GOLD[1] * 0.5, 'disabled skin still repainted borders')
 local after = Button(panel, 'Late'); modules.Guildy.refresh(); flush()
 assert(not after.button, 'disabled skin styled new controls')
-print('PASS: Guildy lazy window, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')
+print('PASS: Guildy lazy window, square title icon, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')

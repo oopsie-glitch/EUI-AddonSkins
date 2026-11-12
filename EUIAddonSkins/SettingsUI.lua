@@ -93,7 +93,9 @@ end
 
 local function Enabled(row)
     if not ui.open or ui.updating or not row.option or row.id ~= ui.selected or Combat() then return false end
-    return Availability(row.id) == false and (not row.option.enabled or row.option.enabled())
+    if ui.reason ~= false or not ns.IsEnabled() then return false end
+    if ui.module and ui.module.skin and not ns.IsEnabled(ui.module) then return false end
+    return not row.option.enabled or row.option.enabled()
 end
 
 local function SyncRow(row)
@@ -106,10 +108,13 @@ local function SyncRow(row)
     elseif enabled then control:Enable() else control:Disable() end
     if option.kind == "toggle" then control:SetChecked(value == true)
     elseif option.kind == "slider" then
-        control:SetValue(value or option.min)
-        row.title:SetText(option.label .. ": " .. tostring(value or option.min) .. (option.unit or ""))
-    elseif option.kind == "choice" then control.label:SetText(FindValue(option, value) or "Choose")
+        value = value or option.min
+        if not control.GetValue or control:GetValue() ~= value then control:SetValue(value) end
+        row.title:SetText(option.label .. ": " .. tostring(value) .. (option.unit or ""))
+    elseif option.kind == "choice" then
+        control.label:SetText(FindValue(option, value) or (value ~= nil and "Unavailable" or "Choose"))
     else control.label:SetText(option.buttonLabel or option.label) end
+    if option.status then row.description:SetText(option.status()) end
 end
 
 local function Write(row, value)
@@ -148,7 +153,10 @@ local function MakeRow(kind)
             local values = option.values or {}
             if #values == 0 then return end
             local _, index = FindValue(option, option.get())
-            Write(row, values[(index or 0) % #values + 1].value)
+            for offset = 1, #values do
+                local choice = values[((index or 0) + offset - 1) % #values + 1]
+                if not choice.available or choice.available() then Write(row, choice.value); return end
+            end
         end)
     end
     row.control = control
@@ -186,13 +194,13 @@ local function BindDetails()
                 if not row then row = MakeRow(kind); pool[slot] = row end
                 row.option, row.id = option, ui.selected
                 row.title:SetText(option.label)
-                row.description:SetText(option.description or "")
+                row.description:SetText(option.status and option.status() or option.description or "")
                 local controlWidth = kind == "toggle" and 24 or math.min(150, math.floor(width * 0.38))
                 local stacked = width < 225 and kind ~= "toggle"
                 row.title:SetWidth(math.max(40, width - (stacked and 16 or controlWidth + 24)))
                 row.description:SetWidth(width - 16)
                 local titleHeight = math.max(18, row.title:GetStringHeight())
-                local descHeight = option.description and math.max(14, row.description:GetStringHeight()) + 5 or 0
+                local descHeight = (option.status or option.description) and math.max(14, row.description:GetStringHeight()) + 5 or 0
                 local lineHeight = stacked and titleHeight + 29 or math.max(24, titleHeight)
                 Place(row.frame, ui.detailContent, 0, y, width, lineHeight + descHeight + 12)
                 Place(row.control, row.frame, width - controlWidth - 8, stacked and titleHeight + 9 or 3,
@@ -354,7 +362,7 @@ function ns.SettingsPreferenceChanged(id, key)
     ui.updating = true
     for _, pool in pairs(ui.pools) do
         for _, row in ipairs(pool) do
-            if row.option and row.option.key == key then SyncRow(row) end
+            if row.option and (not key or row.option.key == key or row.option.dependsOn == key) then SyncRow(row) end
         end
     end
     ui.updating = false
@@ -427,6 +435,80 @@ ns.RegisterSettingsProvider("Details", {label="Details!", options={
 ns.RegisterSettingsProvider("RXPGuides", {label="RestedXP", options={
     Toggle("arrow", "Skin navigation arrow", "Turn off to restore RestedXP's original arrow. Separate from guide style and opacity.", ns.ReadRXPSetting, ns.SetRXPSetting),
 }})
+
+-- Appearance providers delegate to the installed adapter. Inactive integrations
+-- have no writer and do not need to initialize a target just to list its options.
+local function Handler()
+    return ui.module and ui.module.settingsAppearance
+end
+
+local function Appearance(kind, key, label, description)
+    local option = {kind=kind, key=key, label=label, description=description}
+    option.enabled = function() return Handler() ~= nil end
+    option.get = function()
+        local handler = Handler()
+        if handler then return handler.get(key) end
+    end
+    option.set = function(value) Handler().set(key, value) end
+    if kind == "slider" then option.min, option.max, option.step, option.unit = 0, 100, 1, "%" end
+    return option
+end
+
+local function Reset(description)
+    local option = Appearance("action", "reset", "Reset Skin Settings", description)
+    option.buttonLabel = "Reset"
+    option.run = function() Handler().reset() end
+    return option
+end
+
+local function ForeverAvailable()
+    return _G.EllesmereUI and _G.EllesmereUI.IS_FOREVER == true
+end
+
+local style = Appearance("choice", "style", "Skin Style")
+style.values = {
+    {value="auto", label="Automatic"},
+    {value="standard", label="EUI Standard"},
+    {value="forever", label="EUI Forever", available=ForeverAvailable},
+}
+style.status = function()
+    local handler = Handler()
+    if not handler then return "The effective style is available when the skin is active." end
+    local effective = handler.effectiveStyle()
+    if style.get() == "forever" and not ForeverAvailable() then
+        return "Effective: " .. effective .. ". The saved EUI Forever choice requires the Forever client."
+    end
+    return "Effective: " .. effective
+end
+local rxp = providers.RXPGuides
+local rxpOpacity = Appearance("slider", "opacity", "Background Opacity", "Changes the guide background while leaving text and controls visible.")
+rxpOpacity.dependsOn = "style"
+table.insert(rxp.options, 1, rxpOpacity)
+table.insert(rxp.options, 1, style)
+rxp.reset = Reset("Resets guide style and opacity. Keeps the navigation arrow setting.")
+
+ns.RegisterSettingsProvider("AllTheThings", {label="AllTheThings", options={
+    Appearance("slider", "opacity", "Background Opacity", "Changes the window background without fading text or icons."),
+}})
+ns.RegisterSettingsProvider("RareScanner", {label="RareScanner", options={
+    Appearance("slider", "opacity", "Background Opacity", "Changes the alert and navigation button backgrounds."),
+}})
+
+local kiwiSource = Appearance("choice", "opacitySource", "Background Opacity Source", "Follow KiwiFarm's opacity or set it here.")
+kiwiSource.values = {{value="native", label="KiwiFarm"}, {value="custom", label="Custom"}}
+kiwiSource.dependsOn = "backgroundOpacity"
+local kiwiOpacity = Appearance("slider", "backgroundOpacity", "Background Opacity")
+kiwiOpacity.enabled = function() return kiwiSource.get() == "custom" end
+local kiwiTreatment = Appearance("choice", "backgroundStyle", "Background Style")
+kiwiTreatment.values = {{value="soft", label="Soft highlight"}, {value="flat", label="Flat charcoal"}}
+ns.RegisterSettingsProvider("KiwiFarm", {label="KiwiFarm", options={
+    kiwiTreatment,
+    Appearance("toggle", "useEUIFont", "Use EUI Font", "Applies to KiwiFarm statistics. Turn off to restore the original font and outline."),
+    kiwiSource,
+    kiwiOpacity,
+    Appearance("slider", "menuOpacity", "Menu Background Opacity"),
+    Appearance("toggle", "accent", "Show Accent Line"),
+}, reset=Reset("Restores KiwiFarm's AddonSkins appearance defaults.")})
 
 local login = CreateFrame("Frame")
 login:RegisterEvent("PLAYER_LOGIN")

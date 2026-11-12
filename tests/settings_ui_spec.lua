@@ -3,7 +3,7 @@
 do
 local saved = {}
 for _,key in ipairs({"CreateFrame","Settings","C_AddOns","GetAddOnInfo","InterfaceOptions_AddCategory",
-    "InterfaceOptionsFrame_OpenToCategory","InCombatLockdown","EUIAddonSkinsDB","UIParent","SlashCmdList"}) do
+    "InterfaceOptionsFrame_OpenToCategory","InCombatLockdown","EUIAddonSkinsDB","UIParent","SlashCmdList","EllesmereUI"}) do
     saved[#saved+1]={key,_G[key]}
 end
 local function Setup(modern, oldInfo, db)
@@ -43,6 +43,7 @@ local function Setup(modern, oldInfo, db)
             self.value=value;h.counts.writes=h.counts.writes+1
             if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self,value) end
         end
+        function f:GetValue() return self.value end
         function f:SetMinMaxValues(a,b) self.min,self.max=a,b end
         function f:SetValueStep(value) self.step=value end
         function f:SetThumbTexture() end
@@ -254,6 +255,78 @@ for _,oldInfo in ipairs({false,true}) do
     assert(#loaded:Find(function(f)return f.kind=="CheckButton" end,true)==1,
         "saved last selection did not survive a fresh session")
 end
+-- Phase 2 uses the real provider declarations with adapter-owned fixture handlers.
+local appearanceDB = {rxp={arrow=false}, restedXP={style="forever", opacity=0}, kiwiFarm={useEUIFont=false}}
+local app = Setup(true,false,appearanceDB)
+local ns = app.ns
+local writes = 0
+EllesmereUI = {IS_FOREVER=false}
+local rxp = ns.modules[2]
+rxp.settingsAppearance = {
+    get=function(key) return key=="style" and (appearanceDB.restedXP.style or "auto") or appearanceDB.restedXP.opacity end,
+    set=function(key,value) appearanceDB.restedXP[key]=value; writes=writes+1; ns.SettingsPreferenceChanged("RXPGuides",key) end,
+    effectiveStyle=function() return EllesmereUI.IS_FOREVER and appearanceDB.restedXP.style=="forever" and "EUI Forever" or "EUI Standard" end,
+    reset=function() appearanceDB.restedXP={}; writes=writes+1 end,
+}
+ns.skinCatalogByID.KiwiFarm={targets={"KiwiFarm"}}
+app.installed.KiwiFarm=true
+local kiwiValues = {opacitySource="native", backgroundOpacity=60, backgroundStyle="soft", menuOpacity=95, accent=false,
+    useEUIFont=appearanceDB.kiwiFarm.useEUIFont}
+local kiwi = {id="KiwiFarm",active=true,settingsAppearance={
+    get=function(key) return kiwiValues[key] end,
+    set=function(key,value) kiwiValues[key]=value; writes=writes+1; ns.SettingsPreferenceChanged("KiwiFarm","backgroundOpacity") end,
+    reset=function() end,
+}}
+table.insert(ns.modules,kiwi)
+local function Controls(kind)
+    return app:Find(function(f) return f.kind==kind end,true)
+end
+local function Click(label)
+    local buttons=app:Find(function(f)
+        return f.kind=="Button" and f.label and f.label.text==label and (label~="KiwiFarm" or f.id=="KiwiFarm")
+    end,true)
+    assert(#buttons==1,"missing or duplicate button: "..label)
+    app:Press(buttons[1])
+end
+assert(ns.OpenAddonSettings("RXPGuides"))
+assert(writes==0 and appearanceDB.restedXP.style=="forever" and Controls("Slider")[1]:GetValue()==0)
+Click("EUI Forever"); assert(appearanceDB.restedXP.style=="auto")
+Click("Automatic"); assert(appearanceDB.restedXP.style=="standard")
+Click("EUI Standard"); assert(appearanceDB.restedXP.style=="auto","unsupported style was selectable")
+EllesmereUI.IS_FOREVER=true
+Click("Automatic"); Click("EUI Standard"); assert(appearanceDB.restedXP.style=="forever")
+for _,percent in ipairs({75,100,0}) do
+    Controls("Slider")[1]:SetValue(percent)
+    assert(appearanceDB.restedXP.opacity==percent)
+end
+rxp.settingsAppearance.set("opacity",75)
+assert(Controls("Slider")[1]:GetValue()==75,"native change failed to refresh panel")
+Click("Reset"); assert(appearanceDB.rxp.arrow==false and not appearanceDB.restedXP.style)
+Click("KiwiFarm")
+assert(#Controls("Slider")==2 and not Controls("Slider")[1].enabled)
+assert(#Controls("CheckButton")==2 and not Controls("CheckButton")[1].checked)
+local source = app:Find(function(f) return f.kind=="Button" and f.label and f.label.text=="KiwiFarm" end,true)[2]
+app:Press(source)
+assert(kiwiValues.opacitySource=="custom" and Controls("Slider")[1].enabled)
+app.combat=true; app:Event("PLAYER_REGEN_DISABLED")
+local before=writes
+Controls("Slider")[1]:SetValue(25)
+assert(writes==before)
+app.combat=false; app:Event("PLAYER_REGEN_ENABLED")
+-- Exercise all visible kinds repeatedly with both integrations installed.
+app.opened:SetSize(395,400)
+app:Event("UI_SCALE_CHANGED")
+assert(Controls("Slider")[1]:GetValue()==60)
+for _,label in ipairs({"RestedXP","Details!","KiwiFarm"}) do Click(label) end
+local frames, art = app.counts.frames, app.counts.art
+local started = os.clock()
+for _=1,200 do
+    Click("RestedXP"); Click("Details!"); Click("KiwiFarm")
+    app.opened:Hide(); app.opened:Show()
+end
+assert(app.counts.frames==frames and app.counts.art==art and writes==before,"warm cycling allocated or wrote a preference")
+print(string.format("BENCH Phase 2 appearance: %d frames/%d regions settled, 200 three-provider navigation/reopen cycles %.3f ms; zero new objects or preference writes",
+    frames, art, (os.clock()-started)*1000))
 local legacy=Setup(false,true,nil)
 SlashCmdList.EUIDETAILS()
 assert(#legacy.categories==1 and legacy.opened.name=="EUI AddonSkins" and legacy.opened.menus,

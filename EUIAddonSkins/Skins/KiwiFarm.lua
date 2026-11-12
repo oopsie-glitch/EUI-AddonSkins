@@ -1,35 +1,16 @@
 local ADDON, ns = ...
 local function DefineSkin()
 local context, looksBound
-local fonts = setmetatable({}, {__mode = 'k'})
+local ApplyFont, fonts = ns.CreateFontOverride()
 local menuOptions = {noAccent = true, chevrons = true, hoverAlpha = 0.25}
 local headingKeys = {'Kiwi Farm [/kfarm]', 'Statistics', 'Settings'}
 local headingLabels = {}
-local function StatsFont(S, text)
-    if not text or not text.GetFont or not text.SetFont then return end
-    if InCombatLockdown and InCombatLockdown() then return end
-    local path, size, flags = text:GetFont()
-    if not path then return end
-    local target = S.GetFont()
-    local state = fonts[text]
-    if not state then state = {}; fonts[text] = state end
-    if path ~= target or (flags or '') ~= '' then state.native = {path, size, flags} end
-    if context and not ns.IsEnabled(context.module) then
-        if state.native then
-            state.busy = true; text:SetFont((unpack or table.unpack)(state.native)); state.busy = false
-        end
-        return
-    end
-    if path ~= target or (flags or '') ~= '' then
-        state.busy = true; text:SetFont(target, size, ''); state.busy = false
-    end
-end
 menuOptions.isHeading = function(button, text)
     if button.isTitle then return true end
     if not text or not text.GetText then return false end
     return headingLabels[text:GetText()] == true
 end
-local defaults = {backgroundOpacity = 0.9, menuOpacity = 0.95, backgroundStyle = 'soft', accent = false}
+local defaults = {backgroundOpacity = 0.9, menuOpacity = 0.95, backgroundStyle = 'soft', accent = false, useEUIFont = true}
 local layer, base, left, right, accentLine, menuSkin
 local visualExclude = setmetatable({}, {__index = function(_, frame) return frame == layer end})
 local nativeOpacity, painting, pending, nativeCaptured = 1, false, false, false
@@ -46,6 +27,22 @@ local function Value(key)
     end
     if key == 'backgroundStyle' then return value == 'flat' and 'flat' or 'soft' end
     return value == true
+end
+local fontPending
+local function StatsFont(S, text)
+    if InCombatLockdown and InCombatLockdown() then
+        fontPending = true
+        return
+    end
+    local face
+    if Value('useEUIFont') and (not context or ns.IsEnabled(context.module)) then face = S.GetFont() end
+    ApplyFont(text, face, '')
+end
+local function ApplyStatsFonts()
+    if not context then return end
+    if InCombatLockdown and InCombatLockdown() then fontPending = true; return end
+    fontPending = false
+    for text in pairs(fonts) do StatsFont(context.S, text) end
 end
 local function Gradient(texture, first, last)
     texture:SetColorTexture(1, 1, 1, 1)
@@ -99,7 +96,32 @@ local function Set(key, value)
     EUIAddonSkinsDB = EUIAddonSkinsDB or {}
     if type(EUIAddonSkinsDB.kiwiFarm) ~= 'table' then EUIAddonSkinsDB.kiwiFarm = {} end
     EUIAddonSkinsDB.kiwiFarm[key] = value
+    if key == 'useEUIFont' then ApplyStatsFonts() end
     ApplySettings(true)
+    if ns.SettingsPreferenceChanged then ns.SettingsPreferenceChanged("KiwiFarm", key) end
+end
+local function Reset()
+    if not context or not ns.IsEnabled(context.module) then return end
+    if EUIAddonSkinsDB then EUIAddonSkinsDB.kiwiFarm = nil end
+    ApplyStatsFonts()
+    ApplySettings(true)
+    if ns.SettingsPreferenceChanged then ns.SettingsPreferenceChanged("KiwiFarm") end
+end
+local function ReadSetting(key)
+    local opacity = Value('backgroundOpacity')
+    if key == 'opacitySource' then return opacity == 'native' and 'native' or 'custom' end
+    if key == 'backgroundOpacity' then return math.floor((opacity == 'native' and nativeOpacity or opacity) * 100 + 0.5) end
+    if key == 'menuOpacity' then return math.floor(Value(key) * 100 + 0.5) end
+    return Value(key)
+end
+local function WriteSetting(key, value)
+    if key == 'opacitySource' then
+        Set('backgroundOpacity', value == 'native' and 'native' or defaults.backgroundOpacity)
+    elseif key == 'backgroundOpacity' or key == 'menuOpacity' then
+        Set(key, math.max(0, math.min(100, value)) / 100)
+    else
+        Set(key, value)
+    end
 end
 local function Background(C)
     local f = _G.KiwiFarm
@@ -116,12 +138,21 @@ local function Background(C)
         accentLine = f:CreateTexture(nil, 'OVERLAY', nil, 7)
         accentLine:SetPoint('TOPLEFT', f, 'TOPLEFT', 1, -1); accentLine:SetPoint('TOPRIGHT', f, 'TOPRIGHT', -1, -1); accentLine:SetHeight(2)
         C.H.Hook(f, 'SetBackdropColor', function(_, _, _, _, alpha)
-            if type(alpha) == 'number' then nativeOpacity = math.max(0, math.min(1, alpha)) end
+            if type(alpha) == 'number' then
+                local previous = nativeOpacity
+                nativeOpacity = math.max(0, math.min(1, alpha))
+                if nativeOpacity ~= previous and Value('backgroundOpacity') == 'native' and ns.SettingsPreferenceChanged then
+                    ns.SettingsPreferenceChanged("KiwiFarm", "backgroundOpacity")
+                end
+            end
             PaintBackground()
         end)
         local events = CreateFrame('Frame')
         events:RegisterEvent('PLAYER_REGEN_ENABLED')
-        events:SetScript('OnEvent', function() if pending then ApplySettings() end end)
+        events:SetScript('OnEvent', function()
+            if pending then ApplySettings() end
+            if fontPending then ApplyStatsFonts() end
+        end)
     end
     -- Shell backgrounds are owned root textures; keep them transparent so the
     -- independent background opacity never dims text or exposes a second fill.
@@ -162,11 +193,10 @@ local function InjectMenu(owner, _, _, _, menu)
                         Choice('Flat charcoal', 'backgroundStyle', 'flat'), Choice('Soft centre highlight', 'backgroundStyle', 'soft')}},
                     {text = 'Show accent line', isNotRadio = true, keepShownOnClick = true, checked = function() return Value('accent') end,
                         disabled = Disabled, func = function() Set('accent', not Value('accent')) end},
-                    {text = 'Reset skin settings', notCheckable = true, disabled = Disabled, func = function()
-                        if Disabled() then return end
-                        if EUIAddonSkinsDB then EUIAddonSkinsDB.kiwiFarm = nil end
-                        ApplySettings(true)
-                    end},
+                    {text = 'Use EUI font for statistics', isNotRadio = true, keepShownOnClick = true,
+                        checked = function() return Value('useEUIFont') end,
+                        disabled = Disabled, func = function() Set('useEUIFont', not Value('useEUIFont')) end},
+                    {text = 'Reset skin settings', notCheckable = true, disabled = Disabled, func = Reset},
                 }}
             end
             entry.menuList[#entry.menuList + 1] = settingsEntry
@@ -187,6 +217,7 @@ ns.RegisterScopedSkin("KiwiFarm", "KiwiFarm", {
     font = StatsFont,
     hooks = function(C)
         context = C
+        C.module.settingsAppearance = {get=ReadSetting, set=WriteSetting, reset=Reset}
         if not nativeCaptured and _G.KiwiFarm.GetBackdropColor then
             local _, _, _, alpha = _G.KiwiFarm:GetBackdropColor()
             if type(alpha) == 'number' then nativeOpacity = math.max(0, math.min(1, alpha)); nativeCaptured = true end
@@ -236,16 +267,16 @@ ns.RegisterScopedSkin("KiwiFarm", "KiwiFarm", {
         -- two labels after SetFont; never scan on SetText or the stats timer.
         for _, text in ipairs({_G.KiwiFarm:GetRegions()}) do
             if text.GetObjectType and text:GetObjectType() == 'FontString' then
+                if not fonts[text] then fonts[text] = {} end
                 StatsFont(C.S, text)
                 C.H.Hook(text, 'SetFont', function()
-                    local state = fonts[text]
-                    if not state or not state.busy then StatsFont(C.S, text) end
+                    if not fonts[text].writing then StatsFont(C.S, text) end
                 end)
             end
         end
         if not looksBound and C.S.OnLooksChanged then
             looksBound = true
-            C.S.OnLooksChanged(function() for text in pairs(fonts) do StatsFont(C.S, text) end; ApplySettings() end)
+            C.S.OnLooksChanged(function() ApplyStatsFonts(); ApplySettings() end)
         end
         -- Shared popup combat recovery handles the menu itself. No guide/main
         -- frame discovery is needed for menu opens or combat-end callbacks.

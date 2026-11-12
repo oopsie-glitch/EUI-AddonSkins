@@ -726,5 +726,23 @@ flush();assert(scans==0,'reading the existing V2 guide triggers scans')
 for i=1,100 do assert(v2Window:RefreshLayout()=='refresh-native')end
 flush();assert(scans==1,'V2 resize burst did not stay within one guide-window scan')
 print('BENCH rxp_v2_known_getter scans=0 callbacks=100; layout scans='..scans..' callbacks=100')
+local appearance = m.settingsAppearance
+local oldEUI = EllesmereUI
+EllesmereUI = {IS_FOREVER=true}
+local savedArrow = EUIAddonSkinsDB.rxp.arrow
+appearance.reset(); flush()
+assert(EUIAddonSkinsDB.restedXP==nil and EUIAddonSkinsDB.rxp.arrow==savedArrow)
+assert(appearance.get("style")=="auto" and appearance.effectiveStyle()=="EUI Standard")
+appearance.set("style","forever"); flush()
+assert(appearance.effectiveStyle()=="EUI Forever" and appearance.get("opacity")==75)
+for _, percent in ipairs({0, 75, 100}) do
+    appearance.set("opacity",percent); flush()
+    assert(appearance.get("opacity")==percent and EUIAddonSkinsDB.restedXP.opacity==percent/100)
+end
+EllesmereUI.IS_FOREVER=false
+assert(appearance.get("style")=="forever" and appearance.effectiveStyle()=="EUI Standard")
+assert(EUIAddonSkinsDB.restedXP.style=="forever" and EUIAddonSkinsDB.rxp.arrow==savedArrow)
+appearance.reset(); flush()
+EllesmereUI = oldEUI
 ns.CreateSkinHelper=baseScan;LibStub=previousLibStub
 print('PASS: RXP page-local options, native actions/values/branding, dropdown pool cleanup, input alignment, no warm objects/font writes, themes, disabled state and combat deferral')

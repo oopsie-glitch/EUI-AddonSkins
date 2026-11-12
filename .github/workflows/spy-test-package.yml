@@ -141,8 +141,9 @@ jobs:
           PY
           SPY_SOURCE=/tmp/spy-upstream python3 tests/run_lua.py
           SPY_SOURCE=/tmp/spy-upstream SPY_BOOT_INVERTED=1 python3 tests/run_lua.py
+          SPY_SOURCE=/tmp/spy-upstream SPY_BOOT_STANDARD_INVERTED=1 python3 tests/run_lua.py
       - name: Compare Spy performance against approved PR baseline
-        run: SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline 80da829edde4b3e005c51da08d9e6fe610e7827e --trials 5 --iterations 1000 --rows 40
+        run: SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline 47f3cfa30aae122cdd0439393cc5c9a87f798ca4 --trials 5 --iterations 1000 --rows 40
       - name: Fresh Lua bootstrap with saved Spy opacity endpoints
         run: |
           SPY_BOOT_OPACITY=0 python3 tests/run_lua.py
@@ -166,9 +167,10 @@ jobs:
           mutations=[
               ('entry.rule:SetColorTexture(0.73, 0.49, 0.26, 0.55)', 'entry.rule:SetColorTexture(0.49, 0.33, 0.18, 0.24)', 'native hover did not highlight bronze frame'),
               ('else entry.rule:SetColorTexture(0.49, 0.33, 0.18, 0.24) end', 'else entry.rule:SetColorTexture(1, 1, 1, 0.24) end', 'first-visible row lacks resting bronze paint'),
-              ('local NATIVE_LIST_TOP, VISUAL_PADDING, HITBOX_CLEARANCE, LIST_GAP = 34, 2, 1, 2', 'local NATIVE_LIST_TOP, VISUAL_PADDING, HITBOX_CLEARANCE, LIST_GAP = 34, 2, 3, 2', 'first row did not follow the compact header'),
+              ('local NATIVE_LIST_TOP, VISUAL_PADDING, HITBOX_CLEARANCE, LIST_GAP = 34, 2, 1, 2', 'local NATIVE_LIST_TOP, VISUAL_PADDING, HITBOX_CLEARANCE, LIST_GAP = 34, 2, 3, 2', 'Standard did not fit the 22-unit header directly against the list'),
               ('local inverted = nativeTitle and nativeTitle[2] == f and nativeTitle[3] == "BOTTOMLEFT"', 'local inverted = false', 'Inverted kept top header anchors'),
-              ('local wrapped = available < 24', 'local wrapped = true', 'first row did not follow the compact header'),
+              ('local wrapped = available < 24', 'local wrapped = true', 'Standard did not fit the 22-unit header directly against the list'),
+              ('local frameBottom = inverted and -headerHeight or 0', 'local frameBottom = inverted and forever and -headerHeight or 0', 'Standard footer is outside its shell'),
               ('return ns.IsEnabled(module) and ForeverLook and ForeverLook() and f and', 'return false and ForeverLook and ForeverLook() and f and', 'native helper border leaked into Forever'),
               ('return 0.75', 'return 0.92', 'saved/default opacity was overwritten'),
               ('if managed then plate:SetColorTexture(1, 1, 1, 1)', 'if managed then plate:SetColorTexture(0.165, 0.115, 0.075, 1)', 'main plate source repeats the warm tint'),

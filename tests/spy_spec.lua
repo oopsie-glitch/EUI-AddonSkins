@@ -305,6 +305,7 @@ function S.Shell(f,opts)
     f.shellAtlas=f:CreateTexture();f.shellAtlas:SetTexture("modern_blizz.png")
     f.shellOverlay=f:CreateTexture();f.shellOverlay:SetColorTexture(0,0,0,0.62)
     f.shellFlat=f:CreateTexture();f.shellFlat:SetColorTexture(0.04,0.04,0.04,0.92)
+    f.shellAtlas:SetAllPoints(f);f.shellOverlay:SetAllPoints(f);f.shellFlat:SetAllPoints(f)
 end
 function S.CloseButton(f)
     if f.close then return end
@@ -515,8 +516,27 @@ local function NativeOrientation(inverted)
     f.RightButton:ClearAllPoints();f.RightButton:SetPoint(right,f,right,-23,inverted and -16.5 or -14.5)
 end
 local bootInverted=os.getenv("SPY_BOOT_INVERTED")
-if bootInverted then NativeOrientation(true); EUIAddonSkinsDB.spy.style="forever" end
+local bootStandard=os.getenv("SPY_BOOT_STANDARD_INVERTED")
+local function MainShell()
+    for host in pairs(shells) do
+        if host.parent==Spy.MainWindow then return host end
+    end
+end
+if bootInverted or bootStandard then
+    NativeOrientation(true)
+    EUIAddonSkinsDB.spy.style=bootStandard and "standard" or "forever"
+end
 module.install(S,module);flush()
+if bootStandard then
+    local f=Spy.MainWindow
+    local shell=assert(MainShell())
+    row:Show()
+    assert(f.Title.points[1][3]=="BOTTOMLEFT" and row.points[1][5]==-34 and not row.nativeEnterCalls,
+        "fresh Standard Inverted lost the native footer or first row")
+    assert(Coverage(shell.shellFlat)>0 and shell:GetBottom()<=f.CloseButton:GetBottom(),
+        "fresh Standard Inverted footer has no shell coverage")
+    EUIAddonSkinsDB.spy.style="auto";NativeOrientation(false);module.refresh();flush()
+end
 if bootInverted then
     assert(Spy.MainWindow.Title.points[1][3]=="BOTTOMLEFT" and row.points[1][5]==-34,
         "fresh Inverted did not keep footer and native row origin")
@@ -536,6 +556,8 @@ assert(firstA=="native-first-menu" and firstB==nil and firstC==7 and #firstOpeni
 Spy.testFirstMenu=false
 local initialObjects=counts.objects
 assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1,"Standard fill changed")
+assert(row.points[1][5]==-22 and Spy.MainWindow.Title.points[1][5]==-11,
+    "Standard did not fit the 22-unit header directly against the list")
 assert(Spy.MainWindow.LeftButton.glyph=="<" and Spy.MainWindow.CloseButton.close)
 assert(SLASH_EUISPYSKIN1=="/euispy")
 SlashCmdList.EUISPYSKIN()
@@ -807,14 +829,15 @@ for i=1,1000 do b:FireScript("OnEnable");b:SetNormalTexture("native-active-on") 
 assert(counts.objects==stableObjects and counts.hooks==stableHooks and counts.reads==stableReads and counts.alphaWrites==stableWrites,"stable control repainted/rediscovered")
 style.set(nil,"standard");flush()
 assert(Spy.MainWindow.CloseButton.standardGlyph.alpha==1 and Spy.MainWindow.LeftButton.standardGlyph.alpha==1,"Standard helper glyph lost")
-assert(row.points[1][5]==nativeRowPoint[5],"Standard did not restore native row origin")
+assert(row.points[1][5]==-22,"Standard did not remove Forever's divider gap")
 assert(row.StatusBar.points[1][4]==0 and row.StatusBar.points[2][4]==0 and row.LeftText.points[1][2]==row.StatusBar and row.RightText.points[1][2]==row.StatusBar,"Standard row geometry not restored")
 assert(Coverage(rule)==0,"Standard retained row material")
 for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"Standard helper border not restored") end
 assert(select(1,Spy.MainWindow:GetResizeBounds())==90,"Standard resize bounds not restored")
-assert(Spy.MainWindow.Title.width==121 and Spy.MainWindow.Title.height==16 and not Spy.MainWindow.Title:GetWordWrap() and not Spy.MainWindow.Title:GetNonSpaceWrap(),"Standard title geometry not restored")
-assert(Spy.MainWindow.Title.points[1][5]==-16 and Spy.MainWindow.CloseButton.points[1][1]=="TOPRIGHT" and Spy.MainWindow.CloseButton.points[1][4]==-4 and Spy.MainWindow.CloseButton.points[1][5]==-12,"Standard native anchors not restored")
-assert(Spy.MainWindow.LeftButton.points[1][2]==Spy.MainWindow.RightButton and Spy.MainWindow.StatsButton.points[1][2]==Spy.MainWindow.ClearButton,"Standard native anchor chain not restored")
+assert(Spy.MainWindow.Title.points[1][5]==-11 and Spy.MainWindow.CloseButton.points[1][5]==-11,
+    "Standard title and controls are not centered")
+assert(Spy.MainWindow.Title:GetRight()+6<=Spy.MainWindow.StatsButton:GetLeft()
+    and Spy.MainWindow.CloseButton:GetRight()+6<=Spy.MainWindow.CountButton:GetLeft(),"Standard header overlaps controls")
 style.set(nil,"forever");flush()
 
 for _,class in ipairs({"DRUID","PALADIN","SHAMAN","HUNTER","ROGUE"}) do
@@ -1128,10 +1151,41 @@ do
     end
     flush();CheckFooter()
     style.set(nil,"standard");flush()
-    assert(f.Title.points[1][1]=="BOTTOMLEFT" and f.Title.points[1][5]==-15
-        and f.CloseButton.points[1][1]=="BOTTOMRIGHT" and f.CloseButton.points[1][5]==-19
-        and f.LeftButton.points[1][2]==f.RightButton and row.points[1][5]==-34,
-        "Standard did not restore native Inverted anchors")
+    local shell=assert(MainShell())
+    local function CheckStandardFooter()
+        assert(f.Title.points[1][3]=="BOTTOMLEFT" and f.CloseButton.points[1][3]=="BOTTOMRIGHT"
+            and row.points[1][5]==-34,"Standard did not follow native Inverted direction")
+        assert(Coverage(shell.shellFlat)>0 and shell:GetBottom()<=f.CloseButton:GetBottom()
+            and f.CloseButton:GetTop()<=f:GetBottom(),"Standard footer is outside its shell")
+        assert(shell.points[1][5]==-32 and f.CloseButton.scripts.OnClick()=="CloseButton",
+            "Standard Inverted changed the native body or input")
+    end
+    CheckStandardFooter()
+    local standardObjects,standardHooks=counts.objects,counts.hooks
+    for _,label in ipairs({"Nearby","Kill On Sight"}) do
+        f.Title:SetText(label);f:Hide();f:Show();flush();CheckStandardFooter()
+    end
+    f.effectiveScale=0.73;ScaleEvent();CheckStandardFooter()
+    NativeHeaderLayout(90);Spy:ResizeMainWindow();flush();CheckStandardFooter()
+    assert(f.Title:GetBottom()>f.CloseButton:GetTop(),"narrow Standard footer overlapped controls")
+    f.effectiveScale=nil;ScaleEvent()
+    NativeHeaderLayout(200);Spy:ResizeMainWindow();flush()
+    if source then
+        local parentTop=UIParent.top
+        UIParent.top=UIParent:GetHeight()
+        Spy:RestoreMainWindowPosition(20,40,200,90)
+        local bottom=f:GetBottom()
+        Spy.ListAmountDisplayed=0;Spy:AutomaticallyResize();Spy:ManageBarsDisplayed()
+        assert(not row:IsShown() and f:GetBottom()==bottom,"empty Standard footer changed native pivot")
+        CheckStandardFooter()
+        Spy.ListAmountDisplayed=2;Spy:AutomaticallyResize();Spy:ManageBarsDisplayed()
+        assert(f.CurRows==2 and row:IsShown() and f:GetBottom()==bottom,"Standard growth changed native capacity or pivot")
+        CheckStandardFooter()
+        f:ClearAllPoints()
+        if rootPoints[1] then f:SetPoint(unpack(rootPoints)) end
+        f:SetHeight(initialHeight);Spy.ListAmountDisplayed=displayed;UIParent.top=parentTop
+    end
+    assert(counts.objects==standardObjects and counts.hooks==standardHooks,"Standard footer accumulated artwork or hooks")
     style.set(nil,"forever");flush();CheckFooter()
     NativeOrientation(false);module.refresh();flush()
     assert(f.Title.points[1][3]=="TOPLEFT" and row.points[1][5]==-24
@@ -1142,6 +1196,8 @@ enabled=false
 for _,fn in ipairs(looks)do fn()end;flush()
 assert(row.StatusBar:GetStatusBarTexture():GetAlpha()==1 and Spy.MainWindow.Background:GetAlpha()==1,"disable did not clean Forever art")
 assert(row.StatusBar.points[1][4]==0 and row.LeftText.points[1][2]==row.StatusBar and chrome.alpha==0,"disable retained custom row geometry")
+assert(row.points[1][5]==nativeRowPoint[5] and Spy.MainWindow.Title.points[1][5]==-16,
+    "disable did not restore native list and header anchors")
 assert(Coverage(rule)==0,"disable retained row bevels")
 assert(Spy.MainWindow.Title.font[1]=="EUI New" and Spy.MainWindow.Title.font[2]==13,"disable retained title emphasis")
 for _,edge in ipairs(Spy.MainWindow.LeftButton.standardBorder.regions) do assert(edge.baseColor[4]==1,"disable retained hidden Standard border") end

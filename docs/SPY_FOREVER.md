@@ -56,6 +56,24 @@ Identical text and same-width counter changes skip layout. Pending metrics
 use a safe fallback until a native show, font, or scale boundary. No polling
 or extra layout timers.
 
+## Standard shell and compact layout
+
+Standard retains EUI's existing shell and control artwork. The native
+Inverted controls sit below Spy's main frame. Previously the skin removed
+the native TitleBar backdrop, but left Standard's replacement shell
+anchored to the main frame, leaving the controls outside the background.
+Standard now uses the same measured anchor layout as Forever, fitting its
+own existing shell around the body and footer. No new artwork is needed.
+
+At scale 1 with the native 20-unit Close button, Standard's header is
+22 units, with one unit of hitbox clearance per side. In normal mode
+Spy's first row moves from the native 34-unit reservation to 22 units,
+directly at the shell header edge. Inverted keeps its native row origin,
+order and bottom pivot. The native constructed title anchor controls the
+direction, so a live reanchor is followed and a preference-only toggle
+waits for Spy's reload. Forever retains its own existing divider gap,
+materials and dimensions.
+
 ## Functional safeguards kept
 
 Automatic, Standard and Forever, the EUI AddonSkins menu, /euispy, Reset,

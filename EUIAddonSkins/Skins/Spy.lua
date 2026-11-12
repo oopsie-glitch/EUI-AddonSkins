@@ -265,6 +265,7 @@ end, function(S, module)
     local controls = {"CloseButton", "LeftButton", "RightButton", "ClearButton", "StatsButton", "CountButton"}
     local controlOrder = {"CloseButton", "RightButton", "LeftButton", "ClearButton", "StatsButton"}
     local SyncHeader
+    local headerLayouts = setmetatable({}, {__mode = "k"})
     local function SavePoints(region)
         local points = {}
         if region.GetNumPoints then
@@ -386,15 +387,17 @@ end, function(S, module)
         if not f or f ~= spy.MainWindow or not f.Title then return end
         if Locked() then waiting = true; return end
         local entry = foreverWindows[f]
-        if not entry then return end
-        local layout = entry.headerLayout
+        local active = forever or ns.IsEnabled(module)
+        local host = forever and entry and entry.host or (not forever and layers[f])
+        if not host then return end
+        local layout = headerLayouts[f]
         if not layout then
-            if not forever then return end
+            if not active then return end
             layout = {regions = {}, lastText = {}, titleMetric = {}, counterMetric = {},
                 rowY = setmetatable({}, {__mode = "k"}), titleWidth = f.Title:GetWidth(), titleHeight = f.Title:GetHeight(),
                 wordWrap = f.Title.GetWordWrap and f.Title:GetWordWrap(),
                 nonSpaceWrap = f.Title.GetNonSpaceWrap and f.Title:GetNonSpaceWrap()}
-            entry.headerLayout = layout
+            headerLayouts[f] = layout
             H.Hook(f, "SetScale", function()
                 SyncHeader(f, ns.IsEnabled(module) and ForeverLook(), false, true)
             end)
@@ -406,15 +409,15 @@ end, function(S, module)
         TrackHeaderRegion(f, layout, counter)
         if capture then layout.titleWidth = f.Title:GetWidth() end
         layout.writing = true
-        if not forever then
+        if not active then
             if layout.active then
                 for region, points in pairs(layout.regions) do RestorePoints(region, points) end
                 f.Title:SetWidth(layout.titleWidth); f.Title:SetHeight(layout.titleHeight)
                 if f.Title.SetWordWrap and layout.wordWrap ~= nil then f.Title:SetWordWrap(layout.wordWrap) end
                 if f.Title.SetNonSpaceWrap and layout.nonSpaceWrap ~= nil then f.Title:SetNonSpaceWrap(layout.nonSpaceWrap) end
                 ShiftList(f, layout, 0, true)
-                entry.host:ClearAllPoints(); entry.host:SetAllPoints(f)
-                layout.active = false
+                if layout.host then layout.host:ClearAllPoints(); layout.host:SetAllPoints(f) end
+                layout.active, layout.host = false, nil
             end
             layout.writing = false
             return
@@ -476,7 +479,10 @@ end, function(S, module)
             or HeaderBand(textHeight, math.max(tallest, countHeight))
         -- Round up to a whole physical pixel, never into the hitboxes.
         local headerHeight = math.ceil(required * scale) / scale
-        local listDepth = headerHeight + LIST_GAP
+        -- Standard has one uninterrupted shell, so the list can meet the
+        -- measured header directly. Keep Forever's existing divider gap.
+        local listGap = forever and LIST_GAP or 0
+        local listDepth = headerHeight + listGap
         local start = inverted and 0 or math.max(0, listDepth - NATIVE_LIST_TOP)
         local listTop = listDepth - start
         local titleY = start - headerHeight / 2
@@ -503,14 +509,14 @@ end, function(S, module)
         -- the native root, resize grips, row anchors and capacity untouched.
         local frameTop = inverted and LIST_GAP - NATIVE_LIST_TOP or start
         local frameBottom = inverted and -headerHeight or 0
-        if layout.frameTop ~= frameTop or layout.frameBottom ~= frameBottom or not layout.active then
-            entry.host:ClearAllPoints()
-            entry.host:SetPoint("TOPLEFT", f, "TOPLEFT", 0, frameTop)
-            entry.host:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, frameBottom)
-            layout.frameTop, layout.frameBottom = frameTop, frameBottom
+        if layout.host ~= host or layout.frameTop ~= frameTop or layout.frameBottom ~= frameBottom then
+            host:ClearAllPoints()
+            host:SetPoint("TOPLEFT", f, "TOPLEFT", 0, frameTop)
+            host:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, frameBottom)
+            layout.host, layout.frameTop, layout.frameBottom = host, frameTop, frameBottom
         end
         local dividerY = inverted and 0 or LIST_GAP - listTop
-        if entry.seam and (layout.dividerY ~= dividerY or layout.dividerEdge ~= leftEdge) then
+        if forever and entry.seam and (layout.dividerY ~= dividerY or layout.dividerEdge ~= leftEdge) then
             Anchor(entry.seam, "TOPLEFT", f, leftEdge, 5, dividerY)
             entry.seam:SetPoint("TOPRIGHT", f, rightEdge, -5, dividerY)
             layout.dividerY, layout.dividerEdge = dividerY, leftEdge
@@ -573,7 +579,10 @@ end, function(S, module)
                 entry.band, entry.seam = band, seam
             end
         end
-        if not entry then return end
+        if not entry then
+            if not forever then SyncHeader(f, false) end
+            return
+        end
         entry.standardLayer = standardLayer or entry.standardLayer
         Alpha(entry.host, forever and 1 or 0)
         ShowRim(entry.rim, forever)
@@ -609,8 +618,7 @@ end, function(S, module)
     end
     local function RestoreRetiredRow(row)
         local f = spy.MainWindow
-        local entry = f and foreverWindows[f]
-        local layout = entry and entry.headerLayout
+        local layout = f and headerLayouts[f]
         if layout and layout.rowY[row] and Owned(row) then OffsetRow(f, layout, row, 0) end
     end
     local function SyncRow(row, forever)
@@ -638,8 +646,7 @@ end, function(S, module)
             end
             entry.row = row
             local root = spy.MainWindow
-            local window = foreverWindows[root]
-            local layout = window and window.headerLayout
+            local layout = headerLayouts[root]
             if forever and layout and layout.active and row.GetNumPoints then OffsetRow(root, layout, row, layout.shift or 0) end
             entry.forever, entry.wantHover = nil, false
             local host = entry.host
@@ -699,7 +706,18 @@ end, function(S, module)
                 entry.row = nil
             end
         end
+        local f = spy.MainWindow
+        local layout = not forever and f and headerLayouts[f]
+        local shift = layout and layout.active and layout.shift
+        if shift and shift ~= 0 then
+            for row in pairs(layout.rowY) do
+                if row.id and rows[row.id] ~= row then RestoreRetiredRow(row) end
+            end
+        end
         for _, row in pairs(rows) do
+            if shift and shift ~= 0 and not layout.rowY[row] and Owned(row) and row.GetNumPoints then
+                OffsetRow(f, layout, row, shift)
+            end
             SyncRow(row, forever)
         end
     end
@@ -719,6 +737,7 @@ end, function(S, module)
     local function RestoreForever()
         if Locked() then waiting = true; return end
         for f, entry in pairs(foreverWindows) do SyncWindow(f, f == spy.AlertWindow, entry.standardLayer, false) end
+        SyncHeader(spy.MainWindow, false)
         for button in pairs(controlArt) do SyncControl(button, false) end
         for row in pairs(rowArt) do SyncRow(row, false) end
         for popup in pairs(reasonDialogs) do
@@ -959,7 +978,14 @@ end, function(S, module)
         local row = main and main.Rows and main.Rows[index]
         -- Native CreateRow returns with the slot hidden. Prepare the owned
         -- trim here, before ManageBarsDisplayed can first show the slot.
-        if row and not rowArt[row] and ForeverLook() then SyncRow(row, true) end
+        if not row then return end
+        if ForeverLook() then
+            if not rowArt[row] then SyncRow(row, true) end
+        else
+            local layout = headerLayouts[main]
+            if layout and layout.active and layout.shift ~= 0 and not layout.rowY[row]
+                and Owned(row) and row.GetNumPoints then OffsetRow(main, layout, row, layout.shift) end
+        end
     end)
     H.Hook(spy, "ResizeMainWindow", function()
         if Locked() then waiting = true; return end
@@ -969,8 +995,7 @@ end, function(S, module)
         if not ns.IsEnabled(module) then return end
         if Locked() then waiting = true; return end
         local f = spy.MainWindow
-        local entry = f and foreverWindows[f]
-        local layout = entry and entry.headerLayout
+        local layout = f and headerLayouts[f]
         if layout and layout.active then
             local profile = spy.db and spy.db.profile and spy.db.profile.MainWindow
             local height = profile and Positive(profile.RowHeight)
@@ -1003,9 +1028,8 @@ end, function(S, module)
             if ns.IsEnabled(module) then SyncHeader(spy.MainWindow, ForeverLook(), false, true) end
         elseif waiting then
             local f = spy.MainWindow
-            local entry = f and foreverWindows[f]
-            local layout = entry and entry.headerLayout
-            if not Locked() and layout and layout.active and ns.IsEnabled(module) and ForeverLook() then
+            local layout = f and headerLayouts[f]
+            if not Locked() and layout and layout.active and ns.IsEnabled(module) then
                 ShiftList(f, layout, layout.shift or 0, true)
             end
             refresh()

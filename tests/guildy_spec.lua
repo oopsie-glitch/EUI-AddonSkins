@@ -38,6 +38,8 @@ local function texture(kind, parent)
     function t:GetNumMaskTextures() return 0 end
     function t:SetText(s) self.text = s end
     function t:GetText() return self.text end
+    function t:GetStringWidth() return self.stringWidth or 0 end
+    function t:SetWordWrap(v) self.wrap = v end
     function t:GetFont() return self.font, 12, '' end
     function t:SetFont(v) self.font = v; self.fontWrites = (self.fontWrites or 0) + 1 end
     function t:SetTextColor(...) self.textColor = {...} end
@@ -154,7 +156,12 @@ local inGuild = true
 function IsInGuild() return inGuild end
 function SetLargeGuildTabardTextures(unit, emblem, background, border)
     assert(unit == 'player'); if not inGuild then error('no tabard') end
-    emblem:SetTexture('guild-emblem'); background:SetVertexColor(0.2, 0.3, 0.9); border:SetVertexColor(0.9, 0.8, 0.1)
+    emblem:SetTexture('guild-emblem'); background:SetVertexColor(0.2, 0.3, 0.9)
+    border:SetTexture('guild-border'); border:SetVertexColor(0.9, 0.8, 0.1); border:Show()
+end
+local resized = {}
+function PanelTemplates_TabResize(tab, padding)
+    resized[tab] = (resized[tab] or 0) + 1; tab.label.width = tab.label.stringWidth + (padding or 0)
 end
 function ToggleGuildFrame() toggles = toggles + 1; return 'native-toggle' end
 function PanelTemplates_SelectTab(tab) tab.nativeSelected = true end
@@ -189,6 +196,9 @@ main.OptionsButton:SetScript('OnClick', function() main.optionsClicked = true en
 local side = frame('Frame', nil, main); side.sideTab = true; local sideArt = side:CreateTexture()
 local tab1, tab2 = Button(main, 'Chat', 'GuildyFrameTab1'), Button(main, 'Members', 'GuildyFrameTab2')
 tab1:SetID(1); tab2:SetID(2); main.selectedTab = 1
+-- tab1 was sized before its font loaded: its label is wider than its room
+tab1.label.stringWidth, tab1.label.width = 40, 22
+tab2.label.stringWidth, tab2.label.width = 30, 44
 local grip = frame('Button', nil, main); grip.normal = grip:CreateTexture()
 grip.normal.path = 'Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up'
 local content = frame('Frame', nil, main)
@@ -220,7 +230,10 @@ local titleIcon; for _, t in ipairs(main.regions) do if t.path == 'Interface/Ico
 assert(titleIcon and titleIcon.alpha == 1 and titleIcon.width == 28 and titleIcon.crop, 'square title icon missing')
 assert(main.Emblem.alpha == 0, 'round guild emblem still drawn in the corner')
 local tabard = main.euiGuildyTabard
-assert(tabard and tabard.ok and tabard.Emblem.path == 'guild-emblem' and tabard.Emblem.width == 28 and tabard.Emblem:IsShown(), 'guild tabard not drawn in the title icon')
+assert(tabard and tabard.ok and tabard.Emblem.path == 'guild-emblem' and tabard.Emblem:IsShown(), 'guild tabard not drawn in the title icon')
+assert(tabard.Emblem.width == 24 and tabard.Emblem.height == 27 and tabard.Background.width == 28 and tabard.Background.height == 28, 'tabard not fitted to the square')
+assert(tabard.Background.path == 'Interface' .. string.char(92) .. 'Buttons' .. string.char(92) .. 'WHITE8X8' and tabard.Background.color[3] == 0.9 and tabard.Background:IsShown(), 'tabard background colour not filling the square')
+assert(tabard.Border.hidden, 'round tabard border art shown in the square icon')
 assert(main.Version.alpha == 0 and main.Version.mouse == false, 'version line still shown or still catching the mouse')
 assert(main.TitleContainer.TitleText.text == 'Two Trolls One Orc', 'Guildy suffix not removed from the title')
 main.TitleContainer.TitleText:SetText('Other Guild - Guildy'); assert(main.TitleContainer.TitleText.text == 'Other Guild', 'retitle kept the suffix')
@@ -233,6 +246,8 @@ assert(emblemArt.alpha == 1 and emblemText.font == 'native', 'guild emblem inter
 assert(main.OptionsButton.button and main.OptionsButton.Icon.alpha == 1, 'options cog lost its icon')
 assert(not side.button and sideArt.alpha == 1, 'side tab art changed')
 assert(tab1.tab and tab1.selected == true and tab2.tab and tab2.selected == false, 'bottom tabs not styled with selection')
+assert(tab1.label.wrap == false and tab2.label.wrap == false, 'tab labels can still wrap')
+assert(resized[tab1] == 1 and tab1.label.width == 40 and not resized[tab2], 'overflowing tab label not refitted, or a fitting tab resized')
 assert(grip.normal.alpha == 0, 'resize grip art remained')
 assert(search.input and check.checkbox and reset.button and reset.label.font == 'eui')
 assert(reset.label.textColor[2] == 0.82, 'button label colour not preserved')
@@ -298,6 +313,7 @@ local hooked, regions = ToggleGuildFrame, #box.regions
 local mainRegions, mainHooks = #main.regions, main.Emblem.Update
 for _ = 1, 10 do modules.Guildy.refresh(); flush() end
 assert(#main.regions == mainRegions and main.Emblem.Update == mainHooks, 'title icon or tabard recreated on refresh')
+assert(resized[tab1] == 1, 'a fitted tab was resized again on refresh')
 assert(ToggleGuildFrame == hooked and #box.regions == regions, 'duplicate hooks or objects')
 assert(nativeToggle == ToggleGuildFrame)
 
@@ -322,4 +338,4 @@ box:SetBackdropBorderColor(GOLD[1] * 0.5, GOLD[2] * 0.5, GOLD[3] * 0.5)
 assert(box.border[1] == GOLD[1] * 0.5, 'disabled skin still repainted borders')
 local after = Button(panel, 'Late'); modules.Guildy.refresh(); flush()
 assert(not after.button, 'disabled skin styled new controls')
-print('PASS: Guildy lazy window, square title icon with guild tabard, title/version trim, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')
+print('PASS: Guildy lazy window, square title icon with guild tabard, tab label fitting, title/version trim, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')

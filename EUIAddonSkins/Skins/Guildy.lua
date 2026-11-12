@@ -15,33 +15,53 @@ end
 local function Tooltip(path)
     return type(path) == "string" and path:lower():find("ui%-tooltip%-border") ~= nil
 end
--- The guild's tabard (emblem, background, border) in the square title-bar icon
--- spot, drawn over Guildy's logo when the client supplies it. Same API and
--- GuildFrame art as Guildy's own emblem (UI/Main.lua GuildEmblem).
-local GUILD_ART = "Interface\\GuildFrame\\GuildFrame"
+-- The guild's tabard in the square title-bar icon spot, drawn over Guildy's
+-- logo when the client supplies it (SetLargeGuildTabardTextures, as Guildy's
+-- own emblem uses). Square treatment: the tabard's background colour fills the
+-- square and the emblem sits centred on it. The round border art, which needs
+-- Guildy's circular mask, is never shown.
 local function Tabard(C, main)
     local tabard = main.euiGuildyTabard
     if not tabard then
         tabard = {}
-        tabard.Background = main:CreateTexture(nil, "OVERLAY", nil, 7)
-        tabard.Background:SetTexture(GUILD_ART)
-        tabard.Background:SetTexCoord(0.63183594, 0.69238281, 0.61914063, 0.74023438)
+        tabard.Background = main:CreateTexture(nil, "OVERLAY", nil, 6)
+        tabard.Background:SetSize(28, 28)
+        tabard.Background:SetPoint("TOPLEFT", main, "TOPLEFT", 8, -6)
         tabard.Emblem = main:CreateTexture(nil, "OVERLAY", nil, 7)
-        tabard.Border = main:CreateTexture(nil, "OVERLAY", nil, 7)
-        tabard.Border:SetTexture(GUILD_ART)
-        tabard.Border:SetTexCoord(0.63183594, 0.69238281, 0.74414063, 0.86523438)
-        for _, t in ipairs({tabard.Background, tabard.Emblem, tabard.Border}) do
-            t:SetSize(28, 28); t:SetPoint("TOPLEFT", main, "TOPLEFT", 8, -6)
-        end
+        -- Guildy's emblem proportions (56 x 64 in a 60 holder), scaled to the square.
+        tabard.Emblem:SetSize(24, 27)
+        tabard.Emblem:SetPoint("CENTER", tabard.Background, "CENTER", 0, -1)
+        tabard.Border = main:CreateTexture(nil, "OVERLAY", nil, 5)
+        tabard.Border:SetSize(1, 1)
+        tabard.Border:SetPoint("TOPLEFT", main, "TOPLEFT", 8, -6)
+        tabard.Border:SetAlpha(0)
         main.euiGuildyTabard = tabard
         -- Guildy redraws its emblem when the guild changes (UpdateTitle).
         if main.Emblem then C.H.Hook(main.Emblem, "Update", function() Tabard(C, main) end) end
     end
+    -- A white square takes the tabard background colour the API applies.
+    tabard.Background:SetTexture(WHITE)
+    tabard.Background:SetTexCoord(0, 1, 0, 1)
     local set = _G.SetLargeGuildTabardTextures
     local ok = set ~= nil and IsInGuild and IsInGuild()
         and pcall(set, "player", tabard.Emblem, tabard.Background, tabard.Border) or false
-    for _, t in ipairs({tabard.Background, tabard.Emblem, tabard.Border}) do t:SetShown(ok and true or false) end
+    tabard.Background:SetShown(ok and true or false)
+    tabard.Emblem:SetShown(ok and true or false)
+    tabard.Border:Hide()
     tabard.ok = ok
+end
+-- Bottom/top tab labels: never wrap. When the label is wider than the tab Guildy
+-- sized (for instance measured before the font finished loading), let Blizzard's
+-- tab sizing fit it again, exactly as Guildy does when it builds the tab.
+local function FitTab(tab)
+    local text = (tab.GetFontString and tab:GetFontString()) or tab.Text
+    if not text or not text.GetStringWidth then return end
+    if text.SetWordWrap then text:SetWordWrap(false) end
+    local width = text:GetStringWidth() or 0
+    local room = text.GetWidth and text:GetWidth() or 0
+    if width > 0 and room > 0 and width > room + 1 and _G.PanelTemplates_TabResize then
+        pcall(_G.PanelTemplates_TabResize, tab, 0)
+    end
 end
 -- "<guild> · Guildy" becomes "<guild>"; a bare "Guildy" (no guild) stays.
 local function TrimTitle(C, text)
@@ -209,7 +229,10 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
                 local owner = f.GetParent and f:GetParent()
                 value = owner and owner.selectedTab ~= nil and f.GetID and owner.selectedTab == f:GetID() or false
             end
-            return H.Tab(f, value)
+            local styled = H.Tab(f, value)
+            H.Font((f.GetFontString and f:GetFontString()) or f.Text)
+            FitTab(f)
+            return styled
         end
         if f.sideTab then return true end -- profession-style side tabs keep their native art
         if kind == "Frame" and f.GetBackdrop then

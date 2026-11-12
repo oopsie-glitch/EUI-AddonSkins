@@ -1,0 +1,84 @@
+name: Verify public v1.6.6 distribution
+on:
+  push:
+    branches: [audit/published-1.6.6]
+    paths: [.github/workflows/verify-published-1.6.6.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: d5bb81b70d42422dacc9c8b4b199273406cbc4f9
+          persist-credentials: false
+      - name: Verify public GitHub and CurseForge downloads
+        run: |
+          python3 - <<'PY'
+          from hashlib import sha256
+          from html import unescape
+          from io import BytesIO
+          from pathlib import Path
+          import re
+          from time import sleep, time
+          from urllib.request import Request, urlopen
+          from urllib.error import URLError
+          from zipfile import ZipFile
+          project = 'https://www.curseforge.com/wow/addons/eui-addon-skins'
+          versions = {16001,120000,120001,120005,120007,120100,120105}
+          def read(url):
+              request = Request(url,headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36'})
+              with urlopen(request,timeout=12) as response:
+                  return response.read()
+          def verify(data, github=False):
+              expected = {p.as_posix() for p in Path('EUIAddonSkins').rglob('*')
+                          if p.is_file() and p.name not in ('README.md','CHANGELOG.md')}
+              with ZipFile(BytesIO(data)) as z:
+                  assert z.testzip() is None
+                  entries = [item.filename for item in z.infolist() if not item.is_dir()]
+                  assert len(entries)==len(set(entries))==67 and set(entries)==expected
+                  for name in entries:
+                      actual, source = z.read(name), Path(name).read_bytes()
+                      if name.endswith('.toc'):
+                          assert b'## Version: 1.6.6' in actual
+                          if not github:
+                              field = rb'^## Interface:\s*([^\r\n]+)'
+                              values = {int(v.strip()) for v in re.search(field,actual,re.M).group(1).split(b',')}
+                              want = ({16001} if name.endswith('_Camelot.toc') else versions-{16001}
+                                      if name.endswith('_Mainline.toc') else versions)
+                              assert values in (versions,want), (name,values)
+                              actual, source = re.sub(field,b'',actual,flags=re.M), re.sub(field,b'',source,flags=re.M)
+                      if not github and not name.endswith('.tga'):
+                          actual, source = actual.replace(b'\r\n',b'\n'), source.replace(b'\r\n',b'\n')
+                      assert actual==source, name
+              return sha256(data).hexdigest()
+          gh = read('https://github.com/oopsie-glitch/EUI-AddonSkins/releases/download/v1.6.6/EUIAddonSkins-1.6.6.zip')
+          print('GITHUB VERIFIED public download, 67 runtime files, SHA256', verify(gh,github=True),flush=True)
+          found = False
+          for attempt in range(10):
+              ids = set()
+              for page in (project,project+'/files/all'):
+                  try:
+                      html = unescape(read(page+'?_release_check='+str(int(time()))).decode(errors='replace'))
+                      ids.update(int(n) for n in re.findall(r'/eui-addon-skins/files/(\d+)',html) if int(n)>9518314)
+                  except URLError as err:
+                      print('Listing attempt', attempt+1, type(err).__name__, str(err),flush=True)
+              for file_id in sorted(ids,reverse=True)[:8]:
+                  try:
+                      prefix, suffix = divmod(file_id,1000)
+                      data = read(f'https://edge.forgecdn.net/files/{prefix}/{suffix:03d}/EUIAddonSkins-v1.6.6.zip')
+                  except URLError:
+                      continue
+                  print('CURSEFORGE VERIFIED', f'{project}/files/{file_id}', '67 runtime files, SHA256',verify(data),flush=True)
+                  found=True
+                  break
+              if found:
+                  break
+              print('CurseForge v1.6.6 package not visible yet; listing file IDs:',sorted(ids),flush=True)
+              if attempt<9:
+                  sleep(12)
+          if not found:
+              print('CurseForge publication unconfirmed from the public listing')
+          PY

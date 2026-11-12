@@ -1,0 +1,39 @@
+name: DungeonJournal share source audit
+on:
+  push:
+    branches: [audit/dungeonjournal-share-source]
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Inspect native Share button construction and updates
+        run: |
+          python3 - <<'PY'
+          from hashlib import sha256
+          from io import BytesIO
+          from urllib.request import urlopen
+          from zipfile import ZipFile
+          url = 'https://edge.forgecdn.net/files/9567/829/DungeonJournal2.0.3.zip'
+          with urlopen(url, timeout=35) as response:
+              data = response.read()
+          print('PACKAGE SHA256', sha256(data).hexdigest())
+          with ZipFile(BytesIO(data)) as archive:
+              found = False
+              for path in archive.namelist():
+                  if not path.endswith('.lua'):
+                      continue
+                  lines = archive.read(path).decode('utf-8-sig', errors='replace').splitlines()
+                  relevant = set()
+                  for i, line in enumerate(lines):
+                      if 'questShareButton' in line or 'Shareable Quest' in line or 'Not Shareable' in line:
+                          found = True
+                          relevant.update(range(max(0,i-10),min(i+22,len(lines))))
+                  if relevant:
+                      print(path)
+                      for i in sorted(relevant):
+                          print(f'{i+1}: {lines[i]}')
+              assert found, 'No native Share control found'
+          PY

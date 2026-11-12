@@ -219,13 +219,13 @@ ns.RegisterScopedSkin("KiwiFarm", "KiwiFarm", {
     font = StatsFont,
     hooks = function(C)
         context = C
-        if not C.module.settingsAppearance then
-            C.module.settingsAppearance = {get=ReadSetting, set=WriteSetting, reset=Reset}
-            if ns.SettingsAvailabilityChanged then ns.SettingsAvailabilityChanged("KiwiFarm") end
-        end
         if not nativeCaptured and _G.KiwiFarm.GetBackdropColor then
             local _, _, _, alpha = _G.KiwiFarm:GetBackdropColor()
             if type(alpha) == 'number' then nativeOpacity = math.max(0, math.min(1, alpha)); nativeCaptured = true end
+        end
+        if not C.module.settingsAppearance then
+            C.module.settingsAppearance = {get=ReadSetting, set=WriteSetting, reset=Reset}
+            if ns.SettingsAvailabilityChanged then ns.SettingsAvailabilityChanged("KiwiFarm") end
         end
         if not menuSkin then
             menuSkin = setmetatable({GetPanelColor = function() return 0.065, 0.065, 0.07, Value('menuOpacity') end}, {__index = C.S})

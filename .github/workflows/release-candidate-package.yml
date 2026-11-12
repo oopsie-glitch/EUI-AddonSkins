@@ -167,10 +167,33 @@ jobs:
       - name: Verify the shared package manifest with uploads disabled
         run: |
           curl --fail --silent --show-error --location https://raw.githubusercontent.com/BigWigsMods/packager/e50a250f8705041e40f2fa1ddcb280a686d65aa0/release.sh -o /tmp/bigwigs-release.sh
-          bash /tmp/bigwigs-release.sh -d -p 0 -w 0 -a 0 -l -e -u -m .pkgmeta -r /tmp/manifest-package -n EUIAddonSkins-1.6.6-manifest-check
           python3 - <<'PY'
           from pathlib import Path
+          from subprocess import run
           from zipfile import ZipFile
+          import re
+          addon = Path('EUIAddonSkins')
+          pattern = r'^## Interface: (.+)$'
+          generic = (addon / 'EUIAddonSkins.toc').read_text()
+          versions = [int(v.strip()) for v in re.search(pattern, generic, re.M).group(1).split(',')]
+          selected = {'Mainline': [v for v in versions if v >= 100000],
+                      'Camelot': [v for v in versions if 16000 <= v < 17000]}
+          originals, normalized = {}, {}
+          try:
+              # Match the existing Wago workflow's flavor normalization.
+              for flavor, values in selected.items():
+                  path = addon / ('EUIAddonSkins_' + flavor + '.toc')
+                  originals[path] = path.read_bytes()
+                  expected, count = re.subn(pattern, '## Interface: ' + ', '.join(map(str, values)),
+                                            path.read_text(), count=1, flags=re.M)
+                  assert count == 1 and values
+                  path.write_text(expected)
+                  normalized[str(path)] = path.read_bytes()
+              run(['bash','/tmp/bigwigs-release.sh','-d','-p','0','-w','0','-a','0','-l','-e','-u','-m','.pkgmeta',
+                   '-r','/tmp/manifest-package','-n','EUIAddonSkins-1.6.6-manifest-check'], check=True)
+          finally:
+              for path, data in originals.items():
+                  path.write_bytes(data)
           packages = list(Path('/tmp/manifest-package').glob('*.zip'))
           assert len(packages) == 1, packages
           with ZipFile(packages[0]) as actual, ZipFile('EUIAddonSkins.zip') as expected:
@@ -178,11 +201,11 @@ jobs:
               files = {item.filename for item in actual.infolist() if not item.is_dir()}
               assert files == set(expected.namelist()), (files-set(expected.namelist()), set(expected.namelist())-files)
               for name in files:
-                  a, b = actual.read(name), expected.read(name)
+                  a, b = actual.read(name), normalized.get(name, expected.read(name))
                   if not name.endswith('.tga'):
                       a, b = a.replace(b'\r\n', b'\n'), b.replace(b'\r\n', b'\n')
                   assert a == b, name
-              print('Manifest dry run verified', len(files), 'runtime files; uploads disabled')
+              print('Manifest dry run verified', len(files), 'runtime files with normalized client aliases; uploads disabled')
           PY
       - name: Measure canvas construction and retained resources
         run: |

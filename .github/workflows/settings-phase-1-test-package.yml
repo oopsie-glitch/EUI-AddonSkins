@@ -1,0 +1,58 @@
+name: Settings Phase 1 test package
+on:
+  push:
+    branches: [fix/settings-ui-phase-1]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: settings-phase-1-test-package
+  cancel-in-progress: true
+jobs:
+  test-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install Lua test runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Validate and build installation ZIP
+        run: python3 scripts/package.py
+      - name: Prepare addon-only test artifact
+        run: python3 -m zipfile -e EUIAddonSkins.zip /tmp/settings-phase-1
+      - name: Store temporary Actions artifact
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-Settings-Phase1-${{ github.sha }}-test
+          path: /tmp/settings-phase-1/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Verify downloaded artifact against the validated installation ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if gh api "repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/settings-phase-1-download.zip; then break; fi
+            if [ "$attempt" -eq 5 ]; then exit 1; fi
+            sleep 3
+          done
+          python3 - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          from zipfile import ZipFile
+          path = Path('/tmp/settings-phase-1-download.zip')
+          with ZipFile(path) as actual, ZipFile('EUIAddonSkins.zip') as expected:
+              assert actual.testzip() is None
+              assert sorted(actual.namelist()) == sorted(expected.namelist())
+              assert all(actual.read(name) == expected.read(name) for name in expected.namelist())
+              assert {name.split('/')[0] for name in actual.namelist()} == {'EUIAddonSkins'}
+              print('Verified install artifact:', len(actual.namelist()), 'runtime files; one EUIAddonSkins folder')
+          print('Install artifact SHA256:', sha256(path.read_bytes()).hexdigest())
+          PY

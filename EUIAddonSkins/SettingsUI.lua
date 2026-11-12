@@ -1,0 +1,429 @@
+local _, ns = ...
+
+-- Providers are metadata plus existing preference handlers. Registration
+-- does not load targets, initialize saved values, or create controls.
+local providers = {}
+local ui, category, requested
+local Refresh
+function ns.RegisterSettingsProvider(id, provider)
+    assert(type(id) == "string" and not providers[id], "Duplicate settings provider: " .. tostring(id))
+    assert(type(provider.label) == "string" and type(provider.options) == "table", "Invalid settings provider")
+    providers[id] = provider
+    if ui and ui.open then Refresh() end
+end
+
+local function Combat()
+    return InCombatLockdown and InCombatLockdown()
+end
+
+local function Installed(entry)
+    local info = C_AddOns and C_AddOns.GetAddOnInfo or GetAddOnInfo
+    if not info or not entry then return false end
+    for _, target in ipairs(entry.targets) do
+        local ok, name = pcall(info, target)
+        if ok and name then return true end
+    end
+    return false
+end
+
+local function Availability(id)
+    local entry = ns.skinCatalogByID and ns.skinCatalogByID[id]
+    if not Installed(entry) then return nil end
+    if not ns.IsEnabled() then return "AddonSkins is disabled." end
+    if ns.TargetEnabled and not ns.TargetEnabled(entry) then return "This addon is disabled for this character." end
+    local module
+    for _, candidate in ipairs(ns.modules or {}) do
+        if candidate.id == id then module = candidate; break end
+    end
+    if entry.skin and not ns.IsEnabled(entry) or module and module.skin and not ns.IsEnabled(module) then
+        return "Enable this integration in EllesmereUI skin settings.", module
+    end
+    if entry.failed or module and module.attempted and not module.active then
+        return "The skin did not initialize. See /euiskins diagnostics.", module
+    end
+    if not module or not module.active then return "The skin is not active in this session.", module end
+    return false, module
+end
+
+local function Text(parent, template)
+    local label = parent:CreateFontString(nil, "ARTWORK", template or "GameFontHighlight")
+    label:SetJustifyH("LEFT")
+    return label
+end
+
+local function Fill(parent, r, g, b, a)
+    local texture = parent:CreateTexture(nil, "BACKGROUND")
+    texture:SetAllPoints(parent)
+    texture:SetColorTexture(r, g, b, a)
+    return texture
+end
+
+local function Button(parent)
+    local button = CreateFrame("Button", nil, parent)
+    button.fill = Fill(button, 0.10, 0.11, 0.12, 0.95)
+    local hover = button:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetAllPoints(button); hover:SetColorTexture(1, 1, 1, 0.075)
+    button:SetHighlightTexture(hover)
+    button.label = Text(button)
+    button.label:SetPoint("LEFT", button, "LEFT", 8, 0)
+    button.label:SetPoint("RIGHT", button, "RIGHT", -8, 0)
+    button.label:SetWordWrap(false)
+    return button
+end
+
+local function Scroll(parent, name)
+    local scroll = CreateFrame("ScrollFrame", name, parent, "UIPanelScrollFrameTemplate")
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(1, 1)
+    scroll:SetScrollChild(content)
+    return scroll, content
+end
+
+local function Place(frame, parent, x, y, width, height)
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
+    frame:SetSize(width, height)
+end
+
+local function FindValue(option, value)
+    for i, choice in ipairs(option.values or {}) do
+        if choice.value == value then return choice.label, i end
+    end
+end
+
+local function Enabled(row)
+    if not ui.open or ui.updating or not row.option or row.id ~= ui.selected or Combat() then return false end
+    return Availability(row.id) == false and (not row.option.enabled or row.option.enabled())
+end
+
+local function SyncRow(row)
+    local option = row.option
+    if not option then return end
+    local value = option.get and option.get()
+    local control = row.control
+    local enabled = ui.reason == false and not Combat() and (not option.enabled or option.enabled())
+    if control.SetEnabled then control:SetEnabled(enabled)
+    elseif enabled then control:Enable() else control:Disable() end
+    if option.kind == "toggle" then control:SetChecked(value == true)
+    elseif option.kind == "slider" then
+        control:SetValue(value or option.min)
+        row.title:SetText(option.label .. ": " .. tostring(value or option.min) .. (option.unit or ""))
+    elseif option.kind == "choice" then control.label:SetText(FindValue(option, value) or "Choose")
+    else control.label:SetText(option.buttonLabel or option.label) end
+end
+
+local function Write(row, value)
+    if not Enabled(row) then return end
+    local option = row.option
+    if option.get() == value then return end
+    option.set(value) -- Provider notifies after committing the shared preference.
+end
+
+local function MakeRow(kind)
+    local frame = CreateFrame("Frame", nil, ui.detailContent)
+    Fill(frame, 0.09, 0.10, 0.11, 0.65)
+    local row = {frame = frame, title = Text(frame), description = Text(frame, "GameFontHighlightSmall")}
+    row.title:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -7)
+    row.title:SetWordWrap(true)
+    row.description:SetWordWrap(true)
+    row.description:SetTextColor(0.72, 0.75, 0.78)
+    local control
+    if kind == "toggle" then
+        control = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+        control:SetScript("OnClick", function(self) Write(row, self:GetChecked() == true) end)
+    elseif kind == "slider" then
+        control = CreateFrame("Slider", nil, frame)
+        control:SetOrientation("HORIZONTAL")
+        control:EnableMouse(true)
+        control:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
+        Fill(control, 0.19, 0.21, 0.23, 1)
+        if control.SetObeyStepOnDrag then control:SetObeyStepOnDrag(true) end
+        control:SetScript("OnValueChanged", function(_, value) Write(row, value) end)
+    else
+        control = Button(frame)
+        control:SetScript("OnClick", function()
+            if not Enabled(row) then return end
+            local option = row.option
+            if kind == "action" then option.run(); Refresh(); return end
+            local values = option.values or {}
+            if #values == 0 then return end
+            local _, index = FindValue(option, option.get())
+            Write(row, values[(index or 0) % #values + 1].value)
+        end)
+    end
+    row.control = control
+    return row
+end
+
+local function BindDetails()
+    ui.updating = true
+    for _, pool in pairs(ui.pools) do
+        for _, row in ipairs(pool) do row.option, row.id = nil, nil; row.frame:Hide() end
+    end
+    local provider = providers[ui.selected]
+    local title = provider and provider.label or "No configurable addons"
+    local notice = not provider and "Install a supported addon, or open Legacy options."
+        or ui.reason or (Combat() and "Settings are unavailable during combat.") or ""
+    ui.heading:SetText(title)
+    ui.notice:SetText(notice)
+    local width = ui.detailWidth
+    ui.heading:SetWidth(width - 16); ui.notice:SetWidth(width - 16)
+    local y = math.max(20, ui.heading:GetStringHeight()) + 8
+    if notice ~= "" then y = y + math.max(16, ui.notice:GetStringHeight()) + 8 end
+    ui.notice:ClearAllPoints()
+    ui.notice:SetPoint("TOPLEFT", ui.heading, "BOTTOMLEFT", 0, -5)
+    if provider then
+        local used = {}
+        local count = #provider.options + (provider.reset and 1 or 0)
+        for i = 1, count do
+            local option = provider.options[i] or provider.reset
+            local kind = option.kind
+            local pool = ui.pools[kind]
+            if pool and (not option.visible or option.visible()) then
+                local slot = (used[kind] or 0) + 1
+                used[kind] = slot
+                local row = pool[slot]
+                if not row then row = MakeRow(kind); pool[slot] = row end
+                row.option, row.id = option, ui.selected
+                row.title:SetText(option.label)
+                row.description:SetText(option.description or "")
+                local controlWidth = kind == "toggle" and 24 or math.min(150, math.floor(width * 0.38))
+                local stacked = width < 225 and kind ~= "toggle"
+                row.title:SetWidth(math.max(40, width - (stacked and 16 or controlWidth + 24)))
+                row.description:SetWidth(width - 16)
+                local titleHeight = math.max(18, row.title:GetStringHeight())
+                local descHeight = option.description and math.max(14, row.description:GetStringHeight()) + 5 or 0
+                local lineHeight = stacked and titleHeight + 29 or math.max(24, titleHeight)
+                Place(row.frame, ui.detailContent, 0, y, width, lineHeight + descHeight + 12)
+                Place(row.control, row.frame, width - controlWidth - 8, stacked and titleHeight + 9 or 3,
+                    controlWidth, kind == "slider" and 18 or 24)
+                row.description:ClearAllPoints()
+                row.description:SetPoint("TOPLEFT", row.frame, "TOPLEFT", 8, -lineHeight - 6)
+                if kind == "slider" then
+                    row.control:SetMinMaxValues(option.min, option.max)
+                    row.control:SetValueStep(option.step or 1)
+                end
+                SyncRow(row); row.frame:Show()
+                y = y + lineHeight + descHeight + 16
+            end
+        end
+    end
+    ui.detailContent:SetHeight(math.max(1, y))
+    ui.detailScroll:SetVerticalScroll(math.min(ui.detailScroll:GetVerticalScroll(), ui.detailScroll:GetVerticalScrollRange()))
+    ui.updating = false
+end
+
+local Select
+local function Sidebar()
+    local query = (ui.search:GetText() or ""):lower()
+    local shown = 0
+    local r, g, b = 0.36, 0.70, 0.61
+    local module = ui.module
+    if module and module.skin and module.skin.GetAccentColor then r, g, b = module.skin.GetAccentColor() end
+    ui.firstMatch = nil
+    for _, entry in ipairs(ui.entries) do
+        if query == "" or entry.label:lower():find(query, 1, true) then
+            shown = shown + 1
+            if not ui.firstMatch then ui.firstMatch = entry.id end
+            local button = ui.buttons[shown]
+            if not button then
+                button = Button(ui.listContent)
+                button:SetScript("OnClick", function(self) if ui.open and self.id then Select(self.id, true) end end)
+                ui.buttons[shown] = button
+            end
+            button.id = entry.id
+            button.label:SetText(entry.label)
+            if entry.id == ui.selected then
+                button.fill:SetColorTexture(r * 0.33, g * 0.33, b * 0.33, 1)
+                button.label:SetTextColor(0.95, 0.98, 0.98)
+            else
+                button.fill:SetColorTexture(0.10, 0.11, 0.12, 0.95)
+                button.label:SetTextColor(0.77, 0.81, 0.83)
+            end
+            Place(button, ui.listContent, 0, (shown - 1) * 25, ui.listWidth, 24)
+            button:Show()
+        end
+    end
+    for i = shown + 1, #ui.buttons do ui.buttons[i].id = nil; ui.buttons[i]:Hide() end
+    ui.empty:SetText(#ui.entries == 0 and "No installed providers" or "No matching addons")
+    ui.empty:SetShown(shown == 0)
+    ui.listContent:SetHeight(math.max(25, shown * 25))
+    ui.listScroll:SetVerticalScroll(math.min(ui.listScroll:GetVerticalScroll(), ui.listScroll:GetVerticalScrollRange()))
+end
+
+Select = function(id, remember)
+    local reason, module
+    if id then reason, module = Availability(id) end
+    if reason == nil then id = nil end
+    local changed = ui.selected ~= id
+    ui.selected, ui.reason, ui.module = id, reason, module
+    if remember and id then
+        EUIAddonSkinsDB = EUIAddonSkinsDB or {}
+        local db = EUIAddonSkinsDB
+        if type(db.settingsUI) ~= "table" then db.settingsUI = {} end
+        if db.settingsUI.lastAddonID ~= id then db.settingsUI.lastAddonID = id end
+    end
+    if changed then ui.detailScroll:SetVerticalScroll(0) end
+    Sidebar()
+    BindDetails()
+end
+
+Refresh = function()
+    ui.entries = {}
+    for id, provider in pairs(providers) do
+        if #provider.options > 0 and Availability(id) ~= nil then
+            ui.entries[#ui.entries+1] = {id = id, label = provider.label}
+        end
+    end
+    table.sort(ui.entries, function(a, b) return a.label:lower() < b.label:lower()
+        or a.label:lower() == b.label:lower() and a.id < b.id end)
+    local db = EUIAddonSkinsDB and EUIAddonSkinsDB.settingsUI
+    local id = requested or ui.selected or (type(db) == "table" and db.lastAddonID)
+    requested = nil
+    if not providers[id] or Availability(id) == nil then id = ui.entries[1] and ui.entries[1].id end
+    Select(id)
+end
+
+local function Layout()
+    local root = ui.root
+    local w, h = root:GetWidth(), root:GetHeight()
+    if w <= 0 or h <= 0 then w, h = 600, 450 end
+    if ui.width == w and ui.height == h then return end
+    ui.width, ui.height = w, h
+    local narrow = w < 480
+    local left = narrow and w - 36 or 170
+    local listHeight = narrow and 76 or math.max(25, h - 107)
+    local detailX, detailY = narrow and 12 or left + 38, narrow and 164 or 38
+    Place(ui.legacy, root, w - 137, narrow and math.max(30, h - 32) or 8, 125, 23)
+    Place(ui.search, root, 14, 52, math.max(70, left - 5), 22)
+    Place(ui.listScroll, root, 12, 80, math.max(70, left), listHeight)
+    Place(ui.detailScroll, root, detailX, detailY, math.max(100, w - detailX - 33), math.max(30, h - detailY - (narrow and 40 or 18)))
+    ui.listWidth = math.max(70, left - 5)
+    ui.detailWidth = math.max(100, w - detailX - 38)
+    ui.listContent:SetWidth(ui.listWidth)
+    ui.detailContent:SetWidth(ui.detailWidth)
+    ui.divider:ClearAllPoints()
+    ui.divider:SetPoint("TOPLEFT", root, "TOPLEFT", left + 30, -38)
+    ui.divider:SetSize(1, math.max(1, h - 56))
+    ui.divider:SetShown(not narrow)
+end
+
+local function Build(root)
+    Fill(root, 0.045, 0.052, 0.059, 0.97)
+    local name = Text(root, "GameFontNormalLarge")
+    name:SetPoint("TOPLEFT", root, "TOPLEFT", 12, -10); name:SetText("EUI AddonSkins")
+    local legacy = Button(root)
+    ui.legacy = legacy
+    legacy.label:SetText("Legacy options")
+    legacy:SetScript("OnClick", function() if not Combat() then ns.OpenLegacyAddonSettings() end end)
+    ui.search = CreateFrame("EditBox", "EUIAddonSkinsSearch", root, "InputBoxTemplate")
+    ui.search:SetAutoFocus(false)
+    local searchLabel = Text(root, "GameFontHighlightSmall")
+    searchLabel:SetPoint("BOTTOMLEFT", ui.search, "TOPLEFT", 0, 3); searchLabel:SetText("Search addons")
+    ui.search:SetScript("OnTextChanged", function() if ui.open and not ui.updating then Sidebar() end end)
+    ui.search:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    ui.search:SetScript("OnEnterPressed", function(self)
+        if ui.open and ui.firstMatch then Select(ui.firstMatch, true) end
+        self:ClearFocus()
+    end)
+    ui.listScroll, ui.listContent = Scroll(root, "EUIAddonSkinsSidebarScroll")
+    ui.detailScroll, ui.detailContent = Scroll(root, "EUIAddonSkinsOptionsScroll")
+    ui.heading = Text(ui.detailContent, "GameFontNormalLarge")
+    ui.heading:SetPoint("TOPLEFT", ui.detailContent, "TOPLEFT", 0, -2)
+    ui.heading:SetWordWrap(true)
+    ui.notice = Text(ui.detailContent, "GameFontHighlightSmall")
+    ui.notice:SetWordWrap(true)
+    ui.empty = Text(ui.listContent, "GameFontHighlightSmall")
+    ui.empty:SetPoint("TOPLEFT", ui.listContent, "TOPLEFT", 5, -5)
+    ui.divider = root:CreateTexture(nil, "ARTWORK")
+    ui.divider:SetColorTexture(0.22, 0.25, 0.28, 0.7)
+    ui.built = true
+    root:SetScript("OnSizeChanged", function()
+        if not ui.open then return end
+        Layout(); Sidebar(); BindDetails()
+    end)
+end
+
+function ns.SettingsPreferenceChanged(id, key)
+    if not ui or not ui.open or ui.updating or ui.selected ~= id then return end
+    ui.updating = true
+    for _, pool in pairs(ui.pools) do
+        for _, row in ipairs(pool) do
+            if row.option and row.option.key == key then SyncRow(row) end
+        end
+    end
+    ui.updating = false
+end
+
+function ns.SupportsAddonSettingsCanvas()
+    return Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory and Settings.OpenToCategory
+end
+
+local function RegisterCanvas()
+    if category or not ns.SupportsAddonSettingsCanvas() then return end
+    local root = CreateFrame("Frame", "EUIAddonSkinsSettingsCanvas", UIParent)
+    root.name = "EUI AddonSkins"
+    root:Hide()
+    ui = {root=root, pools={toggle={},choice={},slider={},action={}}, entries={}, buttons={}}
+    root:SetScript("OnShow", function()
+        if ui.open then return end
+        if not ui.built then Build(root) end
+        Layout()
+        ui.open = true
+        root:RegisterEvent("ADDON_LOADED")
+        root:RegisterEvent("PLAYER_REGEN_DISABLED")
+        root:RegisterEvent("PLAYER_REGEN_ENABLED")
+        Refresh()
+    end)
+    root:SetScript("OnHide", function()
+        if not ui.open then return end
+        ui.open = false
+        root:UnregisterAllEvents()
+        ui.search:ClearFocus(); ui.search:SetText("")
+        for _, pool in pairs(ui.pools) do
+            for _, row in ipairs(pool) do row.option, row.id = nil, nil end
+        end
+    end)
+    root:SetScript("OnEvent", function(_, event, target)
+        if not ui.open then return end
+        if event ~= "ADDON_LOADED" then Refresh(); return end
+        for id in pairs(providers) do
+            local entry = ns.skinCatalogByID and ns.skinCatalogByID[id]
+            for _, addon in ipairs(entry and entry.targets or {}) do
+                if addon == target then Refresh(); return end
+            end
+        end
+    end)
+    category = Settings.RegisterCanvasLayoutCategory(root, root.name)
+    Settings.RegisterAddOnCategory(category)
+end
+
+function ns.OpenAddonSettings(id)
+    if not ns.SupportsAddonSettingsCanvas() or id and (not providers[id] or Availability(id) == nil) then return false end
+    RegisterCanvas()
+    if not category then return false end
+    requested = id
+    if ui.open and id then requested = nil; Select(id) end
+    Settings.OpenToCategory(category:GetID())
+    return true
+end
+
+local function Toggle(key, label, description, get, set)
+    return {kind="toggle", key=key, label=label, description=description,
+        get=function() return get(key) end, set=function(value) set(key, value) end}
+end
+ns.RegisterSettingsProvider("Details", {label="Details!", options={
+    Toggle("menus", "Skin menus and options", "Styles Details! dialogs and dropdowns. Reload after changing.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
+    Toggle("meter", "Match EUI meter appearance", "Matches fonts, bars and spacing. Turning it off restores the captured appearance.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
+    Toggle("tiny", "Style Tiny Threat", "Styles Tiny Threat independently of other Details! meters.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
+}})
+ns.RegisterSettingsProvider("RXPGuides", {label="RestedXP", options={
+    Toggle("arrow", "Skin navigation arrow", "Turn off to restore RestedXP's original arrow. Separate from guide style and opacity.", ns.ReadRXPSetting, ns.SetRXPSetting),
+}})
+
+local login = CreateFrame("Frame")
+login:RegisterEvent("PLAYER_LOGIN")
+login:SetScript("OnEvent", function(self)
+    self:UnregisterEvent("PLAYER_LOGIN")
+    RegisterCanvas()
+end)

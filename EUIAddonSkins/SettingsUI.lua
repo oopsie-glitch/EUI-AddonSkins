@@ -95,6 +95,8 @@ local function Enabled(row)
     if not ui.open or ui.updating or not row.option or row.id ~= ui.selected or Combat() then return false end
     if ui.reason ~= false or not ns.IsEnabled() then return false end
     if ui.module and ui.module.skin and not ns.IsEnabled(ui.module) then return false end
+    local entry = ns.skinCatalogByID and ns.skinCatalogByID[row.id]
+    if entry and ns.TargetEnabled and not ns.TargetEnabled(entry) then return false end
     return not row.option.enabled or row.option.enabled()
 end
 

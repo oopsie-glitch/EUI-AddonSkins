@@ -108,9 +108,11 @@ local function Reset()
     if ns.SettingsPreferenceChanged then ns.SettingsPreferenceChanged("KiwiFarm") end
 end
 local function ReadSetting(key)
-    local opacity = Value('backgroundOpacity')
-    if key == 'opacitySource' then return opacity == 'native' and 'native' or 'custom' end
-    if key == 'backgroundOpacity' then return math.floor((opacity == 'native' and nativeOpacity or opacity) * 100 + 0.5) end
+    if key == 'opacitySource' then return Value('backgroundOpacity') == 'native' and 'native' or 'custom' end
+    if key == 'backgroundOpacity' then
+        local opacity = Value(key)
+        return math.floor((opacity == 'native' and nativeOpacity or opacity) * 100 + 0.5)
+    end
     if key == 'menuOpacity' then return math.floor(Value(key) * 100 + 0.5) end
     return Value(key)
 end
@@ -217,7 +219,9 @@ ns.RegisterScopedSkin("KiwiFarm", "KiwiFarm", {
     font = StatsFont,
     hooks = function(C)
         context = C
-        C.module.settingsAppearance = {get=ReadSetting, set=WriteSetting, reset=Reset}
+        if not C.module.settingsAppearance then
+            C.module.settingsAppearance = {get=ReadSetting, set=WriteSetting, reset=Reset}
+        end
         if not nativeCaptured and _G.KiwiFarm.GetBackdropColor then
             local _, _, _, alpha = _G.KiwiFarm:GetBackdropColor()
             if type(alpha) == 'number' then nativeOpacity = math.max(0, math.min(1, alpha)); nativeCaptured = true end

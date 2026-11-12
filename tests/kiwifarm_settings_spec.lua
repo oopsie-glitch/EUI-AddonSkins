@@ -30,7 +30,7 @@ EUIAddonSkinsDB = {other={preserved=true}}
 InCombatLockdown = function() return combat end
 LibStub = nil
 local nativeMenuHook
-local context = {module={}, S={
+local context = {module={}, MenuOwner=function() end, S={
     GetFont=function() return face end,
     OnLooksChanged=function(fn) looks=fn end,
 }, H={

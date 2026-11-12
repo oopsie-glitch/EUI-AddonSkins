@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.6.6 — Spy, Addon Settings and DungeonJournal
+
+- Spy now has compact EUI Standard and Forever styling for Normal and Inverted layouts, with Automatic style selection, background opacity and Reset Appearance. Forever defaults to 75% opacity. Spy keeps its own bar textures, class colours, tooltips and actions.
+- Options > AddOns > EUI AddonSkins now has a searchable sidebar for active configurable addons and direct style dropdowns. The panel shows saved and effective styles, exposes supported opacity and font preferences, and shares settings with native quick menus. Legacy options remain available.
+- RestedXP V1/V2 keep their released appearance and default opacity. The centralized controls expose style, opacity and the navigation arrow. Appearance Reset leaves the arrow setting intact.
+- Forever Dungeon Journal's Share button keeps its native green and grey states and hover highlight with an EUI edge.
+
 ## 1.6.5 — RestedXP Forever V1/V2
 
 - Added the approved Forever design for RestedXP V1 and V2, including guide and Current Step windows, Active Targets/Items, menus, controls and copper navigation artwork.

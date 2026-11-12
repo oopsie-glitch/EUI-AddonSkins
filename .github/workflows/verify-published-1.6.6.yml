@@ -56,13 +56,29 @@ jobs:
               return sha256(data).hexdigest()
           gh = read('https://github.com/oopsie-glitch/EUI-AddonSkins/releases/download/v1.6.6/EUIAddonSkins-1.6.6.zip')
           print('GITHUB VERIFIED public download, 67 runtime files, SHA256', verify(gh,github=True),flush=True)
+          wago = 'https://addons.wago.io/addons/aN0a2M6j'
+          try:
+              html = unescape(read(wago).decode(errors='replace'))
+              match = re.search(r'v?1\.6\.6(?:\.zip)?(?![\d.])', html)
+              print('WAGO LISTING', 'v1.6.6 visible' if match else 'v1.6.6 not visible in public HTML', flush=True)
+          except URLError as err:
+              print('WAGO LISTING unavailable:', str(err), flush=True)
           found = False
-          for attempt in range(10):
+          for attempt in range(8):
               ids = set()
-              for page in (project,project+'/files/all'):
+              listed = set()
+              for page in (project,project+'/files/all',
+                           'https://www.curseforge.com/api/v1/mods/1737903/files?pageIndex=0&pageSize=20'):
                   try:
-                      html = unescape(read(page+'?_release_check='+str(int(time()))).decode(errors='replace'))
-                      ids.update(int(n) for n in re.findall(r'/eui-addon-skins/files/(\d+)',html) if int(n)>9518314)
+                      url = page + ('&' if '?' in page else '?') + '_release_check=' + str(int(time()))
+                      html = unescape(read(url).decode(errors='replace')).replace('\\"','"').replace('\\/','/')
+                      listed.update(int(n) for n in re.findall(r'/eui-addon-skins/files/(\d+)', html))
+                      for match in re.finditer(r'EUIAddonSkins-v1\.6\.6\.zip', html):
+                          context = html[max(0,match.start()-1200):match.end()+1200]
+                          listed.update(int(n) for n in re.findall(r'"(?:id|fileId)"\s*:\s*(\d{7,})',context))
+                      if 'EUIAddonSkins-v1.6.6.zip' in html:
+                          print('CurseForge references the expected filename on', page, flush=True)
+                      ids.update(n for n in listed if n>9518314)
                   except URLError as err:
                       print('Listing attempt', attempt+1, type(err).__name__, str(err),flush=True)
               for file_id in sorted(ids,reverse=True)[:8]:
@@ -76,8 +92,8 @@ jobs:
                   break
               if found:
                   break
-              print('CurseForge v1.6.6 package not visible yet; listing file IDs:',sorted(ids),flush=True)
-              if attempt<9:
+              print('CurseForge current listing IDs:', sorted(listed, reverse=True)[:5], flush=True)
+              if attempt<7:
                   sleep(12)
           if not found:
               print('CurseForge publication unconfirmed from the public listing')

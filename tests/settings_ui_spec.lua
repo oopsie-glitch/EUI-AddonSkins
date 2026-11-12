@@ -183,7 +183,8 @@ for _,oldInfo in ipairs({false,true}) do
     assert(not check[1].checked and arrowCalls==2)
     search:SetText("no such addon")
     assert(#Buttons("RestedXP")==0 and #Checks()==1,"empty filter disposed the selected controls")
-    search:SetText("")
+    Choose("×")
+    assert(search:GetText()=="" and #Buttons("Details!")==1,"clear search did not restore entries")
     h.combat=true;h:Event("PLAYER_REGEN_DISABLED")
     assert(not Checks()[1].enabled)
     check[1]:SetChecked(true);check[1].scripts.OnClick(check[1])
@@ -200,7 +201,8 @@ for _,oldInfo in ipairs({false,true}) do
     local detail=h:Find(function(f)return f.name=="EUIAddonSkinsOptionsScroll" end,true)[1]
     assert(list.point[4]==detail.point[4] and -list.point[5]+list.height < -detail.point[5],
         "narrow settings columns overlap")
-    root:SetSize(700,510)
+    root.width,root.height=700,510
+    h:Event("UI_SCALE_CHANGED")
     assert(detail.point[4]>list.point[4]+list.width,"wide settings columns overlap")
     local warmFrames,warmArt=h.counts.frames,h.counts.art
     local started=os.clock()
@@ -215,6 +217,7 @@ for _,oldInfo in ipairs({false,true}) do
     local reads,writes=h.counts.info,h.counts.writes
     for _=1,1000 do
         h:Event("ADDON_LOADED","RXPGuides")
+        h:Event("UI_SCALE_CHANGED")
         ns.SettingsPreferenceChanged("RXPGuides","arrow")
     end
     assert(next(root.events)==nil and h.counts.info==reads and h.counts.writes==writes,"closed panel did work")

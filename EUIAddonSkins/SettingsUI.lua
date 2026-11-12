@@ -221,6 +221,7 @@ local function Sidebar()
     local module = ui.module
     if module and module.skin and module.skin.GetAccentColor then r, g, b = module.skin.GetAccentColor() end
     ui.firstMatch = nil
+    ui.clearSearch:SetShown(query ~= "")
     for _, entry in ipairs(ui.entries) do
         if query == "" or entry.label:lower():find(query, 1, true) then
             shown = shown + 1
@@ -295,7 +296,8 @@ local function Layout()
     local listHeight = narrow and 76 or math.max(25, h - 107)
     local detailX, detailY = narrow and 12 or left + 38, narrow and 164 or 38
     Place(ui.legacy, root, w - 137, narrow and math.max(30, h - 32) or 8, 125, 23)
-    Place(ui.search, root, 14, 52, math.max(70, left - 5), 22)
+    Place(ui.search, root, 14, 52, math.max(45, left - 32), 22)
+    Place(ui.clearSearch, root, left - 12, 52, 22, 22)
     Place(ui.listScroll, root, 12, 80, math.max(70, left), listHeight)
     Place(ui.detailScroll, root, detailX, detailY, math.max(100, w - detailX - 33), math.max(30, h - detailY - (narrow and 40 or 18)))
     ui.listWidth = math.max(70, left - 5)
@@ -318,10 +320,13 @@ local function Build(root)
     legacy:SetScript("OnClick", function() if not Combat() then ns.OpenLegacyAddonSettings() end end)
     ui.search = CreateFrame("EditBox", "EUIAddonSkinsSearch", root, "InputBoxTemplate")
     ui.search:SetAutoFocus(false)
+    ui.clearSearch = Button(root)
+    ui.clearSearch.label:SetText("×")
+    ui.clearSearch:SetScript("OnClick", function() ui.search:SetText(""); ui.search:ClearFocus() end)
     local searchLabel = Text(root, "GameFontHighlightSmall")
     searchLabel:SetPoint("BOTTOMLEFT", ui.search, "TOPLEFT", 0, 3); searchLabel:SetText("Search addons")
     ui.search:SetScript("OnTextChanged", function() if ui.open and not ui.updating then Sidebar() end end)
-    ui.search:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    ui.search:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus() end)
     ui.search:SetScript("OnEnterPressed", function(self)
         if ui.open and ui.firstMatch then Select(ui.firstMatch, true) end
         self:ClearFocus()
@@ -373,6 +378,7 @@ local function RegisterCanvas()
         root:RegisterEvent("ADDON_LOADED")
         root:RegisterEvent("PLAYER_REGEN_DISABLED")
         root:RegisterEvent("PLAYER_REGEN_ENABLED")
+        root:RegisterEvent("UI_SCALE_CHANGED")
         Refresh()
     end)
     root:SetScript("OnHide", function()
@@ -386,6 +392,7 @@ local function RegisterCanvas()
     end)
     root:SetScript("OnEvent", function(_, event, target)
         if not ui.open then return end
+        if event == "UI_SCALE_CHANGED" then Layout() end
         if event ~= "ADDON_LOADED" then Refresh(); return end
         for id in pairs(providers) do
             local entry = ns.skinCatalogByID and ns.skinCatalogByID[id]

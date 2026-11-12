@@ -921,9 +921,14 @@ assert(rootRim.host:GetBottom()==Spy.MainWindow:GetBottom(),"Forever extended th
 assert(alertRim.color[1]==0.9 and Spy.AlertWindow.Title.textColor[1]==1,"alert severity changed")
 assert(Spy:AlertWatch()=="native-watch" and alertRim.color[1]==0.6 and alertRim.color[3]==0.8,"watch alert severity failed to refresh")
 -- Simulate EUI's registered-host texture cleanup; custom art remains outside it.
-for host in pairs(shells) do for _,region in ipairs(host.regions) do region.alpha=0 end end
+local stripped={}
+for host in pairs(shells) do
+    for _,region in ipairs(host.regions) do stripped[region]=region.alpha;region.alpha=0 end
+end
 assert(rootRim.edge.alpha==1,"EUI cleanup stripped Forever rim")
 assert(Coverage(AssertRestingRule(row))>0,"EUI cleanup changed resting row bevels")
+-- End the cleanup probe; the fake API does not run EUI's shell repaint.
+for region,alpha in pairs(stripped) do region.alpha=alpha end
 local plate,grain
 for _,region in ipairs(rootRim.host.regions) do
     if region.drawLayer=="BACKGROUND" and region.sublevel==1 then plate=region end

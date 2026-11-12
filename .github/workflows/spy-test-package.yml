@@ -143,7 +143,9 @@ jobs:
           SPY_SOURCE=/tmp/spy-upstream SPY_BOOT_INVERTED=1 python3 tests/run_lua.py
           SPY_SOURCE=/tmp/spy-upstream SPY_BOOT_STANDARD_INVERTED=1 python3 tests/run_lua.py
       - name: Compare Spy performance against approved PR baseline
-        run: SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline 47f3cfa30aae122cdd0439393cc5c9a87f798ca4 --trials 5 --iterations 1000 --rows 40
+        run: |
+          SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline 47f3cfa30aae122cdd0439393cc5c9a87f798ca4 --trials 5 --iterations 1000 --rows 40 --summary
+          SPY_SOURCE=/tmp/spy-upstream python3 benchmarks/run_spy.py --baseline 47f3cfa30aae122cdd0439393cc5c9a87f798ca4 --style standard --trials 5 --iterations 1000 --rows 40 --summary
       - name: Fresh Lua bootstrap with saved Spy opacity endpoints
         run: |
           SPY_BOOT_OPACITY=0 python3 tests/run_lua.py

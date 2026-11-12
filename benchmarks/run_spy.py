@@ -11,6 +11,8 @@ import urllib.request
 parser=argparse.ArgumentParser()
 parser.add_argument('--baseline',default='e7631a3e9fada47474a9bda356f0ce7a0fef1c2c')
 parser.add_argument('--historical',help='optional pre-redesign revision for a third-way comparison')
+parser.add_argument('--style', choices=('forever','standard'), default='forever')
+parser.add_argument('--summary', action='store_true', help='omit raw per-trial entries from the report')
 parser.add_argument('--trials',type=int,default=5)
 parser.add_argument('--iterations',type=int,default=1000)
 parser.add_argument('--rows',type=int,default=40)
@@ -92,7 +94,7 @@ end
 local function acquire()
     if not BENCH_NATIVE then
         module.install(S,module);flush()
-        EUIAddonSkinsDB.spy.style="forever";module.refresh();flush()
+        EUIAddonSkinsDB.spy.style=BENCH_STYLE;module.refresh();flush()
     end
 end
 if BENCH_COLD_PROFILE then
@@ -115,8 +117,8 @@ end
 local function reopen() Spy.MainWindow:Hide();Spy.MainWindow:Show();flush() end
 local function themes()
     if BENCH_NATIVE then return end
-    EUIAddonSkinsDB.spy.style="standard";module.refresh();flush()
-    EUIAddonSkinsDB.spy.style="forever";module.refresh();flush()
+    EUIAddonSkinsDB.spy.style=BENCH_STYLE=="standard" and "forever" or "standard";module.refresh();flush()
+    EUIAddonSkinsDB.spy.style=BENCH_STYLE;module.refresh();flush()
 end
 local setting
 if not BENCH_NATIVE then
@@ -155,7 +157,7 @@ local f=assert(io.open(BENCH_OUTPUT,"w"))
 f:write("{",table.concat(output,","),',"profiles":{',table.concat(profiles,","),"}}");f:close()
 end
 '''
-report={"baseline":args.baseline,"historical":args.historical,"rows":args.rows,"iterations":args.iterations,
+report={"baseline":args.baseline,"historical":args.historical,"style":args.style,"rows":args.rows,"iterations":args.iterations,
         "trials":args.trials,"warmup":100,"lifecycle_iterations":100,"profile_iterations":10,"source":bool(os.environ.get("SPY_SOURCE")),
         "limits":"Mock UI/Lua host; actual-source constructors/SetBar, shaped list dispatcher/hover. GC-stopped churn is not retained/native/GPU memory.","modes":{}}
 with tempfile.TemporaryDirectory(prefix='spy-bench-') as tmp:
@@ -176,7 +178,7 @@ with tempfile.TemporaryDirectory(prefix='spy-bench-') as tmp:
         for number in range(args.trials):
             destination=tmp/f'{mode}-{number}.json'
             configured=prefix.replace('loadfile("EUIAddonSkins/Skins/Spy.lua")',f'loadfile({json.dumps(str(skin))})')
-            settings=f'BENCH_NATIVE={str(mode=="native").lower()};BENCH_ROWS={args.rows};BENCH_ITERATIONS={args.iterations};BENCH_OUTPUT={json.dumps(str(destination))};\n'
+            settings=f'BENCH_NATIVE={str(mode=="native").lower()};BENCH_STYLE={json.dumps(args.style)};BENCH_ROWS={args.rows};BENCH_ITERATIONS={args.iterations};BENCH_OUTPUT={json.dumps(str(destination))};\n'
             code=settings+configured+tail
             state=lib.luaL_newstate()
             lib.luaL_openlibs(state)
@@ -209,7 +211,9 @@ with tempfile.TemporaryDirectory(prefix='spy-bench-') as tmp:
                       for key in trials[0][name]} for name in trials[0] if name!="profiles"}
         profiles={name:{key:statistics.median(trial["profiles"][name][key] for trial in trials)
                         for key in trials[0]["profiles"][name]} for name in trials[0]["profiles"]}
-        report["modes"][mode]={"median":median,"profiles":profiles,"trials":trials}
+        report["modes"][mode]={"median":median,"profiles":profiles}
+        if not args.summary:
+            report["modes"][mode]["trials"]=trials
     report["candidate_minus_baseline"]={
         name:{key:report["modes"]["candidate"]["median"][name][key]-report["modes"]["baseline"]["median"][name][key]
               for key in report["modes"]["candidate"]["median"][name]}

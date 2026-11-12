@@ -24,6 +24,16 @@ local function Setup(modern, oldInfo, db)
         function f:SetHeight(ht) self.height=ht end
         function f:GetWidth() return self.width end
         function f:GetHeight() return self.height end
+        function f:GetBottom() return self.bottom or 200 end
+        function f:GetEffectiveScale() return self.scale or self.parent and self.parent:GetEffectiveScale() or 1 end
+        function f:SetFrameStrata(value) self.strata=value end
+        function f:SetClampedToScreen(value) self.clamped=value end
+        function f:IsMouseOver() return self.mouseOver==true end
+        function f:EnableKeyboard(value) self.keyboard=value end
+        function f:SetPropagateKeyboardInput(value) self.propagate=value end
+        function f:SetTexture(value) self.texture=value end
+        function f:SetRotation(value) self.rotation=value end
+        function f:SetVertexColor(...) self.vertex={...} end
         function f:GetStringHeight() return math.ceil(#self.text/math.max(1,math.floor(self.width/6)))*12 end
         function f:SetJustifyH() end
         function f:SetWordWrap() end
@@ -54,7 +64,11 @@ local function Setup(modern, oldInfo, db)
         function f:ClearFocus() self.focus=false end
         function f:SetHighlightTexture(texture) self.highlight=texture end
         function f:SetScrollChild(child) self.child=child end
-        function f:SetVerticalScroll(v) self.scroll=v end
+        function f:SetVerticalScroll(v)
+            local changed=self:GetVerticalScroll()~=v
+            self.scroll=v
+            if changed and self.scripts.OnVerticalScroll then self.scripts.OnVerticalScroll(self,v) end
+        end
         function f:GetVerticalScroll() return self.scroll or 0 end
         function f:GetVerticalScrollRange() return math.max(0,self.child.height-self.height) end
         function f:RegisterEvent(event) self.events[event]=true end
@@ -298,18 +312,90 @@ local function Controls(kind)
 end
 local function Click(label)
     local buttons=app:Find(function(f)
-        return f.kind=="Button" and f.label and f.label.text==label and (label~="KiwiFarm" or f.id=="KiwiFarm")
+        return f.kind=="Button" and not f.choice and f.label and f.label.text==label
+            and (label~="KiwiFarm" or f.id=="KiwiFarm")
     end,true)
     assert(#buttons==1,"missing or duplicate button: "..label)
     app:Press(buttons[1])
 end
 assert(ns.OpenAddonSettings("RXPGuides"))
 assert(writes==0 and appearanceDB.restedXP.style=="forever" and Controls("Slider")[1]:GetValue()==0)
-Click("EUI Forever"); assert(appearanceDB.restedXP.style=="auto")
-Click("Automatic"); assert(appearanceDB.restedXP.style=="standard")
-Click("EUI Standard"); assert(appearanceDB.restedXP.style=="auto","unsupported style was selectable")
+local function Popup()
+    return app:Find(function(f) return f.events.GLOBAL_MOUSE_DOWN end,true)[1]
+end
+local function MenuItem(popup,label)
+    for _,item in ipairs(popup.items) do
+        if item:IsVisible() and item.label.text==label then return item end
+    end
+end
+local function ChooseStyle(saved, choice)
+    Click(saved)
+    local popup=assert(Popup())
+    app:Press(assert(MenuItem(popup,choice)))
+    assert(not Popup() and not popup.row and next(popup.events)==nil,"selection retained popup state")
+    for _, item in ipairs(popup.items) do assert(not item.choice and not item:IsVisible()) end
+end
+Click("EUI Forever")
+local popup=assert(Popup())
+assert(popup.keyboard and popup.propagate and popup.clamped)
+assert(MenuItem(popup,"Automatic") and MenuItem(popup,"EUI Standard") and not MenuItem(popup,"EUI Forever"))
+assert(not MenuItem(popup,"Automatic").mark:IsVisible() and not MenuItem(popup,"EUI Standard").mark:IsVisible())
+assert(writes==0 and appearanceDB.restedXP.style=="forever", "opening changed the unsupported saved style")
+popup.scripts.OnKeyDown(popup,"A")
+assert(Popup()==popup and popup.propagate,"unrelated key swallowed")
+popup.scripts.OnKeyDown(popup,"ESCAPE")
+assert(not Popup() and not popup.propagate and writes==0,"Escape did not dismiss without saving")
+Click("EUI Forever")
+popup.mouseOver=true; app:Event("GLOBAL_MOUSE_DOWN","LeftButton")
+assert(Popup()==popup,"inside click dismissed")
+popup.mouseOver=false
+popup.row.control.mouseOver=true; app:Event("GLOBAL_MOUSE_DOWN","LeftButton")
+assert(Popup()==popup,"owner mouse down dismissed before click handler")
+popup.row.control.mouseOver=false
+app:Event("GLOBAL_MOUSE_DOWN","RightButton")
+assert(not Popup() and writes==0,"outside click did not dismiss without saving")
+
+ChooseStyle("EUI Forever","EUI Standard")
+assert(appearanceDB.restedXP.style=="standard","dropdown did not allow direct selection")
+Click("EUI Standard")
+assert(MenuItem(popup,"EUI Standard").mark:IsVisible())
+rxp.settingsAppearance.set("style","auto")
+assert(MenuItem(popup,"Automatic").mark:IsVisible() and not MenuItem(popup,"EUI Standard").mark:IsVisible(),
+    "native change failed to update the selection")
+assert(popup.row.description.text=="Effective: EUI Standard")
+app.combat=true; app:Event("PLAYER_REGEN_DISABLED")
+assert(not Popup())
+app.combat=false; app:Event("PLAYER_REGEN_ENABLED")
 EllesmereUI.IS_FOREVER=true
-Click("Automatic"); Click("EUI Standard"); assert(appearanceDB.restedXP.style=="forever")
+ChooseStyle("Automatic","EUI Forever")
+assert(appearanceDB.restedXP.style=="forever")
+app.opened:SetSize(330,400); app.opened.scale=.8
+Click("EUI Forever")
+assert(popup.row.description.text=="Effective: EUI Forever" and MenuItem(popup,"EUI Forever").mark:IsVisible())
+assert(popup:GetWidth()==popup.row.control:GetWidth() and popup:GetWidth()>=118)
+local owner=popup.row.control
+owner.bottom=1
+Click("EUI Forever"); assert(not Popup(),"owner click did not toggle popup")
+Click("EUI Forever"); assert(popup.point[1]=="BOTTOMRIGHT","scaled popup failed to open above the lower screen edge")
+owner.bottom=nil
+app:Event("UI_SCALE_CHANGED"); assert(not Popup(),"scale change kept stale popup anchors")
+Click("EUI Forever")
+local detailScroll=app:Find(function(f) return f.name=="EUIAddonSkinsOptionsScroll" end,true)[1]
+detailScroll:SetVerticalScroll(1)
+assert(not Popup(),"scroll kept detached popup")
+Click("EUI Forever"); app.opened:Hide()
+assert(not Popup() and next(popup.events)==nil,"closing canvas left an input listener")
+app.opened:Show()
+local warmFrames,warmArt,warmWrites=app.counts.frames,app.counts.art,writes
+local warmStart=os.clock()
+for _=1,200 do
+    Click("EUI Forever")
+    assert(Popup()==popup)
+    app:Event("GLOBAL_MOUSE_DOWN","LeftButton")
+end
+assert(app.counts.frames==warmFrames and app.counts.art==warmArt and writes==warmWrites)
+print(string.format("BENCH Skin Style dropdown: %d frames/%d regions settled, 200 open/dismiss cycles %.3f ms; zero new objects or preference writes",
+    warmFrames,warmArt,(os.clock()-warmStart)*1000))
 for _,percent in ipairs({75,100,0}) do
     Controls("Slider")[1]:SetValue(percent)
     assert(appearanceDB.restedXP.opacity==percent)
@@ -344,6 +430,63 @@ end
 assert(app.counts.frames==frames and app.counts.art==art and writes==before,"warm cycling allocated or wrote a preference")
 print(string.format("BENCH Phase 2 appearance: %d frames/%d regions settled, 200 three-provider navigation/reopen cycles %.3f ms; zero new objects or preference writes",
     frames, art, (os.clock()-started)*1000))
+-- The combined build registers Spy only when its adapter has activated.
+ns.skinCatalogByID.Spy={targets={"Spy"}}
+app.installed.Spy=true
+local spyValues = {style="auto", opacity=75}
+local spy = {id="Spy",active=true,settingsAppearance={
+    get=function(key) return spyValues[key] end,
+    set=function(key,value) spyValues[key]=value; ns.SettingsPreferenceChanged("Spy",key) end,
+    effectiveStyle=function() return spyValues.style=="forever" and EllesmereUI.IS_FOREVER and "EUI Forever" or "EUI Standard" end,
+    supportsForever=function() return EllesmereUI.IS_FOREVER end,
+    reset=function() spyValues.style="auto"; spyValues.opacity=75; ns.SettingsPreferenceChanged("Spy") end,
+}}
+table.insert(ns.modules,spy)
+ns.SettingsAvailabilityChanged("Spy")
+assert(not ns.OpenAddonSettings("Spy"), "installed load-on-demand Spy opened before load")
+app.loaded.Spy=true
+ns.SettingsAvailabilityChanged("Spy")
+Click("Spy")
+assert(#Controls("Slider")==1 and Controls("Slider")[1]:GetValue()==75 and #Controls("CheckButton")==0)
+EllesmereUI.IS_FOREVER=false
+Click("Automatic")
+assert(Popup()==popup and not MenuItem(popup,"EUI Forever"), "Spy offered unsupported Forever")
+app:Press(assert(MenuItem(popup,"EUI Standard")))
+assert(spyValues.style=="standard")
+spy.settingsAppearance.set("style","forever")
+Click("EUI Forever")
+assert(not MenuItem(popup,"EUI Forever") and spyValues.style=="forever", "saved native preference was overwritten")
+app:Event("GLOBAL_MOUSE_DOWN","LeftButton")
+EllesmereUI.IS_FOREVER=true
+ChooseStyle("EUI Forever","Automatic")
+ChooseStyle("Automatic","EUI Forever")
+Controls("Slider")[1]:SetValue(0); assert(spyValues.opacity==0)
+spy.settingsAppearance.set("opacity",100)
+assert(Controls("Slider")[1]:GetValue()==100)
+Click("Reset"); assert(spyValues.style=="auto" and Controls("Slider")[1]:GetValue()==75)
+assert(appearanceDB.rxp.arrow==false and appearanceDB.kiwiFarm.useEUIFont==false)
+
+local combinedFrames, combinedArt = app.counts.frames, app.counts.art
+local combinedWrites, combinedStart = writes, os.clock()
+for _=1,200 do
+    Click("RestedXP"); Click("Spy")
+    app.opened:Hide(); app.opened:Show()
+end
+local combinedElapsed = (os.clock()-combinedStart)*1000
+assert(app.counts.frames==combinedFrames and app.counts.art==combinedArt and writes==combinedWrites,
+    "Spy/RestedXP navigation allocated or saved preferences")
+app.opened:Hide()
+local closedReads, closedWrites = app.counts.info, app.counts.writes
+for _=1,1000 do
+    ns.SettingsPreferenceChanged("Spy","style")
+    ns.SettingsPreferenceChanged("RXPGuides","opacity")
+    ns.SettingsAvailabilityChanged("Spy")
+end
+assert(next(app.opened.events)==nil and app.counts.info==closedReads and app.counts.writes==closedWrites,
+    "closed combined panel processed notifications")
+print(string.format("BENCH Combined Spy/RestedXP: %d frames/%d regions settled, 200 navigation/reopen cycles %.3f ms; zero new objects or preference writes, zero closed reads or writes",
+    combinedFrames, combinedArt, combinedElapsed))
+
 local legacy=Setup(false,true,nil)
 SlashCmdList.EUIDETAILS()
 assert(#legacy.categories==1 and legacy.opened.name=="EUI AddonSkins" and legacy.opened.menus,

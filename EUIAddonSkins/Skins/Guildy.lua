@@ -22,26 +22,29 @@ local function Box(C, f)
     local entry = boxes[f]
     if not entry then
         entry = {}; boxes[f] = entry
-        local painting = false
         entry.border = function(_, r, g, b)
-            if painting or not C.H.Allowed(f) then return end
-            if r then entry.lit = r >= GOLD_LIT and (g or 0) >= GOLD_LIT * 0.8 end
-            painting = true
+            if entry.painting or not C.H.Allowed(f) then return end
+            if r then entry.lit = r >= GOLD_LIT and (g or 0) >= GOLD_LIT * 0.8 and (b or 0) < r * 0.8 end
+            entry.painting = true
             if entry.lit then local ar, ag, ab = S.GetAccentColor(); f:SetBackdropBorderColor(ar, ag, ab, 1)
             else f:SetBackdropBorderColor(0.055, 0.055, 0.055, 1) end
-            painting = false
+            entry.painting = false
         end
         C.H.Hook(f, "SetBackdropBorderColor", entry.border)
         C.H.Hook(f, "SetBackdrop", function(_, value)
-            if value and value.edgeFile ~= WHITE then C.H.Safe(Box, C, f) end
+            if value and value.edgeFile ~= WHITE and not entry.painting then C.H.Safe(Box, C, f) end
         end)
-        local r = f.GetBackdropBorderColor and f:GetBackdropBorderColor()
-        entry.lit = r and r >= GOLD_LIT or false
+        local r, g, b = f:GetBackdropBorderColor()
+        entry.lit = r ~= nil and r >= GOLD_LIT and (g or 0) >= GOLD_LIT * 0.8 and (b or 0) < r * 0.8
     end
     local backdrop = f:GetBackdrop()
     if backdrop and backdrop.edgeFile ~= WHITE then
+        -- BackdropTemplateMixin:SetBackdrop resets the border to white through
+        -- SetBackdropBorderColor; that reset is ours, not a Guildy highlight.
+        entry.painting = true
         f:SetBackdrop({bgFile = WHITE, edgeFile = WHITE, edgeSize = 1,
             insets = {left = 1, right = 1, top = 1, bottom = 1}})
+        entry.painting = false
     end
     local r, g, b = S.GetPanelColor()
     f:SetBackdropColor(math.min(r + 0.02, 1), math.min(g + 0.02, 1), math.min(b + 0.02, 1), 0.9)
@@ -55,6 +58,37 @@ local function Segment(C, button)
     local label = button.GetFontString and button:GetFontString()
     if on then H.Font(label, 1, 1, 1) end
     if S.StateButtonLabel and not on then S.StateButtonLabel(button) end
+end
+-- The chat timeline rail (UI/ChatTimeline.lua): a 2px gold track plus a child
+-- thumb button (black edge, gold fill, highlight). Returns its textures once found.
+local rails = setmetatable({}, {__mode = "k"})
+local function Rail(C, f)
+    if rails[f] ~= nil then return rails[f] end
+    local H, found = C.H, false
+    local regions = H.Regions(f)
+    local track = #regions == 1 and H.Texture(regions[1])
+    if track and track:GetDrawLayer() == "BACKGROUND" and track:GetWidth() == 2 then
+        for _, child in ipairs(H.Children(f)) do
+            if H.Allowed(child) and child:GetObjectType() == "Button" then
+                local layers = {}
+                for _, region in ipairs(H.Regions(child)) do
+                    if H.Texture(region) then layers[region:GetDrawLayer()] = region end
+                end
+                if layers.BACKGROUND and layers.ARTWORK and layers.HIGHLIGHT then
+                    found = {track = track, fill = layers.ARTWORK, hover = layers.HIGHLIGHT, thumb = child}
+                    break
+                end
+            end
+        end
+    end
+    rails[f] = found
+    return found
+end
+local function PaintRail(C, rail)
+    local r, g, b = C.S.GetAccentColor()
+    rail.track:SetColorTexture(r, g, b, 0.35)
+    rail.fill:SetColorTexture(r, g, b, 1)
+    rail.hover:SetColorTexture(1, 1, 1, 0.25)
 end
 local function SegmentGroup(button)
     local group = button.GetParent and button:GetParent()
@@ -140,6 +174,8 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
             -- Only real template buttons are controls. Guildy's custom buttons are
             -- data: sort headers, overview cells, bar rows, cards and timeline marks.
             if not (f.GetFontString and f:GetFontString()) then
+                local rail = Rail(C, f)
+                if rail then PaintRail(C, rail); return true end
                 -- The window's resize grip (W.ResizeGrip) is its only direct anonymous button.
                 if main and f.GetParent and f:GetParent() == main then H.Resize(f) end
                 return true

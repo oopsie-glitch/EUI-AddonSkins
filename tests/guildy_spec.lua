@@ -71,7 +71,8 @@ local function frame(kind, name, parent)
     function f:RegisterEvent(e) self.events = self.events or {}; self.events[e] = true end
     function f:SetScript(e, fn) self.hooks[e] = fn end
     function f:GetBackdrop() return self.backdrop end
-    function f:SetBackdrop(b) assert(not combat, 'styled during combat'); self.backdrop = b end
+    -- BackdropTemplateMixin:SetBackdrop reapplies a white border through SetBackdropBorderColor.
+    function f:SetBackdrop(b) assert(not combat, 'styled during combat'); self.backdrop = b; if b then self:SetBackdropBorderColor(1, 1, 1, 1) end end
     function f:GetBackdropColor() return table.unpack(self.color or {0, 0, 0, 1}) end
     function f:GetBackdropBorderColor() return table.unpack(self.border or {0, 0, 0, 1}) end
     function f:SetBackdropColor(...) self.color = {...} end
@@ -185,6 +186,14 @@ local cell = frame('Button', nil, panel); cell.Text = label(cell, '12')
 local heat = cell:CreateTexture(); heat:SetColorTexture(0.2, 0.8, 0.1, 0.6)
 local header = frame('Button', nil, panel); header.Text = label(header, 'Name')
 header:SetScript('OnClick', function() header.sorted = true end)
+-- the chat timeline rail: 2px gold track and a gold thumb button
+local rail = frame('Button', nil, panel)
+local railTrack = rail:CreateTexture(); railTrack.layer = 'BACKGROUND'; railTrack:SetWidth(2); railTrack:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 0.35)
+local thumb = frame('Button', nil, rail)
+local thumbEdge = thumb:CreateTexture(); thumbEdge.layer = 'BACKGROUND'; thumbEdge:SetColorTexture(0, 0, 0, 1)
+local thumbFill = thumb:CreateTexture(); thumbFill:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 1)
+local thumbHi = thumb:CreateTexture(); thumbHi.layer = 'HIGHLIGHT'; thumbHi:SetColorTexture(1, 0.82, 0, 0.35)
+rail:SetScript('OnClick', function() rail.jumped = true end)
 -- the Blizzard editor is lent into this panel
 container.parent = panel; panel.children[#panel.children + 1] = container
 
@@ -207,7 +216,10 @@ assert(not blizzardEdit.input and not blizzardAccept.button and blizzardAccept.l
 
 -- Boxes keep a backdrop so Guildy's own border colours still mean something.
 assert(box.backdrop.edgeFile == 'Interface\\Buttons\\WHITE8X8' and box.backdrop.edgeSize == 1, 'box not flattened')
-assert(box.border[1] == 0.055 and box.color[1] > 0.03 and box.color[4] == 0.9, 'resting box colours')
+assert(box.border[1] == 0.055 and box.color[1] > 0.03 and box.color[4] == 0.9, 'resting box lit by the backdrop reset or wrong colours')
+assert(railTrack.color[1] == accent and railTrack.color[4] == 0.35 and thumbFill.color[1] == accent, 'timeline rail kept gold')
+assert(thumbEdge.color[1] == 0 and thumbEdge.alpha == 1 and not rail.button and not thumb.button, 'timeline rail art replaced')
+rail.hooks.OnClick(rail); assert(rail.jumped, 'timeline rail action lost')
 box:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
 assert(box.border[1] == accent and box.border[4] == 1, 'selected card border did not use the accent')
 box:SetBackdropBorderColor(GOLD[1] * 0.5, GOLD[2] * 0.5, GOLD[3] * 0.5)
@@ -272,6 +284,7 @@ flush(); assert(waiting.button, 'combat recovery missed')
 box:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
 accent = 0.9; for _, look in ipairs(looks) do look() end; flush()
 assert(box.border[1] == 0.9, 'accent change not applied to a lit border')
+assert(railTrack.color[1] == 0.9 and thumbFill.color[1] == 0.9, 'accent change not applied to the timeline rail')
 
 -- Disabled skin stops processing.
 enabled = false
@@ -279,4 +292,4 @@ box:SetBackdropBorderColor(GOLD[1] * 0.5, GOLD[2] * 0.5, GOLD[3] * 0.5)
 assert(box.border[1] == GOLD[1] * 0.5, 'disabled skin still repainted borders')
 local after = Button(panel, 'Late'); modules.Guildy.refresh(); flush()
 assert(not after.button, 'disabled skin styled new controls')
-print('PASS: Guildy lazy window, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')
+print('PASS: Guildy lazy window, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')

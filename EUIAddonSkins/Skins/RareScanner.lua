@@ -24,14 +24,10 @@ end, function(S, module)
         return true
     end
     local function BackgroundOpacity()
-        EUIAddonSkinsDB = EUIAddonSkinsDB or {}
-        local db = EUIAddonSkinsDB
-        db.rareScanner = db.rareScanner or {}
-        local value = db.rareScanner.backgroundOpacity
-        if type(value) ~= "number" or value ~= value then value = 0.8 end
-        value = math.max(0, math.min(1, value))
-        db.rareScanner.backgroundOpacity = value
-        return value
+        local settings = EUIAddonSkinsDB and EUIAddonSkinsDB.rareScanner
+        local value = type(settings) == "table" and settings.backgroundOpacity
+        if type(value) ~= "number" or value ~= value then return 0.8 end
+        return math.max(0, math.min(1, value))
     end
     local function ApplyAlertOpacity()
         if not Ready() then return end
@@ -40,6 +36,26 @@ end, function(S, module)
         for _, texture in pairs(alertBackgrounds) do texture:SetColorTexture(r, g, b, opacity) end
         for _, texture in pairs(alertHovers) do texture:SetColorTexture(1, 1, 1, 0.06 * opacity) end
     end
+    local function GetOpacity()
+        return math.floor(BackgroundOpacity() * 100 + 0.5)
+    end
+    local function SetOpacity(value)
+        if type(value) ~= "number" or value ~= value then return end
+        EUIAddonSkinsDB = EUIAddonSkinsDB or {}
+        local db = EUIAddonSkinsDB
+        if type(db.rareScanner) ~= "table" then db.rareScanner = {} end
+        local alpha = math.max(0, math.min(100, value)) / 100
+        if db.rareScanner.backgroundOpacity == alpha then return end
+        db.rareScanner.backgroundOpacity = alpha
+        ApplyAlertOpacity()
+        if ns.SettingsPreferenceChanged then ns.SettingsPreferenceChanged("RareScanner", "opacity") end
+    end
+    local opacityRegistry
+    module.settingsAppearance = {get=GetOpacity, set=function(_, value)
+        SetOpacity(value)
+        if opacityRegistry and opacityRegistry.NotifyChange then opacityRegistry:NotifyChange("RareScanner Display") end
+    end}
+
     local function OpacityOptions()
         local registry = LibStub and LibStub("AceConfigRegistry-3.0", true)
         if not registry or type(registry.GetOptionsTable) ~= "function" then return end
@@ -49,15 +65,11 @@ end, function(S, module)
             type = "range", name = "Background opacity", order = 7.5, width = "full",
             desc = "Alert and navigation button background opacity (default: 80%). Text, icons and models stay fully visible.",
             min = 0, max = 100, step = 1, bigStep = 5,
-            get = function() return math.floor(BackgroundOpacity() * 100 + 0.5) end,
-            set = function(_, value)
-                if type(value) ~= "number" or value ~= value then return end
-                BackgroundOpacity()
-                EUIAddonSkinsDB.rareScanner.backgroundOpacity = math.max(0, math.min(100, value)) / 100
-                ApplyAlertOpacity() -- No scans, font writes or target actions while dragging.
-            end,
+            get = GetOpacity,
+            set = function(_, value) SetOpacity(value) end,
             disabled = function() return not ns.IsEnabled(module) end,
         }
+        opacityRegistry = registry
         if registry.NotifyChange then registry:NotifyChange("RareScanner Display") end
     end
     local function OptionID(id)

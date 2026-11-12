@@ -1447,7 +1447,37 @@ ForeverDungeonJournal_NS = {THEMES = {dungeon = originalTheme}, ToggleJournal = 
     local closeClicks = 0
     close.onClick = function() closeClicks = closeClicks + 1 end
     root.close, root.closeClicks = close, function() return closeClicks end
-    root.children = {root.rightPanel, close}
+    local share, map = frame('Button'), frame('Button')
+    local backdrop = {bgFile = 'Interface\\Buttons\\WHITE8X8', edgeFile = 'native-tooltip-border', edgeSize = 12}
+    share:SetBackdrop(backdrop); map:SetBackdrop(backdrop)
+    share.highlight = region('native-quest-highlight', 'HIGHLIGHT')
+    map.highlight = region('native-map-highlight', 'HIGHLIGHT')
+    function share:GetHighlightTexture() return self.highlight end
+    function map:GetHighlightTexture() return self.highlight end
+    function share:SetBackdropColor(...) self.fill = {...} end
+    function share:GetBackdropColor() return table.unpack(self.fill or {1, 1, 1, 1}) end
+    share.text = frame('FontString')
+    function share.text:GetTextColor() return table.unpack(self.textColor or {1, 1, 1, 1}) end
+    function share.text:SetTextColor(...) self.textColor = {...} end
+    function share:IsEnabled() return not self.disabled end
+    function share:Enable() self.disabled = false end
+    function share:Disable() self.disabled = true end
+    function share:PaintNative(shareable, canShare)
+        self.shareable, self.canShare = shareable, canShare
+        if shareable then self:SetBackdropColor(0.10, 0.29, 0.14, 1)
+        else self:SetBackdropColor(0.16, 0.16, 0.16, 1) end
+    end
+    function share:NativeEnter()
+        if self.shareable then self:SetBackdropColor(0.13, 0.40, 0.19, 1); return 'Shareable Quest' end
+        self:SetBackdropColor(0.22, 0.22, 0.22, 1); return 'Not Shareable'
+    end
+    function share:NativeLeave() self:PaintNative(self.shareable, self.canShare) end
+    function share:NativeClick()
+        if self:IsEnabled() and self.canShare then self.clicks = (self.clicks or 0) + 1 end
+    end
+    share:PaintNative(true, true)
+    root.questShareButton, root.questMapButton = share, map
+    root.children = {root.rightPanel, close, share, map}
     root.dungeonMapArtHolder = frame(); root.dungeonMapArtHolder.children = {frame('EditBox')}
     root.children[#root.children + 1] = root.dungeonMapArtHolder
     ForeverDungeonJournalFrame = root
@@ -1462,6 +1492,32 @@ assert(ForeverDungeonJournalFrame.portrait.alpha == 0.8, 'boss portrait faded')
 assert(ForeverDungeonJournalFrame.close.euiClose, 'numeric-texture close button missed')
 ForeverDungeonJournalFrame.close.onClick(); assert(ForeverDungeonJournalFrame.closeClicks() == 1, 'close action lost')
 assert(edits == 1, 'map contents must not be scanned')
+do
+local share, map = ForeverDungeonJournalFrame.questShareButton, ForeverDungeonJournalFrame.questMapButton
+local shareBackdrop = share:GetBackdrop()
+assert(shareBackdrop and shareBackdrop.edgeSize == 1 and shareBackdrop.bgFile == 'Interface\\Buttons\\WHITE8X8',
+    'Share needs a thin EUI edge and its native fill surface')
+assert(share.fill[2] > share.fill[1] and share.text:GetTextColor() > 0.8 and share.highlight:GetAlpha() == 0.8,
+    'initial Shareable state lost its green fill, readable text or native highlight')
+assert(map:GetBackdrop() == nil and map.highlight:GetAlpha() == 0, 'Map action received Share-specific styling')
+assert(share:NativeEnter() == 'Shareable Quest' and share.fill[2] == 0.40)
+share:NativeLeave(); assert(share.fill[2] == 0.29)
+share:NativeClick(); assert(share.clicks == 1)
+share:PaintNative(false, false)
+assert(share:IsEnabled() and share.fill[1] == share.fill[2] and share.fill[2] == share.fill[3])
+assert(share:NativeEnter() == 'Not Shareable' and share.fill[2] == 0.22)
+share:NativeClick(); share:NativeLeave()
+assert(share.clicks == 1 and share.fill[2] == 0.16)
+share:PaintNative(true, false)
+assert(share:NativeEnter() == 'Shareable Quest' and share.fill[2] > share.fill[1])
+share:NativeClick(); share:NativeLeave(); assert(share.clicks == 1, 'shareability bypassed native click eligibility')
+share:Disable(); assert(not share:IsEnabled() and share.text:GetTextColor() == 0.5)
+share:Enable(); assert(share:IsEnabled() and share.text:GetTextColor() > 0.8)
+local setShareBackdrop = share.SetBackdrop
+modules.ForeverDungeonJournal.refresh(); flush()
+assert(share:GetBackdrop() == shareBackdrop and share.SetBackdrop == setShareBackdrop and share.fill[2] == 0.29,
+    'refresh replaced Share styling or native state')
+end
 local icon = region('Interface\\Icons\\INV_Misc_Book_09', 'ARTWORK')
 ForeverDungeonJournalSettings = frame(); ForeverDungeonJournalSettings.regions = {icon}
 modules.ForeverDungeonJournal.refresh(); flush()

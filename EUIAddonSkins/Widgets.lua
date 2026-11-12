@@ -1,5 +1,42 @@
 local ADDON, ns = ...
 
+-- Own only the concrete font tuple of explicitly supplied FontStrings.
+-- A native font write while the override is active becomes the new restore point.
+function ns.CreateFontOverride()
+    local states = setmetatable({}, {__mode = "k"})
+    local function Apply(text, face, flags)
+        if not text or not text.GetFont or not text.SetFont then return end
+        local state = states[text]
+        if state and state.writing then return end
+        if not state and not face then return end
+        local path, size, currentFlags = text:GetFont()
+        if not path or not size then return end
+        currentFlags = currentFlags or ""
+        if not state then
+            state = {}
+            states[text] = state
+        end
+        local owned = state.face == path and state.size == size and state.flags == currentFlags
+        if not owned then
+            state.nativePath, state.nativeSize, state.nativeFlags = path, size, currentFlags
+        end
+        local currentSize = size
+        if face then
+            flags = flags or ""
+        else
+            face, size, flags = state.nativePath, state.nativeSize, state.nativeFlags
+        end
+        if path ~= face or currentSize ~= size or currentFlags ~= flags then
+            state.writing = true
+            local applied = text:SetFont(face, size, flags)
+            state.writing = false
+            if applied == false then return end
+        end
+        state.face, state.size, state.flags = face, size, flags
+    end
+    return Apply, states
+end
+
 -- Scoped utilities for integrations without public frame factories. Never scan UIParent.
 function ns.CreateSkinHelper(S, module)
     local H = {}

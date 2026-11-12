@@ -336,6 +336,16 @@ end, function(S, module)
         for _, name in ipairs({"SetNormalTexture", "SetPushedTexture", "SetDisabledTexture", "SetHighlightTexture", "Enable", "Disable"}) do H.Hook(button, name, Paint) end
         H.Script(button, "OnClick", QuestDone)
     end
+    local function QuestShareAction(button)
+        -- The journal paints shareability and hover into this backdrop.
+        H.ThinBackdrop(button)
+        local function PaintLabel()
+            Readable((button.GetFontString and button:GetFontString()) or button.text or button.Text, "action", button)
+        end
+        PaintLabel()
+        H.Hook(button, "Enable", PaintLabel); H.Hook(button, "Disable", PaintLabel)
+        H.Script(button, "OnClick", QuestDone)
+    end
     ModeTab = function(tab)
         if not H.Allowed(tab) then return end
         -- Keep the journal's foreground icon; the API only preserves .Icon.
@@ -369,6 +379,10 @@ end, function(S, module)
             ModeTab(f); return true
         end
         if root then
+            if f == root.questShareButton and f.GetBackdrop and f:GetBackdrop() then
+                QuestShareAction(f)
+                return true
+            end
             for _, key in ipairs({"questMapButton", "questChainButton", "questStartLinkButton", "questLeadsToButton", "questShareButton"}) do
                 if f == root[key] then QuestAction(f); return true end
             end

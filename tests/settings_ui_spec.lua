@@ -344,6 +344,33 @@ end
 assert(app.counts.frames==frames and app.counts.art==art and writes==before,"warm cycling allocated or wrote a preference")
 print(string.format("BENCH Phase 2 appearance: %d frames/%d regions settled, 200 three-provider navigation/reopen cycles %.3f ms; zero new objects or preference writes",
     frames, art, (os.clock()-started)*1000))
+-- The combined build registers Spy only when its adapter has activated.
+ns.skinCatalogByID.Spy={targets={"Spy"}}
+app.installed.Spy=true
+local spyValues = {style="auto", opacity=75}
+local spy = {id="Spy",active=true,settingsAppearance={
+    get=function(key) return spyValues[key] end,
+    set=function(key,value) spyValues[key]=value; ns.SettingsPreferenceChanged("Spy",key) end,
+    effectiveStyle=function() return spyValues.style=="forever" and EllesmereUI.IS_FOREVER and "EUI Forever" or "EUI Standard" end,
+    supportsForever=function() return EllesmereUI.IS_FOREVER end,
+    reset=function() spyValues.style="auto"; spyValues.opacity=75; ns.SettingsPreferenceChanged("Spy") end,
+}}
+table.insert(ns.modules,spy)
+ns.SettingsAvailabilityChanged("Spy")
+assert(not ns.OpenAddonSettings("Spy"), "installed load-on-demand Spy opened before load")
+app.loaded.Spy=true
+ns.SettingsAvailabilityChanged("Spy")
+Click("Spy")
+assert(#Controls("Slider")==1 and Controls("Slider")[1]:GetValue()==75 and #Controls("CheckButton")==0)
+EllesmereUI.IS_FOREVER=false
+Click("Automatic"); Click("EUI Standard")
+assert(spyValues.style=="forever", "Spy's native Retail preference options changed")
+Controls("Slider")[1]:SetValue(0); assert(spyValues.opacity==0)
+spy.settingsAppearance.set("opacity",100)
+assert(Controls("Slider")[1]:GetValue()==100)
+Click("Reset"); assert(spyValues.style=="auto" and Controls("Slider")[1]:GetValue()==75)
+assert(appearanceDB.rxp.arrow==false and appearanceDB.kiwiFarm.useEUIFont==false)
+
 local legacy=Setup(false,true,nil)
 SlashCmdList.EUIDETAILS()
 assert(#legacy.categories==1 and legacy.opened.name=="EUI AddonSkins" and legacy.opened.menus,

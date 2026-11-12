@@ -465,21 +465,24 @@ local function ForeverAvailable()
     return _G.EllesmereUI and _G.EllesmereUI.IS_FOREVER == true
 end
 
-local style = Appearance("choice", "style", "Skin Style")
-style.values = {
-    {value="auto", label="Automatic"},
-    {value="standard", label="EUI Standard"},
-    {value="forever", label="EUI Forever", available=ForeverAvailable},
-}
-style.status = function()
-    local handler = Handler()
-    if not handler then return "The effective style is available when the skin is active." end
-    local effective = handler.effectiveStyle()
-    if style.get() == "forever" and not ForeverAvailable() then
-        return "Effective: " .. effective .. ". The saved EUI Forever choice requires the Forever client."
+local function SkinStyle(available, unsupportedText)
+    local option = Appearance("choice", "style", "Skin Style")
+    option.values = {
+        {value="auto", label="Automatic"},
+        {value="standard", label="EUI Standard"},
+        {value="forever", label="EUI Forever", available=available},
+    }
+    option.status = function()
+        local handler = Handler()
+        if not handler then return "The effective style is available when the skin is active." end
+        local text = "Effective: " .. handler.effectiveStyle()
+        local supported = handler.supportsForever or available
+        if option.get() == "forever" and supported and not supported() then return text .. ". " .. unsupportedText end
+        return text
     end
-    return "Effective: " .. effective
+    return option
 end
+local style = SkinStyle(ForeverAvailable, "The saved EUI Forever choice requires the Forever client.")
 local rxp = providers.RXPGuides
 local rxpOpacity = Appearance("slider", "opacity", "Background Opacity", "Changes the guide background while leaving text and controls visible.")
 rxpOpacity.dependsOn = "style"
@@ -510,6 +513,13 @@ ns.RegisterSettingsProvider("KiwiFarm", {label="KiwiFarm",
     Appearance("slider", "menuOpacity", "Menu Background Opacity"),
     Appearance("toggle", "accent", "Show Accent Line"),
 }, reset=Reset("Restores KiwiFarm's AddonSkins appearance defaults.")})
+
+local spyReset = Reset("Restores Spy's AddonSkins style and opacity. Keeps native Spy settings.")
+spyReset.label = "Reset Appearance"
+ns.RegisterSettingsProvider("Spy", {label="Spy", options={
+    SkinStyle(nil, "EUI Forever rendering is unavailable on this client or EUI version."),
+    Appearance("slider", "opacity", "Background Opacity", "Changes only the Forever decorative background. Spy controls its own bar textures and window fading."),
+}, reset=spyReset})
 
 local login = CreateFrame("Frame")
 login:RegisterEvent("PLAYER_LOGIN")

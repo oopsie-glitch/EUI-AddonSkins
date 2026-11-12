@@ -305,7 +305,9 @@ Click("Reset"); assert(appearanceDB.rxp.arrow==false and not appearanceDB.rested
 Click("KiwiFarm")
 assert(#Controls("Slider")==2 and not Controls("Slider")[1].enabled)
 assert(#Controls("CheckButton")==2 and not Controls("CheckButton")[1].checked)
-local source = app:Find(function(f) return f.kind=="Button" and f.label and f.label.text=="KiwiFarm" end,true)[2]
+local source = app:Find(function(f)
+    return f.kind=="Button" and f.label and f.label.text=="KiwiFarm" and f.id~="KiwiFarm"
+end,true)[1]
 app:Press(source)
 assert(kiwiValues.opacitySource=="custom" and Controls("Slider")[1].enabled)
 app.combat=true; app:Event("PLAYER_REGEN_DISABLED")

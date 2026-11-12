@@ -1,0 +1,62 @@
+name: Final hosted settings and adapter audit
+on:
+  push:
+    branches: [audit/settings-spy-rxp-final]
+permissions:
+  contents: read
+jobs:
+  benchmarks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install host Lua
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+          uname -m
+          dpkg-query -W liblua5.4-0
+      - name: Pin Spy source and historical benchmark
+        run: |
+          python3 - <<'PY'
+          from hashlib import sha256
+          from io import BytesIO
+          from pathlib import Path
+          from urllib.request import urlopen
+          from zipfile import ZipFile
+          def download(url):
+              with urlopen(url, timeout=30) as response:
+                  return response.read()
+          data = download('https://edge.forgecdn.net/files/9501/070/Spy-1.3.8-forever5.zip')
+          assert sha256(data).hexdigest() == 'f0373e3cb8a31864d41532e08fb5748f42f0a76f45b2c4c9b0bbd92efe14fbec'
+          path = Path('/tmp/spy-upstream')
+          path.mkdir()
+          with ZipFile(BytesIO(data)) as z:
+              for name in ('Spy.lua', 'MainWindow.lua', 'Colors.lua', 'Widgets.lua'):
+                  (path / name).write_bytes(z.read('Spy/' + name))
+          runner = download('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/17916c43d95e108c6f4e082e83b8556a9bbffadc/benchmarks/run_spy.py')
+          Path('/tmp/spy-bench.py').write_bytes(runner)
+          PY
+      - name: Compare standalone and combined Spy adapters
+        run: |
+          SPY_SOURCE=/tmp/spy-upstream python3 /tmp/spy-bench.py --baseline 17916c43d95e108c6f4e082e83b8556a9bbffadc --style forever --trials 5 --iterations 1000 --rows 40 --summary > /tmp/spy-forever.json
+          SPY_SOURCE=/tmp/spy-upstream python3 /tmp/spy-bench.py --baseline 17916c43d95e108c6f4e082e83b8556a9bbffadc --style standard --trials 5 --iterations 1000 --rows 40 --summary > /tmp/spy-standard.json
+          python3 - <<'PY'
+          from pathlib import Path
+          for style in ('forever','standard'):
+              print('SPY AUDIT',style,Path('/tmp/spy-'+style+'.json').read_text().replace('\n',' '))
+          PY
+      - name: Compare published RestedXP audit baseline and combined adapter
+        run: |
+          git fetch --no-tags --depth=1 origin f71c8a8cf30c43aa984d69d43d58e7de46789aa5
+          python3 benchmarks/run_rxp.py --baseline f71c8a8cf30c43aa984d69d43d58e7de46789aa5 --output /tmp/rxp-before.json > /dev/null
+          python3 benchmarks/run_rxp.py --output /tmp/rxp-after.json > /dev/null
+          python3 - <<'PY'
+          import json
+          for name in ('before','after'):
+              with open('/tmp/rxp-'+name+'.json') as f:
+                  data = json.load(f)
+              print('RXP AUDIT',name,json.dumps(data['medians']))
+          PY

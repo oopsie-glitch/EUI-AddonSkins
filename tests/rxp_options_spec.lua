@@ -23,6 +23,9 @@ local function texture(kind, parent)
     function t:GetAlpha() return self.alpha end
     function t:SetAlpha(v) self.alpha = v end
     function t:GetDrawLayer() return self.layer or 'ARTWORK' end
+    function t:SetBlendMode(mode) self.blend=mode end
+    function t:SetHorizTile(value) self.horizontalTile=value end
+    function t:SetVertTile(value) self.verticalTile=value end
     function t:SetColorTexture(...) self.color = {...}; self.path = 'solid' end
     function t:SetVertexColor(...) self.color = {...} end
     function t:SetPoint(...) self.points[#self.points + 1] = {...} end
@@ -59,6 +62,10 @@ local function frame(kind, name, parent)
     local f = {kind = kind or 'Frame', name = name, parent = parent, regions = {}, children = {}, hooks = {}}
     function f:GetObjectType() return self.kind end
     function f:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end
+    function f:SetAllPoints(target) self.allPoints=target end
+    function f:EnableMouse(value) self.mouse=value end
+    function f:SetFrameLevel(value) self.level=value end
+    function f:SetShown(value) self.hidden=not value end
     function f:ClearAllPoints() self.points = {} end
     function f:SetSize(w, h) self.width, self.height = w, h end
     function f:SetWidth(w) self.width = w end
@@ -726,5 +733,23 @@ flush();assert(scans==0,'reading the existing V2 guide triggers scans')
 for i=1,100 do assert(v2Window:RefreshLayout()=='refresh-native')end
 flush();assert(scans==1,'V2 resize burst did not stay within one guide-window scan')
 print('BENCH rxp_v2_known_getter scans=0 callbacks=100; layout scans='..scans..' callbacks=100')
+local appearance = m.settingsAppearance
+local oldEUI = EllesmereUI
+EllesmereUI = {IS_FOREVER=true}
+local savedArrow = EUIAddonSkinsDB.rxp.arrow
+appearance.reset(); flush()
+assert(EUIAddonSkinsDB.restedXP==nil and EUIAddonSkinsDB.rxp.arrow==savedArrow)
+assert(appearance.get("style")=="auto" and appearance.effectiveStyle()=="EUI Standard")
+appearance.set("style","forever"); flush()
+assert(appearance.effectiveStyle()=="EUI Forever" and appearance.get("opacity")==75)
+for _, percent in ipairs({0, 75, 100}) do
+    appearance.set("opacity",percent); flush()
+    assert(appearance.get("opacity")==percent and EUIAddonSkinsDB.restedXP.opacity==percent/100)
+end
+EllesmereUI.IS_FOREVER=false
+assert(appearance.get("style")=="forever" and appearance.effectiveStyle()=="EUI Standard")
+assert(EUIAddonSkinsDB.restedXP.style=="forever" and EUIAddonSkinsDB.rxp.arrow==savedArrow)
+appearance.reset(); flush()
+EllesmereUI = oldEUI
 ns.CreateSkinHelper=baseScan;LibStub=previousLibStub
 print('PASS: RXP page-local options, native actions/values/branding, dropdown pool cleanup, input alignment, no warm objects/font writes, themes, disabled state and combat deferral')

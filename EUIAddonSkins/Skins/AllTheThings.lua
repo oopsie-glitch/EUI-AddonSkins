@@ -15,14 +15,10 @@ end, function(S, module)
     local PaintWindow, BindWindow, BindObject, PaintObject, Refresh, PaintAuctionTab, BindAuction
     local auctionWindow, auctionTabs = nil, {}
     local function Opacity()
-        EUIAddonSkinsDB = EUIAddonSkinsDB or {}
-        local db = EUIAddonSkinsDB
-        db.allTheThings = db.allTheThings or {}
-        local value = db.allTheThings.opacity
-        if type(value) ~= "number" or value ~= value then value = 0.65 end
-        value = math.max(0, math.min(1, value))
-        db.allTheThings.opacity = value
-        return value
+        local settings = EUIAddonSkinsDB and EUIAddonSkinsDB.allTheThings
+        local value = type(settings) == "table" and settings.opacity
+        if type(value) ~= "number" or value ~= value then return 0.65 end
+        return math.max(0, math.min(1, value))
     end
     local events = CreateFrame("Frame")
     events:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -294,6 +290,25 @@ end, function(S, module)
         local value = Opacity()
         for _, surface in pairs(surfaces) do surface.layer:SetAlpha(value) end
     end
+    local syncNativeOpacity
+    local function GetOpacity()
+        return math.floor(Opacity() * 100 + 0.5)
+    end
+    local function SetOpacity(value)
+        value = math.max(0, math.min(100, math.floor(value + 0.5)))
+        EUIAddonSkinsDB = EUIAddonSkinsDB or {}
+        local db = EUIAddonSkinsDB
+        if type(db.allTheThings) ~= "table" then db.allTheThings = {} end
+        if db.allTheThings.opacity == value / 100 then return end
+        db.allTheThings.opacity = value / 100
+        Run(ApplyOpacity)
+        if ns.SettingsPreferenceChanged then ns.SettingsPreferenceChanged("AllTheThings", "opacity") end
+    end
+    module.settingsAppearance = {get=GetOpacity, set=function(_, value)
+        SetOpacity(value)
+        if syncNativeOpacity then syncNativeOpacity() end
+    end}
+
     local function AppearanceOptions()
         if type(app.Settings) ~= "table" or type(app.Settings.CreateOptionsPage) ~= "function" then return end
         local page = app.Settings:CreateOptionsPage("EUI AddonSkins")
@@ -307,17 +322,19 @@ end, function(S, module)
         local description = page:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
         description:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", 0, -22)
         description:SetText("Window background opacity. Text, icons and controls stay fully visible.")
+        local syncing
         local function Sync()
-            local percent = math.floor(Opacity() * 100 + 0.5)
-            slider:SetValue(percent)
+            local percent = GetOpacity()
+            syncing = true
+            if slider:GetValue() ~= percent then slider:SetValue(percent) end
+            syncing = false
             label:SetText("Background opacity: " .. percent .. "%")
         end
+        syncNativeOpacity = Sync
         slider:SetScript("OnValueChanged", function(_, value)
-            value = math.max(0, math.min(100, math.floor(value + 0.5)))
-            Opacity() -- Initialize only our own saved settings.
-            EUIAddonSkinsDB.allTheThings.opacity = value / 100
-            label:SetText("Background opacity: " .. value .. "%")
-            Run(ApplyOpacity) -- No row scans, font writes or full refresh while dragging.
+            if syncing then return end
+            SetOpacity(value)
+            label:SetText("Background opacity: " .. GetOpacity() .. "%")
         end)
         slider:HookScript("OnShow", Sync)
         -- ATT registers controls before their constructors finish; its normal

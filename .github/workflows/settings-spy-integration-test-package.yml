@@ -20,6 +20,54 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y liblua5.4-0
+      - name: Compare settings artwork and navigation on one runner
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from statistics import median
+          from subprocess import check_output
+          from urllib.request import urlopen
+          import re
+          import sys
+
+          baseline = 'https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/7969b352a23aed96d87b23cb7d12419e6b20fef9/'
+          renderer = Path('EUIAddonSkins/SettingsUI.lua')
+          fixture = Path('tests/settings_ui_spec.lua')
+          candidate_source = renderer.read_bytes()
+          candidate_fixture = fixture.read_bytes()
+
+          def read_baseline(path):
+              with urlopen(baseline + str(path), timeout=30) as response:
+                  return response.read()
+
+          before_source = read_baseline(renderer)
+          original_fixture = read_baseline(fixture)
+          measurements = {'before': [], 'after': []}
+          pattern = re.compile(r'BENCH (Skin Style dropdown|Combined Spy/RestedXP): '
+                               r'(\d+) frames/(\d+) regions settled, 200 .* cycles ([\d.]+) ms')
+          try:
+              # Keep instrumentation and workloads identical across both renderers.
+              fixture.write_bytes(original_fixture)
+              for trial in range(5):
+                  pair = [('before', before_source), ('after', candidate_source)]
+                  for label, source in pair if trial % 2 == 0 else reversed(pair):
+                      renderer.write_bytes(source)
+                      output = check_output([sys.executable, 'tests/run_lua.py'], text=True)
+                      rows = pattern.findall(output)
+                      assert len(rows) == 2, output
+                      measurements[label].append(rows)
+                      print(label, trial + 1, rows, flush=True)
+          finally:
+              renderer.write_bytes(candidate_source)
+              fixture.write_bytes(candidate_fixture)
+
+          for label, samples in measurements.items():
+              for index, (name, frames, regions, _) in enumerate(samples[0]):
+                  assert all(rows[index][:3] == (name, frames, regions) for rows in samples)
+                  duration = median(float(rows[index][3]) for rows in samples)
+                  print(f'PAIRED SETTINGS {label}: {name}: {frames} frames/{regions} regions, '
+                        f'{duration:.3f} ms median of five 200-cycle trials')
+          PY
       - name: Validate and build installation ZIP
         run: python3 scripts/package.py
       - name: Verify against pinned official Spy Forever source

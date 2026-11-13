@@ -106,7 +106,13 @@ function S.PageButton(f, label) f.glyph = label end
 function S.ScrollBar(f) f.scroll = true end
 function S.Panel(f) f.panel = true end
 function S.Shell(f, options) f.shell = true; f.shellOptions = options end
-function S.Tab(f) f.tab = true end
+function S.Tab(f)
+    if f.tab then return end
+    f.tab = true
+    -- EUI's own label, measured before the game font loaded: narrower than its text.
+    f.euiLabel = f:CreateFontString(); f.euiLabel:SetText(f.label and f.label.text or '')
+    f.euiLabel.font = 'eui'; f.euiLabel.width = 23.33; f.euiLabel.stringWidth = 24.17
+end
 function S.SetTabSelection(f, selected) f.selected = selected end
 function S.CloseButton(f) f.close = true end
 function S.Checkbox(f) f.checkbox = true end
@@ -254,6 +260,9 @@ assert(main.OptionsButton.button and main.OptionsButton.Icon.alpha == 1, 'option
 assert(not side.button and sideArt.alpha == 1, 'side tab art changed')
 assert(tab1.tab and tab1.selected == true and tab2.tab and tab2.selected == false, 'bottom tabs not styled with selection')
 assert(tab1.label.alpha == 0 and tab2.label.alpha == 0, 'Blizzard tab labels still drawn under the EUI labels')
+assert(tab1.euiLabel.wrap == false and tab1.euiLabel.width >= tab1.euiLabel.stringWidth, 'EUI tab label can still wrap its last letter')
+tab1.euiLabel.stringWidth = 40; tab1.euiLabel:SetText('Chat (3)')
+assert(tab1.euiLabel.width >= 40, 'EUI tab label not refitted after a text change')
 assert(grip.normal.alpha == 0, 'resize grip art remained')
 assert(search.input and check.checkbox and reset.button and reset.label.font == 'eui')
 assert(reset.label.textColor[2] == 0.82, 'button label colour not preserved')

@@ -136,14 +136,31 @@ end
 -- Tabs: EUI's S.Tab hides Blizzard's label (transparent text colour) and draws
 -- its own unwrapped one. Blizzard's tab select/deselect resets that label's
 -- font object, which brings it back as a second, wrapping copy; keep it faded
--- by region alpha, which a font reset never changes. With guild colours the
--- skin lays a 2px underline in the guild accent over EUI's own.
+-- by region alpha, which a font reset never changes. EUI's label can also keep
+-- a width measured before the game font loaded (narrower than its text), and
+-- then wraps its last letter; pin it to one line at its real text width. With
+-- guild colours the skin lays a 2px underline in the guild accent over EUI's own.
+local fitted = setmetatable({}, {__mode = "k"})
+local function FitLabel(label)
+    if label.SetWordWrap then label:SetWordWrap(false) end
+    local width = label.GetStringWidth and label:GetStringWidth()
+    if width and width > 0 then label:SetWidth(math.ceil(width) + 4) end
+end
 local function PaintTab(C, tab, on)
     local H = C.H
     local styled = H.Tab(tab, on)
     if styled then
         local native = tab.Text or (tab.GetFontString and tab:GetFontString())
         if native then H.Fade(native) end
+        for _, region in ipairs(H.Regions(tab)) do
+            if region ~= native and region.GetObjectType and region:GetObjectType() == "FontString" then
+                if not fitted[region] then
+                    fitted[region] = true
+                    H.Hook(region, "SetText", FitLabel)
+                end
+                FitLabel(region)
+            end
+        end
     end
     local accent = C.guild and C.guild.accent
     local line = tab.euiGuildyLine

@@ -68,12 +68,35 @@ local function PaintEdges(edges, color)
         t:SetShown(color ~= nil)
     end
 end
+-- The tabard's own border art (GetGuildTabardFiles: the cloth the tabard is
+-- worn with, already in the guild's border colour). The top half carries two
+-- straight braids down the middle; one of them edges each side of the square,
+-- laid sideways for the top and bottom.
+local FRINGE_SIZE = 7
+local FRINGE = {0.52, 0.68, 0.05, 0.95} -- u left/right, v top/bottom of one braid
+local function BorderArt()
+    local files = _G.GetGuildTabardFiles
+    if not files then return end
+    local ok, _, _, _, _, upper = pcall(files)
+    if ok and upper and upper ~= 0 and upper ~= "" then return upper end
+end
+local function PaintFringe(edges, file)
+    local a, b, c, d = FRINGE[1], FRINGE[2], FRINGE[3], FRINGE[4]
+    for i, t in ipairs(edges) do
+        if file then
+            t:SetTexture(file)
+            t:SetVertexColor(1, 1, 1, 1)
+            if i <= 2 then t:SetTexCoord(a, c, b, c, a, d, b, d) else t:SetTexCoord(a, b, c, d) end
+        end
+        t:SetShown(file ~= nil)
+    end
+end
 
 -- The corner emblem at Guildy's own size and spot (60px, overhanging the top
 -- left corner), drawn square instead of round: the guild's tabard when the
 -- client supplies it (SetLargeGuildTabardTextures, as Guildy's own emblem uses),
 -- otherwise Guildy's logo, never both. The tabard's background colour fills the
--- square, its border colour edges it and the emblem sits centred on it. The
+-- square, its border art (or colour) edges it and the emblem sits centred on it. The
 -- round ring art and circular mask Guildy uses are never shown. It lives on its
 -- own frame at Guildy's emblem level, above the window's title bar and panels.
 local LOGO = "Interface\\Icons\\INV_Shirt_GuildTabard_01"
@@ -105,6 +128,7 @@ local function Tabard(C, main, logoPath)
         tabard.Border:SetPoint("TOPLEFT", holder, "TOPLEFT")
         tabard.Border:SetAlpha(0)
         tabard.Edges = Edges(holder, holder, 2)
+        tabard.Fringe = Edges(holder, holder, FRINGE_SIZE)
         main.euiGuildyTabard = tabard
         -- Guildy redraws its emblem when the guild or its tabard changes
         -- (UpdateTitle); new colours repaint the whole window.
@@ -128,7 +152,10 @@ local function Tabard(C, main, logoPath)
     tabard.Background:SetShown(ok and true or false)
     tabard.Emblem:SetShown(ok and true or false)
     tabard.Border:Hide()
-    PaintEdges(tabard.Edges, ok and colors and colors.border or nil)
+    -- The border art when the client has it, else a flat edge in the border colour.
+    local art = ok and colors and BorderArt() or nil
+    PaintFringe(tabard.Fringe, art)
+    PaintEdges(tabard.Edges, (ok and colors and not art) and colors.border or nil)
     tabard.Logo:SetShown(not ok)
     tabard.ok = ok
     return changed

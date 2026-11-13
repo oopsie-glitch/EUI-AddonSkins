@@ -164,6 +164,7 @@ local inGuild = true
 -- Tabard colours (C_GuildInfo.GetGuildTabardInfo); nil until the guild designs one.
 local tabardInfo
 function GetGuildLogoInfo() if tabardInfo then return 0, 0, 0, 0, 0, 0, 0, 0, 0, 123 end end
+function GetGuildTabardFiles() if tabardInfo then return 180151, 180150, 184061, 184060, 180227, 180226 end end
 C_GuildInfo = {GetGuildTabardInfo = function(unit) assert(unit == 'player'); return tabardInfo end}
 local function Color(r, g, b) return {GetRGB = function() return r, g, b end} end
 function IsInGuild() return inGuild end
@@ -357,7 +358,16 @@ assert(not tab1.euiGuildyLine or not tab1.euiGuildyLine.shown, 'guild underline 
 tabardInfo = {backgroundColor = Color(0.1, 0.05, 0.2), borderColor = Color(0.6, 0.5, 0.1), emblemColor = Color(0.8, 0.2, 0.9)}
 main.Emblem:Update(); flush()
 assert(tabard.Background.color[1] == 0.1 and tabard.Background.color[3] == 0.2 and tabard.Background.path == 'solid', 'title icon not filled with the tabard background colour')
+for i, e in ipairs(tabard.Fringe) do
+    assert(e.shown == true and e.path == 180227 and e.parent == holder, 'title icon not edged in the tabard border art')
+    assert(#e.crop == (i <= 2 and 8 or 4), 'border braid not laid sideways on the top and bottom edges')
+end
+for _, e in ipairs(tabard.Edges) do assert(e.shown == false, 'flat edge drawn over the tabard border art') end
+-- A client without the tabard cloth files: a flat edge in the border colour.
+local files = GetGuildTabardFiles; GetGuildTabardFiles = nil; main.Emblem:Update()
+for _, e in ipairs(tabard.Fringe) do assert(e.shown == false, 'border art kept without its file') end
 for _, e in ipairs(tabard.Edges) do assert(e.shown == true and e.color[1] == 0.6, 'title icon not edged in the tabard border colour') end
+GetGuildTabardFiles = files; main.Emblem:Update()
 for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == true and e.color[1] == 0.6, 'window edge not in the tabard border colour') end
 box:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
 assert(box.border[1] == 0.8 and box.border[3] == 0.9, 'lit border not in the guild accent')
@@ -376,6 +386,7 @@ local queued = #timers; main.Emblem:Update(); assert(#timers == queued, 'unchang
 -- The design removed again: back to the EUI accent.
 tabardInfo = nil; main.Emblem:Update(); flush()
 for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == false, 'window edge kept after the tabard design went away') end
+for _, e in ipairs(tabard.Fringe) do assert(e.shown == false, 'tabard border art kept after the design went away') end
 assert(railTrack.color[1] == accent and tab1.selected == true and not tab1.euiGuildyLine.shown, 'EUI accent not restored')
 
 -- Disabled skin stops processing.

@@ -68,83 +68,65 @@ local function PaintEdges(edges, color)
         t:SetShown(color ~= nil)
     end
 end
--- The tabard's own border art (GetGuildTabardFiles: the cloth the tabard is
--- worn with, already in the guild's border colour). The top half carries two
--- straight braids down the middle; one of them edges each side of the square,
--- laid sideways for the top and bottom.
--- 9px keeps the braid near its own proportions over the 60px side (it is about
--- six times longer than wide); the sides sit between the top and bottom runs so
--- the braids never cross at the corners.
-local FRINGE_SIZE = 9
-local FRINGE = {0.52, 0.68, 0.02, 0.98} -- u left/right, v top/bottom of one braid
-local function Fringe(owner, size)
-    local edges = {}
-    for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
-        local t = owner:CreateTexture(nil, "OVERLAY", nil, 7)
-        if i <= 2 then
-            t:SetPoint(side .. "LEFT", owner, side .. "LEFT"); t:SetPoint(side .. "RIGHT", owner, side .. "RIGHT"); t:SetHeight(size)
-        else
-            t:SetPoint("TOP" .. side, owner, "TOP" .. side, 0, -size); t:SetPoint("BOTTOM" .. side, owner, "BOTTOM" .. side, 0, size); t:SetWidth(size)
-        end
-        edges[i] = t
-    end
-    return edges
-end
-local function BorderArt()
-    local files = _G.GetGuildTabardFiles
-    if not files then return end
-    local ok, _, _, _, _, upper = pcall(files)
-    if ok and upper and upper ~= 0 and upper ~= "" then return upper end
-end
-local function PaintFringe(edges, file)
-    local a, b, c, d = FRINGE[1], FRINGE[2], FRINGE[3], FRINGE[4]
-    for i, t in ipairs(edges) do
-        if file then
-            t:SetTexture(file)
-            t:SetVertexColor(1, 1, 1, 1)
-            if i <= 2 then t:SetTexCoord(a, c, b, c, a, d, b, d) else t:SetTexCoord(a, b, c, d) end
-        end
-        t:SetShown(file ~= nil)
-    end
-end
-
--- The corner emblem at Guildy's own size and spot (60px, overhanging the top
--- left corner), drawn square instead of round: the guild's tabard when the
--- client supplies it (SetLargeGuildTabardTextures, as Guildy's own emblem uses),
--- otherwise Guildy's logo, never both. The tabard's background colour fills the
--- square, its border art (or colour) edges it and the emblem sits centred on it. The
--- round ring art and circular mask Guildy uses are never shown. It lives on its
--- own frame at Guildy's emblem level, above the window's title bar and panels.
+-- The corner emblem at Guildy's own spot (overhanging the top left corner): the
+-- guild's banner from Blizzard's guild finder cards when the client has its art
+-- (the background and border atlases, which SetLargeGuildTabardTextures tints
+-- with the tabard colours while it draws the emblem on top), else a 60px square
+-- in the tabard colours; Guildy's logo when there is no tabard, never both. The
+-- round ring and circular mask Guildy uses are never shown. It lives on its own
+-- frame at Guildy's emblem level, above the window's title bar and panels.
 local LOGO = "Interface\\Icons\\INV_Shirt_GuildTabard_01"
 local EMBLEM_SIZE = 60
+local BANNER = "guildfinder-card-guildbanner-"
+local BANNER_WIDTH = 88 -- the banner atlases are 246 x 168
+local function HasBanner()
+    local info = C_Texture and C_Texture.GetAtlasInfo
+    return info and info(BANNER .. "background") ~= nil and info(BANNER .. "border") ~= nil or false
+end
+-- The game reports the border colour at the depth of the cloth's shading (a teal
+-- border comes back near black): lift a coloured border to full strength, keep
+-- greys, white and black as they are.
+local function BorderTint(c)
+    local hi, lo = math.max(c[1], c[2], c[3]), math.min(c[1], c[2], c[3])
+    if hi <= 0 or (hi - lo) / hi < 0.2 then return c[1], c[2], c[3] end
+    local k = math.max(1, 0.8 / hi)
+    return c[1] * k, c[2] * k, c[3] * k
+end
 local function Tabard(C, main, logoPath)
     local colors = GuildColors()
     local changed = (colors and colors.key) ~= (C.guild and C.guild.key)
     C.guild = colors
     local tabard = main.euiGuildyTabard
     if not tabard then
+        local banner = HasBanner()
         local holder = CreateFrame("Frame", nil, main)
-        holder:SetSize(EMBLEM_SIZE, EMBLEM_SIZE)
+        holder:SetSize(banner and BANNER_WIDTH or EMBLEM_SIZE, EMBLEM_SIZE)
         holder:SetPoint("TOPLEFT", main, "TOPLEFT", -5, 8)
         holder:SetFrameLevel(main:GetFrameLevel() + 300)
-        tabard = {Frame = holder}
+        tabard = {Frame = holder, banner = banner}
         tabard.Logo = holder:CreateTexture(nil, "ARTWORK", nil, 1)
-        tabard.Logo:SetAllPoints(holder)
+        tabard.Logo:SetSize(EMBLEM_SIZE, EMBLEM_SIZE)
+        tabard.Logo:SetPoint("TOPLEFT", holder, "TOPLEFT")
         tabard.Logo:SetTexture(logoPath or LOGO)
         if C.S.SquareIcon then C.S.SquareIcon(tabard.Logo) end
         tabard.Background = holder:CreateTexture(nil, "ARTWORK", nil, 2)
         tabard.Background:SetAllPoints(holder)
-        tabard.Emblem = holder:CreateTexture(nil, "ARTWORK", nil, 3)
-        -- Guildy's emblem proportions (56 x 64 in its 60px holder), kept inside the square.
-        tabard.Emblem:SetSize(EMBLEM_SIZE * 52 / 60, EMBLEM_SIZE * 58 / 60)
-        tabard.Emblem:SetPoint("CENTER", holder, "CENTER", 0, -1)
-        -- Receives the API's ring art; never shown.
-        tabard.Border = holder:CreateTexture(nil, "ARTWORK", nil, 0)
-        tabard.Border:SetSize(1, 1)
-        tabard.Border:SetPoint("TOPLEFT", holder, "TOPLEFT")
-        tabard.Border:SetAlpha(0)
-        tabard.Edges = Edges(holder, holder, 2)
-        tabard.Fringe = Fringe(holder, FRINGE_SIZE)
+        tabard.Border = holder:CreateTexture(nil, "ARTWORK", nil, banner and 3 or 0)
+        tabard.Emblem = holder:CreateTexture(nil, "ARTWORK", nil, 4)
+        if banner then
+            tabard.Border:SetAllPoints(holder)
+            tabard.Emblem:SetSize(46, 46)
+            tabard.Emblem:SetPoint("CENTER", holder, "CENTER", 0, 4)
+        else
+            -- Receives the API's ring art; never shown.
+            tabard.Border:SetSize(1, 1)
+            tabard.Border:SetPoint("TOPLEFT", holder, "TOPLEFT")
+            tabard.Border:SetAlpha(0)
+            -- Guildy's emblem proportions (56 x 64 in its 60px holder), kept inside the square.
+            tabard.Emblem:SetSize(EMBLEM_SIZE * 52 / 60, EMBLEM_SIZE * 58 / 60)
+            tabard.Emblem:SetPoint("CENTER", holder, "CENTER", 0, -1)
+            tabard.Edges = Edges(holder, holder, 2)
+        end
         main.euiGuildyTabard = tabard
         -- Guildy redraws its emblem when the guild or its tabard changes
         -- (UpdateTitle); new colours repaint the whole window.
@@ -154,24 +136,33 @@ local function Tabard(C, main, logoPath)
             end)
         end
     end
-    -- A white square takes the tabard background colour the API applies.
-    tabard.Background:SetTexture(WHITE)
-    tabard.Background:SetTexCoord(0, 1, 0, 1)
+    if tabard.banner then
+        tabard.Background:SetAtlas(BANNER .. "background")
+        tabard.Border:SetAtlas(BANNER .. "border")
+    else
+        -- A white square takes the tabard background colour the API applies.
+        tabard.Background:SetTexture(WHITE)
+        tabard.Background:SetTexCoord(0, 1, 0, 1)
+    end
     local set = _G.SetLargeGuildTabardTextures
     local ok = set ~= nil and IsInGuild and IsInGuild()
         and pcall(set, "player", tabard.Emblem, tabard.Background, tabard.Border) or false
-    if ok and colors then
-        local c = colors.background
-        tabard.Background:SetVertexColor(1, 1, 1, 1) -- the API's tint would multiply the fill
-        tabard.Background:SetColorTexture(c[1], c[2], c[3], 1)
+    if tabard.banner then
+        -- The API may swap in its own ring art; the banner keeps its border.
+        tabard.Border:SetAtlas(BANNER .. "border")
+        if ok and colors then tabard.Border:SetVertexColor(BorderTint(colors.border)) end
+        tabard.Border:SetShown(ok and true or false)
+    else
+        if ok and colors then
+            local c = colors.background
+            tabard.Background:SetVertexColor(1, 1, 1, 1) -- the API's tint would multiply the fill
+            tabard.Background:SetColorTexture(c[1], c[2], c[3], 1)
+        end
+        tabard.Border:Hide()
+        PaintEdges(tabard.Edges, ok and colors and colors.border or nil)
     end
     tabard.Background:SetShown(ok and true or false)
     tabard.Emblem:SetShown(ok and true or false)
-    tabard.Border:Hide()
-    -- The border art when the client has it, else a flat edge in the border colour.
-    local art = ok and colors and BorderArt() or nil
-    PaintFringe(tabard.Fringe, art)
-    PaintEdges(tabard.Edges, (ok and colors and not art) and colors.border or nil)
     tabard.Logo:SetShown(not ok)
     tabard.ok = ok
     return changed

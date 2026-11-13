@@ -20,7 +20,8 @@ local function texture(kind, parent)
     function t:GetWidth() return self.width or 0 end
     function t:GetHeight() return self.height or 0 end
     function t:GetTexture() return self.path end
-    function t:SetTexture(v) self.path = v end
+    function t:SetTexture(v) self.path = v; self.atlas = nil end
+    function t:SetAtlas(v) self.atlas = v; self.path = nil end
     function t:GetAlpha() return self.alpha end
     function t:SetAlpha(v) self.alpha = v end
     function t:GetDrawLayer() return self.layer or 'ARTWORK' end
@@ -164,10 +165,11 @@ local inGuild = true
 -- Tabard colours (C_GuildInfo.GetGuildTabardInfo); nil until the guild designs one.
 local tabardInfo
 function GetGuildLogoInfo() if tabardInfo then return 0, 0, 0, 0, 0, 0, 0, 0, 0, 123 end end
-function GetGuildTabardFiles() if tabardInfo then return 180151, 180150, 184061, 184060, 180227, 180226 end end
 C_GuildInfo = {GetGuildTabardInfo = function(unit) assert(unit == 'player'); return tabardInfo end}
 local function Color(r, g, b) return {GetRGB = function() return r, g, b end} end
 function IsInGuild() return inGuild end
+-- The client has the guild finder card's banner art.
+C_Texture = {GetAtlasInfo = function(name) if name:find('^guildfinder%-card%-guildbanner%-') then return {} end end}
 function SetLargeGuildTabardTextures(unit, emblem, background, border)
     assert(unit == 'player'); if not inGuild then error('no tabard') end
     emblem:SetTexture('guild-emblem'); background:SetVertexColor(0.2, 0.3, 0.9)
@@ -235,7 +237,7 @@ assert(ToggleGuildFrame() == 'native-toggle' and toggles == 1); flush()
 assert(main.shell and main.shellOptions.noAccent, 'Guildy window not shelled on first open')
 assert(ring.alpha == 0 and main.PortraitContainer.portrait.alpha == 0, 'round portrait art remained')
 local holder = main.euiGuildyTabard and main.euiGuildyTabard.Frame
-assert(holder and holder.parent == main and holder.width == 60 and holder.height == 60, 'corner emblem not at Guildy size')
+assert(holder and holder.parent == main and holder.width == 88 and holder.height == 60, 'corner banner not at Guildy size')
 assert(holder.points[1][1] == 'TOPLEFT' and holder.points[1][4] == -5 and holder.points[1][5] == 8, 'corner emblem not at Guildy position')
 assert(holder.level == main:GetFrameLevel() + 300, 'corner emblem below the window chrome')
 local titleIcon = main.euiGuildyTabard.Logo
@@ -243,10 +245,10 @@ assert(titleIcon.path == 'Interface/Icons/INV_Shirt_GuildTabard_01' and titleIco
 assert(main.Emblem.alpha == 0, 'round guild emblem still drawn in the corner')
 local tabard = main.euiGuildyTabard
 assert(tabard and tabard.ok and tabard.Emblem.path == 'guild-emblem' and tabard.Emblem:IsShown(), 'guild tabard not drawn in the title icon')
-assert(tabard.Emblem.width == 52 and tabard.Emblem.height == 58 and tabard.Background.parent == holder, 'tabard not fitted to the square')
-for _, e in ipairs(tabard.Edges) do assert(e.parent == holder, 'tabard edge not on the emblem frame') end
-assert(tabard.Background.path == 'Interface' .. string.char(92) .. 'Buttons' .. string.char(92) .. 'WHITE8X8' and tabard.Background.color[3] == 0.9 and tabard.Background:IsShown(), 'tabard background colour not filling the square')
-assert(tabard.Border.hidden, 'round tabard border art shown in the square icon')
+assert(tabard.banner and tabard.Emblem.width == 46 and tabard.Background.parent == holder, 'emblem not fitted to the banner')
+assert(tabard.Background.atlas == 'guildfinder-card-guildbanner-background' and tabard.Background.color[3] == 0.9 and tabard.Background:IsShown(), 'banner not in the tabard background colour')
+assert(tabard.Border.atlas == 'guildfinder-card-guildbanner-border' and tabard.Border.shown == true, 'banner border replaced by the round tabard ring')
+assert(not tabard.Edges, 'square edges drawn around the banner')
 assert(titleIcon == tabard.Logo and tabard.Logo.shown == false, 'Guildy logo still shown under the tabard')
 assert(main.Version.alpha == 0 and main.Version.mouse == false, 'version line still shown or still catching the mouse')
 assert(main.TitleContainer.TitleText.text == 'Two Trolls One Orc', 'Guildy suffix not removed from the title')
@@ -357,18 +359,14 @@ assert(not tab1.euiGuildyLine or not tab1.euiGuildyLine.shown, 'guild underline 
 -- Tabard colours drive Guildy's accent, tabs, title icon and window edge.
 tabardInfo = {backgroundColor = Color(0.1, 0.05, 0.2), borderColor = Color(0.6, 0.5, 0.1), emblemColor = Color(0.8, 0.2, 0.9)}
 main.Emblem:Update(); flush()
-assert(tabard.Background.color[1] == 0.1 and tabard.Background.color[3] == 0.2 and tabard.Background.path == 'solid', 'title icon not filled with the tabard background colour')
-for i, e in ipairs(tabard.Fringe) do
-    assert(e.shown == true and e.path == 180227 and e.parent == holder, 'title icon not edged in the tabard border art')
-    assert(#e.crop == (i <= 2 and 8 or 4), 'border braid not laid sideways on the top and bottom edges')
-    if i > 2 then assert(e.points[1][5] == -9 and e.points[2][5] == 9, 'side braids cross the top and bottom ones at the corners') end
-end
-for _, e in ipairs(tabard.Edges) do assert(e.shown == false, 'flat edge drawn over the tabard border art') end
--- A client without the tabard cloth files: a flat edge in the border colour.
-local files = GetGuildTabardFiles; GetGuildTabardFiles = nil; main.Emblem:Update()
-for _, e in ipairs(tabard.Fringe) do assert(e.shown == false, 'border art kept without its file') end
-for _, e in ipairs(tabard.Edges) do assert(e.shown == true and e.color[1] == 0.6, 'title icon not edged in the tabard border colour') end
-GetGuildTabardFiles = files; main.Emblem:Update()
+local function near(x, y) return math.abs(x - y) < 1e-6 end
+assert(near(tabard.Border.color[1], 0.8) and near(tabard.Border.color[3], 0.1 * 0.8 / 0.6), 'banner border not lifted to full strength in the border colour')
+-- A teal border the game reports near black (15, 20, 21) comes out teal; black stays black.
+tabardInfo.borderColor = Color(15 / 255, 20 / 255, 21 / 255); main.Emblem:Update(); flush()
+assert(near(tabard.Border.color[3], 0.8) and near(tabard.Border.color[1], 0.8 * 15 / 21), 'near-black teal border not lifted')
+tabardInfo.borderColor = Color(0.05, 0.05, 0.05); main.Emblem:Update(); flush()
+assert(near(tabard.Border.color[1], 0.05), 'black border lifted to grey')
+tabardInfo.borderColor = Color(0.6, 0.5, 0.1); main.Emblem:Update(); flush()
 for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == true and e.color[1] == 0.6, 'window edge not in the tabard border colour') end
 box:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
 assert(box.border[1] == 0.8 and box.border[3] == 0.9, 'lit border not in the guild accent')
@@ -387,7 +385,6 @@ local queued = #timers; main.Emblem:Update(); assert(#timers == queued, 'unchang
 -- The design removed again: back to the EUI accent.
 tabardInfo = nil; main.Emblem:Update(); flush()
 for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == false, 'window edge kept after the tabard design went away') end
-for _, e in ipairs(tabard.Fringe) do assert(e.shown == false, 'tabard border art kept after the design went away') end
 assert(railTrack.color[1] == accent and tab1.selected == true and not tab1.euiGuildyLine.shown, 'EUI accent not restored')
 
 -- Disabled skin stops processing.
@@ -396,4 +393,4 @@ box:SetBackdropBorderColor(GOLD[1] * 0.5, GOLD[2] * 0.5, GOLD[3] * 0.5)
 assert(box.border[1] == GOLD[1] * 0.5, 'disabled skin still repainted borders')
 local after = Button(panel, 'Late'); modules.Guildy.refresh(); flush()
 assert(not after.button, 'disabled skin styled new controls')
-print('PASS: Guildy lazy window, 60px square corner emblem with guild tabard, guild colour accent/tabs/edges, hidden native tab labels, title/version trim, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')
+print('PASS: Guildy lazy window, corner guild banner, guild colour accent/tabs/edges, hidden native tab labels, title/version trim, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')

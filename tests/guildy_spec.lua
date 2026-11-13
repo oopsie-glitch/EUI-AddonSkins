@@ -361,6 +361,7 @@ assert(tabard.Background.color[1] == 0.1 and tabard.Background.color[3] == 0.2 a
 for i, e in ipairs(tabard.Fringe) do
     assert(e.shown == true and e.path == 180227 and e.parent == holder, 'title icon not edged in the tabard border art')
     assert(#e.crop == (i <= 2 and 8 or 4), 'border braid not laid sideways on the top and bottom edges')
+    if i > 2 then assert(e.points[1][5] == -9 and e.points[2][5] == 9, 'side braids cross the top and bottom ones at the corners') end
 end
 for _, e in ipairs(tabard.Edges) do assert(e.shown == false, 'flat edge drawn over the tabard border art') end
 -- A client without the tabard cloth files: a flat edge in the border colour.

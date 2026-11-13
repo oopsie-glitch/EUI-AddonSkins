@@ -72,8 +72,24 @@ end
 -- worn with, already in the guild's border colour). The top half carries two
 -- straight braids down the middle; one of them edges each side of the square,
 -- laid sideways for the top and bottom.
-local FRINGE_SIZE = 7
-local FRINGE = {0.52, 0.68, 0.05, 0.95} -- u left/right, v top/bottom of one braid
+-- 9px keeps the braid near its own proportions over the 60px side (it is about
+-- six times longer than wide); the sides sit between the top and bottom runs so
+-- the braids never cross at the corners.
+local FRINGE_SIZE = 9
+local FRINGE = {0.52, 0.68, 0.02, 0.98} -- u left/right, v top/bottom of one braid
+local function Fringe(owner, size)
+    local edges = {}
+    for i, side in ipairs({"TOP", "BOTTOM", "LEFT", "RIGHT"}) do
+        local t = owner:CreateTexture(nil, "OVERLAY", nil, 7)
+        if i <= 2 then
+            t:SetPoint(side .. "LEFT", owner, side .. "LEFT"); t:SetPoint(side .. "RIGHT", owner, side .. "RIGHT"); t:SetHeight(size)
+        else
+            t:SetPoint("TOP" .. side, owner, "TOP" .. side, 0, -size); t:SetPoint("BOTTOM" .. side, owner, "BOTTOM" .. side, 0, size); t:SetWidth(size)
+        end
+        edges[i] = t
+    end
+    return edges
+end
 local function BorderArt()
     local files = _G.GetGuildTabardFiles
     if not files then return end
@@ -128,7 +144,7 @@ local function Tabard(C, main, logoPath)
         tabard.Border:SetPoint("TOPLEFT", holder, "TOPLEFT")
         tabard.Border:SetAlpha(0)
         tabard.Edges = Edges(holder, holder, 2)
-        tabard.Fringe = Edges(holder, holder, FRINGE_SIZE)
+        tabard.Fringe = Fringe(holder, FRINGE_SIZE)
         main.euiGuildyTabard = tabard
         -- Guildy redraws its emblem when the guild or its tabard changes
         -- (UpdateTitle); new colours repaint the whole window.

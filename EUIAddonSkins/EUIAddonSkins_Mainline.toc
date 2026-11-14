@@ -19,6 +19,7 @@ Scoped.lua
 Menus.lua
 Loader.lua
 SettingsUI.lua
+Skins\AddonMrgl.lua
 Skins\AllTheThings.lua
 Skins\Altoholic.lua
 Skins\AngrierWorldQuests.lua

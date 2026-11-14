@@ -2,6 +2,7 @@ local ADDON, ns = ...
 -- One-folder activation catalog. Skin files define factories at startup;
 -- their implementation bodies run only for eligible, loaded targets.
 ns.skinCatalog = {
+    {id = "AddonMrgl", label = "Addon Manargl", targets = {"AddonMrgl"}},
     {id = "AllTheThings", label = "AllTheThings", targets = {"AllTheThings"}},
     {id = "Altoholic", label = "Altoholic", targets = {"Altoholic"}},
     {id = "AngrierWorldQuests", label = "Angrier World Quests", targets = {"AngrierWorldQuests"}},

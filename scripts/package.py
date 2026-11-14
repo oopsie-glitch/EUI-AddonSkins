@@ -52,6 +52,12 @@ for name in ('RestedXPRouteFlag', 'RestedXPQuestAccept', 'RestedXPQuestTurnIn', 
     assert data[17] & 0x0f == 8
     assert len(data) >= 18+32*32*4 and {0,255} <= set(data[21:18+32*32*4:4])
     files.append(icon)
+# Guildy banner braids: one grey 64x256 RGBA strip per tabard border style.
+for style in range(10):
+    strip=addon/f'Media/GuildyBorder/Border{style:02d}.tga'
+    data=strip.read_bytes()
+    assert data[2]==2 and data[12:17]==bytes((64, 0, 0, 1, 32)) and len(data)>=18+64*256*4
+    files.append(strip)
 for flavor in ['Camelot','Mainline']:
     alias=addon/f'EUIAddonSkins_{flavor}.toc'
     assert alias.read_bytes()==toc.read_bytes(),f'Stale client manifest: {alias}'

@@ -22,6 +22,7 @@ EllesmereUI skins for World of Warcraft addons.
 - Gargul
 - GTFO
 - Guild Roster Manager
+- Guildy
 - HandyNotes
 - HekiLight
 - Home Bound

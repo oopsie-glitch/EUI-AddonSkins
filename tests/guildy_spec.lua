@@ -237,8 +237,8 @@ assert(ToggleGuildFrame() == 'native-toggle' and toggles == 1); flush()
 assert(main.shell and main.shellOptions.noAccent, 'Guildy window not shelled on first open')
 assert(ring.alpha == 0 and main.PortraitContainer.portrait.alpha == 0, 'round portrait art remained')
 local holder = main.euiGuildyTabard and main.euiGuildyTabard.Frame
-assert(holder and holder.parent == main and holder.width == 88 and holder.height == 60, 'corner banner not at Guildy size')
-assert(holder.points[1][1] == 'TOPLEFT' and holder.points[1][4] == -5 and holder.points[1][5] == 8, 'corner emblem not at Guildy position')
+assert(holder and holder.parent == main and holder.width == 70 and holder.height == 60, 'corner banner not at Guildy size')
+assert(holder.points[1][1] == 'TOPLEFT' and holder.points[1][4] == 4 and holder.points[1][5] == -4, 'corner emblem not inside the window frame')
 assert(holder.level == main:GetFrameLevel() + 300, 'corner emblem below the window chrome')
 local titleIcon = main.euiGuildyTabard.Logo
 assert(titleIcon.path == 'Interface/Icons/INV_Shirt_GuildTabard_01' and titleIcon.alpha == 1 and titleIcon.crop, 'square logo missing')

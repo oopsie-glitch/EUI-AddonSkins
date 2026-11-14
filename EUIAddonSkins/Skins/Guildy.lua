@@ -78,7 +78,7 @@ end
 local LOGO = "Interface\\Icons\\INV_Shirt_GuildTabard_01"
 local EMBLEM_SIZE = 60
 local BANNER = "guildfinder-card-guildbanner-"
-local BANNER_WIDTH = 88 -- the banner atlases are 246 x 168
+local BANNER_WIDTH = 70 -- the banner atlases are 246 x 168; drawn narrower than that
 local function HasBanner()
     local info = C_Texture and C_Texture.GetAtlasInfo
     return info and info(BANNER .. "background") ~= nil and info(BANNER .. "border") ~= nil or false
@@ -101,7 +101,7 @@ local function Tabard(C, main, logoPath)
         local banner = HasBanner()
         local holder = CreateFrame("Frame", nil, main)
         holder:SetSize(banner and BANNER_WIDTH or EMBLEM_SIZE, EMBLEM_SIZE)
-        holder:SetPoint("TOPLEFT", main, "TOPLEFT", -5, 8)
+        holder:SetPoint("TOPLEFT", main, "TOPLEFT", 4, -4) -- inside the window frame
         holder:SetFrameLevel(main:GetFrameLevel() + 300)
         tabard = {Frame = holder, banner = banner}
         tabard.Logo = holder:CreateTexture(nil, "ARTWORK", nil, 1)
@@ -116,7 +116,8 @@ local function Tabard(C, main, logoPath)
         if banner then
             tabard.Border:SetAllPoints(holder)
             tabard.Emblem:SetSize(46, 46)
-            tabard.Emblem:SetPoint("CENTER", holder, "CENTER", 0, 4)
+            -- Centred on the pennant's visual middle (its point makes it bottom-light).
+            tabard.Emblem:SetPoint("CENTER", holder, "CENTER", 0, 11)
         else
             -- Receives the API's ring art; never shown.
             tabard.Border:SetSize(1, 1)

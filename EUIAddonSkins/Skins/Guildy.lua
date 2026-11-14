@@ -202,10 +202,16 @@ end
 -- then wraps its last letter; pin it to one line at its real text width.
 -- EUI owns the sole selection underline and its accent-bar visibility.
 local fitted = setmetatable({}, {__mode = "k"})
+local labelWidths = setmetatable({}, {__mode = "k"})
 local function FitLabel(label)
-    if label.SetWordWrap then label:SetWordWrap(false) end
+    if not labelWidths[label] and label.SetWordWrap then label:SetWordWrap(false) end
     local width = label.GetStringWidth and label:GetStringWidth()
-    if width and width > 0 then label:SetWidth(math.ceil(width) + 4) end
+    if not width or width <= 0 then return end
+    width = math.ceil(width) + 4
+    if labelWidths[label] ~= width then
+        labelWidths[label] = width
+        label:SetWidth(width)
+    end
 end
 local function PaintTab(C, tab, on)
     local H = C.H
@@ -329,8 +335,62 @@ local function SegmentGroup(button)
     end
 end
 
+local function Visible(frame)
+    return not frame.IsVisible or frame:IsVisible()
+end
+
+local function Exclusions()
+    local exclude = {}
+    local editor = _G.CommunitiesGuildTextEditFrame
+    if editor and editor.Container then exclude[editor.Container] = true end
+    local main = _G.GuildyFrame
+    if main and main.Emblem then exclude[main.Emblem] = true end
+    return exclude
+end
+
+local function RefreshContent(C, frame)
+    if frame and Visible(frame) then C.RefreshControls(frame, Exclusions()) end
+end
+
 ns.RegisterScopedSkin("Guildy", "Guildy", {
-    softBorders = true, preserveTextColors = true, immediateShow = true,
+    softBorders = true, preserveTextColors = true,
+    rootShow = function(C, root)
+        if root == _G.GuildyFrame and Ready(C) and Tabard(C, root) then C.refresh() end
+    end,
+    scanOptions = function(C)
+        return {
+            explicitVisibility = true,
+            skip = function(frame)
+                local main = _G.GuildyFrame
+                local options = _G.GuildyOptions
+                local page = main and main.Content and frame:GetParent() == main.Content
+                if not page and options and options.Panels then
+                    for _, panel in pairs(options.Panels) do
+                        if frame == panel then page = true; break end
+                    end
+                end
+                if page then
+                    C.H.Script(frame, "OnShow", function(self) RefreshContent(C, self) end)
+                    return not Visible(frame)
+                end
+            end,
+        }
+    end,
+    controlRefresh = function(C, root, source)
+        -- Clicking the cog can construct the separate Options root.
+        if _G.GuildyFrame and source == _G.GuildyFrame.OptionsButton
+            and _G.GuildyOptions and not C.optionsDiscovered then
+            C.refresh()
+            return
+        end
+        if source and source.GetObjectType and source:GetObjectType() == "ScrollFrame" then
+            RefreshContent(C, source)
+            return
+        end
+        local main = _G.GuildyFrame
+        if root == main and main.Content then root = main.Content end
+        RefreshContent(C, root)
+    end,
     available = function() return SlashCmdList ~= nil and SlashCmdList.GUILDY ~= nil end,
     hooks = function(C, refresh)
         local H = C.H
@@ -351,10 +411,10 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
         -- (Blizzard_Communities loads on demand) and lives inside it.
         local function Opened()
             local main = _G.GuildyFrame
-            if H.Allowed(main) and (not main.IsVisible or main:IsVisible()) then refresh() end
+            if H.Allowed(main) and Visible(main) and not main.euiGuildyTabard then refresh() end
         end
         H.Hook(_G, "ToggleGuildFrame", Opened)
-        if SlashCmdList then H.Hook(SlashCmdList, "GUILDY", refresh) end
+        if SlashCmdList then H.Hook(SlashCmdList, "GUILDY", Opened) end
         H.Hook(_G, "ToggleCommunitiesFrame", Opened)
         if _G.CommunitiesFrame then H.Script(_G.CommunitiesFrame, "OnShow", Opened) end
         if not C.guildBankEvents then
@@ -363,7 +423,9 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
             events:SetScript("OnEvent", function()
                 -- Guildy 1.8 builds its standalone window in a peer event
                 -- handler. Inspect the owned root after that dispatch finishes.
-                if ns.IsEnabled(C.module) then refresh() end
+                if not ns.IsEnabled(C.module) then return end
+                local main = _G.GuildyFrame
+                if not main or not main.euiGuildyTabard or not Visible(main) then refresh() end
             end)
             C.guildBankEvents = events
         end
@@ -381,12 +443,7 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
         end)
     end,
     roots = function(C)
-        local exclude = {}
-        -- Blizzard's guild text editor is lent into Guildy's panels: never style it.
-        local editor = _G.CommunitiesGuildTextEditFrame
-        if editor and editor.Container then exclude[editor.Container] = true end
-        local main = _G.GuildyFrame
-        if main and main.Emblem then exclude[main.Emblem] = true end
+        local exclude = Exclusions()
         -- Copy and confirmation dialogs are standalone and their constructors
         -- live in Guildy's private namespace. Preserve their native first open.
         local result = {}
@@ -427,6 +484,7 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
             return
         end
         if f == _G.GuildyOptions then
+            C.optionsDiscovered = true
             -- The options window hides its portrait; drop any leftover ring art.
             local pc = f.PortraitContainer
             if pc and pc.GetRegions then

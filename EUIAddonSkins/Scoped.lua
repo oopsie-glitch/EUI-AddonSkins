@@ -25,6 +25,10 @@ function ns.RegisterScopedSkin(id, label, config)
         events:RegisterEvent("PLAYER_ENTERING_WORLD")
         events:RegisterEvent("PLAYER_REGEN_ENABLED")
         local C = {S = S, H = H, module = module}
+        local scanOptions
+        if config.scanOptions then scanOptions = config.scanOptions(C) end
+        local customRootShow
+        if config.rootShow then customRootShow = function(root) config.rootShow(C, root) end end
         -- Optional integration-local routing for control/scroll callbacks.
         -- Other adapters retain the existing coalesced full refresh.
         local controlRefreshes = {}
@@ -153,25 +157,26 @@ function ns.RegisterScopedSkin(id, label, config)
             if InCombatLockdown and InCombatLockdown() then waiting = true; return end
             waiting = false
             if config.hooks then config.hooks(C, refresh) end
+            local show = customRootShow or (config.immediateShow and C.RefreshNow or refresh)
             for _, target in ipairs(config.roots(C) or {}) do
                 local f = target.frame or target
                 if H.Allowed(f) then
                     if target.mode ~= "controls" and not styled[f] then
                         styled[f] = true
-                        H.Shell(f, config.immediateShow and C.RefreshNow or refresh, target.options)
+                        H.Shell(f, show, target.options)
                         -- Some addons redraw their original window backdrop.
                         H.Hook(f, "SetBackdrop", function(_, value)
                             if value then refresh() end
                         end)
                     end
                     if styled[f] and f.SetBackdrop then f:SetBackdrop(nil) end
-                    H.Script(f, "OnShow", config.immediateShow and C.RefreshNow or refresh)
+                    H.Script(f, "OnShow", show)
                     -- A hidden root is walked once, which hooks its controls' OnShow;
                     -- after that only visible roots are walked. Hidden roots cannot
                     -- change the look, and showing one queues its own refresh.
                     if not scanned[f] or not f.IsVisible or f:IsVisible() then
                         scanned[f] = true
-                        H.Scan(f, ControlRefresh(f), Visit, target.exclude)
+                        H.Scan(f, ControlRefresh(f), Visit, target.exclude, scanOptions)
                     end
                 end
             end
@@ -183,19 +188,19 @@ function ns.RegisterScopedSkin(id, label, config)
             if applying or not ns.IsEnabled(module) or not H.Allowed(root) then return end
             if InCombatLockdown and InCombatLockdown() then waiting = true; return end
             applying = true
-            H.Safe(H.Scan, root, ControlRefresh(root), Visit, exclude)
+            H.Safe(H.Scan, root, ControlRefresh(root), Visit, exclude, scanOptions)
             applying = false
         end
         local controlsPending = {}
         local function PaintControls()
-            for root in pairs(controlsPending) do
+            for root, exclude in pairs(controlsPending) do
                 controlsPending[root] = nil
-                C.RefreshControlsNow(root)
+                C.RefreshControlsNow(root, exclude or nil)
             end
         end
-        function C.RefreshControls(root)
+        function C.RefreshControls(root, exclude)
             if not ns.IsEnabled(module) or not H.Allowed(root) then return end
-            controlsPending[root] = true
+            controlsPending[root] = exclude or false
             H.Queue(controlsPending, PaintControls)
         end
         function C.RefreshNow()

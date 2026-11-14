@@ -46,9 +46,22 @@ jobs:
           PY
       - name: Compare original and corrected Guildy fixtures
         run: |
-          curl --fail --silent --show-error https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/a0d97a83ba7a654790a7381d3d898a8ef31cc78d/EUIAddonSkins/Skins/Guildy.lua -o /tmp/guildy-baseline.lua
+          curl --fail --silent --show-error https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/e4f0d37bdcb3f734142b8cdc935182cc21eee0e0/EUIAddonSkins/Skins/Guildy.lua -o /tmp/guildy-baseline.lua
           GUILDY_AUDIT=1 GUILDY_AUDIT_BASELINE=/tmp/guildy-baseline.lua python3 tests/run_lua.py
           GUILDY_AUDIT=1 python3 tests/run_lua.py
+      - name: Compare cold and warm Guildy opening
+        run: |
+          set -o pipefail
+          for mode in native disabled baseline candidate; do
+            for trial in 1 2 3 4 5; do
+              if [ "$mode" = baseline ]; then
+                export GUILDY_AUDIT_BASELINE=/tmp/guildy-baseline.lua
+              else
+                unset GUILDY_AUDIT_BASELINE
+              fi
+              GUILDY_OPEN_AUDIT="$mode" python3 tests/run_lua.py | grep '^GUILDY OPEN '
+            done
+          done
       - name: Verify addon-only ZIP contents
         run: |
           python3 - <<'PY'

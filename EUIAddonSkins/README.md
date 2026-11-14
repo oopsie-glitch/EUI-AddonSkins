@@ -4,6 +4,7 @@ EllesmereUI skins for World of Warcraft addons.
 
 ## Supported addons
 
+- Addon Manargl
 - AllTheThings
 - Altoholic
 - Angrier World Quests
@@ -22,7 +23,7 @@ EllesmereUI skins for World of Warcraft addons.
 - Gargul
 - GTFO
 - Guild Roster Manager
-- Guildy
+- Guildy (WoW Forever)
 - HandyNotes
 - HekiLight
 - Home Bound

@@ -163,15 +163,16 @@ assert(modules.Guildy.available())
 local toggles = 0
 local inGuild = true
 -- Tabard colours (C_GuildInfo.GetGuildTabardInfo); nil until the guild designs one.
-local tabardInfo
-function GetGuildLogoInfo() if tabardInfo then return 0, 0, 0, 0, 0, 0, 0, 0, 0, 123 end end
+local tabardInfo, emblemID, bannerPaints = nil, 123, 0
+function GetGuildLogoInfo() return 0, 0, 0, 0, 0, 0, 0, 0, 0, emblemID end
 C_GuildInfo = {GetGuildTabardInfo = function(unit) assert(unit == 'player'); return tabardInfo end}
 local function Color(r, g, b) return {GetRGB = function() return r, g, b end} end
 function IsInGuild() return inGuild end
 -- The client has the guild finder card's banner art.
 C_Texture = {GetAtlasInfo = function(name) if name:find('^guildfinder%-card%-guildbanner%-') then return {} end end}
 function SetLargeGuildTabardTextures(unit, emblem, background, border)
-    assert(unit == 'player'); if not inGuild then error('no tabard') end
+    assert(not combat and unit == 'player'); if not inGuild then error('no tabard') end
+    bannerPaints=bannerPaints+1
     emblem:SetTexture('guild-emblem'); background:SetVertexColor(0.2, 0.3, 0.9)
     border:SetTexture('guild-border'); border:SetVertexColor(0.9, 0.8, 0.1); border:Show()
 end
@@ -233,6 +234,11 @@ rail:SetScript('OnClick', function() rail.jumped = true end)
 -- the Blizzard editor is lent into this panel
 container.parent = panel; panel.children[#panel.children + 1] = container
 
+for _, f in ipairs(events) do
+    if f.events and f.events.GUILDBANKFRAME_OPENED then f.hooks.OnEvent(f, 'GUILDBANKFRAME_OPENED') end
+end
+flush()
+assert(main.shell, 'standalone bank first open not discovered')
 assert(ToggleGuildFrame() == 'native-toggle' and toggles == 1); flush()
 assert(main.shell and main.shellOptions.noAccent, 'Guildy window not shelled on first open')
 assert(ring.alpha == 0 and main.PortraitContainer.portrait.alpha == 0, 'round portrait art remained')
@@ -250,13 +256,13 @@ assert(tabard.Background.atlas == 'guildfinder-card-guildbanner-background' and 
 assert(tabard.Border.atlas == 'guildfinder-card-guildbanner-border' and tabard.Border.shown == true, 'banner border replaced by the round tabard ring')
 assert(not tabard.Edges, 'square edges drawn around the banner')
 assert(titleIcon == tabard.Logo and tabard.Logo.shown == false, 'Guildy logo still shown under the tabard')
-assert(main.Version.alpha == 0 and main.Version.mouse == false, 'version line still shown or still catching the mouse')
+assert(main.Version:GetAlpha() == 1 and main.Version.mouse, 'version tooltip suppressed')
 assert(main.TitleContainer.TitleText.text == 'Two Trolls One Orc', 'Guildy suffix not removed from the title')
 main.TitleContainer.TitleText:SetText('Other Guild - Guildy'); assert(main.TitleContainer.TitleText.text == 'Other Guild', 'retitle kept the suffix')
 main.TitleContainer.TitleText:SetText('Guildy'); assert(main.TitleContainer.TitleText.text == 'Guildy', 'bare title emptied')
 inGuild = false; main.Emblem:Update(); assert(not tabard.ok and not tabard.Emblem:IsShown() and tabard.Logo.shown == true, 'tabard kept, or logo not restored, after leaving the guild')
 inGuild = true; main.Emblem:Update(); assert(tabard.ok and tabard.Emblem:IsShown() and tabard.Logo.shown == false, 'tabard not restored, or logo left showing, after joining')
-main.Emblem:SetAlpha(1); assert(main.Emblem.alpha == 0, 'emblem came back after a native alpha write')
+main.Emblem:SetAlpha(1); main.Emblem:Update(); assert(main.Emblem.alpha == 0, 'native emblem visible after update')
 assert(main.CloseButton.close)
 assert(emblemArt.alpha == 1 and emblemText.font == 'native', 'guild emblem internals were styled')
 assert(main.OptionsButton.button and main.OptionsButton.Icon.alpha == 1, 'options cog lost its icon')
@@ -289,7 +295,7 @@ box:SetBackdropBorderColor(1, 0.82, 0)
 assert(box.border[1] == accent, 'hover border did not use the accent')
 
 -- Tab selection follows PanelTemplates; foreign tabs are untouched.
-local foreign = Button(nil, 'Other', 'OtherFrameTab1')
+local foreign = Button(frame('Frame'), 'Other', 'GuildyFrameTab99')
 PanelTemplates_SelectTab(tab2); PanelTemplates_DeselectTab(tab1); PanelTemplates_SelectTab(foreign)
 assert(tab2.selected == true and tab1.selected == false and tab2.nativeSelected, 'tab selection not followed')
 assert(not foreign.tab, 'foreign tab styled')
@@ -324,7 +330,11 @@ assert(b.euiSelection.color[4] == 0.2 and a.euiSelection.color[4] == 0, 'segment
 local confirm = Box(nil, 0.9); confirm.name = 'GuildyConfirm'; GuildyConfirm = confirm
 local ok = Button(confirm, 'Yes')
 modules.Guildy.refresh(); flush()
-assert(confirm.shell and ok.button, 'confirmation popup not styled')
+assert(not confirm.shell and not ok.button, 'standalone confirmation dialog must stay native')
+local copy = frame('Frame', 'GuildyCopyBox')
+local copyInput = frame('EditBox', nil, copy)
+copy:Show(); flush()
+assert(not copy.shell and not copyInput.input, 'standalone copy dialog must stay native')
 
 -- Repeated refreshes add no hooks or objects.
 local hooked, regions = ToggleGuildFrame, #box.regions
@@ -333,18 +343,33 @@ for _ = 1, 10 do modules.Guildy.refresh(); flush() end
 assert(#main.regions == mainRegions and main.Emblem.Update == mainHooks, 'title icon or tabard recreated on refresh')
 PanelTemplates_SelectTab(tab1); PanelTemplates_DeselectTab(tab2)
 assert(tab1.label.alpha == 0 and tab2.label.alpha == 0, 'a tab font reset brought the wrapping Blizzard label back')
-tab1.label:SetAlpha(1); assert(tab1.label.alpha == 0, 'Blizzard tab label came back after a native alpha write')
+tab1.label:SetAlpha(1); PanelTemplates_SelectTab(tab1)
+assert(tab1.label.alpha == 0, 'Blizzard tab label came back after selection')
 assert(ToggleGuildFrame == hooked and #box.regions == regions, 'duplicate hooks or objects')
 assert(nativeToggle == ToggleGuildFrame)
 
 -- Combat defers styling; leaving combat applies it.
 local waiting = Button(panel, 'Promote')
 combat = true
+local paints = bannerPaints
+local width = tab1.euiLabel.width
+PanelTemplates_SelectTab(tab2); PanelTemplates_DeselectTab(tab1)
+group:SetValue('a')
+tab1.euiLabel.stringWidth = width + 20; tab1.euiLabel:SetText('New title')
+main.TitleContainer.TitleText:SetText('Combat Guild - Guildy')
+box:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
+emblemID = 456; main.Emblem:Update()
+assert(tab1.selected and not tab2.selected and b.euiSelection.color[4] == 0.2)
+assert(tab1.euiLabel.width == width and main.TitleContainer.TitleText.text == 'Combat Guild - Guildy')
+assert(box.border[1] == GOLD[1] and bannerPaints == paints)
 modules.Guildy.refresh(); flush()
 assert(not waiting.button, 'styled during combat')
 combat = false
 for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
 flush(); assert(waiting.button, 'combat recovery missed')
+assert(not tab1.selected and tab2.selected and a.euiSelection.color[4] == 0.2)
+assert(tab1.euiLabel.width >= width + 20 and main.TitleContainer.TitleText.text == 'Combat Guild')
+assert(box.border[1] == accent and bannerPaints == paints + 1)
 
 -- Accent changes repaint lit borders.
 box:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
@@ -354,7 +379,7 @@ assert(railTrack.color[1] == 0.9 and thumbFill.color[1] == 0.9, 'accent change n
 
 -- No tabard design: the EUI look, no guild edges or underlines.
 for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == false, 'window edge drawn without tabard colours') end
-assert(not tab1.euiGuildyLine or not tab1.euiGuildyLine.shown, 'guild underline without tabard colours')
+assert(not tab1.euiGuildyLine or not tab1.euiGuildyLine, 'guild underline without tabard colours')
 
 -- Tabard colours drive Guildy's accent, tabs, title icon and window edge.
 tabardInfo = {backgroundColor = Color(0.1, 0.05, 0.2), borderColor = Color(0.6, 0.5, 0.1), emblemColor = Color(0.8, 0.2, 0.9)}
@@ -367,24 +392,19 @@ assert(near(tabard.Border.color[3], 0.8) and near(tabard.Border.color[1], 0.8 * 
 tabardInfo.borderColor = Color(0.05, 0.05, 0.05); main.Emblem:Update(); flush()
 assert(near(tabard.Border.color[1], 0.05), 'black border lifted to grey')
 tabardInfo.borderColor = Color(0.6, 0.5, 0.1); main.Emblem:Update(); flush()
--- The guild's border style (border_01_15_tu_u) edges the banner with its braid strip.
-function GetGuildTabardFiles() if tabardInfo then return 180151, 180150, 184061, 184060, 180227, 180226 end end
+assert(not tabard.Braid and tabard.Border.shown == true, 'client banner border must remain visible')
+local previousPaints = bannerPaints
 main.Emblem:Update()
-assert(tabard.Braid and #tabard.Braid >= 5 and tabard.Border.shown == false, 'banner not edged with the braid')
-for _, t in ipairs(tabard.Braid) do
-    assert(t.shown ~= false and t.path:find('GuildyBorder\\Border01$') and near(t.color[1], 0.8), 'braid piece not the tinted style 01 strip')
-end
-GetGuildTabardFiles = nil; main.Emblem:Update()
-for _, t in ipairs(tabard.Braid) do assert(t.shown == false, 'braid kept without the border style') end
-assert(tabard.Border.shown == true, 'banner border not restored without the braid')
+assert(bannerPaints == previousPaints, 'repainted unchanged guild design')
+emblemID = 789; main.Emblem:Update()
+assert(bannerPaints == previousPaints + 1, 'same-colour design change missed')
 for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == true and e.color[1] == 0.6, 'window edge not in the tabard border colour') end
 box:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
 assert(box.border[1] == 0.8 and box.border[3] == 0.9, 'lit border not in the guild accent')
 assert(railTrack.color[1] == 0.8 and thumbFill.color[3] == 0.9, 'timeline rail not in the guild accent')
 PanelTemplates_SelectTab(tab1); PanelTemplates_DeselectTab(tab2)
 assert(tab1.selected == true and tab2.selected == false, 'EUI tab selection lost with guild colours')
-assert(tab1.euiGuildyLine.shown == true and tab1.euiGuildyLine.color[1] == 0.8, 'selected tab has no guild underline')
-assert(tab2.euiGuildyLine.shown == false, 'unselected tab kept the guild underline')
+assert(not tab1.euiGuildyLine and not tab2.euiGuildyLine, 'duplicate selection underline')
 assert(tab1.label.alpha == 0 and tab2.label.alpha == 0, 'guild colours made the Blizzard tab labels visible')
 -- A dark emblem is unreadable: the border colour becomes the accent.
 tabardInfo.emblemColor = Color(0.05, 0.05, 0.05); main.Emblem:Update(); flush()
@@ -393,7 +413,7 @@ assert(box.border[1] == 0.6, 'dark emblem colour used as the accent')
 -- Unchanged colours add no refresh work.
 local queued = #timers; main.Emblem:Update(); assert(#timers == queued, 'unchanged tabard queued a refresh')
 -- The design removed again: back to the EUI accent.
-tabardInfo = nil; main.Emblem:Update(); flush()
+tabardInfo = nil; emblemID = nil; main.Emblem:Update(); flush()
 for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == false, 'window edge kept after the tabard design went away') end
 assert(railTrack.color[1] == accent and tab1.selected == true and not tab1.euiGuildyLine.shown, 'EUI accent not restored')
 

@@ -10,7 +10,17 @@ local groups = setmetatable({}, {__mode = "k"})
 
 local function OwnedTab(tab)
     local name = tab and tab.GetName and tab:GetName()
-    return name and (name:find("^GuildyFrameTab%d+$") or name:find("^GuildyOptionsTab%d+$")) and true or false
+    local parent = tab and tab.GetParent and tab:GetParent()
+    if not name or not parent or _G[name] ~= tab then return false end
+    return (parent == _G.GuildyFrame and name:match("^GuildyFrameTab%d+$") ~= nil)
+        or (parent == _G.GuildyOptions and name:match("^GuildyOptionsTab%d+$") ~= nil)
+end
+local function Ready(C)
+    if InCombatLockdown and InCombatLockdown() then
+        C.RefreshNow() -- Scoped records a pending refresh for PLAYER_REGEN_ENABLED.
+        return false
+    end
+    return true
 end
 local function Tooltip(path)
     return type(path) == "string" and path:lower():find("ui%-tooltip%-border") ~= nil
@@ -25,10 +35,8 @@ local function RGB(color)
     if color.r then return color.r, color.g, color.b end
 end
 local function Luminance(c) return 0.299 * c[1] + 0.587 * c[2] + 0.114 * c[3] end
-local function GuildColors()
-    if not (IsInGuild and IsInGuild()) then return end
-    -- No emblem file: the guild has not designed a tabard yet.
-    if GetGuildLogoInfo and select(10, GetGuildLogoInfo()) == nil then return end
+local function GuildColors(emblem)
+    if not emblem then return end
     local api = C_GuildInfo and C_GuildInfo.GetGuildTabardInfo
     if not api then return end
     local ok, info = pcall(api, "player")
@@ -92,66 +100,26 @@ local function BorderTint(c)
     local k = math.max(1, 0.8 / hi)
     return c[1] * k, c[2] * k, c[3] * k
 end
--- The guild's own border on the banner: a seamless grey strip per tabard border
--- style (Media/GuildyBorder/BorderNN, made from the tabard cloth art), tinted in
--- the border colour and laid along the banner's outline, top edge included.
-local BRAID = "Interface\\AddOns\\EUIAddonSkins\\Media\\GuildyBorder\\Border%02d"
-local BRAID_SIZE = 8 -- banner atlas pixels (246 x 168)
-local BRAID_ASPECT = 4 -- the strips are 64 x 256
--- The outline through the middle of the banner's border, in atlas pixels.
-local OUTLINE = {{30, 10, 213, 10}, {30, 10, 30, 66}, {213, 10, 213, 66}, {30, 66, 121, 136}, {213, 66, 121, 136}}
-local atan2 = math.atan2 or math.atan
--- The border style from the tabard's border cloth file (border_SS_CC_tu_u).
-local function BorderStyle()
-    local files = _G.GetGuildTabardFiles
-    if not files then return end
-    local ok, _, _, _, _, upper = pcall(files)
-    if not ok or type(upper) ~= "number" then return end
-    if upper >= 180163 and upper <= 180365 and (upper - 180163) % 2 == 0 then return math.floor((upper - 180163) / 34) end
-    if upper >= 180367 and upper <= 180397 and (upper - 180367) % 2 == 0 then return 6 + math.floor((upper - 180367) / 8) end
-end
-local function Braid(tabard, style, r, g, b)
-    local holder, n = tabard.Frame, 0
-    tabard.Braid = tabard.Braid or {}
-    if style and tabard.banner then
-        local sx, sy = BANNER_WIDTH / 246, EMBLEM_SIZE / 168
-        local th = BRAID_SIZE * sy -- the same braid width however narrow the banner
-        for _, seg in ipairs(OUTLINE) do
-            local x0, y0, dx, dy = seg[1] * sx, seg[2] * sy, (seg[3] - seg[1]) * sx, (seg[4] - seg[2]) * sy
-            local span = math.sqrt(dx * dx + dy * dy)
-            local ux, uy = dx / span, dy / span
-            local len = span + th -- runs overlap at the joins
-            local count = math.max(1, math.floor(len / (th * BRAID_ASPECT) + 0.5))
-            local piece = len / count
-            for k = 1, count do
-                n = n + 1
-                local t = tabard.Braid[n] or holder:CreateTexture(nil, "ARTWORK", nil, 3)
-                tabard.Braid[n] = t
-                local along = -th / 2 + (k - 0.5) * piece
-                t:ClearAllPoints()
-                t:SetSize(th, piece)
-                t:SetPoint("CENTER", holder, "TOPLEFT", x0 + ux * along, -(y0 + uy * along))
-                t:SetTexture(BRAID:format(style))
-                if t.SetRotation then t:SetRotation(atan2(dx, dy)) end
-                t:SetVertexColor(r, g, b, 1)
-                t:SetShown(true)
-            end
-        end
-    end
-    for k = n + 1, #tabard.Braid do tabard.Braid[k]:SetShown(false) end
-    return n > 0
-end
 local function Tabard(C, main, logoPath)
-    local colors = GuildColors()
+    local inGuild = IsInGuild and IsInGuild()
+    local emblem = inGuild and GetGuildLogoInfo and select(10, GetGuildLogoInfo())
+    local colors = GuildColors(emblem)
     local changed = (colors and colors.key) ~= (C.guild and C.guild.key)
     C.guild = colors
+    local b1, b2, e1, e2, r1, r2
+    if inGuild and GetGuildTabardFiles then
+        local ok
+        ok, b1, b2, e1, e2, r1, r2 = pcall(GetGuildTabardFiles)
+        if not ok then b1 = nil end
+    end
+    local key = table.concat({tostring(inGuild), tostring(emblem), colors and colors.key or "",
+        tostring(b1), tostring(b2), tostring(e1), tostring(e2), tostring(r1), tostring(r2)}, ":")
     local tabard = main.euiGuildyTabard
     if not tabard then
         local banner = HasBanner()
         local holder = CreateFrame("Frame", nil, main)
         holder:SetSize(banner and BANNER_WIDTH or EMBLEM_SIZE, EMBLEM_SIZE)
         holder:SetPoint("TOPLEFT", main, "TOPLEFT", 4, -4) -- inside the window frame
-        holder:SetFrameLevel(main:GetFrameLevel() + 300)
         tabard = {Frame = holder, banner = banner}
         tabard.Logo = holder:CreateTexture(nil, "ARTWORK", nil, 1)
         tabard.Logo:SetSize(EMBLEM_SIZE, EMBLEM_SIZE)
@@ -182,10 +150,16 @@ local function Tabard(C, main, logoPath)
         -- (UpdateTitle); new colours repaint the whole window.
         if main.Emblem then
             C.H.Hook(main.Emblem, "Update", function()
+                if not C.H.Allowed(main) or main.IsVisible and not main:IsVisible() or not Ready(C) then return end
+                if main.Emblem:GetAlpha() ~= 0 then main.Emblem:SetAlpha(0) end
                 if Tabard(C, main) and C.refresh then C.refresh() end
             end)
         end
     end
+    local level = main:GetFrameLevel() + 300
+    if tabard.Frame:GetFrameLevel() ~= level then tabard.Frame:SetFrameLevel(level) end
+    if tabard.key == key then return changed end
+    tabard.key = key
     if tabard.banner then
         tabard.Background:SetAtlas(BANNER .. "background")
         tabard.Border:SetAtlas(BANNER .. "border")
@@ -195,20 +169,16 @@ local function Tabard(C, main, logoPath)
         tabard.Background:SetTexCoord(0, 1, 0, 1)
     end
     local set = _G.SetLargeGuildTabardTextures
-    local ok = set ~= nil and IsInGuild and IsInGuild()
+    local ok = set ~= nil and inGuild and (emblem or not GetGuildLogoInfo)
         and pcall(set, "player", tabard.Emblem, tabard.Background, tabard.Border) or false
     if tabard.banner then
         -- The API may swap in its own ring art; the banner keeps its border.
         tabard.Border:SetAtlas(BANNER .. "border")
-        local braided = false
         if ok and colors then
             local r, g, b = BorderTint(colors.border)
             tabard.Border:SetVertexColor(r, g, b)
-            braided = Braid(tabard, BorderStyle(), r, g, b)
-        else
-            Braid(tabard)
         end
-        tabard.Border:SetShown(ok and not braided)
+        tabard.Border:SetShown(not not ok)
     else
         if ok and colors then
             local c = colors.background
@@ -229,8 +199,8 @@ end
 -- font object, which brings it back as a second, wrapping copy; keep it faded
 -- by region alpha, which a font reset never changes. EUI's label can also keep
 -- a width measured before the game font loaded (narrower than its text), and
--- then wraps its last letter; pin it to one line at its real text width. With
--- guild colours the skin lays a 2px underline in the guild accent over EUI's own.
+-- then wraps its last letter; pin it to one line at its real text width.
+-- EUI owns the sole selection underline and its accent-bar visibility.
 local fitted = setmetatable({}, {__mode = "k"})
 local function FitLabel(label)
     if label.SetWordWrap then label:SetWordWrap(false) end
@@ -242,29 +212,18 @@ local function PaintTab(C, tab, on)
     local styled = H.Tab(tab, on)
     if styled then
         local native = tab.Text or (tab.GetFontString and tab:GetFontString())
-        if native then H.Fade(native) end
+        if native and native:GetAlpha() ~= 0 then native:SetAlpha(0) end
         for _, region in ipairs(H.Regions(tab)) do
             if region ~= native and region.GetObjectType and region:GetObjectType() == "FontString" then
                 if not fitted[region] then
                     fitted[region] = true
-                    H.Hook(region, "SetText", FitLabel)
+                    H.Hook(region, "SetText", function()
+                        if H.Allowed(region) and Ready(C) then FitLabel(region) end
+                    end)
                 end
                 FitLabel(region)
             end
         end
-    end
-    local accent = C.guild and C.guild.accent
-    local line = tab.euiGuildyLine
-    if accent and not line and tab.CreateTexture then
-        line = tab:CreateTexture(nil, "OVERLAY", nil, 7)
-        line:SetHeight(2)
-        line:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, 0)
-        line:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, 0)
-        tab.euiGuildyLine = line
-    end
-    if line then
-        if accent then line:SetColorTexture(accent[1], accent[2], accent[3], 1) end
-        line:SetShown((accent and on) and true or false)
     end
     return styled
 end
@@ -276,7 +235,9 @@ local function TrimTitle(C, text)
         -- Guildy joins them with its locale separator (" · "); match any short
         -- token between spaces, independent of the client's character classes.
         local trimmed, separator = value:match("^(.-%S)%s+(%S+)%s+Guildy%s*$")
-        if trimmed and #separator <= 3 then guard = true; text:SetText(trimmed); guard = false end
+        if trimmed and #separator <= 3 and C.H.Allowed(text) and Ready(C) then
+            guard = true; text:SetText(trimmed); guard = false
+        end
     end
     C.H.Hook(text, "SetText", Trim)
     Trim(nil, text:GetText())
@@ -291,6 +252,7 @@ local function Box(C, f)
         entry.border = function(_, r, g, b)
             if entry.painting or not C.H.Allowed(f) then return end
             if r then entry.lit = r >= GOLD_LIT and (g or 0) >= GOLD_LIT * 0.8 and (b or 0) < r * 0.8 end
+            if not Ready(C) then return end
             entry.painting = true
             if entry.lit then local ar, ag, ab = S.GetAccentColor(); f:SetBackdropBorderColor(ar, ag, ab, 1)
             else f:SetBackdropBorderColor(0.055, 0.055, 0.055, 1) end
@@ -298,7 +260,9 @@ local function Box(C, f)
         end
         C.H.Hook(f, "SetBackdropBorderColor", entry.border)
         C.H.Hook(f, "SetBackdrop", function(_, value)
-            if value and value.edgeFile ~= WHITE and not entry.painting then C.H.Safe(Box, C, f) end
+            if value and value.edgeFile ~= WHITE and not entry.painting and C.H.Allowed(f) and Ready(C) then
+                C.H.Safe(Box, C, f)
+            end
         end)
         local r, g, b = f:GetBackdropBorderColor()
         entry.lit = r ~= nil and r >= GOLD_LIT and (g or 0) >= GOLD_LIT * 0.8 and (b or 0) < r * 0.8
@@ -385,14 +349,35 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
         end
         -- Guildy builds its window the first time Blizzard's guild window opens
         -- (Blizzard_Communities loads on demand) and lives inside it.
-        H.Hook(_G, "ToggleGuildFrame", refresh)
-        H.Hook(_G, "ToggleCommunitiesFrame", refresh)
-        if _G.CommunitiesFrame then H.Script(_G.CommunitiesFrame, "OnShow", refresh) end
+        local function Opened()
+            local main = _G.GuildyFrame
+            if H.Allowed(main) and (not main.IsVisible or main:IsVisible()) then refresh() end
+        end
+        H.Hook(_G, "ToggleGuildFrame", Opened)
+        if SlashCmdList then H.Hook(SlashCmdList, "GUILDY", refresh) end
+        H.Hook(_G, "ToggleCommunitiesFrame", Opened)
+        if _G.CommunitiesFrame then H.Script(_G.CommunitiesFrame, "OnShow", Opened) end
+        if not C.guildBankEvents then
+            local events = CreateFrame("Frame")
+            events:RegisterEvent("GUILDBANKFRAME_OPENED")
+            events:SetScript("OnEvent", function()
+                -- Guildy 1.8 builds its standalone window in a peer event
+                -- handler. Inspect the owned root after that dispatch finishes.
+                if ns.IsEnabled(C.module) then refresh() end
+            end)
+            C.guildBankEvents = events
+        end
         H.Hook(_G, "PanelTemplates_SelectTab", function(tab)
-            if OwnedTab(tab) then selected[tab] = true; PaintTab(C, tab, true) end
+            if H.Allowed(tab) and OwnedTab(tab) then
+                selected[tab] = true
+                if Ready(C) then PaintTab(C, tab, true) end
+            end
         end)
         H.Hook(_G, "PanelTemplates_DeselectTab", function(tab)
-            if OwnedTab(tab) then selected[tab] = false; PaintTab(C, tab, false) end
+            if H.Allowed(tab) and OwnedTab(tab) then
+                selected[tab] = false
+                if Ready(C) then PaintTab(C, tab, false) end
+            end
         end)
     end,
     roots = function(C)
@@ -402,8 +387,10 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
         if editor and editor.Container then exclude[editor.Container] = true end
         local main = _G.GuildyFrame
         if main and main.Emblem then exclude[main.Emblem] = true end
+        -- Copy and confirmation dialogs are standalone and their constructors
+        -- live in Guildy's private namespace. Preserve their native first open.
         local result = {}
-        for _, name in ipairs({"GuildyFrame", "GuildyOptions", "GuildyConfirm", "GuildyCopyBox"}) do
+        for _, name in ipairs({"GuildyFrame", "GuildyOptions"}) do
             local f = _G[name]
             if C.H.Allowed(f) then
                 result[#result + 1] = {frame = f, exclude = exclude, options = {noAccent = true}}
@@ -421,20 +408,19 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
             local logoPath = H.Texture(portrait) and portrait:GetTexture() or nil
             if type(logoPath) ~= "string" and type(logoPath) ~= "number" then logoPath = nil end
             if pc and pc.GetRegions then
-                for _, region in ipairs(H.Regions(pc)) do if H.Texture(region) then H.Fade(region) end end
+                for _, region in ipairs(H.Regions(pc)) do
+                    if H.Texture(region) and region:GetAlpha() ~= 0 then region:SetAlpha(0) end
+                end
             end
-            if H.Texture(portrait) then H.Fade(portrait) end
-            if H.Allowed(f.Emblem) then H.Fade(f.Emblem) end
+            if H.Texture(portrait) and portrait:GetAlpha() ~= 0 then portrait:SetAlpha(0) end
+            if H.Allowed(f.Emblem) and f.Emblem:GetAlpha() ~= 0 then f.Emblem:SetAlpha(0) end
             Tabard(C, f, logoPath)
-            -- The window's outer edge in the tabard's border colour.
+            -- Refresh the outer edge only when the tabard colours change.
+            local edgeKey = C.guild and C.guild.key or false
             if not f.euiGuildyEdges then f.euiGuildyEdges = Edges(f, f, 1) end
-            PaintEdges(f.euiGuildyEdges, C.guild and C.guild.border or nil)
-            -- No version line or "· Guildy" suffix in the title bar. Guildy still
-            -- announces newer releases in chat.
-            if H.Allowed(f.Version) and not f.euiGuildyVersion then
-                f.euiGuildyVersion = true
-                H.Fade(f.Version)
-                if f.Version.EnableMouse then f.Version:EnableMouse(false) end
+            if f.euiGuildyEdgeKey ~= edgeKey then
+                f.euiGuildyEdgeKey = edgeKey
+                PaintEdges(f.euiGuildyEdges, C.guild and C.guild.border or nil)
             end
             local title = (f.TitleContainer and f.TitleContainer.TitleText) or f.TitleText
             if H.Allowed(title) and title:GetObjectType() == "FontString" then TrimTitle(C, title) end
@@ -446,7 +432,7 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
             if pc and pc.GetRegions then
                 local portrait = pc.portrait
                 for _, region in ipairs(H.Regions(pc)) do
-                    if region ~= portrait and H.Texture(region) then H.Fade(region) end
+                    if region ~= portrait and H.Texture(region) and region:GetAlpha() ~= 0 then region:SetAlpha(0) end
                 end
             end
             return
@@ -474,7 +460,10 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
                 if not groups[group] then
                     groups[group] = true
                     H.Hook(group, "SetValue", function()
-                        for _, member in ipairs(group.buttons) do Segment(C, member) end
+                        if not H.Allowed(group) or not Ready(C) then return end
+                        for _, member in ipairs(group.buttons) do
+                            if H.Allowed(member) then Segment(C, member) end
+                        end
                     end)
                 end
                 Segment(C, f); return true

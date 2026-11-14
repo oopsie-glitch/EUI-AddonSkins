@@ -68,7 +68,7 @@ local function PaintEdges(edges, color)
         t:SetShown(color ~= nil)
     end
 end
--- The corner emblem at Guildy's own spot (overhanging the top left corner): the
+-- The corner emblem, inside the window's top left corner: the
 -- guild's banner from Blizzard's guild finder cards when the client has its art
 -- (the background and border atlases, which SetLargeGuildTabardTextures tints
 -- with the tabard colours while it draws the emblem on top), else a 60px square
@@ -78,7 +78,7 @@ end
 local LOGO = "Interface\\Icons\\INV_Shirt_GuildTabard_01"
 local EMBLEM_SIZE = 60
 local BANNER = "guildfinder-card-guildbanner-"
-local BANNER_WIDTH = 88 -- the banner atlases are 246 x 168
+local BANNER_WIDTH = 70 -- the banner atlases are 246 x 168; drawn narrower than that
 local function HasBanner()
     local info = C_Texture and C_Texture.GetAtlasInfo
     return info and info(BANNER .. "background") ~= nil and info(BANNER .. "border") ~= nil or false
@@ -92,6 +92,55 @@ local function BorderTint(c)
     local k = math.max(1, 0.8 / hi)
     return c[1] * k, c[2] * k, c[3] * k
 end
+-- The guild's own border on the banner: a seamless grey strip per tabard border
+-- style (Media/GuildyBorder/BorderNN, made from the tabard cloth art), tinted in
+-- the border colour and laid along the banner's outline, top edge included.
+local BRAID = "Interface\\AddOns\\EUIAddonSkins\\Media\\GuildyBorder\\Border%02d"
+local BRAID_SIZE = 8 -- banner atlas pixels (246 x 168)
+local BRAID_ASPECT = 4 -- the strips are 64 x 256
+-- The outline through the middle of the banner's border, in atlas pixels.
+local OUTLINE = {{30, 10, 213, 10}, {30, 10, 30, 66}, {213, 10, 213, 66}, {30, 66, 121, 136}, {213, 66, 121, 136}}
+local atan2 = math.atan2 or math.atan
+-- The border style from the tabard's border cloth file (border_SS_CC_tu_u).
+local function BorderStyle()
+    local files = _G.GetGuildTabardFiles
+    if not files then return end
+    local ok, _, _, _, _, upper = pcall(files)
+    if not ok or type(upper) ~= "number" then return end
+    if upper >= 180163 and upper <= 180365 and (upper - 180163) % 2 == 0 then return math.floor((upper - 180163) / 34) end
+    if upper >= 180367 and upper <= 180397 and (upper - 180367) % 2 == 0 then return 6 + math.floor((upper - 180367) / 8) end
+end
+local function Braid(tabard, style, r, g, b)
+    local holder, n = tabard.Frame, 0
+    tabard.Braid = tabard.Braid or {}
+    if style and tabard.banner then
+        local sx, sy = BANNER_WIDTH / 246, EMBLEM_SIZE / 168
+        local th = BRAID_SIZE * sy -- the same braid width however narrow the banner
+        for _, seg in ipairs(OUTLINE) do
+            local x0, y0, dx, dy = seg[1] * sx, seg[2] * sy, (seg[3] - seg[1]) * sx, (seg[4] - seg[2]) * sy
+            local span = math.sqrt(dx * dx + dy * dy)
+            local ux, uy = dx / span, dy / span
+            local len = span + th -- runs overlap at the joins
+            local count = math.max(1, math.floor(len / (th * BRAID_ASPECT) + 0.5))
+            local piece = len / count
+            for k = 1, count do
+                n = n + 1
+                local t = tabard.Braid[n] or holder:CreateTexture(nil, "ARTWORK", nil, 3)
+                tabard.Braid[n] = t
+                local along = -th / 2 + (k - 0.5) * piece
+                t:ClearAllPoints()
+                t:SetSize(th, piece)
+                t:SetPoint("CENTER", holder, "TOPLEFT", x0 + ux * along, -(y0 + uy * along))
+                t:SetTexture(BRAID:format(style))
+                if t.SetRotation then t:SetRotation(atan2(dx, dy)) end
+                t:SetVertexColor(r, g, b, 1)
+                t:SetShown(true)
+            end
+        end
+    end
+    for k = n + 1, #tabard.Braid do tabard.Braid[k]:SetShown(false) end
+    return n > 0
+end
 local function Tabard(C, main, logoPath)
     local colors = GuildColors()
     local changed = (colors and colors.key) ~= (C.guild and C.guild.key)
@@ -101,7 +150,7 @@ local function Tabard(C, main, logoPath)
         local banner = HasBanner()
         local holder = CreateFrame("Frame", nil, main)
         holder:SetSize(banner and BANNER_WIDTH or EMBLEM_SIZE, EMBLEM_SIZE)
-        holder:SetPoint("TOPLEFT", main, "TOPLEFT", -5, 8)
+        holder:SetPoint("TOPLEFT", main, "TOPLEFT", 4, -4) -- inside the window frame
         holder:SetFrameLevel(main:GetFrameLevel() + 300)
         tabard = {Frame = holder, banner = banner}
         tabard.Logo = holder:CreateTexture(nil, "ARTWORK", nil, 1)
@@ -116,7 +165,8 @@ local function Tabard(C, main, logoPath)
         if banner then
             tabard.Border:SetAllPoints(holder)
             tabard.Emblem:SetSize(46, 46)
-            tabard.Emblem:SetPoint("CENTER", holder, "CENTER", 0, 4)
+            -- Centred on the pennant's visual middle (its point makes it bottom-light).
+            tabard.Emblem:SetPoint("CENTER", holder, "CENTER", 0, 11)
         else
             -- Receives the API's ring art; never shown.
             tabard.Border:SetSize(1, 1)
@@ -150,8 +200,15 @@ local function Tabard(C, main, logoPath)
     if tabard.banner then
         -- The API may swap in its own ring art; the banner keeps its border.
         tabard.Border:SetAtlas(BANNER .. "border")
-        if ok and colors then tabard.Border:SetVertexColor(BorderTint(colors.border)) end
-        tabard.Border:SetShown(ok and true or false)
+        local braided = false
+        if ok and colors then
+            local r, g, b = BorderTint(colors.border)
+            tabard.Border:SetVertexColor(r, g, b)
+            braided = Braid(tabard, BorderStyle(), r, g, b)
+        else
+            Braid(tabard)
+        end
+        tabard.Border:SetShown(ok and not braided)
     else
         if ok and colors then
             local c = colors.background

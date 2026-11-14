@@ -237,8 +237,8 @@ assert(ToggleGuildFrame() == 'native-toggle' and toggles == 1); flush()
 assert(main.shell and main.shellOptions.noAccent, 'Guildy window not shelled on first open')
 assert(ring.alpha == 0 and main.PortraitContainer.portrait.alpha == 0, 'round portrait art remained')
 local holder = main.euiGuildyTabard and main.euiGuildyTabard.Frame
-assert(holder and holder.parent == main and holder.width == 88 and holder.height == 60, 'corner banner not at Guildy size')
-assert(holder.points[1][1] == 'TOPLEFT' and holder.points[1][4] == -5 and holder.points[1][5] == 8, 'corner emblem not at Guildy position')
+assert(holder and holder.parent == main and holder.width == 70 and holder.height == 60, 'corner banner not at Guildy size')
+assert(holder.points[1][1] == 'TOPLEFT' and holder.points[1][4] == 4 and holder.points[1][5] == -4, 'corner banner not inside the window frame')
 assert(holder.level == main:GetFrameLevel() + 300, 'corner emblem below the window chrome')
 local titleIcon = main.euiGuildyTabard.Logo
 assert(titleIcon.path == 'Interface/Icons/INV_Shirt_GuildTabard_01' and titleIcon.alpha == 1 and titleIcon.crop, 'square logo missing')
@@ -367,6 +367,16 @@ assert(near(tabard.Border.color[3], 0.8) and near(tabard.Border.color[1], 0.8 * 
 tabardInfo.borderColor = Color(0.05, 0.05, 0.05); main.Emblem:Update(); flush()
 assert(near(tabard.Border.color[1], 0.05), 'black border lifted to grey')
 tabardInfo.borderColor = Color(0.6, 0.5, 0.1); main.Emblem:Update(); flush()
+-- The guild's border style (border_01_15_tu_u) edges the banner with its braid strip.
+function GetGuildTabardFiles() if tabardInfo then return 180151, 180150, 184061, 184060, 180227, 180226 end end
+main.Emblem:Update()
+assert(tabard.Braid and #tabard.Braid >= 5 and tabard.Border.shown == false, 'banner not edged with the braid')
+for _, t in ipairs(tabard.Braid) do
+    assert(t.shown ~= false and t.path:find('GuildyBorder\\Border01$') and near(t.color[1], 0.8), 'braid piece not the tinted style 01 strip')
+end
+GetGuildTabardFiles = nil; main.Emblem:Update()
+for _, t in ipairs(tabard.Braid) do assert(t.shown == false, 'braid kept without the border style') end
+assert(tabard.Border.shown == true, 'banner border not restored without the braid')
 for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == true and e.color[1] == 0.6, 'window edge not in the tabard border colour') end
 box:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3])
 assert(box.border[1] == 0.8 and box.border[3] == 0.9, 'lit border not in the guild accent')

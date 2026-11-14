@@ -8,7 +8,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -70,8 +70,16 @@ jobs:
               print('WAGO LISTING', 'v1.6.7 visible' if match else 'v1.6.7 not visible in public HTML', flush=True)
           except URLError as err:
               print('WAGO LISTING unavailable:', str(err), flush=True)
+          try:
+              endpoint = 'https://api.github.com/repos/oopsie-glitch/EUI-AddonSkins/contributors?per_page=100'
+              import json
+              contributors = json.loads(read(endpoint))
+              matches = [c['contributions'] for c in contributors if c.get('login') == 'goldenpipes']
+              print('GOLDENPIPES CONTRIBUTORS API', matches if matches else 'not yet listed', flush=True)
+          except (URLError, ValueError) as err:
+              print('GOLDENPIPES CONTRIBUTORS API unavailable:', str(err), flush=True)
           found = False
-          for attempt in range(8):
+          for attempt in range(15):
               ids = set()
               listed = set()
               for page in (project,project+'/files/all',
@@ -100,8 +108,8 @@ jobs:
               if found:
                   break
               print('CurseForge current listing IDs:', sorted(listed, reverse=True)[:5], flush=True)
-              if attempt<7:
-                  sleep(12)
+              if attempt<14:
+                  sleep(16)
           if not found:
               print('CurseForge publication unconfirmed from the public listing')
           PY

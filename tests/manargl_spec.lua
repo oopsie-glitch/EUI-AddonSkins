@@ -22,7 +22,10 @@ local function region(kind)
     function f:SetDesaturated(flag) self.desaturated=flag end
     function f:SetAlpha(alpha) self.alpha=alpha; writes=writes+1 end
     function f:GetAlpha() return self.alpha end
-    function f:SetPoint(...) self.point={...} end
+    function f:SetPoint(...)
+        self.point={...}
+        if self.point[1]=="TOPLEFT" then self.topLeft=self.point end
+    end
     function f:ClearAllPoints() self.point=nil end
     function f:SetHeight(value) self.height=value end
     function f:SetSize(w,h) self.width,self.height=w,h end
@@ -320,7 +323,7 @@ assert(slider:GetThumbTexture()==slider.thumb and slider.thumb.atlas=="Minimal_S
 assert(slider.thumb.width==20 and slider.thumb.height==20 and slider.thumb.point==thumbPoint)
 assert(slider.thumb.alpha==0 and slider.thumb.fill==nil and slider.thumb.tint==nil)
 assert(edge.width==8 and edge.height==14 and edge.point[2]==slider.thumb)
-assert(edge.fill[1]>grip.fill[1] and grip.point[2]==edge and grip.point[4]==1)
+assert(edge.fill[1]>grip.fill[1] and grip.topLeft[2]==edge and grip.topLeft[4]==1 and grip.point[2]==edge and grip.point[4]==-1)
 assert(menuLookups==1 and styleRegistrations==1)
 local style=root.filterBtn.ddDisplayMode
 local foreignModes={"menu","menuBackdrop","unregistered-foreign-style"}

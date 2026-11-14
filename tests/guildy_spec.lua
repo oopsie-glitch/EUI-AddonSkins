@@ -79,6 +79,7 @@ local function frame(kind, name, parent)
     function f:IsForbidden() return false end
     function f:IsProtected() return self.protected end
     function f:GetChildren() visits=visits+1; return table.unpack(self.children) end
+    function f:GetNumChildren() return #self.children end
     function f:GetRegions() return table.unpack(self.regions) end
     function f:HasScript() return true end
     function f:HookScript(event, fn) hookCount=hookCount+1; local old = self.hooks[event]; self.hooks[event] = function(...) if old then old(...) end; callbacks=callbacks+1; fn(...) end end
@@ -299,9 +300,22 @@ if opening then
     if opening == "candidate" then
         assert(not alternate.children[1].button, "warm opens styled hidden page")
         assert(scans-sc <= 5000, "warm open performed duplicate scans")
-        activePage:Hide(); alternate:Show(); flush()
-        assert(alternate.children[1].button, "lazy page not styled after switching")
+        activePage:Hide(); alternate:Show()
+        assert(alternate.children[1].button, "lazy page not styled before returning to native code")
+        flush()
     end
+    local start = os.clock()
+    local switchSamples = {}
+    for trial=1,5 do
+        start = os.clock()
+        for _=1,500 do
+            activePage:Hide(); alternate:Show(); PanelTemplates_SelectTab(tab2); flush()
+            alternate:Hide(); activePage:Show(); PanelTemplates_SelectTab(tab1); flush()
+        end
+        switchSamples[trial] = (os.clock()-start)*1000
+    end
+    table.sort(switchSamples)
+    print(("GUILDY OPEN %s switch %.4f ms per 1000"):format(opening,switchSamples[3]))
     return
 end
 if not baseline then
@@ -414,8 +428,39 @@ assert(not foreign.tab, 'foreign tab styled')
 local lazy = frame('Frame', nil, content); lazy:Hide()
 modules.Guildy.refresh(); flush()
 local later = Button(lazy, 'Invite'); local laterBox = Box(lazy, 0.7)
-lazy:Show(); flush()
-assert(later.button and laterBox.backdrop.edgeSize == 1, 'lazy tab content not styled on show')
+local list = frame('ScrollFrame', nil, lazy)
+local scrollChild = frame('Frame', nil, list)
+list.rows = {}
+function list:GetScrollChild() return scrollChild end
+function list:SetItems(items)
+    for i = 1, items do
+        if not self.rows[i] then self.rows[i] = Button(scrollChild, 'Row') end
+    end
+end
+for _, look in ipairs(looks) do look() end; flush()
+assert(not later.button, 'theme refresh eagerly styled a hidden page')
+lazy:Show()
+assert(later.button and laterBox.backdrop.edgeSize == 1, 'lazy tab left native art after OnShow returned')
+list:SetItems(2)
+assert(list.rows[1].button and list.rows[2].button, 'post-OnShow list rows left unstyled')
+local stableScans = scans
+list:SetItems(2)
+assert(scans == stableScans, 'same-sized list scanned again')
+lazy:Hide(); lazy:Show()
+assert(later.button and list.rows[1].button)
+lazy:Hide()
+local lockedPage = frame('Frame', nil, content); lockedPage:Hide()
+modules.Guildy.refresh(); flush()
+local lockedButton = Button(lockedPage, 'Combat tab')
+combat = true
+lockedPage:Show()
+assert(not lockedButton.button, 'first show styled during combat')
+combat = false
+for _, f in ipairs(events) do
+    if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end
+end
+flush()
+assert(lockedButton.button, 'first show did not recover after combat')
 
 -- Segmented options: the chosen option is the disabled button.
 local options = frame('Frame', 'GuildyOptions')

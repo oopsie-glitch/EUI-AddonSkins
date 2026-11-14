@@ -39,6 +39,11 @@ jobs:
               assert '_G.GuildyCopyBox = copyBox' in popups and '_G.GuildyConfirm = confirm' in commands
               assert 'CommunitiesGuildTextEditFrame' in commands
               if sha == new:
+                  build = main.index("tab.builder, tab.panel")
+                  show = main.index("tab.panel:Show()", build)
+                  assert build < show < main.index("tab.view.Refresh", show)
+                  widgets = source(sha, 'UI/Widgets.lua')
+                  assert 'function scroll:SetItems(items)' in widgets and 'AceGUI' not in widgets
                   assert 'function UI.ShowAtBank()' in main and 'frame:SetParent(UIParent)' in main
                   assert 'GUILDBANKFRAME_OPENED' in source(sha, 'Core/Init.lua')
                   assert 'ns.SafeCall(ns.UI.ShowAtBank)' in source(sha, 'Game/Bank.lua')
@@ -46,7 +51,7 @@ jobs:
           PY
       - name: Compare original and corrected Guildy fixtures
         run: |
-          curl --fail --silent --show-error https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/e4f0d37bdcb3f734142b8cdc935182cc21eee0e0/EUIAddonSkins/Skins/Guildy.lua -o /tmp/guildy-baseline.lua
+          curl --fail --silent --show-error https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/bbbcbd4c9afe071e38d124c82a9962bf4859b849/EUIAddonSkins/Skins/Guildy.lua -o /tmp/guildy-baseline.lua
           GUILDY_AUDIT=1 GUILDY_AUDIT_BASELINE=/tmp/guildy-baseline.lua python3 tests/run_lua.py
           GUILDY_AUDIT=1 python3 tests/run_lua.py
       - name: Compare cold and warm Guildy opening

@@ -1,0 +1,81 @@
+name: Addon Manargl test package
+on:
+  push:
+    branches: [skin/addon-manargl]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: manargl-test-package
+  cancel-in-progress: true
+jobs:
+  test-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install Lua test runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Validate and build installation ZIP
+        run: python3 scripts/package.py
+      - name: Run pinned Manargl native row and profiler fixtures
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          from xml.etree import ElementTree as ET
+          sha = '9416adb7cd2187bd80f72e78db93032a309a3d35'
+          root = Path('/tmp/manargl-source')
+          root.mkdir()
+          base = 'https://raw.githubusercontent.com/sfmict/Addon-Manargl/' + sha + '/'
+          for name in ('AddonMrgl.lua','AddonMrgl.xml','AddonMrgl.toc','ListButtons.lua','Filters.lua',
+                       'Profiles.lua','Settings.lua','Profiler.lua','AddonSearch.lua'):
+              with urlopen(base + name, timeout=30) as response:
+                  (root / name).write_bytes(response.read())
+          xml = ET.parse(root / 'AddonMrgl.xml').getroot()
+          assert any(node.get('name') == 'AddonMgrAddonList' for node in xml)
+          assert {node.get('name') for node in xml} >= {
+              'AddonMgrListNormal', 'AddonMgrListParent', 'AddonMgrListCategory',
+          }
+          assert '16001' in (root / 'AddonMrgl.toc').read_text() and '120105' in (root / 'AddonMrgl.toc').read_text()
+          print('Pinned Manargl source and XML:', sha)
+          PY
+          MANARGL_SOURCE=/tmp/manargl-source python3 tests/run_lua.py
+      - name: Prepare addon-only test artifact
+        run: python3 -m zipfile -e EUIAddonSkins.zip /tmp/manargl
+      - name: Store temporary Actions artifact
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-Manargl-${{ github.sha }}-test
+          path: /tmp/manargl/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Verify downloaded artifact against the validated installation ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if gh api "repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/manargl-download.zip; then break; fi
+            if [ "$attempt" -eq 5 ]; then exit 1; fi
+            sleep 3
+          done
+          python3 - <<'PY'
+          from hashlib import sha256
+          from pathlib import Path
+          from zipfile import ZipFile
+          path = Path('/tmp/manargl-download.zip')
+          with ZipFile(path) as actual, ZipFile('EUIAddonSkins.zip') as expected:
+              assert actual.testzip() is None
+              assert sorted(actual.namelist()) == sorted(expected.namelist())
+              assert all(actual.read(name) == expected.read(name) for name in expected.namelist())
+              assert {name.split('/')[0] for name in actual.namelist()} == {'EUIAddonSkins'}
+              print('Verified install artifact:', len(actual.namelist()), 'runtime files; one EUIAddonSkins folder')
+          print('Install artifact SHA256:', sha256(path.read_bytes()).hexdigest())
+          PY

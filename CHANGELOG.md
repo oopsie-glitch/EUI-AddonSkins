@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.6.7 — Addon Manargl and Guildy
+
+- **Addon Manargl:** Added an EUI Standard skin with a compact rectangular scale grip and scoped styling for Filter, Profiles and character menus.
+- **Guildy (WoW Forever):** Added an EUI skin for the guild window and Bank view, with guild colours, native banner artwork, and first-open tab styling. Thanks to **goldenpipes** for the original contribution.
+
 ## 1.6.6 — Spy, Addon Settings and DungeonJournal
 
 - Spy now has compact EUI Standard and Forever styling for Normal and Inverted layouts, with Automatic style selection, background opacity and Reset Appearance. Forever defaults to 75% opacity. Spy keeps its own bar textures, class colours, tooltips and actions.

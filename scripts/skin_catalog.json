@@ -1,5 +1,12 @@
 [
   [
+    "AddonMrgl",
+    "Addon Manargl",
+    [
+      "AddonMrgl"
+    ]
+  ],
+  [
     "AllTheThings",
     "AllTheThings",
     [
@@ -124,6 +131,13 @@
     "Guild Roster Manager",
     [
       "Guild_Roster_Manager"
+    ]
+  ],
+  [
+    "Guildy",
+    "Guildy",
+    [
+      "Guildy"
     ]
   ],
   [

@@ -2,6 +2,7 @@ local ADDON, ns = ...
 -- One-folder activation catalog. Skin files define factories at startup;
 -- their implementation bodies run only for eligible, loaded targets.
 ns.skinCatalog = {
+    {id = "AddonMrgl", label = "Addon Manargl", targets = {"AddonMrgl"}},
     {id = "AllTheThings", label = "AllTheThings", targets = {"AllTheThings"}},
     {id = "Altoholic", label = "Altoholic", targets = {"Altoholic"}},
     {id = "AngrierWorldQuests", label = "Angrier World Quests", targets = {"AngrierWorldQuests"}},
@@ -20,6 +21,7 @@ ns.skinCatalog = {
     {id = "Gargul", label = "Gargul", targets = {"Gargul"}},
     {id = "GTFO", label = "GTFO", targets = {"GTFO"}},
     {id = "GuildRosterManager", label = "Guild Roster Manager", targets = {"Guild_Roster_Manager"}},
+    {id = "Guildy", label = "Guildy", targets = {"Guildy"}},
     {id = "HandyNotes", label = "HandyNotes", targets = {"HandyNotes"}},
     {id = "HekiLight", label = "HekiLight", targets = {"HekiLight"}},
     {id = "HomeBound", label = "Home Bound", targets = {"HomeBound"}},

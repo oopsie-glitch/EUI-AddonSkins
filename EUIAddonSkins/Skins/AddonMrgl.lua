@@ -11,7 +11,8 @@ local function DefineSkin()
         local fonts = setmetatable({}, {__mode = "k"})
         local checkboxOptions = {stockCheck = true, hover = 0.08}
         local mainReady, pending, looksPending
-        local scaleThumb, thumbRed, thumbGreen, thumbBlue
+        local menuStyleRegistered
+        local menuStyle = "EUIAddonSkins_AddonMrgl"
 
         local function Font(text)
             if H.Allowed(text) and S.Font then
@@ -51,14 +52,6 @@ local function DefineSkin()
             end
         end
 
-        local function TintScaleThumb()
-            if not scaleThumb then return end
-            local r, g, b = S.GetAccentColor()
-            if r == thumbRed and g == thumbGreen and b == thumbBlue then return end
-            thumbRed, thumbGreen, thumbBlue = r, g, b
-            scaleThumb:SetVertexColor(r, g, b, 1)
-        end
-
         local function ScaleControl()
             local slider = root.scaleSlider
             if not H.Allowed(slider) or not slider.GetThumbTexture then return end
@@ -74,18 +67,40 @@ local function DefineSkin()
             track:SetHeight(2)
             track:SetColorTexture(0.2, 0.2, 0.22, 1)
 
-            if not S.GetAccentColor then return end
-            -- The EUI options slider draws an accent-tinted circle. The public
-            -- skin facade has no horizontal slider method. Use the installed
-            -- artwork and follow the native thumb without resizing its hit area.
-            local art = slider:CreateTexture(nil, "OVERLAY")
-            art:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\rounded\\circle-12.tga")
-            if not art:GetTexture() then art:Hide(); return end
-            art:SetSize(12, 12)
-            art:SetPoint("CENTER", thumb, "CENTER")
-            scaleThumb = art
-            TintScaleThumb()
+            -- Like HomeBound's scale grip, follow the native thumb without
+            -- changing the slider's travel, input scripts, or hit area.
+            local edge = slider:CreateTexture(nil, "OVERLAY")
+            edge:SetSize(8, 14)
+            edge:SetPoint("CENTER", thumb, "CENTER")
+            edge:SetColorTexture(0.31, 0.28, 0.23, 1)
+            local grip = slider:CreateTexture(nil, "OVERLAY", nil, 1)
+            grip:SetPoint("TOPLEFT", edge, "TOPLEFT", 1, -1)
+            grip:SetPoint("BOTTOMRIGHT", edge, "BOTTOMRIGHT", -1, 1)
+            grip:SetColorTexture(0.11, 0.105, 0.10, 1)
             H.Fade(thumb)
+        end
+
+        local function SkinMenus()
+            if not S.Panel or not LibStub then return end
+            local library = LibStub("LibSFDropDown-1.5", true)
+            if not library or not library.CreateMenuStyle then return end
+            if not menuStyleRegistered then
+                -- The library owns popup reuse and switches style children
+                -- from the opening launcher's display mode at every depth.
+                menuStyleRegistered = library:CreateMenuStyle(menuStyle, function(menu)
+                    local surface = CreateFrame("Frame", nil, menu)
+                    surface:EnableMouse(false)
+                    S.Panel(surface, {inset = true})
+                    return surface
+                end)
+                if not menuStyleRegistered then return end
+            end
+            for _, key in ipairs({"filterBtn", "profileBtn", "charSelect"}) do
+                local launcher = root[key]
+                if H.Allowed(launcher) and launcher:GetParent() == root and launcher.ddSetDisplayMode then
+                    launcher:ddSetDisplayMode(menuStyle)
+                end
+            end
         end
 
         local function SkinWindow()
@@ -112,8 +127,7 @@ local function DefineSkin()
                 S.ScrollBar(root.inset.scrollBar, true)
             end
             for _, key in ipairs({"enableAll", "disableAll", "okay", "cancel"}) do Button(root[key]) end
-            -- Owned launchers only. LibSFDropDown menu levels and their rows
-            -- are shared by every consumer and stay native.
+            -- Shared menu rows retain their native interaction and state art.
             Button(root.filterBtn, {"Arrow"})
             Button(root.profileBtn, {"Arrow"})
             Button(root.settingsBtn, {"icon"})
@@ -136,6 +150,7 @@ local function DefineSkin()
                 end
             end
             ScaleControl()
+            SkinMenus()
         end
 
         local function ApplyLooks()
@@ -143,7 +158,6 @@ local function DefineSkin()
             if InCombatLockdown and InCombatLockdown() then looksPending = true; return end
             looksPending = nil
             for text in pairs(fonts) do Font(text) end
-            TintScaleThumb()
         end
 
         local function Refresh()

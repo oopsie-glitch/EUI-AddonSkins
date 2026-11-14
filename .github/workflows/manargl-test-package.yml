@@ -36,6 +36,9 @@ jobs:
                        'Profiles.lua','Settings.lua','Profiler.lua','AddonSearch.lua'):
               with urlopen(base + name, timeout=30) as response:
                   (root / name).write_bytes(response.read())
+          library = 'https://raw.githubusercontent.com/sfmict/LibSFDropDown/528acc55749f98fd5f95d6295dddf7dcebb00bd7/LibSFDropDown.lua'
+          with urlopen(library, timeout=30) as response:
+              (root / 'LibSFDropDown.lua').write_bytes(response.read())
           xml = ET.parse(root / 'AddonMrgl.xml').getroot()
           assert any(node.get('name') == 'AddonMgrAddonList' for node in xml)
           assert {node.get('name') for node in xml} >= {

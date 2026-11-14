@@ -7,9 +7,12 @@ for _, key in ipairs(globals) do saved[key] = _G[key] end
 local calls, hooks, frames, textures, reads, writes = 0, 0, 0, 0, 0, 0
 local locked, enabled, active = false, true, {}
 local callbacks, events = {}, {}
+local menuLookups, styleRegistrations = 0, 0
 local function region(kind)
     local f = {kind=kind, alpha=1, text="", scripts={}, regions={}, shown=true}
     function f:GetObjectType() return self.kind end
+    function f:GetParent() return self.parent end
+    function f:EnableMouse(value) self.mouse=value end
     function f:SetText(v) self.text=v end
     function f:SetTextColor(...) self.color={...} end
     function f:SetVertexColor(...) self.tint={...}; self.tintWrites=(self.tintWrites or 0)+1 end
@@ -48,7 +51,12 @@ local function region(kind)
     function f:RegisterEvent(event) events[event]=self end
     return f
 end
-CreateFrame=function() frames=frames+1; return region("Frame") end
+CreateFrame=function(_, _, parent)
+    frames=frames+1
+    local f=region("Frame")
+    f.parent=parent
+    return f
+end
 hooksecurefunc=function(owner,key,fn)
     hooks=hooks+1
     local native=owner[key]
@@ -60,7 +68,47 @@ hooksecurefunc=function(owner,key,fn)
 end
 InCombatLockdown=function() return locked end
 geterrorhandler=function() return function(message) error(message) end end
-LibStub=function() error("adapter must not access shared dropdown libraries") end
+local builtins={"backdrop","menuBackdrop","modernMenu"}
+local nativeMenus, factories = {}, {}
+local function AcquireMenu(level)
+    if nativeMenus[level] then return nativeMenus[level] end
+    local menu=region("Frame")
+    menu.styles={}
+    for _, style in ipairs(builtins) do menu.styles[style]=region("Frame") end
+    for style, factory in pairs(factories) do
+        menu.styles[style]=factory(menu)
+        menu.styles[style]:Hide()
+    end
+    menu.activeStyle=menu.styles.backdrop
+    nativeMenus[level]=menu
+    return menu
+end
+local function SelectStyle(menu, owner)
+    local style=owner.ddDisplayMode
+    if style=="menu" then style="modernMenu"
+    elseif not menu.styles[style] then style="backdrop" end
+    menu.activeStyle:Hide()
+    menu.activeStyle=menu.styles[style]
+    menu.activeStyle:Show()
+end
+local function SetDisplayMode(self, style) self.ddDisplayMode=style end
+local library={}
+function library:CreateMenuStyle(style, factory)
+    assert(not locked and not factories[style])
+    styleRegistrations=styleRegistrations+1
+    factories[style]=factory
+    for _, menu in ipairs(nativeMenus) do
+        menu.styles[style]=factory(menu)
+        menu.styles[style]:Hide()
+    end
+    return true
+end
+LibStub=function(name, silent)
+    assert(name=="LibSFDropDown-1.5" and silent)
+    menuLookups=menuLookups+1
+    return library
+end
+local existingMenu=AcquireMenu(1)
 local function button()
     local f=region("Button")
     f.label=region("FontString")
@@ -106,6 +154,11 @@ root.filterBtn.Arrow=region("Texture")
 root.charSelect=button()
 root.charSelect.Arrow=region("Texture")
 root.charSelect.Icon=region("Texture")
+for _, field in ipairs({"charSelect","filterBtn","profileBtn","settingsBtn"}) do
+    local launcher=root[field]
+    launcher.parent=root
+    launcher.ddSetDisplayMode=SetDisplayMode
+end
 root.isMainline=true
 root.scaleSlider=region("Slider")
 local slider=root.scaleSlider
@@ -161,6 +214,11 @@ if source then
         local contents=handle:read("*a"); handle:close()
         return contents
     end
+    local libSource=Read("LibSFDropDown.lua")
+    local start=assert(libSource:find("local style = v.DROPDOWNBUTTON.ddDisplayMode",1,true))
+    local finish=assert(libSource:find("menu.activeStyle:Show()",start,true))
+    SelectStyle=assert(load("return function(menu, owner) local v={DROPDOWNBUTTON=owner, menuStyle='modernMenu',defaultStyle='backdrop'}\n"
+        ..libSource:sub(start,finish+#"menu.activeStyle:Show()"-1).."\nend","@upstream/LibSFDropDown.lua"))()
     local native=Read("AddonMrgl.lua")
     local i=assert(native:find("function listFrame:normalInit",1,true))
     local j=assert(native:find("function listFrame:updateList",i,true))
@@ -189,16 +247,15 @@ if source then
 end
 
 local S={}
-for _, name in ipairs({"Shell","Inset","CloseButton","EditBox","ScrollBar","Button","Checkbox","Font"}) do
+for _, name in ipairs({"Shell","Inset","CloseButton","EditBox","ScrollBar","Button","Checkbox","Font","Panel"}) do
     S[name]=function(f,options)
-        assert(not locked, "wrote cosmetic state in combat")
+        assert(not locked or name=="Panel" and f.parent and f.mouse==false, "wrote cosmetic state in combat")
         calls=calls+1; f.skin=name; f.opts=options
         if name=="EditBox" and f.searchIcon then f.searchIcon:SetAlpha(0) end
         if name=="Font" then f.font="EUI" end
     end
 end
-local accent=.2
-S.GetAccentColor=function() return accent,.7,.6 end
+S.GetAccentColor=function() return .2,.7,.6 end
 S.OnLooksChanged=function(fn) callbacks[#callbacks+1]=fn end
 local ns={IsEnabled=function() return enabled end}
 local module={}
@@ -250,30 +307,49 @@ root:normalInit(lockedRow,addonNode)
 assert(calls==0)
 active[3]=lockedRow
 Show()
-assert(calls==0)
+assert(calls==0 and menuLookups==0 and #slider.regions==4)
 locked=false
 local event=assert(events.PLAYER_REGEN_ENABLED)
 event.scripts.OnEvent(event)
 assert(root.skin=="Shell" and root.inset.skin=="Inset" and root.searchBox.skin=="EditBox")
 assert(root.closeButton.skin=="CloseButton")
-local track,thumbArt=slider.regions[5],slider.regions[6]
-assert(track.height==2 and track.fill[1]==.2 and #slider.regions==6)
+local track,edge,grip=slider.regions[5],slider.regions[6],slider.regions[7]
+assert(track.height==2 and track.fill[1]==.2 and #slider.regions==7)
 assert(slider.Left.alpha==0 and slider.Middle.alpha==0 and slider.Right.alpha==0)
 assert(slider:GetThumbTexture()==slider.thumb and slider.thumb.atlas=="Minimal_SliderBar_Button")
 assert(slider.thumb.width==20 and slider.thumb.height==20 and slider.thumb.point==thumbPoint)
 assert(slider.thumb.alpha==0 and slider.thumb.fill==nil and slider.thumb.tint==nil)
-assert(thumbArt.path=="Interface\\AddOns\\EllesmereUI\\media\\rounded\\circle-12.tga")
-assert(thumbArt.width==12 and thumbArt.height==12 and thumbArt.point[2]==slider.thumb)
-assert(thumbArt.tint[1]==accent and thumbArt.tintWrites==1)
-callbacks[1]()
-assert(thumbArt.tintWrites==1, "unchanged accent rewrote thumb")
-locked=true
-accent=.8
-callbacks[1]()
-assert(thumbArt.tintWrites==1, "repainted thumb during combat")
-locked=false
-event.scripts.OnEvent(event)
-assert(thumbArt.tint[1]==accent and thumbArt.tintWrites==2)
+assert(edge.width==8 and edge.height==14 and edge.point[2]==slider.thumb)
+assert(edge.fill[1]>grip.fill[1] and grip.point[2]==edge and grip.point[4]==1)
+assert(menuLookups==1 and styleRegistrations==1)
+local style=root.filterBtn.ddDisplayMode
+local foreignModes={"menu","menuBackdrop","unregistered-foreign-style"}
+local fallbackStyles={"modernMenu","menuBackdrop","backdrop"}
+assert(root.profileBtn.ddDisplayMode==style and root.charSelect.ddDisplayMode==style)
+assert(root.settingsBtn.ddDisplayMode==nil)
+for level, owner in ipairs({root.filterBtn,root.profileBtn,root.charSelect}) do
+    local popup=AcquireMenu(level)
+    local panel=popup.styles[style]
+    assert(panel.parent==popup and panel.skin=="Panel" and panel.opts.inset and panel.mouse==false)
+    assert(not panel:IsShown())
+    SelectStyle(popup, owner)
+    assert(panel:IsShown() and popup.activeStyle==panel)
+    SelectStyle(popup, {ddDisplayMode=foreignModes[level]})
+    assert(popup.activeStyle==popup.styles[fallbackStyles[level]] and not panel:IsShown())
+end
+local menuFrames,menuTextures=frames,textures
+for _=1,20 do
+    for _, owner in ipairs({root.filterBtn,root.profileBtn,root.charSelect}) do
+        for level=1,3 do
+            local popup=AcquireMenu(level)
+            SelectStyle(popup, owner)
+            assert(popup.activeStyle==popup.styles[style])
+            SelectStyle(popup, {ddDisplayMode="backdrop"})
+            assert(popup.activeStyle==popup.styles.backdrop and not popup.styles[style]:IsShown())
+        end
+    end
+end
+assert(existingMenu==nativeMenus[1] and frames==menuFrames and textures==menuTextures and styleRegistrations==1)
 assert(root.searchBox.searchIcon:GetAlpha()==1 and root.searchBox.scripts.OnTextChanged()=="native-search")
 assert(root.filterBtn.skin=="Button" and root.filterBtn.opts[1]=="Arrow" and root.filterBtn.scripts.OnClick()=="native-click")
 assert(root.inset.scrollBar.skin=="ScrollBar")
@@ -302,14 +378,14 @@ callbacks[1](); assert(calls==liveCalls)
 -- On reopen the original initializer has already been replaced in WoW.
 root:Hide(); Show()
 assert(calls>liveCalls and frames==warmFrames and textures==warmArt and hooks==warmHooks)
-assert(#slider.regions==6 and slider.regions[5]==track and slider.regions[6]==thumbArt)
-assert(thumbArt.tintWrites==2 and slider.scripts.OnValueChanged==scaleChanged)
+assert(#slider.regions==7 and slider.regions[5]==track and slider.regions[6]==edge and slider.regions[7]==grip)
+assert(menuLookups==1 and styleRegistrations==1 and slider.scripts.OnValueChanged==scaleChanged)
 assert(root.config.scale==200 and writes==warmWrites)
 enabled=false; liveCalls=calls
 module.refresh(); root:normalInit(addonRow(),addonNode); callbacks[1]()
 assert(calls==liveCalls)
-print(("BENCH Manargl %s: five-trial median for 1000 pooled row/category and CPU cycles %.3f -> %.3f ms; first open +%d frames, +%d textures, +%d adapter hooks; warm 0 cosmetic calls/writes, pool reads or allocations")
+print(("BENCH Manargl %s: five-trial median for 1000 pooled row/category and CPU cycles %.3f -> %.3f ms; after first open and three popup depths +%d frames, +%d textures, +%d adapter hooks; warm 0 cosmetic calls/writes, pool reads or allocations")
     :format(source and "pinned-source" or "fixture",before,after,warmFrames,warmArt,warmHooks))
-print("PASS: Manargl owned appearance, native state colours/actions, pool reuse, combat, theme deferral and no library hooks")
+print("PASS: Manargl owned appearance, native state colours/actions, pool reuse, combat, theme deferral and launcher-only menu style and foreign popup reuse")
 for _, key in ipairs(globals) do _G[key]=saved[key] end
 end

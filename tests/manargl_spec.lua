@@ -12,8 +12,9 @@ local function region(kind)
     function f:GetObjectType() return self.kind end
     function f:SetText(v) self.text=v end
     function f:SetTextColor(...) self.color={...} end
-    function f:SetVertexColor(...) self.tint={...} end
+    function f:SetVertexColor(...) self.tint={...}; self.tintWrites=(self.tintWrites or 0)+1 end
     function f:SetTexture(path) self.path=path end
+    function f:GetTexture() return self.path end
     function f:SetAtlas(atlas) self.atlas=atlas end
     function f:SetDesaturated(flag) self.desaturated=flag end
     function f:SetAlpha(alpha) self.alpha=alpha; writes=writes+1 end
@@ -196,7 +197,8 @@ for _, name in ipairs({"Shell","Inset","CloseButton","EditBox","ScrollBar","Butt
         if name=="Font" then f.font="EUI" end
     end
 end
-S.GetAccentColor=function() return .2,.7,.6 end
+local accent=.2
+S.GetAccentColor=function() return accent,.7,.6 end
 S.OnLooksChanged=function(fn) callbacks[#callbacks+1]=fn end
 local ns={IsEnabled=function() return enabled end}
 local module={}
@@ -254,12 +256,24 @@ local event=assert(events.PLAYER_REGEN_ENABLED)
 event.scripts.OnEvent(event)
 assert(root.skin=="Shell" and root.inset.skin=="Inset" and root.searchBox.skin=="EditBox")
 assert(root.closeButton.skin=="CloseButton")
-local track=slider.regions[5]
-assert(track.height==2 and track.fill[1]==.2 and #slider.regions==5)
+local track,thumbArt=slider.regions[5],slider.regions[6]
+assert(track.height==2 and track.fill[1]==.2 and #slider.regions==6)
 assert(slider.Left.alpha==0 and slider.Middle.alpha==0 and slider.Right.alpha==0)
 assert(slider:GetThumbTexture()==slider.thumb and slider.thumb.atlas=="Minimal_SliderBar_Button")
 assert(slider.thumb.width==20 and slider.thumb.height==20 and slider.thumb.point==thumbPoint)
-assert(slider.thumb.alpha==1 and slider.thumb.fill==nil and slider.thumb.tint==nil)
+assert(slider.thumb.alpha==0 and slider.thumb.fill==nil and slider.thumb.tint==nil)
+assert(thumbArt.path=="Interface\\AddOns\\EllesmereUI\\media\\rounded\\circle-12.tga")
+assert(thumbArt.width==12 and thumbArt.height==12 and thumbArt.point[2]==slider.thumb)
+assert(thumbArt.tint[1]==accent and thumbArt.tintWrites==1)
+callbacks[1]()
+assert(thumbArt.tintWrites==1, "unchanged accent rewrote thumb")
+locked=true
+accent=.8
+callbacks[1]()
+assert(thumbArt.tintWrites==1, "repainted thumb during combat")
+locked=false
+event.scripts.OnEvent(event)
+assert(thumbArt.tint[1]==accent and thumbArt.tintWrites==2)
 assert(root.searchBox.searchIcon:GetAlpha()==1 and root.searchBox.scripts.OnTextChanged()=="native-search")
 assert(root.filterBtn.skin=="Button" and root.filterBtn.opts[1]=="Arrow" and root.filterBtn.scripts.OnClick()=="native-click")
 assert(root.inset.scrollBar.skin=="ScrollBar")
@@ -288,7 +302,8 @@ callbacks[1](); assert(calls==liveCalls)
 -- On reopen the original initializer has already been replaced in WoW.
 root:Hide(); Show()
 assert(calls>liveCalls and frames==warmFrames and textures==warmArt and hooks==warmHooks)
-assert(#slider.regions==5 and slider.regions[5]==track and slider.scripts.OnValueChanged==scaleChanged)
+assert(#slider.regions==6 and slider.regions[5]==track and slider.regions[6]==thumbArt)
+assert(thumbArt.tintWrites==2 and slider.scripts.OnValueChanged==scaleChanged)
 assert(root.config.scale==200 and writes==warmWrites)
 enabled=false; liveCalls=calls
 module.refresh(); root:normalInit(addonRow(),addonNode); callbacks[1]()

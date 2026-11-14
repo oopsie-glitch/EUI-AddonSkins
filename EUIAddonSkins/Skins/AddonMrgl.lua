@@ -11,6 +11,7 @@ local function DefineSkin()
         local fonts = setmetatable({}, {__mode = "k"})
         local checkboxOptions = {stockCheck = true, hover = 0.08}
         local mainReady, pending, looksPending
+        local scaleThumb, thumbRed, thumbGreen, thumbBlue
 
         local function Font(text)
             if H.Allowed(text) and S.Font then
@@ -50,14 +51,20 @@ local function DefineSkin()
             end
         end
 
+        local function TintScaleThumb()
+            if not scaleThumb then return end
+            local r, g, b = S.GetAccentColor()
+            if r == thumbRed and g == thumbGreen and b == thumbBlue then return end
+            thumbRed, thumbGreen, thumbBlue = r, g, b
+            scaleThumb:SetVertexColor(r, g, b, 1)
+        end
+
         local function ScaleControl()
             local slider = root.scaleSlider
-            if not H.Allowed(slider) or not slider.GetThumbTexture or not slider:GetThumbTexture() then return end
+            if not H.Allowed(slider) or not slider.GetThumbTexture then return end
+            local thumb = H.Texture(slider:GetThumbTexture())
             local left, middle, right = H.Texture(slider.Left), H.Texture(slider.Middle), H.Texture(slider.Right)
-            if not (left and middle and right and slider.CreateTexture) then return end
-            -- MinimalSliderTemplate owns the moving thumb and its atlas supplies
-            -- the visible shape within a larger texture. A solid fill would paint
-            -- that entire rectangle. The public EUI ScrollBar targets scrollbars.
+            if not (thumb and left and middle and right and slider.CreateTexture) then return end
             H.Fade(left)
             H.Fade(middle)
             H.Fade(right)
@@ -66,6 +73,19 @@ local function DefineSkin()
             track:SetPoint("RIGHT")
             track:SetHeight(2)
             track:SetColorTexture(0.2, 0.2, 0.22, 1)
+
+            if not S.GetAccentColor then return end
+            -- The EUI options slider draws an accent-tinted circle. The public
+            -- skin facade has no horizontal slider method. Use the installed
+            -- artwork and follow the native thumb without resizing its hit area.
+            local art = slider:CreateTexture(nil, "OVERLAY")
+            art:SetTexture("Interface\\AddOns\\EllesmereUI\\media\\rounded\\circle-12.tga")
+            if not art:GetTexture() then art:Hide(); return end
+            art:SetSize(12, 12)
+            art:SetPoint("CENTER", thumb, "CENTER")
+            scaleThumb = art
+            TintScaleThumb()
+            H.Fade(thumb)
         end
 
         local function SkinWindow()
@@ -123,6 +143,7 @@ local function DefineSkin()
             if InCombatLockdown and InCombatLockdown() then looksPending = true; return end
             looksPending = nil
             for text in pairs(fonts) do Font(text) end
+            TintScaleThumb()
         end
 
         local function Refresh()

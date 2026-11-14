@@ -241,6 +241,90 @@ if source then
         ..libSource:sub(first,last-1).."\nreturn DropDownButtonMixin.ddToggle","@upstream/LibSFDropDown.lua"))
     NativeToggle=chunk({},context,queue,function() return 1000 end,function() return 700 end)
     nativeRootOwner=context
+    local settings=Read("Settings.lua")
+    local scaleStart=assert(settings:find("-- scale",1,true))
+    local scaleEnd=assert(settings:find("-- settings",scaleStart,true))
+    local window=region("Frame")
+    window.scaleSlider=region("Slider")
+    window.config={scale=125}
+    local dragStops=0
+    window:SetScript("OnDragStop",function() dragStops=dragStops+1 end)
+    function window:GetRight() return 640 end
+    function window:GetTop() return 500 end
+    local control=window.scaleSlider
+    for _, frame in ipairs({window, control}) do
+        function frame:GetScript(key) return self.scripts[key] end
+        function frame:GetScale() return self.scale or 1 end
+        function frame:SetScale(value) self.scale=value end
+    end
+    function control:SetMinMaxValues(a,b) self.min,self.max=a,b end
+    function control:SetValueStep(step) self.step=step end
+    function control:GetValue() return self.value end
+    function control:SetValue(value)
+        value=math.max(self.min, math.min(self.max, value))
+        if self.value==value then return end
+        self.value=value
+        local changed=self:GetScript("OnValueChanged")
+        if changed then changed(self,value) end
+    end
+    local openSlider=assert(load("return function(self, UIParent)\n"..settings:sub(scaleStart,scaleEnd-1).."\nend","@upstream/Settings.lua"))()
+    openSlider(window,{})
+    assert(control.min==50 and control.max==200 and control.step==1 and control.value==125)
+    control:SetValue(50)
+    assert(window.config.scale==50 and window.scale==.5 and dragStops==1)
+    control:GetScript("OnMouseUp")(control)
+    control:SetValue(200)
+    assert(window.config.scale==200 and window.scale==2 and dragStops==2)
+    control:GetScript("OnMouseWheel")(control,-1)
+    assert(window.config.scale==199 and control:GetScale()==1)
+    control:GetScript("OnMouseDown")(control,"RightButton")
+    control:GetScript("OnMouseUp")(control)
+    assert(window.config.scale==100 and control.value==100 and control:GetScale()==1)
+    window.config.scale=137
+    control:SetScript("OnValueChanged",nil)
+    openSlider(window,{})
+    assert(window.config.scale==137 and control.value==137)
+
+    local dismissStart=assert(libSource:find("-- CLOSE ON ESC",1,true))
+    local dismissEnd=assert(libSource:find("-- DROPDOWN TOGGLE BUTTON",dismissStart,true))
+    local popup=region("Frame")
+    local underMouse, focus
+    local eventsActive={}
+    function popup:IsMouseOver() return underMouse end
+    function popup:Raise() end
+    function popup:EnableKeyboard(value) self.keyboard=value end
+    function popup:SetPropagateKeyboardInput(value) self.propagate=value end
+    function popup:RegisterEvent(event) eventsActive[event]=true end
+    function popup:UnregisterEvent(event) eventsActive[event]=nil end
+    local nativeDismiss=assert(load("local menu1,dropDownMenusList,GetBindingKey,GetMouseFoci,InCombatLockdown,DropDownMenuList_OnHide=...\n"
+        ..libSource:sub(dismissStart,dismissEnd-1),"@upstream/LibSFDropDown.lua"))
+    nativeDismiss(popup,{popup},function() return "ESCAPE" end,function() return {focus} end,
+        function() return locked end,function() end)
+    popup.scripts.OnShow(popup)
+    assert(popup.keyboard and eventsActive.GLOBAL_MOUSE_DOWN)
+    popup.scripts.OnKeyDown(popup,"ESCAPE")
+    assert(not popup:IsShown() and popup.propagate==false)
+    popup:Show()
+    underMouse=true
+    popup.scripts.OnEvent(popup,"GLOBAL_MOUSE_DOWN","LeftButton")
+    assert(popup:IsShown())
+    underMouse=false
+    focus={LibSFDropDownNoGMEvent=true}
+    popup.scripts.OnEvent(popup,"GLOBAL_MOUSE_DOWN","LeftButton")
+    assert(popup:IsShown())
+    focus=nil
+    popup.scripts.OnEvent(popup,"GLOBAL_MOUSE_DOWN","RightButton")
+    assert(not popup:IsShown())
+    popup.scripts.OnHide(popup)
+    assert(next(eventsActive)==nil)
+    locked=true
+    popup:Show()
+    popup.scripts.OnShow(popup)
+    assert(not popup.keyboard)
+    locked=false
+    popup.scripts.OnEvent(popup,"PLAYER_REGEN_ENABLED")
+    assert(popup.keyboard)
+    print("AUDIT source PASS: scale bounds, wheel, reset, reopening with saved value, Escape, outside click, protected launcher focus, combat keyboard recovery")
     local native=Read("AddonMrgl.lua")
     local i=assert(native:find("function listFrame:normalInit",1,true))
     local j=assert(native:find("function listFrame:updateList",i,true))

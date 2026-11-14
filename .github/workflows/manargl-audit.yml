@@ -48,18 +48,3 @@ jobs:
           print('Pinned Manargl source and XML:', sha)
           PY
           MANARGL_SOURCE=/tmp/manargl-source python3 tests/run_lua.py
-      - name: Compare audited and historical adapters on one runner
-        run: |
-          set -o pipefail
-          mkdir /tmp/manargl-versions
-          for sha in 6f1fead228ae0370b5dfdf9bc46f0201958bada4 77c06823b1fd158a2a3cd56cde0653d72a92d938 59410b77948a11a83da2c4ab6fe93a02fa3fb02f 0d8dd79563a957b7a7735faf9fe4348f771d90f6; do
-            curl --fail --silent --show-error "https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/$sha/EUIAddonSkins/Skins/AddonMrgl.lua" -o "/tmp/manargl-versions/$sha.lua"
-          done
-          for client in retail forever; do
-            for skin in native /tmp/manargl-versions/*.lua; do
-              echo "AUDIT client $client skin $skin"
-              for trial in 1 2 3 4 5; do
-                MANARGL_AUDIT_CLIENT="$client" MANARGL_AUDIT_SKIN="$skin" MANARGL_SOURCE=/tmp/manargl-source python3 tests/run_lua.py | grep -E 'AUDIT '
-              done
-            done
-          done

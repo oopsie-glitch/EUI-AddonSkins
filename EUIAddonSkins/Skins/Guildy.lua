@@ -352,6 +352,27 @@ local function RefreshContent(C, frame)
     if frame and Visible(frame) then C.RefreshControls(frame, Exclusions()) end
 end
 
+local function PaintPage(C, page)
+    if Visible(page) then C.RefreshControlsNow(page, Exclusions()) end
+end
+
+local function WatchList(C, scroll)
+    -- Guildy's ScrollList creates visible rows in SetItems, which a tab can
+    -- call after its panel's OnShow. Only scan when that call adds children.
+    if type(scroll.SetItems) ~= "function" or type(scroll.rows) ~= "table" or not scroll.GetScrollChild then return end
+    local child = scroll:GetScrollChild()
+    if not C.H.Allowed(child) or not child.GetNumChildren then return end
+    local count = child:GetNumChildren()
+    C.H.Hook(scroll, "SetItems", function()
+        if not Visible(scroll) or not C.H.Allowed(child) then return end
+        local current = child:GetNumChildren()
+        if current ~= count then
+            count = current
+            C.RefreshControlsNow(child, Exclusions())
+        end
+    end)
+end
+
 ns.RegisterScopedSkin("Guildy", "Guildy", {
     softBorders = true, preserveTextColors = true,
     rootShow = function(C, root)
@@ -370,7 +391,7 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
                     end
                 end
                 if page then
-                    C.H.Script(frame, "OnShow", function(self) RefreshContent(C, self) end)
+                    C.H.Script(frame, "OnShow", function(self) PaintPage(C, self) end)
                     return not Visible(frame)
                 end
             end,
@@ -411,7 +432,7 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
         -- (Blizzard_Communities loads on demand) and lives inside it.
         local function Opened()
             local main = _G.GuildyFrame
-            if H.Allowed(main) and Visible(main) and not main.euiGuildyTabard then refresh() end
+            if H.Allowed(main) and Visible(main) and not main.euiGuildyTabard then C.RefreshNow() end
         end
         H.Hook(_G, "ToggleGuildFrame", Opened)
         if SlashCmdList then H.Hook(SlashCmdList, "GUILDY", Opened) end
@@ -457,6 +478,13 @@ ns.RegisterScopedSkin("Guildy", "Guildy", {
     end,
     visit = function(C, f, kind, refresh)
         local H, S = C.H, C.S
+        if kind == "ScrollFrame" then
+            if not C.guildyLists then C.guildyLists = setmetatable({}, {__mode = "k"}) end
+            if not C.guildyLists[f] then
+                C.guildyLists[f] = true
+                WatchList(C, f)
+            end
+        end
         if f == _G.GuildyFrame then
             -- A small square title-bar icon like other EUI windows, instead of the
             -- round portrait and the 60px guild emblem Guildy draws over it.

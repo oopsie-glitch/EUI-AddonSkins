@@ -379,7 +379,7 @@ assert(railTrack.color[1] == 0.9 and thumbFill.color[1] == 0.9, 'accent change n
 
 -- No tabard design: the EUI look, no guild edges or underlines.
 for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == false, 'window edge drawn without tabard colours') end
-assert(not tab1.euiGuildyLine or not tab1.euiGuildyLine, 'guild underline without tabard colours')
+assert(not tab1.euiGuildyLine, 'guild underline without tabard colours')
 
 -- Tabard colours drive Guildy's accent, tabs, title icon and window edge.
 tabardInfo = {backgroundColor = Color(0.1, 0.05, 0.2), borderColor = Color(0.6, 0.5, 0.1), emblemColor = Color(0.8, 0.2, 0.9)}
@@ -415,7 +415,22 @@ local queued = #timers; main.Emblem:Update(); assert(#timers == queued, 'unchang
 -- The design removed again: back to the EUI accent.
 tabardInfo = nil; emblemID = nil; main.Emblem:Update(); flush()
 for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == false, 'window edge kept after the tabard design went away') end
-assert(railTrack.color[1] == accent and tab1.selected == true and not tab1.euiGuildyLine.shown, 'EUI accent not restored')
+assert(railTrack.color[1] == accent and tab1.selected == true and not tab1.euiGuildyLine, 'EUI accent not restored')
+
+-- Stable design: no paint work on repeated native roster-driven emblem updates.
+local usage = collectgarbage("count")
+local samples = {}
+local beforePaints = bannerPaints
+for trial = 1, 5 do
+    local start = os.clock()
+    for _ = 1, 1000 do main.Emblem:Update() end
+    samples[trial] = (os.clock() - start) * 1000
+end
+table.sort(samples)
+collectgarbage("collect")
+assert(bannerPaints == beforePaints and #timers == 0)
+print(("BENCH Guildy: 1000 unchanged emblem updates %.3f ms median; %d holder and %d outer textures; heap delta %.3f KiB")
+    :format(samples[3], #holder.regions, #main.euiGuildyEdges, collectgarbage("count") - usage))
 
 -- Disabled skin stops processing.
 enabled = false
@@ -423,4 +438,4 @@ box:SetBackdropBorderColor(GOLD[1] * 0.5, GOLD[2] * 0.5, GOLD[3] * 0.5)
 assert(box.border[1] == GOLD[1] * 0.5, 'disabled skin still repainted borders')
 local after = Button(panel, 'Late'); modules.Guildy.refresh(); flush()
 assert(not after.button, 'disabled skin styled new controls')
-print('PASS: Guildy lazy window, corner guild banner, guild colour accent/tabs/edges, hidden native tab labels, title/version trim, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')
+print('PASS: Guildy lazy window, corner guild banner, guild colour accent/tabs/edges, hidden native tab labels, title trim and version tooltip, backdrop border reset, timeline rail, borrowed Blizzard editor, selection borders, data buttons, segmented options, tabs, popups, combat and disable')

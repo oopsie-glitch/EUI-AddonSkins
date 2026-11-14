@@ -1,0 +1,66 @@
+name: Guildy integration test package
+on:
+  push:
+    branches: [skin/guildy-integration]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  test-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Validate regressions and build installation ZIP
+        run: python3 scripts/package.py
+      - name: Check pinned Guildy source entry points
+        run: |
+          python3 - <<'PY'
+          from urllib.request import urlopen
+          old = '62a1e6cad3cfd00d3b102cea275775ed4215dd08'
+          new = 'cbf5e4aaa784b878c75a17596e7514bb61b1519b'
+          def source(sha, path):
+              with urlopen(f'https://raw.githubusercontent.com/svengabr/Guildy/{sha}/{path}', timeout=30) as response:
+                  return response.read().decode('utf-8-sig')
+          for sha in (old, new):
+              toc = source(sha, 'Guildy.toc')
+              main = source(sha, 'UI/Main.lua')
+              options = source(sha, 'UI/Options.lua')
+              popups = source(sha, 'UI/Popups.lua')
+              commands = source(sha, 'UI/Commands.lua')
+              assert '## Interface: 16001' in toc
+              assert 'CreateFrame("Frame", "GuildyFrame"' in main and 'frame.Emblem:Update()' in main
+              assert 'CreateFrame("Frame", "GuildyOptions"' in options and 'GuildyOptionsTab' in options
+              assert '_G.GuildyCopyBox = copyBox' in popups and '_G.GuildyConfirm = confirm' in commands
+              assert 'CommunitiesGuildTextEditFrame' in commands
+              if sha == new:
+                  assert 'function UI.ShowAtBank()' in main and 'frame:SetParent(UIParent)' in main
+                  assert 'GUILDBANKFRAME_OPENED' in source(sha, 'Core/Init.lua')
+                  assert 'ns.SafeCall(ns.UI.ShowAtBank)' in source(sha, 'Game/Bank.lua')
+              print('Verified Guildy upstream source:', sha)
+          PY
+      - name: Verify addon-only ZIP contents
+        run: |
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          with ZipFile('EUIAddonSkins.zip') as archive:
+              names = archive.namelist()
+              assert archive.testzip() is None
+              assert 'EUIAddonSkins/Skins/Guildy.lua' in names
+              assert not any('GuildyBorder' in name for name in names)
+              assert all(name.startswith('EUIAddonSkins/') for name in names)
+              print('Verified Guildy install ZIP:', len(names), 'files')
+              archive.extractall('/tmp/guildy-test')
+          PY
+      - name: Store temporary install artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-Guildy-${{ github.sha }}-test
+          path: /tmp/guildy-test/
+          retention-days: 30
+          if-no-files-found: error

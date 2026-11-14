@@ -1,0 +1,166 @@
+name: Validate combined v1.6.7 candidate
+on:
+  push:
+    branches: [test/release-1.6.7-validation]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: c588914df02c2953629d7db544a6ac3e373b3643
+          persist-credentials: false
+      - name: Verify the exact candidate and install the Lua runtime
+        run: |
+          test "$(git rev-parse HEAD)" = "c588914df02c2953629d7db544a6ac3e373b3643"
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Run full regressions and build the install ZIP
+        run: python3 scripts/package.py
+      - name: Run pinned Manargl native row and profiler fixtures
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          from xml.etree import ElementTree as ET
+          sha = '9416adb7cd2187bd80f72e78db93032a309a3d35'
+          root = Path('/tmp/manargl-source')
+          root.mkdir()
+          base = 'https://raw.githubusercontent.com/sfmict/Addon-Manargl/' + sha + '/'
+          for name in ('AddonMrgl.lua','AddonMrgl.xml','AddonMrgl.toc','ListButtons.lua','Filters.lua',
+                       'Profiles.lua','Settings.lua','Profiler.lua','AddonSearch.lua'):
+              with urlopen(base + name, timeout=30) as response:
+                  (root / name).write_bytes(response.read())
+          library = 'https://raw.githubusercontent.com/sfmict/LibSFDropDown/528acc55749f98fd5f95d6295dddf7dcebb00bd7/LibSFDropDown.lua'
+          with urlopen(library, timeout=30) as response:
+              (root / 'LibSFDropDown.lua').write_bytes(response.read())
+          xml = ET.parse(root / 'AddonMrgl.xml').getroot()
+          assert any(node.get('name') == 'AddonMgrAddonList' for node in xml)
+          assert {node.get('name') for node in xml} >= {
+              'AddonMgrListNormal', 'AddonMgrListParent', 'AddonMgrListCategory',
+          }
+          assert '16001' in (root / 'AddonMrgl.toc').read_text() and '120105' in (root / 'AddonMrgl.toc').read_text()
+          print('Pinned Manargl source and XML:', sha)
+          PY
+          MANARGL_SOURCE=/tmp/manargl-source python3 tests/run_lua.py
+      - name: Check pinned Guildy source entry points
+        run: |
+          python3 - <<'PY'
+          from urllib.request import urlopen
+          old = '62a1e6cad3cfd00d3b102cea275775ed4215dd08'
+          new = 'cbf5e4aaa784b878c75a17596e7514bb61b1519b'
+          def source(sha, path):
+              with urlopen(f'https://raw.githubusercontent.com/svengabr/Guildy/{sha}/{path}', timeout=30) as response:
+                  return response.read().decode('utf-8-sig')
+          for sha in (old, new):
+              toc = source(sha, 'Guildy.toc')
+              main = source(sha, 'UI/Main.lua')
+              options = source(sha, 'UI/Options.lua')
+              popups = source(sha, 'UI/Popups.lua')
+              commands = source(sha, 'UI/Commands.lua')
+              assert '## Interface: 16001' in toc
+              assert 'CreateFrame("Frame", "GuildyFrame"' in main and 'frame.Emblem:Update()' in main
+              assert 'CreateFrame("Frame", "GuildyOptions"' in options and 'GuildyOptionsTab' in options
+              assert '_G.GuildyCopyBox = copyBox' in popups and '_G.GuildyConfirm = confirm' in commands
+              assert 'CommunitiesGuildTextEditFrame' in commands
+              if sha == new:
+                  build = main.index("tab.builder, tab.panel")
+                  show = main.index("tab.panel:Show()", build)
+                  assert build < show < main.index("tab.view.Refresh", show)
+                  widgets = source(sha, 'UI/Widgets.lua')
+                  assert 'function scroll:SetItems(items)' in widgets and 'AceGUI' not in widgets
+                  assert 'function UI.ShowAtBank()' in main and 'frame:SetParent(UIParent)' in main
+                  assert 'GUILDBANKFRAME_OPENED' in source(sha, 'Core/Init.lua')
+                  assert 'ns.SafeCall(ns.UI.ShowAtBank)' in source(sha, 'Game/Bank.lua')
+              print('Verified Guildy upstream source:', sha)
+          PY
+      - name: Compare prior and combined Guildy fixtures
+        run: |
+          curl --fail --silent --show-error https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/bbbcbd4c9afe071e38d124c82a9962bf4859b849/EUIAddonSkins/Skins/Guildy.lua -o /tmp/guildy-baseline.lua
+          GUILDY_AUDIT=1 GUILDY_AUDIT_BASELINE=/tmp/guildy-baseline.lua python3 tests/run_lua.py
+          GUILDY_AUDIT=1 python3 tests/run_lua.py
+      - name: Compare cold and warm Guildy opening
+        run: |
+          set -o pipefail
+          for mode in native disabled baseline candidate; do
+            for trial in 1 2 3 4 5; do
+              if [ "$mode" = baseline ]; then
+                export GUILDY_AUDIT_BASELINE=/tmp/guildy-baseline.lua
+              else
+                unset GUILDY_AUDIT_BASELINE
+              fi
+              GUILDY_OPEN_AUDIT="$mode" python3 tests/run_lua.py | grep '^GUILDY OPEN '
+            done
+          done
+      - name: Verify the shared package manifest with uploads disabled
+        run: |
+          curl --fail --silent --show-error --location https://raw.githubusercontent.com/BigWigsMods/packager/e50a250f8705041e40f2fa1ddcb280a686d65aa0/release.sh -o /tmp/bigwigs-release.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          from subprocess import run
+          from zipfile import ZipFile
+          import re
+          addon = Path('EUIAddonSkins')
+          pattern = r'^## Interface: (.+)$'
+          generic = (addon / 'EUIAddonSkins.toc').read_text()
+          versions = [int(v.strip()) for v in re.search(pattern, generic, re.M).group(1).split(',')]
+          selected = {'Mainline': [v for v in versions if v >= 100000],
+                      'Camelot': [v for v in versions if 16000 <= v < 17000]}
+          originals, normalized = {}, {}
+          try:
+              # Match the existing Wago workflow's flavor normalization.
+              for flavor, values in selected.items():
+                  path = addon / ('EUIAddonSkins_' + flavor + '.toc')
+                  originals[path] = path.read_bytes()
+                  expected, count = re.subn(pattern, '## Interface: ' + ', '.join(map(str, values)),
+                                            path.read_text(), count=1, flags=re.M)
+                  assert count == 1 and values
+                  path.write_text(expected)
+                  normalized[str(path)] = path.read_bytes()
+              run(['bash','/tmp/bigwigs-release.sh','-d','-p','0','-w','0','-a','0','-l','-e','-u','-m','.pkgmeta',
+                   '-r','/tmp/manifest-package','-n','EUIAddonSkins-1.6.7-manifest-check'], check=True)
+          finally:
+              for path, data in originals.items():
+                  path.write_bytes(data)
+          packages = list(Path('/tmp/manifest-package').glob('*.zip'))
+          assert len(packages) == 1, packages
+          with ZipFile(packages[0]) as actual, ZipFile('EUIAddonSkins.zip') as expected:
+              assert actual.testzip() is None
+              files = {item.filename for item in actual.infolist() if not item.is_dir()}
+              assert files == set(expected.namelist()), (files-set(expected.namelist()), set(expected.namelist())-files)
+              for name in files:
+                  a, b = actual.read(name), normalized.get(name, expected.read(name))
+                  if not name.endswith('.tga'):
+                      a, b = a.replace(b'\r\n', b'\n'), b.replace(b'\r\n', b'\n')
+                  assert a == b, name
+              print('Manifest dry run verified', len(files), 'runtime files with normalized client aliases; uploads disabled')
+          PY
+      - name: Confirm release inputs and install ZIP scope
+        env:
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+        run: |
+          if test -n "$WAGO_API_TOKEN"; then echo 'Configured Wago publishing token present'; else echo 'Wago publishing token unavailable'; fi
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          from hashlib import sha256
+          with ZipFile('EUIAddonSkins.zip') as archive:
+              names = archive.namelist()
+              assert archive.testzip() is None
+              assert len(names) == len(set(names)) == 69
+              assert {'EUIAddonSkins/Skins/AddonMrgl.lua', 'EUIAddonSkins/Skins/Guildy.lua'} <= set(names)
+              assert all(name.startswith('EUIAddonSkins/') for name in names)
+              assert not any('GuildyBorder' in name or any(part in ('tests', 'benchmarks', '.github', 'docs') for part in name.split('/')) for name in names)
+              print('Install zip validated:', len(names), 'files', sha256(Path('EUIAddonSkins.zip').read_bytes()).hexdigest())
+              archive.extractall('/tmp/install')
+      - name: Store verified installation files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-1.6.7-c588914-test
+          path: /tmp/install/
+          retention-days: 30
+          if-no-files-found: error

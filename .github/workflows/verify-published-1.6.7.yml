@@ -1,0 +1,107 @@
+name: Verify public v1.6.7 distribution
+on:
+  push:
+    branches: [audit/published-1.6.7]
+    paths: [.github/workflows/verify-published-1.6.7.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 3553aca8e386c77be2c1af20a719117c14199df2
+          persist-credentials: false
+      - name: Verify public GitHub and CurseForge downloads
+        run: |
+          python3 - <<'PY'
+          from hashlib import sha256
+          from html import unescape
+          from io import BytesIO
+          from pathlib import Path
+          import re
+          from time import sleep, time
+          from urllib.request import Request, urlopen
+          from urllib.error import URLError
+          from zipfile import ZipFile
+          project = 'https://www.curseforge.com/wow/addons/eui-addon-skins'
+          versions = {16001,120000,120001,120005,120007,120100,120105}
+          def read(url):
+              request = Request(url,headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36'})
+              with urlopen(request,timeout=12) as response:
+                  return response.read()
+          def verify(data, github=False):
+              expected = {p.as_posix() for p in Path('EUIAddonSkins').rglob('*')
+                          if p.is_file() and p.name not in ('README.md','CHANGELOG.md')}
+              with ZipFile(BytesIO(data)) as z:
+                  assert z.testzip() is None
+                  entries = [item.filename for item in z.infolist() if not item.is_dir()]
+                  assert len(entries)==len(set(entries))==69 and set(entries)==expected
+                  for name in entries:
+                      actual, source = z.read(name), Path(name).read_bytes()
+                      if name.endswith('.toc'):
+                          assert b'## Version: 1.6.7' in actual
+                          if not github:
+                              field = rb'^## Interface:\s*([^\r\n]+)'
+                              values = {int(v.strip()) for v in re.search(field,actual,re.M).group(1).split(b',')}
+                              want = ({16001} if name.endswith('_Camelot.toc') else versions-{16001}
+                                      if name.endswith('_Mainline.toc') else versions)
+                              assert values in (versions,want), (name,values)
+                              actual, source = re.sub(field,b'',actual,flags=re.M), re.sub(field,b'',source,flags=re.M)
+                      if not github and not name.endswith('.tga'):
+                          actual, source = actual.replace(b'\r\n',b'\n'), source.replace(b'\r\n',b'\n')
+                      assert actual==source, name
+              return sha256(data).hexdigest()
+          for attempt in range(15):
+              try:
+                  gh = read('https://github.com/oopsie-glitch/EUI-AddonSkins/releases/download/v1.6.7/EUIAddonSkins-1.6.7.zip')
+                  break
+              except URLError:
+                  if attempt == 14:
+                      raise
+                  sleep(8)
+          print('GITHUB VERIFIED public download, 69 runtime files, SHA256', verify(gh,github=True),flush=True)
+          wago = 'https://addons.wago.io/addons/aN0a2M6j'
+          try:
+              html = unescape(read(wago).decode(errors='replace'))
+              match = re.search(r'v?1\.6\.7(?:\.zip)?(?![\d.])', html)
+              print('WAGO LISTING', 'v1.6.7 visible' if match else 'v1.6.7 not visible in public HTML', flush=True)
+          except URLError as err:
+              print('WAGO LISTING unavailable:', str(err), flush=True)
+          found = False
+          for attempt in range(8):
+              ids = set()
+              listed = set()
+              for page in (project,project+'/files/all',
+                           'https://www.curseforge.com/api/v1/mods/1737903/files?pageIndex=0&pageSize=20'):
+                  try:
+                      url = page + ('&' if '?' in page else '?') + '_release_check=' + str(int(time()))
+                      html = unescape(read(url).decode(errors='replace')).replace('\\"','"').replace('\\/','/')
+                      listed.update(int(n) for n in re.findall(r'/eui-addon-skins/files/(\d+)', html))
+                      for match in re.finditer(r'EUIAddonSkins-v1\.6\.7\.zip', html):
+                          context = html[max(0,match.start()-1200):match.end()+1200]
+                          listed.update(int(n) for n in re.findall(r'"(?:id|fileId)"\s*:\s*(\d{7,})',context))
+                      if 'EUIAddonSkins-v1.6.7.zip' in html:
+                          print('CurseForge references the expected filename on', page, flush=True)
+                      ids.update(n for n in listed if n>9582581)
+                  except URLError as err:
+                      print('Listing attempt', attempt+1, type(err).__name__, str(err),flush=True)
+              for file_id in sorted(ids,reverse=True)[:8]:
+                  try:
+                      prefix, suffix = divmod(file_id,1000)
+                      data = read(f'https://edge.forgecdn.net/files/{prefix}/{suffix:03d}/EUIAddonSkins-v1.6.7.zip')
+                  except URLError:
+                      continue
+                  print('CURSEFORGE VERIFIED', f'{project}/files/{file_id}', '69 runtime files, SHA256',verify(data),flush=True)
+                  found=True
+                  break
+              if found:
+                  break
+              print('CurseForge current listing IDs:', sorted(listed, reverse=True)[:5], flush=True)
+              if attempt<7:
+                  sleep(12)
+          if not found:
+              print('CurseForge publication unconfirmed from the public listing')
+          PY

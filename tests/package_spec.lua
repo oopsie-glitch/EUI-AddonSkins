@@ -32,7 +32,10 @@ for _, manifest in ipairs({'EUIAddonSkins.toc', 'EUIAddonSkins_Camelot.toc', 'EU
         for _, entry in ipairs(ns.skinCatalog) do assert(entry.defined and not entry.loaded) end
         local count = 0; for _ in pairs(entries) do count = count + 1 end
         assert(count == (onlyTarget and 1 or 0), manifest .. ': unexpected toggles')
-        if onlyTarget then assert(entries['EUI AddonSkins - ' .. onlyTarget]) end
+        if onlyTarget then
+            local label = onlyTarget == 'AddonMrgl' and 'Addon Manargl' or onlyTarget
+            assert(entries['EUI AddonSkins - ' .. label])
+        end
     end
 end
 print('PASS: generic, Forever/Camelot and Mainline manifests register only the enabled target; absent skin factories never activate')

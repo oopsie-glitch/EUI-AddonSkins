@@ -93,6 +93,8 @@ root.charGUID="Player-Test"
 root.inset=region("Frame")
 root.inset.scrollBar=region("EventFrame")
 root.searchBox=region("EditBox")
+root.searchBox.searchIcon=region("Texture")
+root.searchBox.scripts.OnTextChanged=function() return "native-search" end
 root.closeButton=button()
 root.settingsBtn=button()
 root.settingsBtn.icon=region("Texture")
@@ -174,6 +176,7 @@ for _, name in ipairs({"Shell","Inset","CloseButton","EditBox","ScrollBar","Butt
     S[name]=function(f,options)
         assert(not locked, "wrote cosmetic state in combat")
         calls=calls+1; f.skin=name; f.opts=options
+        if name=="EditBox" and f.searchIcon then f.searchIcon:SetAlpha(0) end
         if name=="Font" then f.font="EUI" end
     end
 end
@@ -235,6 +238,7 @@ local event=assert(events.PLAYER_REGEN_ENABLED)
 event.scripts.OnEvent(event)
 assert(root.skin=="Shell" and root.inset.skin=="Inset" and root.searchBox.skin=="EditBox")
 assert(root.closeButton.skin=="CloseButton" and root.scaleSlider.thumb.fill)
+assert(root.searchBox.searchIcon:GetAlpha()==1 and root.searchBox.scripts.OnTextChanged()=="native-search")
 assert(root.filterBtn.skin=="Button" and root.filterBtn.opts[1]=="Arrow" and root.filterBtn.scripts.OnClick()=="native-click")
 assert(root.inset.scrollBar.skin=="ScrollBar")
 assert(row.check.skin=="Checkbox" and row.check.opts.stockCheck and row.check.CheckedTexture.tint[2]==1)

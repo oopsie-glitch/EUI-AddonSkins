@@ -65,10 +65,18 @@ local function DefineSkin()
             -- engine owns its shell artwork and live theme updates.
             if S.Shell then S.Shell(root, {bottomBar = true}) end
             if H.Allowed(root.inset) and S.Inset then S.Inset(root.inset) end
-            local title = root.TitleContainer and root.TitleContainer.TitleText or root.TitleText or root.Title
-            Font(title)
+            if root.NineSlice and S.FadeNineSlice then S.FadeNineSlice(root.NineSlice) end
+            local title = root.TitleContainer
+            if title then H.Fade(title.TitleBg) end
+            Font(title and title.TitleText or root.TitleText or root.Title)
             if H.Allowed(root.closeButton) and S.CloseButton then S.CloseButton(root.closeButton) end
-            if H.Allowed(root.searchBox) and S.EditBox then S.EditBox(root.searchBox, {padInput = false}) end
+            local search = root.searchBox
+            if H.Allowed(search) and S.EditBox then
+                local icon = H.Texture(search.searchIcon or search.SearchIcon)
+                local alpha = icon and icon:GetAlpha()
+                S.EditBox(search, {padInput = false})
+                if icon then icon:SetAlpha(alpha) end
+            end
             if root.inset and H.Allowed(root.inset.scrollBar) and S.ScrollBar then
                 S.ScrollBar(root.inset.scrollBar, true)
             end

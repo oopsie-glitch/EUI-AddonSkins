@@ -2,6 +2,8 @@
 -- editor, selection borders, data buttons, segmented options, tabs and combat.
 local enabled, combat, accent, timers, events = true, false, 0.4, {}, {}
 local hookCount, frameCount, textureCount, fontCount = 0, 0, 0, 0
+local visits, scans, layouts, callbacks, styles = 0, 0, 0, 0, 0
+local function CountLayout() layouts = layouts + 1 end
 local ns = {IsEnabled = function() return enabled end, AttachAccent = function(_, f) f.accent = true end}
 C_Timer = {After = function(_, fn) timers[#timers + 1] = fn end}
 InCombatLockdown = function() return combat end
@@ -10,7 +12,7 @@ hooksecurefunc = function(object, name, callback)
     hookCount = hookCount + 1
     local original = object[name]
     object[name] = function(...)
-        local values = table.pack(original(...)); callback(...); return table.unpack(values, 1, values.n)
+        local values = table.pack(original(...)); callbacks=callbacks+1; callback(...); return table.unpack(values, 1, values.n)
     end
 end
 local function texture(kind, parent)
@@ -29,14 +31,14 @@ local function texture(kind, parent)
     function t:GetDrawLayer() return self.layer or 'ARTWORK' end
     function t:SetColorTexture(...) self.color = {...}; self.path = 'solid' end
     function t:SetVertexColor(...) self.color = {...} end
-    function t:SetPoint(...) self.points[#self.points + 1] = {...} end
+    function t:SetPoint(...) CountLayout(); self.points[#self.points + 1] = {...} end
     function t:SetAllPoints() end
     function t:ClearAllPoints() self.points = {} end
     function t:SetShown(v) self.shown = v end
     function t:IsShown() return self.shown ~= false end
-    function t:SetSize(w, h) self.width, self.height = w, h end
+    function t:SetSize(w, h) CountLayout(); self.width, self.height = w, h end
     function t:SetHeight(h) self.height = h end
-    function t:SetWidth(w) self.width = w end
+    function t:SetWidth(w) CountLayout(); self.width = w end
     function t:SetTexCoord(...) self.crop = {...} end
     function t:GetNumMaskTextures() return 0 end
     function t:SetText(s) self.text = s end
@@ -53,10 +55,10 @@ end
 local function frame(kind, name, parent)
     local f = {kind = kind or 'Frame', name = name, parent = parent, regions = {}, children = {}, hooks = {}}
     function f:GetObjectType() return self.kind end
-    function f:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = {...} end
+    function f:SetPoint(...) CountLayout(); self.points = self.points or {}; self.points[#self.points + 1] = {...} end
     function f:GetPoint() return 'CENTER', nil, 'CENTER', 0, 0 end
     function f:ClearAllPoints() self.points = {} end
-    function f:SetSize(w, h) self.width, self.height = w, h end
+    function f:SetSize(w, h) CountLayout(); self.width, self.height = w, h end
     function f:GetWidth() return self.width or 24 end
     function f:GetHeight() return self.height or 24 end
     function f:SetID(v) self.id = v end
@@ -76,15 +78,15 @@ local function frame(kind, name, parent)
     function f:GetParent() return self.parent end
     function f:IsForbidden() return false end
     function f:IsProtected() return self.protected end
-    function f:GetChildren() return table.unpack(self.children) end
+    function f:GetChildren() visits=visits+1; return table.unpack(self.children) end
     function f:GetRegions() return table.unpack(self.regions) end
     function f:HasScript() return true end
-    function f:HookScript(event, fn) hookCount=hookCount+1; local old = self.hooks[event]; self.hooks[event] = function(...) if old then old(...) end; fn(...) end end
+    function f:HookScript(event, fn) hookCount=hookCount+1; local old = self.hooks[event]; self.hooks[event] = function(...) if old then old(...) end; callbacks=callbacks+1; fn(...) end end
     function f:RegisterEvent(e) self.events = self.events or {}; self.events[e] = true end
     function f:SetScript(e, fn) self.hooks[e] = fn end
     function f:GetBackdrop() return self.backdrop end
     -- BackdropTemplateMixin:SetBackdrop reapplies a white border through SetBackdropBorderColor.
-    function f:SetBackdrop(b) assert(not combat, 'styled during combat'); self.backdrop = b; if b then self:SetBackdropBorderColor(1, 1, 1, 1) end end
+    function f:SetBackdrop(b) CountLayout(); assert(not combat, 'styled during combat'); self.backdrop = b; if b then self:SetBackdropBorderColor(1, 1, 1, 1) end end
     function f:GetBackdropColor() return table.unpack(self.color or {0, 0, 0, 1}) end
     function f:GetBackdropBorderColor() return table.unpack(self.border or {0, 0, 0, 1}) end
     function f:SetBackdropColor(...) self.color = {...} end
@@ -124,6 +126,10 @@ function S.EditBox(f) f.input = true end
 function S.Dropdown(f) f.dropdown = true end
 function S.FadeNineSlice(f) f.faded = true end
 function S.GetPanelColor() return 0.03, 0.03, 0.04, 0.95 end
+for _, name in ipairs({"Font","Button","Tab","SetTabSelection","Panel","Shell","CloseButton","Checkbox","EditBox","ScrollBar"}) do
+    local apply = S[name]
+    S[name] = function(...) styles=styles+1; return apply(...) end
+end
 local looks = {}
 S.OnLooksChanged = function(fn) looks[#looks + 1] = fn end
 assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
@@ -131,7 +137,16 @@ local modules = {}
 function ns.RegisterModule(id, _, available, install) modules[id] = {available = available, install = install} end
 assert(loadfile('EUIAddonSkins/Scoped.lua'))('EUIAddonSkins', ns)
 local baseline = os.getenv("GUILDY_AUDIT_BASELINE")
+local opening = os.getenv("GUILDY_OPEN_AUDIT")
+
 assert(loadfile(baseline or 'EUIAddonSkins/Skins/Guildy.lua'))('EUIAddonSkins', ns)
+local helper = ns.CreateSkinHelper
+ns.CreateSkinHelper = function(...)
+    local H = helper(...)
+    local scan = H.Scan
+    H.Scan = function(...) scans=scans+1; return scan(...) end
+    return H
+end
 local function flush()
     local rounds = 0
     while #timers > 0 do
@@ -191,9 +206,13 @@ local blizzardEdit = frame('EditBox', nil, container)
 local blizzardAccept = Button(container, 'Accept')
 
 -- Installed before Guildy built its window (it builds on the first guild-window open).
-modules.Guildy.install(S, modules.Guildy); flush()
+if opening == "disabled" then enabled = false end
+if opening ~= "native" then modules.Guildy.install(S, modules.Guildy); flush() end
 local nativeToggle = ToggleGuildFrame
 
+local coldStart = os.clock()
+local coldCallbacks, coldVisits, coldScans, coldLayouts, coldStyles = callbacks, visits, scans, layouts, styles
+local coldFrames, coldTextures, coldFonts = frameCount, textureCount, fontCount
 -- Guildy builds GuildyFrame as ButtonFrameTemplate inside Blizzard's window.
 local main = frame('Frame', 'GuildyFrame')
 main.PortraitContainer = frame('Frame', nil, main)
@@ -216,7 +235,7 @@ local tab1, tab2 = Button(main, 'Chat', 'GuildyFrameTab1'), Button(main, 'Member
 tab1:SetID(1); tab2:SetID(2); main.selectedTab = 1
 local grip = frame('Button', nil, main); grip.normal = grip:CreateTexture()
 grip.normal.path = 'Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up'
-local content = frame('Frame', nil, main)
+local content = frame('Frame', nil, main); main.Content = content
 local panel = frame('Frame', nil, content)
 local box = Box(panel, 0.7)
 local search = frame('EditBox', nil, panel)
@@ -238,6 +257,53 @@ rail:SetScript('OnClick', function() rail.jumped = true end)
 -- the Blizzard editor is lent into this panel
 container.parent = panel; panel.children[#panel.children + 1] = container
 
+if opening then
+    -- Simulate Guildy's post-host sequence: show root, show the active page, then
+    -- finish Blizzard's toggle. Populate hidden panels to reveal wasted walks.
+    local nativeOpen = ToggleGuildFrame
+    local alternate = frame("Frame", nil, content)
+    for _=1,80 do Button(alternate, "Dormant row") end
+    alternate:Hide()
+    local activePage = frame("Frame", nil, content)
+    for _=1,40 do Button(activePage, "Visible row") end
+    activePage:Hide()
+    local function Open()
+        main:Show()
+        activePage:Show()
+        PanelTemplates_SelectTab(tab1)
+        nativeOpen()
+        flush()
+    end
+    Open()
+    if enabled and opening ~= "native" then
+        assert(activePage.children[1].button, "cold opening failed to skin active page")
+    end
+    print(("GUILDY OPEN %s cold %.4f ms callbacks=%d visits=%d scans=%d layout=%d styles=%d objects=%d/%d/%d"):format(
+        opening,(os.clock()-coldStart)*1000,callbacks-coldCallbacks,visits-coldVisits,scans-coldScans,
+        layouts-coldLayouts,styles-coldStyles,frameCount-coldFrames,textureCount-coldTextures,fontCount-coldFonts))
+    local samples = {}
+    collectgarbage("collect")
+    local heap = collectgarbage("count")
+    local c,v,sc,l,st = callbacks,visits,scans,layouts,styles
+    local f,t,fs = frameCount,textureCount,fontCount
+    for trial=1,5 do
+        local start=os.clock()
+        for _=1,1000 do main:Hide(); activePage:Hide(); Open() end
+        samples[trial]=(os.clock()-start)*1000
+    end
+    table.sort(samples)
+    collectgarbage("collect")
+    assert(frameCount==f and textureCount==t and fontCount==fs)
+    print(("GUILDY OPEN %s warm %.4f ms per 1000 callbacks=%d visits=%d scans=%d layout=%d styles=%d heap=%.3f KiB"):format(
+        opening,samples[3],(callbacks-c)/5,(visits-v)/5,(scans-sc)/5,(layouts-l)/5,(styles-st)/5,collectgarbage("count")-heap))
+    if opening == "candidate" then
+        assert(not alternate.children[1].button, "warm opens styled hidden page")
+        assert(scans-sc <= 5000, "warm open performed duplicate scans")
+        activePage:Hide(); alternate:Show(); flush()
+        assert(alternate.children[1].button, "lazy page not styled after switching")
+    end
+    return
+end
 if not baseline then
     for _, f in ipairs(events) do
         if f.events and f.events.GUILDBANKFRAME_OPENED then f.hooks.OnEvent(f, 'GUILDBANKFRAME_OPENED') end
@@ -281,7 +347,7 @@ if os.getenv("GUILDY_AUDIT") then
     Bench("visible-emblem", function() main.Emblem:Update() end)
     main:Hide()
     Bench("closed-emblem", function() main.Emblem:Update() end)
-    main:Show(); flush()
+    main:Show(); panel:Show(); flush()
     Bench("tab-switch", function() PanelTemplates_DeselectTab(tab1); PanelTemplates_SelectTab(tab1) end)
     Bench("reopen", function() main:Hide(); main:Show(); flush() end)
     Bench("scroll", function() scroll.hooks.OnVerticalScroll(scroll); flush() end)

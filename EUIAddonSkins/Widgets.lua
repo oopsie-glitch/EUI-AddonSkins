@@ -155,28 +155,31 @@ function ns.CreateSkinHelper(S, module)
         if S.SetTabSelection then S.SetTabSelection(f, selected) end
         return true
     end
-    function H.Scan(root, refresh, visit, exclude)
+    function H.Scan(root, refresh, visit, exclude, options)
         -- Update existing scroll contexts even when an ancestor becomes excluded.
         for _, context in pairs(scrolls) do
             if context.root == root then
-                context.refresh, context.visit, context.exclude = refresh, visit, exclude
+                context.refresh, context.visit, context.exclude, context.options = refresh, visit, exclude, options
             end
         end
         local function walk(f, depth)
             if depth > 16 or not H.Allowed(f) or (exclude and exclude[f]) then return end
+            if options and options.skip and options.skip(f) then return end
             local kind = f:GetObjectType()
             if kind == "GameTooltip" or kind == "PlayerModel" or kind == "ModelScene" then return end
             if kind == "ScrollFrame" then
                 local context = scrolls[f]
                 if not context then
                     context = {root = root}; scrolls[f] = context
-                    context.apply = function() H.Scan(f, context.refresh, context.visit, context.exclude) end
+                    context.apply = function() H.Scan(f, context.refresh, context.visit, context.exclude, context.options) end
                     H.Script(f, "OnVerticalScroll", function()
                         -- Exclusions can belong to ancestors outside this subtree.
-                        if context.exclude then context.refresh() else H.Queue(f, context.apply) end
+                        if context.exclude then
+                            if context.options then context.refresh(f) else context.refresh() end
+                        else H.Queue(f, context.apply) end
                     end)
                 end
-                context.refresh, context.visit, context.exclude = refresh, visit, exclude
+                context.refresh, context.visit, context.exclude, context.options = refresh, visit, exclude, options
             end
             local handled = visit and visit(f, kind)
             if not known[f] then
@@ -217,10 +220,12 @@ function ns.CreateSkinHelper(S, module)
                 end
                 if kind == "Button" or kind == "CheckButton" then
                     H.Script(f, "OnClick", refresh)
-                    H.Script(f, "OnEnable", refresh)
-                    H.Script(f, "OnDisable", refresh)
+                    if not (options and options.explicitVisibility) then
+                        H.Script(f, "OnEnable", refresh)
+                        H.Script(f, "OnDisable", refresh)
+                    end
                 end
-                H.Script(f, "OnShow", refresh)
+                if not (options and options.explicitVisibility) then H.Script(f, "OnShow", refresh) end
                 if kind == "ScrollFrame" then
                     if f.ScrollBar then S.ScrollBar(f.ScrollBar) end
                 end

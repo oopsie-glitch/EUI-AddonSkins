@@ -107,7 +107,23 @@ root.charSelect.Arrow=region("Texture")
 root.charSelect.Icon=region("Texture")
 root.isMainline=true
 root.scaleSlider=region("Slider")
-root.scaleSlider.thumb, root.scaleSlider.regions[1]=region("Texture"),region("Texture")
+local slider=root.scaleSlider
+slider.thumb=region("Texture")
+slider.thumb:SetAtlas("Minimal_SliderBar_Button")
+slider.thumb:SetSize(20,20)
+slider.thumb:SetPoint("CENTER")
+for _, key in ipairs({"Left","Middle","Right"}) do
+    local texture=region("Texture")
+    slider[key]=texture
+    slider.regions[#slider.regions+1]=texture
+end
+slider.regions[#slider.regions+1]=slider.thumb
+local thumbPoint=slider.thumb.point
+local function scaleChanged(self, value)
+    root.config.scale=value
+    self.thumb.position=value
+end
+slider:SetScript("OnValueChanged", scaleChanged)
 root.TitleContainer={TitleText=region("FontString")}
 root.performance=region("Frame")
 for _, key in ipairs({"enableAll","disableAll","okay","cancel","currentCPU","averageCPU","peakCPU","encounterCPU"}) do
@@ -237,14 +253,24 @@ locked=false
 local event=assert(events.PLAYER_REGEN_ENABLED)
 event.scripts.OnEvent(event)
 assert(root.skin=="Shell" and root.inset.skin=="Inset" and root.searchBox.skin=="EditBox")
-assert(root.closeButton.skin=="CloseButton" and root.scaleSlider.thumb.fill)
+assert(root.closeButton.skin=="CloseButton")
+local track=slider.regions[5]
+assert(track.height==2 and track.fill[1]==.2 and #slider.regions==5)
+assert(slider.Left.alpha==0 and slider.Middle.alpha==0 and slider.Right.alpha==0)
+assert(slider:GetThumbTexture()==slider.thumb and slider.thumb.atlas=="Minimal_SliderBar_Button")
+assert(slider.thumb.width==20 and slider.thumb.height==20 and slider.thumb.point==thumbPoint)
+assert(slider.thumb.alpha==1 and slider.thumb.fill==nil and slider.thumb.tint==nil)
 assert(root.searchBox.searchIcon:GetAlpha()==1 and root.searchBox.scripts.OnTextChanged()=="native-search")
 assert(root.filterBtn.skin=="Button" and root.filterBtn.opts[1]=="Arrow" and root.filterBtn.scripts.OnClick()=="native-click")
 assert(root.inset.scrollBar.skin=="ScrollBar")
 assert(row.check.skin=="Checkbox" and row.check.opts.stockCheck and row.check.CheckedTexture.tint[2]==1)
 assert(cat.skin=="Button" and not cat.toggleBtn.skin and cat.title.font=="EUI")
 assert(row.loadButton.skin=="Button" and row.icon.path=="native-icon" and row.status.font=="EUI" and lockedRow.check.skin)
-assert(root.currentCPU.bottomStr.font=="EUI" and root.scaleSlider.scripts.OnValueChanged==nil)
+assert(root.currentCPU.bottomStr.font=="EUI" and slider.scripts.OnValueChanged==scaleChanged)
+slider.scripts.OnValueChanged(slider, 50)
+assert(root.config.scale==50 and slider.thumb.position==50)
+slider.scripts.OnValueChanged(slider, 200)
+assert(root.config.scale==200 and slider.thumb.position==200)
 assert(root.settingsBtn.opts[1]=="icon" and root.charSelect.opts[1]=="Arrow")
 assert(cat.opts[1]=="icon" and cat.opts[2]=="highlight")
 local warmCalls,warmHooks,warmFrames,warmArt,warmReads,warmWrites=calls,hooks,frames,textures,reads,writes
@@ -262,6 +288,8 @@ callbacks[1](); assert(calls==liveCalls)
 -- On reopen the original initializer has already been replaced in WoW.
 root:Hide(); Show()
 assert(calls>liveCalls and frames==warmFrames and textures==warmArt and hooks==warmHooks)
+assert(#slider.regions==5 and slider.regions[5]==track and slider.scripts.OnValueChanged==scaleChanged)
+assert(root.config.scale==200 and writes==warmWrites)
 enabled=false; liveCalls=calls
 module.refresh(); root:normalInit(addonRow(),addonNode); callbacks[1]()
 assert(calls==liveCalls)

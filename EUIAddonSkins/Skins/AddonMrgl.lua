@@ -52,9 +52,20 @@ local function DefineSkin()
 
         local function ScaleControl()
             local slider = root.scaleSlider
-            if H.Allowed(slider) and slider.GetThumbTexture and S.GetAccentColor then
-                H.LegacySlider(slider)
-            end
+            if not H.Allowed(slider) or not slider.GetThumbTexture or not slider:GetThumbTexture() then return end
+            local left, middle, right = H.Texture(slider.Left), H.Texture(slider.Middle), H.Texture(slider.Right)
+            if not (left and middle and right and slider.CreateTexture) then return end
+            -- MinimalSliderTemplate owns the moving thumb and its atlas supplies
+            -- the visible shape within a larger texture. A solid fill would paint
+            -- that entire rectangle. The public EUI ScrollBar targets scrollbars.
+            H.Fade(left)
+            H.Fade(middle)
+            H.Fade(right)
+            local track = slider:CreateTexture(nil, "BACKGROUND")
+            track:SetPoint("LEFT")
+            track:SetPoint("RIGHT")
+            track:SetHeight(2)
+            track:SetColorTexture(0.2, 0.2, 0.22, 1)
         end
 
         local function SkinWindow()
@@ -112,7 +123,6 @@ local function DefineSkin()
             if InCombatLockdown and InCombatLockdown() then looksPending = true; return end
             looksPending = nil
             for text in pairs(fonts) do Font(text) end
-            ScaleControl()
         end
 
         local function Refresh()

@@ -1,11 +1,13 @@
 -- Guildy fixtures: lazy window inside Blizzard's guild window, borrowed Blizzard
 -- editor, selection borders, data buttons, segmented options, tabs and combat.
 local enabled, combat, accent, timers, events = true, false, 0.4, {}, {}
+local hookCount, frameCount, textureCount, fontCount = 0, 0, 0, 0
 local ns = {IsEnabled = function() return enabled end, AttachAccent = function(_, f) f.accent = true end}
 C_Timer = {After = function(_, fn) timers[#timers + 1] = fn end}
 InCombatLockdown = function() return combat end
 geterrorhandler = function() return function(e) error(e) end end
 hooksecurefunc = function(object, name, callback)
+    hookCount = hookCount + 1
     local original = object[name]
     object[name] = function(...)
         local values = table.pack(original(...)); callback(...); return table.unpack(values, 1, values.n)
@@ -60,6 +62,7 @@ local function frame(kind, name, parent)
     function f:SetID(v) self.id = v end
     function f:GetID() return self.id end
     function f:IsShown() return not self.hidden end
+    function f:IsVisible() return not self.hidden and (not self.parent or self.parent:IsVisible()) end
     function f:Show() self.hidden = false; if self.hooks.OnShow then self.hooks.OnShow(self) end end
     function f:Hide() self.hidden = true end
     function f:IsEnabled() return not self.disabled end
@@ -76,7 +79,7 @@ local function frame(kind, name, parent)
     function f:GetChildren() return table.unpack(self.children) end
     function f:GetRegions() return table.unpack(self.regions) end
     function f:HasScript() return true end
-    function f:HookScript(event, fn) local old = self.hooks[event]; self.hooks[event] = function(...) if old then old(...) end; fn(...) end end
+    function f:HookScript(event, fn) hookCount=hookCount+1; local old = self.hooks[event]; self.hooks[event] = function(...) if old then old(...) end; fn(...) end end
     function f:RegisterEvent(e) self.events = self.events or {}; self.events[e] = true end
     function f:SetScript(e, fn) self.hooks[e] = fn end
     function f:GetBackdrop() return self.backdrop end
@@ -86,15 +89,15 @@ local function frame(kind, name, parent)
     function f:GetBackdropBorderColor() return table.unpack(self.border or {0, 0, 0, 1}) end
     function f:SetBackdropColor(...) self.color = {...} end
     function f:SetBackdropBorderColor(...) self.border = {...} end
-    function f:CreateTexture() local t = texture(nil, self); self.regions[#self.regions + 1] = t; return t end
-    function f:CreateFontString() local t = texture('FontString', self); t.font = 'native'; self.regions[#self.regions + 1] = t; return t end
+    function f:CreateTexture() textureCount=textureCount+1; local t = texture(nil, self); self.regions[#self.regions + 1] = t; return t end
+    function f:CreateFontString() fontCount=fontCount+1; local t = texture('FontString', self); t.font = 'native'; self.regions[#self.regions + 1] = t; return t end
     function f:GetFontString() return self.label end
     function f:GetNormalTexture() return self.normal end
     if parent then parent.children[#parent.children + 1] = f end
     if name then _G[name] = f end
     return f
 end
-CreateFrame = function(kind, name, parent) local f = frame(kind, name, parent); events[#events + 1] = f; return f end
+CreateFrame = function(kind, name, parent) frameCount=frameCount+1; local f = frame(kind, name, parent); events[#events + 1] = f; return f end
 local S = {GetAccentColor = function() return accent, 0.6, 0.7 end}
 function S.Font(t, r, g, b) t:SetFont('eui'); if r then t:SetTextColor(r, g, b) end end
 function S.Button(f, keys)
@@ -127,7 +130,8 @@ assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
 local modules = {}
 function ns.RegisterModule(id, _, available, install) modules[id] = {available = available, install = install} end
 assert(loadfile('EUIAddonSkins/Scoped.lua'))('EUIAddonSkins', ns)
-assert(loadfile('EUIAddonSkins/Skins/Guildy.lua'))('EUIAddonSkins', ns)
+local baseline = os.getenv("GUILDY_AUDIT_BASELINE")
+assert(loadfile(baseline or 'EUIAddonSkins/Skins/Guildy.lua'))('EUIAddonSkins', ns)
 local function flush()
     local rounds = 0
     while #timers > 0 do
@@ -234,11 +238,13 @@ rail:SetScript('OnClick', function() rail.jumped = true end)
 -- the Blizzard editor is lent into this panel
 container.parent = panel; panel.children[#panel.children + 1] = container
 
-for _, f in ipairs(events) do
-    if f.events and f.events.GUILDBANKFRAME_OPENED then f.hooks.OnEvent(f, 'GUILDBANKFRAME_OPENED') end
+if not baseline then
+    for _, f in ipairs(events) do
+        if f.events and f.events.GUILDBANKFRAME_OPENED then f.hooks.OnEvent(f, 'GUILDBANKFRAME_OPENED') end
+    end
+    flush()
+    assert(main.shell, 'standalone bank first open not discovered')
 end
-flush()
-assert(main.shell, 'standalone bank first open not discovered')
 assert(ToggleGuildFrame() == 'native-toggle' and toggles == 1); flush()
 assert(main.shell and main.shellOptions.noAccent, 'Guildy window not shelled on first open')
 assert(ring.alpha == 0 and main.PortraitContainer.portrait.alpha == 0, 'round portrait art remained')
@@ -246,6 +252,44 @@ local holder = main.euiGuildyTabard and main.euiGuildyTabard.Frame
 assert(holder and holder.parent == main and holder.width == 70 and holder.height == 60, 'corner banner not at Guildy size')
 assert(holder.points[1][1] == 'TOPLEFT' and holder.points[1][4] == 4 and holder.points[1][5] == -4, 'corner banner not inside the window frame')
 assert(holder.level == main:GetFrameLevel() + 300, 'corner emblem below the window chrome')
+if os.getenv("GUILDY_AUDIT") then
+    local tabard = main.euiGuildyTabard
+    GetGuildTabardFiles = function() return 180151, 180150, 184061, 184060, 180227, 180226 end
+    tabardInfo = {backgroundColor = Color(.1,.05,.2), borderColor = Color(.6,.5,.1), emblemColor = Color(.8,.2,.9)}
+    main.Emblem:Update(); flush()
+    PanelTemplates_SelectTab(tab1)
+    local function counts()
+        return ("%d/%d/%d/%d"):format(frameCount,textureCount,fontCount,hookCount)
+    end
+    local function Bench(label, fn)
+        collectgarbage("collect")
+        local resources, heap, paints = counts(), collectgarbage("count"), bannerPaints
+        local samples={}
+        for trial=1,5 do
+            local start=os.clock()
+            for _=1,1000 do fn() end
+            samples[trial]=(os.clock()-start)*1000
+        end
+        table.sort(samples)
+        collectgarbage("collect")
+        assert(counts()==resources, label.." accumulated resources")
+        print(("GUILDY AUDIT %s %s %.3f ms; %d banner paints; %.3f KiB heap delta"):format(
+            baseline and "baseline" or "candidate",label,samples[3],bannerPaints-paints,collectgarbage("count")-heap))
+    end
+    local scroll = frame("ScrollFrame", nil, panel)
+    modules.Guildy.refresh(); flush()
+    Bench("visible-emblem", function() main.Emblem:Update() end)
+    main:Hide()
+    Bench("closed-emblem", function() main.Emblem:Update() end)
+    main:Show(); flush()
+    Bench("tab-switch", function() PanelTemplates_DeselectTab(tab1); PanelTemplates_SelectTab(tab1) end)
+    Bench("reopen", function() main:Hide(); main:Show(); flush() end)
+    Bench("scroll", function() scroll.hooks.OnVerticalScroll(scroll); flush() end)
+    Bench("theme-refresh", function() looks[1](); flush() end)
+    print(("GUILDY AUDIT %s inventory %s frames/textures/fontstrings/hooks; %d holder and %d outer textures"):
+        format(baseline and "baseline" or "candidate",counts(),#holder.regions,#main.euiGuildyEdges))
+    return
+end
 local titleIcon = main.euiGuildyTabard.Logo
 assert(titleIcon.path == 'Interface/Icons/INV_Shirt_GuildTabard_01' and titleIcon.alpha == 1 and titleIcon.crop, 'square logo missing')
 assert(main.Emblem.alpha == 0, 'round guild emblem still drawn in the corner')
@@ -418,6 +462,7 @@ for _, e in ipairs(main.euiGuildyEdges) do assert(e.shown == false, 'window edge
 assert(railTrack.color[1] == accent and tab1.selected == true and not tab1.euiGuildyLine, 'EUI accent not restored')
 
 -- Stable design: no paint work on repeated native roster-driven emblem updates.
+collectgarbage("collect")
 local usage = collectgarbage("count")
 local samples = {}
 local beforePaints = bannerPaints

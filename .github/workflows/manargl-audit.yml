@@ -1,0 +1,65 @@
+name: Manargl audit benchmark
+on:
+  push:
+    branches: [chore/manargl-final-audit]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: manargl-final-audit
+  cancel-in-progress: true
+jobs:
+  test-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install Lua test runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Validate and build installation ZIP
+        run: python3 scripts/package.py
+      - name: Run pinned Manargl native row and profiler fixtures
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          from xml.etree import ElementTree as ET
+          sha = '9416adb7cd2187bd80f72e78db93032a309a3d35'
+          root = Path('/tmp/manargl-source')
+          root.mkdir()
+          base = 'https://raw.githubusercontent.com/sfmict/Addon-Manargl/' + sha + '/'
+          for name in ('AddonMrgl.lua','AddonMrgl.xml','AddonMrgl.toc','ListButtons.lua','Filters.lua',
+                       'Profiles.lua','Settings.lua','Profiler.lua','AddonSearch.lua'):
+              with urlopen(base + name, timeout=30) as response:
+                  (root / name).write_bytes(response.read())
+          library = 'https://raw.githubusercontent.com/sfmict/LibSFDropDown/528acc55749f98fd5f95d6295dddf7dcebb00bd7/LibSFDropDown.lua'
+          with urlopen(library, timeout=30) as response:
+              (root / 'LibSFDropDown.lua').write_bytes(response.read())
+          xml = ET.parse(root / 'AddonMrgl.xml').getroot()
+          assert any(node.get('name') == 'AddonMgrAddonList' for node in xml)
+          assert {node.get('name') for node in xml} >= {
+              'AddonMgrListNormal', 'AddonMgrListParent', 'AddonMgrListCategory',
+          }
+          assert '16001' in (root / 'AddonMrgl.toc').read_text() and '120105' in (root / 'AddonMrgl.toc').read_text()
+          print('Pinned Manargl source and XML:', sha)
+          PY
+          MANARGL_SOURCE=/tmp/manargl-source python3 tests/run_lua.py
+      - name: Compare audited and historical adapters on one runner
+        run: |
+          set -o pipefail
+          mkdir /tmp/manargl-versions
+          for sha in 6f1fead228ae0370b5dfdf9bc46f0201958bada4 77c06823b1fd158a2a3cd56cde0653d72a92d938 59410b77948a11a83da2c4ab6fe93a02fa3fb02f 0d8dd79563a957b7a7735faf9fe4348f771d90f6; do
+            curl --fail --silent --show-error "https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/$sha/EUIAddonSkins/Skins/AddonMrgl.lua" -o "/tmp/manargl-versions/$sha.lua"
+          done
+          for client in retail forever; do
+            for skin in native /tmp/manargl-versions/*.lua; do
+              echo "AUDIT client $client skin $skin"
+              for trial in 1 2 3 4 5; do
+                MANARGL_AUDIT_CLIENT="$client" MANARGL_AUDIT_SKIN="$skin" MANARGL_SOURCE=/tmp/manargl-source python3 tests/run_lua.py | grep -E 'AUDIT '
+              done
+            done
+          done

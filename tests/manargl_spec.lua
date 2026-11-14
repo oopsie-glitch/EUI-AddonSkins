@@ -73,6 +73,8 @@ InCombatLockdown=function() return locked end
 geterrorhandler=function() return function(message) error(message) end end
 local builtins={"backdrop","menuBackdrop","modernMenu"}
 local nativeMenus, factories = {}, {}
+local NativeToggle
+local nativeRootOwner
 local function AcquireMenu(level)
     if nativeMenus[level] then return nativeMenus[level] end
     local menu=region("Frame")
@@ -83,6 +85,14 @@ local function AcquireMenu(level)
         menu.styles[style]:Hide()
     end
     menu.activeStyle=menu.styles.backdrop
+    menu.shown=false
+    menu.reset=function(self) self:ClearAllPoints(); return self end
+    menu.scrollChild=region("Frame")
+    function menu.scrollChild:SetWidth(width) self.width=width end
+    menu.scrollFrame=region("ScrollFrame")
+    menu.scrollBar=region("Frame")
+    function menu.scrollBar:SetScrollPercentage(value) self.scroll=value end
+    menu.searchFrames={}
     nativeMenus[level]=menu
     return menu
 end
@@ -162,7 +172,8 @@ for _, field in ipairs({"charSelect","filterBtn","profileBtn","settingsBtn"}) do
     launcher.parent=root
     launcher.ddSetDisplayMode=SetDisplayMode
 end
-root.isMainline=true
+root.isMainline=os.getenv("MANARGL_AUDIT_CLIENT")~="forever"
+if not root.isMainline then root.charSelect.Button=button() end
 root.scaleSlider=region("Slider")
 local slider=root.scaleSlider
 slider.thumb=region("Texture")
@@ -222,6 +233,14 @@ if source then
     local finish=assert(libSource:find("menu.activeStyle:Show()",start,true))
     SelectStyle=assert(load("return function(menu, owner) local v={DROPDOWNBUTTON=owner, menuStyle='modernMenu',defaultStyle='backdrop'}\n"
         ..libSource:sub(start,finish+#"menu.activeStyle:Show()"-1).."\nend","@upstream/LibSFDropDown.lua"))()
+    local first=assert(libSource:find("function DropDownButtonMixin:ddToggle(",1,true))
+    local last=assert(libSource:find("function DropDownButtonMixin:ddRefresh(",first,true))
+    local queue=setmetatable({}, {__index=function(_, level) return AcquireMenu(level) end})
+    local context={dropDownMenuButtonHeight=18, menuStyle="modernMenu", defaultStyle="backdrop"}
+    local chunk=assert(load("local DropDownButtonMixin,v,dropDownMenusList,GetScreenWidth,GetScreenHeight=...\n"
+        ..libSource:sub(first,last-1).."\nreturn DropDownButtonMixin.ddToggle","@upstream/LibSFDropDown.lua"))
+    NativeToggle=chunk({},context,queue,function() return 1000 end,function() return 700 end)
+    nativeRootOwner=context
     local native=Read("AddonMrgl.lua")
     local i=assert(native:find("function listFrame:normalInit",1,true))
     local j=assert(native:find("function listFrame:updateList",i,true))
@@ -293,6 +312,104 @@ local function Benchmark()
     end
     table.sort(samples)
     return samples[3]
+end
+local auditMode=os.getenv("MANARGL_AUDIT_SKIN")
+if auditMode then
+    assert(NativeToggle and nativeRootOwner)
+    local function delta(fn)
+        local samples={}
+        for trial=1,7 do
+            local start=os.clock()
+            fn()
+            samples[trial]=(os.clock()-start)*1000
+        end
+        table.sort(samples)
+        return samples[4]
+    end
+    local function report(name, fn)
+        print(("AUDIT %s %s %.4f ms"):format(auditMode,name,delta(fn)))
+    end
+    local function Setup()
+        local start=os.clock()
+        if auditMode~="native" then
+            assert(loadfile("EUIAddonSkins/Widgets.lua"))("EUIAddonSkins",ns)
+            ns.RegisterSkinDefinition=function(_,fn) fn() end
+            assert(loadfile(auditMode))("EUIAddonSkins",ns)
+        end
+        print(("AUDIT %s initialize-single %.4f ms"):format(auditMode,(os.clock()-start)*1000))
+        start=os.clock()
+        Show()
+        print(("AUDIT %s first-open-single %.4f ms"):format(auditMode,(os.clock()-start)*1000))
+    end
+    LibStub=function(name, silent)
+        assert(name=="LibSFDropDown-1.5" and silent)
+        menuLookups=menuLookups+1
+        return library
+    end
+    Setup()
+    local dropdowns={root.filterBtn, root.profileBtn, root.charSelect, region("Button")}
+    local other=dropdowns[4]
+    other.ddDisplayMode="menuBackdrop"
+    local function Initialize(_, level, value)
+        local popup=AcquireMenu(level)
+        popup.width,popup.height=140,60
+        popup.value=value
+    end
+    local submenuAnchor=region("Button")
+    function submenuAnchor:GetRight() return self.right or 400 end
+    for _, owner in ipairs(dropdowns) do owner.ddInitializeFunc=Initialize end
+    local function Open(owner, count)
+        NativeToggle(owner,1,nil,owner,"TOPLEFT","BOTTOMLEFT")
+        assert(nativeRootOwner.DROPDOWNBUTTON==owner)
+        for level=2,count do NativeToggle(owner,level,"submenu",submenuAnchor) end
+    end
+    local function Close(count)
+        for level=count,1,-1 do AcquireMenu(level):Hide() end
+    end
+    for i=1,3 do
+        local owner=dropdowns[i]
+        Open(owner,3)
+        local mode=owner.ddDisplayMode or "backdrop"
+        for level=1,3 do
+            local popup=AcquireMenu(level)
+            assert(popup.activeStyle==popup.styles[mode])
+        end
+        submenuAnchor.right=990
+        NativeToggle(owner,2,"edge",submenuAnchor)
+        assert(AcquireMenu(2).point[1]=="TOPRIGHT")
+        submenuAnchor.right=nil
+        Open(other,3)
+        for level=1,3 do
+            local popup=AcquireMenu(level)
+            assert(popup.activeStyle==popup.styles.menuBackdrop)
+            for name, panel in pairs(popup.styles) do
+                if not name:match("^backdrop$") and name~="modernMenu" and panel~=popup.activeStyle then
+                    assert(not panel:IsShown())
+                end
+            end
+        end
+        Close(3)
+    end
+    print("AUDIT ownership PASS: native ddToggle, three depths, three Manargl launchers, independent foreign launcher, right-edge submenu flip")
+    local function Counts()
+        return table.concat({frames,textures,hooks,menuLookups,styleRegistrations,#callbacks},",")
+    end
+    local function Repeat(fn) for i=1,1000 do fn(i) end end
+    local objects=Counts()
+    collectgarbage("collect")
+    local heap=collectgarbage("count")
+    report("reopen",function() Repeat(function() root:Hide(); Show() end) end)
+    report("row-rebind",function() Repeat(function() root:normalInit(row,addonNode); root:categoryInit(cat,catNode) end) end)
+    report("metrics",function() Repeat(function() root:updatePerformance(); root:updateAddonMetrics(row) end) end)
+    report("popup-root-cycle",function() Repeat(function() Open(root.filterBtn,1); Close(1) end) end)
+    report("popup-three-depth-handoff",function() Repeat(function() Open(root.profileBtn,3); Open(other,3); Close(3) end) end)
+    report("slider-callback",function() Repeat(function(i) slider.scripts.OnValueChanged(slider,50+i%151) end) end)
+    report("theme-signal",function() Repeat(function() if callbacks[1] then callbacks[1]() end end) end)
+    collectgarbage("collect")
+    assert(Counts()==objects, "resource counts grew: "..objects.." -> "..Counts())
+    print(("AUDIT %s counts=%s retained-heap-delta=%.3f KiB"):format(auditMode,objects,collectgarbage("count")-heap))
+    for _, key in ipairs(globals) do _G[key]=saved[key] end
+    return
 end
 local before=Benchmark()
 assert(loadfile("EUIAddonSkins/Widgets.lua"))("EUIAddonSkins",ns)

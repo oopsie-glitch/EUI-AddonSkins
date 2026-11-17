@@ -1,0 +1,191 @@
+name: Package combined Details toolbar and Cooltip fixes
+on:
+  push:
+    branches: [test/details-toolbar-cooltip-package]
+    paths: [.github/workflows/details-toolbar-cooltip-package.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      DETAILS_COOLTIP_SOURCE_FIXTURE: /tmp/details-cooltip-source.lua
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 017efd5f483d7bba14fef62e32224ccd42e042ae
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Lua and prepare pinned Forever and DetailsFramework source fixture
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import re
+
+          def read(repo, sha, path):
+              with urlopen(f'https://raw.githubusercontent.com/{repo}/{sha}/{path}', timeout=30) as response:
+                  return response.read().decode('utf-8-sig').replace(chr(13), '')
+
+          upstream = 'Tercioo/Details-Damage-Meter'
+          details = '4316feb434bcc9751455ae2c6435d93fc20f034f'
+          forever = 'bebcb6bf309cf41b41bd74f8ca651e6a105b2676'
+          df = read(upstream, details, 'Libs/DF/fw.lua')
+          cooltip = read(upstream, details, 'Libs/DF/cooltip.lua')
+          main = read(upstream, details, 'frames/window_main.lua')
+          backdrop = read('Gethe/wow-ui-source', forever, 'Interface/AddOns/Blizzard_SharedXML/Backdrop.lua')
+          fade = re.search(r'^function DF:FadeFrame\(frame, t\)\n.*?^end$', df, re.M | re.S).group()
+          coordinates = re.search(r'^function BackdropTemplateMixin:SetupTextureCoordinates\(\)\n.*?^end$', backdrop, re.M | re.S).group()
+          coord_start = re.search(r'^local coordStart\s*=\s*([^;\n]+)', backdrop, re.M).group(1)
+          assert 'frame:SetAlpha(0)' in fade and 'frame:Hide()' in fade
+          assert 'DF:FadeFrame(frame1, 1)' in cooltip and 'gameCooltip.Host = nil' in cooltip
+          assert 'not issecretvalue(frame:GetWidth()) and not issecretvalue(frame:GetHeight())' in cooltip
+          assert 'GameCooltip:Hide()' in main
+          def native_method(name):
+              return re.search(r'^function Details:' + name + r'\([^\n]*\)\n.*?^end'local DF, BackdropTemplateMixin = {}, {}\n'
+                     'local max, textureUVs = math.max, {}\n'
+                     f'local coordStart = {coord_start}\n'
+                     f'{fade}\n{coordinates}\n'
+                     'return DF.FadeFrame, BackdropTemplateMixin.SetupTextureCoordinates\n')
+          Path('/tmp/details-cooltip-source.lua').write_text(fixture)
+          print('Pinned native source verified:', details, forever)
+          PY
+, main, re.M | re.S).group()
+
+          native = ['local Details = {Destroy = function(t, keys) for key in pairs(keys) do keys[key] = nil end end}', 'local tbuttons = {}']
+          native.extend(native_method(name) for name in ('ToolbarMenuButtonsSize', 'ToolbarMenuSetButtons', 'ToolbarMenuButtons'))
+          native.append('return Details')
+          Path('/tmp/details-toolbar-native.lua').write_text(chr(10).join(native))
+          fixture = ('local DF, BackdropTemplateMixin = {}, {}\n'
+                     'local max, textureUVs = math.max, {}\n'
+                     f'local coordStart = {coord_start}\n'
+                     f'{fade}\n{coordinates}\n'
+                     'return DF.FadeFrame, BackdropTemplateMixin.SetupTextureCoordinates\n')
+          Path('/tmp/details-cooltip-source.lua').write_text(fixture)
+          print('Pinned native source verified:', details, forever)
+          PY
+      - name: Verify combined Git tree and confirm the earlier archive lacked the sizing fix
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD)" = "017efd5f483d7bba14fef62e32224ccd42e042ae"
+          test "$(git rev-parse HEAD^{tree})" = "9ea215061597fe62d3b0690b782eab9e46219f37"
+          git merge-base --is-ancestor 9dfee943a69800f873f27525e0ed1453b8a6fc62 HEAD
+          git merge-base --is-ancestor f28ada14300cd075ba859bb751d0514402aa7d9e HEAD
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/14338836922/zip" > /tmp/previous.zip
+          git show f28ada14300cd075ba859bb751d0514402aa7d9e:EUIAddonSkins/DetailsLayout.lua > /tmp/standalone-layout.lua
+          git show f28ada14300cd075ba859bb751d0514402aa7d9e:EUIAddonSkins/Skins/Details.lua > /tmp/standalone-skin.lua
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          with ZipFile('/tmp/previous.zip') as prior:
+              layout = prior.read('EUIAddonSkins/DetailsLayout.lua')
+              assert layout == Path('/tmp/standalone-layout.lua').read_bytes()
+              assert prior.read('EUIAddonSkins/Skins/Details.lua') == Path('/tmp/standalone-skin.lua').read_bytes()
+              assert b'button:SetSize(look.iconSize, look.iconSize)' in layout
+              assert b'function L.Toolbar(instance)' not in layout
+          print('PREVIOUS ZIP VERIFIED: PR #88 skin and legacy toolbar override, without PR #87')
+          PY
+      - name: Run full regression and validate package from exact combined commit
+        run: python3 scripts/package.py
+      - name: Exercise the pinned native toolbar sizing functions alongside the combined skin
+        run: |
+          cat >> tests/details_spec.lua <<'LUA'
+          do
+              local Native = assert(loadfile('/tmp/details-toolbar-native.lua'))()
+              local layout = ns.CreateDetailsLayout(ns.CreateSkinHelper(S, modules.Details),
+                  function() return true end, function() end, function() end)
+              hooksecurefunc(Native, 'ToolbarMenuSetButtons', function(window) layout.Toolbar(window) end)
+              local keys = {'modo_selecao','segmento','atributo','report','reset','fechar'}
+              local function make(size, side)
+                  local window = instance()
+                  window.menu_icons_size, window.menu_anchor = size, {side = side}
+                  window.menu_icons = {true, true, true, true, true, true, space = 2}
+                  window.toolbar_icon_file = 'native-toolbar-image'
+                  window.ToolbarMenuButtonsSize = Native.ToolbarMenuButtonsSize
+                  window.ToolbarMenuButtons = Native.ToolbarMenuButtons
+                  window.ToolbarMenuSetButtons = Native.ToolbarMenuSetButtons
+                  window.GetMenuAnchorPoint = function(self)
+                      local side = self.menu_anchor.side == 1 and 'left' or 'right'
+                      return self.baseframe, side, side
+                  end
+                  window.IsLowerInstance = function() return false end
+                  window.RefreshAttributeTextSize = function() end
+                  window.baseframe.UPFrame = frame()
+                  local header = window.baseframe.cabecalho
+                  header.PluginIconsSeparator = frame()
+                  for _, key in ipairs(keys) do
+                      local button = header[key].widget or header[key]
+                      header[key] = button
+                      function button:SetParent(parent) self.parent = parent end
+                      function button:SetNormalTexture(path) self.normal:SetTexture(path) end
+                      function button:SetHighlightTexture(path) self.nativeHighlight = path end
+                      function button:SetPushedTexture(path) self.nativePushed = path end
+                  end
+                  assert(window:ToolbarMenuButtons() == true)
+                  layout.Window(window, ns.GetMeterStyle(S))
+                  return window
+              end
+              local function verify(window, size, side)
+                  for i, key in ipairs(keys) do
+                      local button = window.baseframe.cabecalho[key]
+                      assert(button:GetWidth() == 16 * size and button:GetHeight() == 16 * size)
+                      local previous = i + (side == 1 and -1 or 1)
+                      local expected = keys[previous] and window.baseframe.cabecalho[keys[previous]] or window.baseframe
+                      assert(button:GetPoint(1) == (side == 1 and 'left' or 'right'))
+                      assert(button.points[1][2] == expected and button.hooks.OnClick() == key .. '-native')
+                  end
+              end
+              local first, second = make(1, 1), make(1, 2)
+              assert(first:ToolbarMenuButtonsSize(0.75) == true)
+              assert(second:ToolbarMenuButtonsSize(1.375) == true)
+              verify(first, 0.75, 1)
+              verify(second, 1.375, 2)
+              local reloaded = make(second.menu_icons_size, 2)
+              verify(reloaded, 1.375, 2)
+              print('PINNED TOOLBAR PASS: six native buttons, left/right anchors, independent windows and saved-size reconstruction')
+          end
+          LUA
+          python3 tests/run_lua.py
+          git restore tests/details_spec.lua
+      - name: Compare package runtime files byte-for-byte with the combined commit
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from subprocess import check_output
+          from zipfile import ZipFile
+          with ZipFile('EUIAddonSkins.zip') as build:
+              names = build.namelist()
+              assert build.testzip() is None and len(names) == len(set(names)) == 69
+              assert all(name.startswith('EUIAddonSkins/') for name in names)
+              for name in names:
+                  assert build.read(name) == check_output(['git', 'show', 'HEAD:' + name]), name
+              build.extractall('/tmp/details-combined-install')
+          print('COMBINED ZIP VERIFIED: 69 runtime files match the committed blobs')
+          PY
+      - name: Store directly installable test ZIP
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-Details-Combined-017efd5f
+          path: /tmp/details-combined-install/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Verify uploaded test ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/details-combined-download.zip
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          with ZipFile('/tmp/details-combined-download.zip') as uploaded, ZipFile('EUIAddonSkins.zip') as expected:
+              files = [item.filename for item in uploaded.infolist() if not item.is_dir()]
+              assert uploaded.testzip() is None and sorted(files) == sorted(expected.namelist())
+              assert all(uploaded.read(name) == expected.read(name) for name in files)
+          print('UPLOADED ZIP VERIFIED: runtime contents match the combined commit')
+          PY

@@ -37,6 +37,9 @@ jobs:
           df = read(upstream, details, 'Libs/DF/fw.lua')
           cooltip = read(upstream, details, 'Libs/DF/cooltip.lua')
           main = read(upstream, details, 'frames/window_main.lua')
+          designer = read(upstream, details, 'frames/window_designer/designer_objects.lua')
+          assert 'instanceObject:ToolbarMenuButtonsSize(instanceObject.menu_icons_size)' in designer
+          assert 'option("menu_icons_size", "range", Loc["STRING_OPTIONS_DESIGNER_MENU_ICON_SIZE"], applyMenuIconSize,' in designer
           backdrop = read('Gethe/wow-ui-source', forever, 'Interface/AddOns/Blizzard_SharedXML/Backdrop.lua')
           fade = re.search(r'^function DF:FadeFrame\(frame, t\)\n.*?^end$', df, re.M | re.S).group()
           coordinates = re.search(r'^function BackdropTemplateMixin:SetupTextureCoordinates\(\)\n.*?^end$', backdrop, re.M | re.S).group()
@@ -172,7 +175,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/details-combined-download.zip
+          for attempt in 1 2 3 4 5 6; do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/details-combined-download.zip; then
+              break
+            fi
+            if [ "$attempt" -eq 6 ]; then exit 1; fi
+            sleep 4
+          done
           python3 - <<'PY'
           from zipfile import ZipFile
           with ZipFile('/tmp/details-combined-download.zip') as uploaded, ZipFile('EUIAddonSkins.zip') as expected:

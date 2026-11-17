@@ -14,7 +14,7 @@ local function texture(kind, parent)
     local t = {kind = kind or 'Texture', alpha = 1, path = 'native', parent = parent, points = {}}
     function t:GetObjectType() return self.kind end
     function t:GetTexture() return self.path end
-    function t:SetTexture(v) self.path = v end
+    function t:SetTexture(v) self.path = v; self.textureWrites = (self.textureWrites or 0) + 1 end
     function t:GetAlpha() return self.alpha end
     function t:SetAlpha(v) self.alpha = v end
     function t:GetDrawLayer() return self.layer or 'ARTWORK' end
@@ -95,6 +95,9 @@ local function frame(kind, name, parent)
     function f:CreateTexture() local t = texture(nil, self); self.regions[#self.regions + 1] = t; return t end
     function f:CreateFontString(_, _, template) local t = texture('FontString', self); t.font = template; self.regions[#self.regions + 1] = t; return t end
     function f:GetNormalTexture() return self.normal end
+    function f:GetLeft() return self.left end
+    function f:GetRight() return self.left and self.left + self:GetWidth() end
+    function f:GetEffectiveScale() return self.effectiveScale or 1 end
     function f:GetWidth() return self.width or 24 end
     function f:GetHeight() return self.height or 24 end
     function f:GetFontString() return self.label end
@@ -238,6 +241,22 @@ local callbacks, setterCalls = {}, 0
 Details = {
     GetTitleBarFontString = function(self) return {widget = self.nativeTitle} end,
     GetInstanceAttributeText = function() return 'Damage Done' end,
+    ToolbarMenuSetButtons = function(self, size, side)
+        self.menu_icons_size, self.menu_anchor = size, {side = side}
+        local prior = self.baseframe
+        local keys = {'modo_selecao', 'segmento', 'atributo', 'report', 'reset', 'fechar'}
+        for i, key in ipairs(keys) do
+            local control = self.baseframe.cabecalho[key]
+            local button = control.widget or control
+            local point = side == 1 and 'LEFT' or 'RIGHT'
+            button:ClearAllPoints(); button:SetPoint(point, prior, point, 0, 0)
+            button:SetSize(16 * size, 16 * size)
+            button:SetFrameLevel(4)
+            button.left = side == 1 and (i - 1) * (16 * size) or self.baseframe:GetWidth() - i * (16 * size)
+            prior = button
+        end
+        return 'native-toolbar'
+    end,
     GetShowingCombat = function(self) return {GetCombatTime = function() return self.elapsed or 6 end} end,
     SetTitleBarText = function() return 'title-native' end,
     SetMode = function(self, mode) self.modo = mode; return 'mode-native' end,
@@ -332,19 +351,19 @@ assert(meter.baseframe.cabecalho.fechar.action() == 'close-native')
 assert(meter.nativeTitle.alpha == 0 and meter.baseframe.lock_button.label.alpha == 0 and meter.baseframe.resize_direita.texture.alpha == 0)
 assert(meter.use_multi_fontstrings == false and meter.row_info.textR_show_data[3] == false and meter.row_info.textR_bracket == '(')
 local ownHeader
-for _, f in ipairs(meter.baseframe.children) do if f.regions[2] and f.regions[2].text == 'Damage Done' then ownHeader = f end end
-assert(ownHeader and not ownHeader.hidden and ownHeader.regions[3].text == ' (0:06)', 'independent header/timer missing')
+for _, f in ipairs(meter.baseframe.children) do if f.regions[1] and f.regions[1].text == 'Damage Done' then ownHeader = f end end
+assert(ownHeader and not ownHeader.hidden and ownHeader.regions[2].text == ' (0:06)', 'independent header/timer missing')
 local icons = {}
 for _, key in ipairs({'modo_selecao', 'segmento', 'atributo', 'report', 'reset', 'fechar'}) do
     local value = meter.baseframe.cabecalho[key]
     local button = value.widget or value
     for _, region in ipairs(ownHeader.regions) do
-        if region.kind == 'Texture' and region.points[1] and region.points[1][2] == button then icons[key] = region end
+        if region.kind == 'Texture' and region.anchor == button then icons[key] = region end
     end
     assert(icons[key] and icons[key].alpha == 1, 'toolbar icon must render independently of native button alpha: ' .. key)
-    assert(icons[key].width == 22 and icons[key].height == 22, 'header icon size depends on native startup geometry: ' .. key)
+    assert(not icons[key].width and not icons[key].height, 'header icon has a fixed size: ' .. key)
     button:SetWidth(12); button:SetHeight(12)
-    assert(button:GetWidth() == 22 and button:GetHeight() == 22, 'late startup dimensions shrank toolbar hit area: ' .. key)
+    assert(button:GetWidth() == 12 and button:GetHeight() == 12, 'skin changed the native toolbar hit area: ' .. key)
 end
 local closeButton = meter.baseframe.cabecalho.fechar
 closeButton:Hide(); closeButton.hooks.OnHide()
@@ -352,15 +371,33 @@ assert(icons.fechar.alpha == 0, 'hidden native button left a floating icon')
 closeButton:Show(); closeButton.hooks.OnShow(); flush()
 assert(icons.fechar.alpha == 1, 'shown native button did not recover its icon')
 assert(meter.baseframe.titleBar.hidden, 'native title-bar visibility should remain unchanged')
-assert(meter.baseframe.cabecalho.fechar.normal.alpha == 0 and meter.baseframe.cabecalho.fechar.points[1][1] == 'RIGHT')
+assert(meter.baseframe.cabecalho.fechar.normal.alpha == 0 and meter.baseframe.cabecalho.fechar.points[1][1] == 'BOTTOMRIGHT')
 assert(meter.baseframe.cabecalho.reset.widget.hooks.OnClick() == 'reset-native', 'toolbar action changed')
-meter.elapsed = 65; assert(Details:RefreshMainWindow(meter) == 'refresh-native'); assert(ownHeader.regions[3].text == ' (1:05)')
+meter.elapsed = 65; assert(Details:RefreshMainWindow(meter) == 'refresh-native'); assert(ownHeader.regions[2].text == ' (1:05)')
 local secret = {}; issecretvalue = function(v) return v == secret end
-meter.elapsed = secret; Details:RefreshMainWindow(meter); assert(ownHeader.regions[3].text == '', 'secret timer must not be formatted')
+meter.elapsed = secret; Details:RefreshMainWindow(meter); assert(ownHeader.regions[2].text == '', 'secret timer must not be formatted')
 meter.elapsed = 6; issecretvalue = nil
 Details:RefreshMainWindow(meter)
-meter.baseframe.cabecalho.fechar:SetPoint('BOTTOMRIGHT', meter.baseframe, 'TOPRIGHT', 99, 99)
-assert(meter.baseframe.cabecalho.fechar.points[1][1] == 'RIGHT', 'native toolbar redraw escaped the header')
+meter.baseframe.left = 0
+local artCount, title = #ownHeader.regions, ownHeader.regions[1]
+assert(Details.ToolbarMenuSetButtons(meter, 0.75, 1) == 'native-toolbar')
+assert(closeButton:GetWidth() == 12 and closeButton.points[1][1] == 'LEFT' and closeButton.level == 4)
+assert(icons.fechar.anchor == closeButton and title.points[1][4] == 78, 'left toolbar overlaps the EUI title')
+local leftWidth = title.width
+assert(meter:ToolbarMenuSetButtons(1.25, 2) == 'native-toolbar')
+assert(closeButton:GetWidth() == 20 and closeButton:GetHeight() == 20 and closeButton.points[1][1] == 'RIGHT')
+assert(title.points[1][4] == 6 and title.width < leftWidth, 'right toolbar reservation did not follow native geometry')
+closeButton.effectiveScale = 0.5
+meter:ToolbarMenuSetButtons(1.25, 2)
+assert(closeButton:GetEffectiveScale() == 0.5 and icons.fechar.anchor == closeButton)
+closeButton.effectiveScale = nil
+for _ = 1, 10 do meter:ToolbarMenuSetButtons(1.25, 2) end
+assert(#ownHeader.regions == artCount and icons.fechar.textureWrites == 1, 'warm redraw recreated or rewrote icon art')
+combat = true
+meter:ToolbarMenuSetButtons(0.875, 2)
+assert(closeButton:GetWidth() == 14 and closeButton.points[1][1] == 'RIGHT', 'combat deferral intercepted native geometry')
+combat = false; flush()
+assert(closeButton:GetWidth() == 14 and meter.menu_icons_size == 0.875, 'refresh replaced the native size preference')
 local r = meter.barras[1]
 assert(r.textura.path == 'eui-bar' and r.lineText1.font == 'eui-meter-font' and r.lineText1.size == 11 and r.lineText4.size == 10)
 assert(r.statusbar.value == 937 and r.statusbar.classColour[2] == 0.7 and r.lineText1.textColor[4] == 0.8 and r.icone_classe.crop[1] == 0.25 and r.action() == 'breakdown-native')
@@ -779,8 +816,10 @@ GameCooltip:SetHost(meter.baseframe); tip1.hooks.OnHide()
 assert(tip1.backdrop.bgFile == 'native-tooltip', 'hidden menu was not restored')
 GameCooltip:SetHost(stranger)
 local second = instance(); Details.instances[2] = second
+second:ToolbarMenuSetButtons(0.625, 1)
 callbacks.DETAILS_INSTANCE_OPEN('DETAILS_INSTANCE_OPEN', second); flush()
 assert(second.baseframe.cabecalho.ball.alpha == 0 and setterCalls == 2, 'late meter was not styled')
+assert(second.baseframe.cabecalho.fechar:GetWidth() == 10 and closeButton:GetWidth() == 14, 'meters shared toolbar sizing')
 local late = row(); meter.barras[2] = late
 callbacks.DETAILS_INSTANCE_NEWROW('DETAILS_INSTANCE_NEWROW', meter, late)
 assert(late.lineText1.font == 'eui-meter-font' and late.textura.path == 'eui-bar')
@@ -804,7 +843,7 @@ for _, icon in pairs(icons) do assert(icon.alpha == 0, 'header icon survived dis
 assert(meter.baseframe.cabecalho.modo_selecao.widget.alpha == 0, 'native button fade preference was changed')
 assert(meter.baseframe.cabecalho.ball.alpha == 1 and r.lineText1.font == 'native', 'meter artwork/fonts not restored')
 assert(ownHeader.hidden and meter.nativeTitle.alpha == 1 and meter.baseframe.cabecalho.fechar.normal.alpha == 1)
-assert(meter.baseframe.cabecalho.fechar.points[1][1] == 'BOTTOMRIGHT' and meter.use_multi_fontstrings and meter.row_info.textR_show_data[3] and meter.row_info.textR_bracket == '[' and meter.row_info.textR_enable_custom_text, 'format/control placement not restored')
+assert(closeButton.points[1][1] == 'RIGHT' and closeButton:GetWidth() == 14 and meter.use_multi_fontstrings and meter.row_info.textR_show_data[3] and meter.row_info.textR_bracket == '[' and meter.row_info.textR_enable_custom_text, 'format/control placement not restored')
 assert(meter.position.x == 100 and meter.segment == 3)
 local menuOnlyRow = row(); meter.barras[5] = menuOnlyRow
 callbacks.DETAILS_INSTANCE_NEWROW('DETAILS_INSTANCE_NEWROW', meter, menuOnlyRow)
@@ -932,37 +971,21 @@ assert(not meter.skinResets and meter.row_info.height == 35, 'closed instance re
 meter.baseframe = existingFrame
 ns.SetDetailsSetting('meter', true); flush()
 assert(meter.row_info.height == 18, 'restored window could not be styled again')
--- Native header redraws must never introduce sibling anchor cycles.
+-- Native anchors are never captured or rebuilt during toggles.
 local isolated = instance()
 local activeLayout = true
 local helper = ns.CreateSkinHelper(S, modules.Details)
 local layout = ns.CreateDetailsLayout(helper, function() return activeLayout end, function() end, function() end)
-local controls = {}
-for _, key in ipairs({'modo_selecao', 'segmento', 'atributo', 'report', 'reset', 'fechar'}) do
-    local obj = isolated.baseframe.cabecalho[key]
-    controls[#controls + 1] = obj.widget or obj
-end
-local nativePrevious = isolated.baseframe
-for _, b in ipairs(controls) do b:ClearAllPoints(); b:SetPoint('RIGHT', nativePrevious, 'LEFT', -4, 0); nativePrevious = b end
+isolated:ToolbarMenuSetButtons(1.125, 1)
+local initial = isolated.baseframe.cabecalho.fechar.points
 layout.Window(isolated, ns.GetMeterStyle(S))
--- Native order reverses our old sibling chain: this failed before the fix.
-controls[2]:ClearAllPoints(); controls[2]:SetPoint('RIGHT', controls[1], 'LEFT', -4, 0)
-assert(controls[1].points[1][2] == controls[2].points[1][2], 'custom buttons should anchor independently to the header')
-local clearing, firstRestorePoint = {}, true
+assert(isolated.baseframe.cabecalho.fechar.points == initial, 'skinning changed native sibling anchors')
+isolated:ToolbarMenuSetButtons(0.625, 2)
+local resized = isolated.baseframe.cabecalho.fechar.points
 activeLayout = false
-for _, b in ipairs(controls) do
-    local clear, set = b.ClearAllPoints, b.SetPoint
-    b.ClearAllPoints = function(self) clearing[self] = true; clear(self) end
-    b.SetPoint = function(self, ...)
-        if firstRestorePoint then
-            for _, other in ipairs(controls) do assert(clearing[other], 'restoring anchors before all custom links were cleared') end
-            firstRestorePoint = false
-        end
-        return set(self, ...)
-    end
-end
 layout.Restore()
-for i, b in ipairs(controls) do assert(b.points[1][2] == (i == 1 and isolated.baseframe or controls[i-1]), 'native anchor graph was not restored') end
+assert(isolated.baseframe.cabecalho.fechar.points == resized and isolated.baseframe.cabecalho.fechar:GetWidth() == 10,
+    'disabling EUI restored stale toolbar geometry')
 -- Release EUI anchors before native ChangeSkin starts rebuilding its graph.
 local nativeResetChecked = false
 meter.ChangeSkin = function(self)

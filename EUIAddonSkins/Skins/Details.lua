@@ -567,26 +567,26 @@ local function Setup(C, refresh)
         for _, row in pairs(instance.barras or {}) do Row(row) end
     end
     state.Row = Row
-    local function Fade(art)
+    local function Fade(art, instance)
         if not H.Allowed(art) or not art.SetAlpha then return end
         local kind = art:GetObjectType()
         if kind ~= "Texture" and kind ~= "FontString" then return end
         if not state.textures[art] then
-            state.textures[art] = {alpha = art:GetAlpha(), profile = Profile(), instance = state.paintInstance}
+            state.textures[art] = {alpha = art:GetAlpha(), profile = Profile(), instance = instance or state.paintInstance}
             local painting = false
-            H.Hook(art, "SetAlpha", function()
+            H.Hook(art, "SetAlpha", function(_, alpha)
                 local snapshot = state.textures[art]
-                if painting or state.restoring or not snapshot or not MeterWanted(snapshot.instance) then return end
+                if alpha == 0 or painting or state.restoring or not snapshot or not MeterWanted(snapshot.instance) then return end
                 painting = true; art:SetAlpha(0); painting = false
             end)
         end
-        art:SetAlpha(0)
+        if art:GetAlpha() ~= 0 then art:SetAlpha(0) end
     end
     state.layout = ns.CreateDetailsLayout(H, function(instance) return not state.restoring and MeterWanted(instance) and ns.IsEnabled(C.module) end, refresh, Fade)
     state.RestoreMeters = function()
         if Busy() then return end
         state.applying, state.restoring = true, true
-        -- Native ChangeSkin can reanchor controls; release our layout first.
+        -- Release managed row decoration before the native renderer rebuilds it.
         if state.meterActive then state.layout.Restore() end
         for _, instance in pairs(D:GetAllInstances() or {}) do
             local restored = RestoreSettings(instance)
@@ -860,6 +860,8 @@ local function Setup(C, refresh)
         end)
     end
     H.Hook(D, "InstanceRefreshRows", Rows)
+    -- Details finishes sizing, placing and resetting its native toolbar art here.
+    H.Hook(D, "ToolbarMenuSetButtons", state.layout.Toolbar)
     for _, method in ipairs({"RefreshTitleBarText", "TitleTextTickTimer", "SetTitleBarText"}) do
         H.Hook(D, method, function(instance, other)
             state.layout.Title(method == "TitleTextTickTimer" and other or instance)

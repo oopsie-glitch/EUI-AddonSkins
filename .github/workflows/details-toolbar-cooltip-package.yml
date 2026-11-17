@@ -46,15 +46,7 @@ jobs:
           assert 'not issecretvalue(frame:GetWidth()) and not issecretvalue(frame:GetHeight())' in cooltip
           assert 'GameCooltip:Hide()' in main
           def native_method(name):
-              return re.search(r'^function Details:' + name + r'\([^\n]*\)\n.*?^end'local DF, BackdropTemplateMixin = {}, {}\n'
-                     'local max, textureUVs = math.max, {}\n'
-                     f'local coordStart = {coord_start}\n'
-                     f'{fade}\n{coordinates}\n'
-                     'return DF.FadeFrame, BackdropTemplateMixin.SetupTextureCoordinates\n')
-          Path('/tmp/details-cooltip-source.lua').write_text(fixture)
-          print('Pinned native source verified:', details, forever)
-          PY
-, main, re.M | re.S).group()
+              return re.search(r'^function Details:' + name + r'\([^\n]*\)\n.*?^end$', main, re.M | re.S).group()
 
           native = ['local Details = {Destroy = function(t, keys) for key in pairs(keys) do keys[key] = nil end end}', 'local tbuttons = {}']
           native.extend(native_method(name) for name in ('ToolbarMenuButtonsSize', 'ToolbarMenuSetButtons', 'ToolbarMenuButtons'))

@@ -293,12 +293,41 @@ _EDM_DB = {profile = {dm = {barHeight = 18, barSpacing = 2, barTexture = 'test',
 _EDM_BarTextures = {test = 'eui-bar'}
 EllesmereUI = {GetFontPath = function() return 'eui-meter-font' end, GetFontOutlineFlag = function() return 'OUTLINE' end}
 local tip1, tip2 = frame(), frame()
+local secretWidth = setmetatable({}, {__div = function() error('attempt to divide secret tooltip width') end})
+local fadeFrame = function(_, tip, state)
+    assert(state == 1)
+    tip.hidden, tip.faded, tip.fading_out, tip.fading_in = true, true, false, false
+    tip:SetAlpha(0)
+    tip:Hide()
+end
+local backdropFixture
+local extractedSource = os.getenv('DETAILS_COOLTIP_SOURCE_FIXTURE')
+if extractedSource then fadeFrame, backdropFixture = assert(loadfile(extractedSource))() end
+local backdropCalls = 0
 for _, f in ipairs({tip1, tip2}) do
     f:SetBackdrop({bgFile = 'native-tooltip'}); f:SetBackdropColor(0.2, 0.2, 0.2, 1); f:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     local line = frame(); f.Lines = {line}; local bar = frame('StatusBar', nil, line); line.leftText = font(bar); line.rightText = font(bar)
     f.HaveRoundedCorners = true
     function f:EnableRoundedCorners() self.disabled = false end
     function f:DisableRoundedCorners() self.disabled = true end
+    local setBackdrop, nativeHide = f.SetBackdrop, f.Hide
+    function f:SetBackdrop(info)
+        backdropCalls = backdropCalls + 1
+        if info and self.secretWidth then
+            if backdropFixture then backdropFixture(self) end
+            error('attempt to divide secret tooltip width')
+        end
+        setBackdrop(self, info)
+    end
+    function f:SetAlpha(alpha) self.alpha = alpha end
+    function f:GetAlpha() return self.alpha end
+    function f:GetWidth() return self.secretWidth or 220 end
+    function f:GetEffectiveScale() return 1 end
+    function f:GetEdgeSize() return 1 end
+    function f:Hide()
+        nativeHide(self)
+        if self.hooks.OnHide then self.hooks.OnHide(self) end
+    end
     f.frameBackgroundTexture, f.gradientTexture = f:CreateTexture(), f:CreateTexture()
     line.background, line.divbar, line.leftIcon = bar:CreateTexture(), line:CreateTexture(), bar:CreateTexture()
     line.divbar:SetAlpha(0.1); line.divbar:SetTexCoord(0.2, 0.8, 0, 0.1)
@@ -310,7 +339,10 @@ GameCooltip = {ExecFunc = function(_, host)
 end, entries = {}, Reset = function(self) self.entries = {} end,
     AddLine = function(self, text, right, level) self.entries[#self.entries + 1] = {text = text, right = right, level = level or 1} end,
     AddMenu = function(self, level, action) self.entries[#self.entries].action = action end,
-    Hide = function(self) self.hidden = true end, frame1 = tip1, frame2 = tip2, GetOwner = function(self) return self.owner end,
+    Hide = function(self)
+        self.hidden, self.owner = true, nil
+        fadeFrame(nil, self.frame1, 1); fadeFrame(nil, self.frame2, 1)
+    end, frame1 = tip1, frame2 = tip2, GetOwner = function(self) return self.owner end,
     SetHost = function(self, owner) self.owner = owner end,
     ShowCooltip = function() return 'menu-native' end, BuildCooltip = function() end,
     BuildTooltip = function() end, BuildTooltipSecondFrame = function() end,
@@ -752,12 +784,38 @@ if not auditBaseline then assert(auditScans[DetailsOptionsWindow] == 0 and audit
 
 -- Shared menu/submenu ownership must not leak to another addon.
 GameCooltip:SetHost(meter.baseframe.cabecalho.fechar); assert(GameCooltip:ShowCooltip() == 'menu-native')
-assert(tip1.backdrop.bgFile ~= 'native-tooltip' and tip2.border[1] == 0.055 and tip1.Lines[1].leftText.font == 'eui')
+-- A width can become secret after the tooltip is skinned. Run the actual
+-- fade/hide order while the width remains secret and check native cleanup.
+local previousBackdropCalls = backdropCalls
+tip1.secretWidth, tip2.secretWidth = secretWidth, secretWidth
+issecretvalue = function(value) return value == secretWidth end
+GameCooltip:Hide()
+assert(tip1:GetAlpha() == 0 and tip2:GetAlpha() == 0 and GameCooltip:GetOwner() == nil)
+assert(backdropCalls == previousBackdropCalls, 'Details! hide reapplied a backdrop with secret geometry')
+assert(tip1.border[1] == 0.4 and tip2.border[1] == 0.4 and tip1.Lines[1].leftText.font == 'native')
+GameCooltip:SetHost(meter.baseframe.cabecalho.fechar)
+GameCooltip:ShowCooltip()
+assert(tip1.backdrop.bgFile == 'native-tooltip' and tip2.border[1] == 0.055 and tip1.Lines[1].leftText.font == 'eui')
+assert(backdropCalls == previousBackdropCalls, 'opening a secret-width tooltip rebuilt its backdrop')
+GameCooltip:Hide()
+ns.SetDetailsSetting('menus', false)
+GameCooltip:SetHost(meter.baseframe.cabecalho.fechar); GameCooltip:ShowCooltip(); GameCooltip:Hide()
+assert(backdropCalls == previousBackdropCalls and tip1.border[1] == 0.4, 'disabled menu skin touched the tooltip')
+ns.SetDetailsSetting('menus', true)
+tip1.secretWidth, tip2.secretWidth, issecretvalue = nil, nil, nil
+GameCooltip:SetHost(meter.baseframe.cabecalho.fechar); GameCooltip:ShowCooltip()
+for _ = 1, 100 do
+    GameCooltip:Hide()
+    GameCooltip:SetHost(meter.baseframe.cabecalho.fechar); GameCooltip:ShowCooltip()
+end
+assert(backdropCalls == previousBackdropCalls, 'warm Cooltip cycles rebuilt backdrop geometry')
+print('PASS: Details Cooltip secret-width hide/show, native fade, disabled skin and 100 geometry-free cycles')
 GameCooltip:ShowRoundedCorner()
-assert(tip1.disabled and tip2.disabled and tip1.backdrop.bgFile == 'Interface\\Buttons\\WHITE8X8', 'rounded menu art overwrote EUI shell')
-assert(tip1.frameBackgroundTexture.alpha == 0 and tip2.gradientTexture.alpha == 0, 'native menu background overlays were left visible')
+assert(not tip1.disabled and not tip2.disabled and tip1.backdrop == nil, 'EUI changed the native rounded state')
+assert(tip1.frameBackgroundTexture.alpha == 1 and tip2.gradientTexture.alpha == 1, 'EUI changed native background layers')
 assert(tip1.Lines[1].background.path == 'Interface\\Buttons\\WHITE8X8' and tip1.Lines[1].background.color[4] == 0.14)
 assert(tip1.Lines[1].leftIcon.color[1] == 1 and tip1.Lines[1].leftIcon.color[2] == 0 and tip1.Lines[1].action() == 'delete-native', 'semantic icon/action was changed')
+for _, f in ipairs({tip1, tip2}) do f:SetBackdrop({bgFile = 'native-tooltip'}) end
 local pooled = frame(); tip2.Lines[2] = pooled; pooled.leftText = font(pooled); pooled.background = pooled:CreateTexture()
 GameCooltip:BuildTooltipSecondFrame()
 assert(pooled.leftText.font == 'eui' and pooled.background.color[4] == 0.14, 'new submenu row was not styled synchronously')
@@ -769,7 +827,7 @@ auditScans[editor] = 0; flush()
 assert(auditScans[editor] == 0, 'queued designer refresh ignored disabled menu styling')
 assert(not tip1.disabled and tip1.frameBackgroundTexture.alpha == 1 and pooled.background.path == 'native', 'menu toggle did not restore the shared popup')
 ns.SetDetailsSetting('menus', true); flush()
-assert(tip1.disabled and tip1.frameBackgroundTexture.alpha == 0, 'menu toggle did not restyle the open popup')
+assert(tip1.border[1] == 0.055 and tip1.Lines[1].leftText.font == 'eui', 'menu toggle did not restyle the open popup')
 accent = 0.4
 local stranger = frame(); GameCooltip:SetHost(stranger)
 assert(tip1.backdrop.bgFile == 'native-tooltip' and tip2.border[1] == 0.4 and tip1.Lines[1].leftText.font == 'native')

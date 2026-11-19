@@ -147,6 +147,7 @@ local function Run(look)
     local tab = region("Button", root)
     local tabIcon = tab:CreateTexture(nil, "ARTWORK")
     tabIcon.layer, tabIcon.sublevel = "ARTWORK", 0
+    tabIcon.masks[1] = region("MaskTexture") -- SquareMask
     tab.frame = tab:CreateTexture(nil, "ARTWORK", nil, 1); tab.frame:SetAtlas("spellbook-Tab-Frame-C60")
     tab.active = tab:CreateTexture(nil, "ARTWORK", nil, 1); tab.active:SetAtlas("spellbook-Tab-Frame-Glow-C60")
     tab.glow = tab:CreateTexture(nil, "ARTWORK", nil, 1); tab.glow:SetAtlas("spellbook-Tab-Frame-glow-gradient-C60")
@@ -165,7 +166,7 @@ local function Run(look)
         self.name:SetText(name); self.sub:SetText(sub)
         self.name:SetTextColor(BOOK_INK[1], BOOK_INK[2], BOOK_INK[3])
     end
-    entry:SetEntry(nil, "Bat", "0 / 22")
+    -- (grid entries are not filled before the journal first opens: the border has no atlas yet)
     local pager = {prev = button(root, "prev"), next = button(root, "next"), text = text(root, BOOK_INK, "Page 1/1")}
     local templateButton = button(root, "settings")
     templateButton.Left, templateButton.Right = region("Texture"), region("Texture")
@@ -294,8 +295,9 @@ local function Run(look)
         assert(root.portrait.width == 28 and root.portrait.point[2] == root and root.portrait.border)
         -- Header, entries, tabs, page arrows.
         assert(root.header.plate.alpha == 0 and Near({1, 1, 1}, root.header.text:GetTextColor()))
-        assert(entry.backplate.alpha == 0 and entry.border.alpha == 0 and #entry.icon.masks == 0 and entry.icon.border)
-        assert(tab.frame.alpha == 0 and tab.active.alpha == 0 and tab.glow.alpha == 0 and tabIcon.border)
+        assert(entry.border.atlas == nil and entry.border.alpha == 0)
+        assert(entry.backplate.alpha == 0 and #entry.icon.masks == 0 and entry.icon.border)
+        assert(tab.frame.alpha == 0 and tab.active.alpha == 0 and tab.glow.alpha == 0 and tabIcon.border and #tabIcon.masks == 0)
         assert(pager.prev.skin == "PageButton" and pager.prev.opts == "<" and pager.next.opts == ">")
         assert(templateButton.skin == "Button" and templateButton.scripts.OnClick() == "native-settings")
         -- Text: light palette, including labels on pages not shown yet.

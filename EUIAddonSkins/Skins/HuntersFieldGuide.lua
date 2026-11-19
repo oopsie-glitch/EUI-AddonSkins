@@ -178,6 +178,9 @@ local function DefineSkin()
         end
 
         local function SkinEntry(e)
+            -- The border gets its atlas in SetEntry, so an entry never filled
+            -- before activation has no atlas to recognise it by yet.
+            H.Fade(H.Texture(e.border))
             SquareIcon(e.icon, e.slot)
             if e.CreateTexture then
                 local hover = e:CreateTexture(nil, "HIGHLIGHT")
@@ -192,12 +195,8 @@ local function DefineSkin()
                 if region ~= t.frame and region ~= t.active and region ~= t.glow and H.Texture(region)
                     and region:GetDrawLayer() == "ARTWORK" then icon = region end
             end
-            if icon and S.SquareIcon then
-                local holder = CreateFrame("Frame", nil, t)
-                holder:SetAllPoints(icon)
-                holder:EnableMouse(false)
-                S.SquareIcon(icon, holder)
-            end
+            -- The tab's SquareMask is offset 2px and keeps the icon's bevel.
+            if icon then SquareIcon(icon, t) end
             local line = t:CreateTexture(nil, "OVERLAY")
             line:SetHeight(2)
             line:SetPoint("BOTTOMLEFT", icon or t, "BOTTOMLEFT", 0, -3)

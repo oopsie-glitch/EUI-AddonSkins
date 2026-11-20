@@ -2,7 +2,6 @@ local ADDON, ns = ...
 local function DefineSkin()
 local unpack = unpack or table.unpack
 local WHITE = "Interface\\Buttons\\WHITE8X8"
-local MEDIA_NAME = "EUI AddonSkins Meter"
 local function TinyPlugin()
     local D = _G.Details
     return D and D.GetPlugin and D:GetPlugin("DETAILS_PLUGIN_TINY_THREAT")
@@ -14,81 +13,13 @@ local function TinyWindow(instance)
     local plugin = TinyPlugin()
     return plugin and plugin.GetPluginInstance and plugin:GetPluginInstance() == instance or false
 end
-local function MeterWanted(instance)
+local function MeterWanted(instance, area)
     local eui = _G.EllesmereUIDB
-    local cfg = ns.DetailsSettings()
-    local wanted
-    if instance then
-        local key = TinyWindow(instance) and "tiny" or "meter"
-        wanted = cfg[key] == true
-    else wanted = cfg.meter == true or cfg.tiny == true end
-    return wanted and not (EUIAddonSkinsDB and EUIAddonSkinsDB.disabled)
+    local key = area == "toolbar" and "toolbar" or (TinyWindow(instance) and "tiny" or "meter")
+    return ns.ReadDetailsSetting(key) and not (EUIAddonSkinsDB and EUIAddonSkinsDB.disabled)
         and not (eui and (eui.thirdPartySkinsOff or eui.thirdPartySkinAddons
             and eui.thirdPartySkinAddons["EUI AddonSkins - Details!"] == false))
 end
-local function Profile()
-    local D = _G.Details
-    local name = D and D.GetCurrentProfileName and D:GetCurrentProfileName() or "Default"
-    return (GetRealmName and GetRealmName() or "") .. ":" .. (UnitName and UnitName("player") or "") .. ":" .. name
-end
-local function Backup(instance, create)
-    local db = ns.DetailsSettings()
-    db.backups = db.backups or {}
-    local profile = Profile()
-    db.backups[profile] = db.backups[profile] or {}
-    local id = instance.meu_id or (instance.GetId and instance:GetId())
-    if not id then return end
-    local saved = db.backups[profile]
-    if create and not saved[id] and instance.row_info and instance.row_info.space then
-        local info = instance.row_info
-        saved[id] = {height = info.height, spacing = info.space.between, texture = info.texture, texture_file = info.texture_file}
-    end
-    if create and saved[id] and instance.row_info and not saved[id].format then
-        local info = instance.row_info
-        local data = info.textR_show_data
-        saved[id].format = {multi = instance.use_multi_fontstrings,
-            custom = info.textR_enable_custom_text, bracket = info.textR_bracket,
-            separator = info.textR_separator, data = data and {data[1], data[2], data[3]}}
-    end
-    return saved[id], saved, id
-end
-local function RestoreSettings(instance)
-    local old, saved, id = Backup(instance)
-    local info = instance.row_info
-    if old and info and info.space then
-        info.height, info.texture, info.texture_file = old.height, old.texture, old.texture_file
-        info.space.between = old.spacing
-        instance.row_height = (old.height or 0) + (old.spacing or 0)
-        if old.format then
-            local format = old.format
-            instance.use_multi_fontstrings, info.textR_enable_custom_text = format.multi, format.custom
-            info.textR_bracket, info.textR_separator = format.bracket, format.separator
-            if format.data then info.textR_show_data = {format.data[1], format.data[2], format.data[3]} end
-        end
-        saved[id] = nil
-        return true
-    end
-end
-
--- Recovery is independent of EUI dispatch: a disabled skin must still be able
--- to restore its saved cosmetic settings after a reload or profile switch.
-local recovery = CreateFrame("Frame")
-recovery:RegisterEvent("PLAYER_LOGIN"); recovery:RegisterEvent("ADDON_LOADED")
-local profileRecoveryHooked
-local function Recover()
-    local D = _G.Details
-    if D and type(D.ApplyProfile) == "function" and not profileRecoveryHooked then
-        profileRecoveryHooked = true
-        hooksecurefunc(D, "ApplyProfile", function() Recover() end)
-    end
-    if D and D.GetAllInstances then
-        for _, instance in pairs(D:GetAllInstances() or {}) do
-            if not MeterWanted(instance) and RestoreSettings(instance) and instance.baseframe and instance.ChangeSkin
-                and not (InCombatLockdown and InCombatLockdown()) then instance:ChangeSkin() end
-        end
-    end
-end
-recovery:SetScript("OnEvent", Recover)
 
 local function Frame(value)
     if type(value) == "table" or type(value) == "userdata" then
@@ -101,7 +32,7 @@ local Look = ns.GetMeterStyle
 local function Setup(C, refresh)
     if C.details then return C.details end
     local S, H, D = C.S, C.H, _G.Details
-    local state = {meters = {}, owners = {}, roots = {}, sections = {}, designerRows = {}, designers = {}, snapshots = {}, texts = {}, textures = {}, applying = false}
+    local state = {meters = {}, owners = {}, roots = {}, sections = {}, designerRows = {}, designers = {}, snapshots = {}, tinyTexts = {}, tinyTextures = {}, applying = false}
     C.details = state
     -- The public Font primitive reapplies its FontObject/shadow and font on
     -- every call. Details shows/re-enables whole groups at once; cache only
@@ -535,195 +466,84 @@ local function Setup(C, refresh)
         end
         Rows()
     end
-    local function Row(row)
-        if not MeterWanted() or not H.Allowed(row) or Busy() then return end
-        local look = state.look
-        if not look then return end
-        -- Only appearance: never read actor GUIDs, names, values or combat data.
-        if H.Allowed(row.statusbar) and row.statusbar.SetStatusBarTexture then
-            local texture = H.Texture(row.textura)
-            if texture then
-                if not state.textures[texture] then state.textures[texture] = {path = texture:GetTexture(), profile = Profile()} end
-                if texture:GetTexture() ~= look.texture then texture:SetTexture(look.texture) end
-            else row.statusbar:SetStatusBarTexture(look.texture) end
+    state.layout = ns.CreateDetailsLayout(H, function(instance, area)
+        return ns.IsEnabled(C.module) and MeterWanted(instance, area)
+    end, refresh)
+    local function RestoreTiny()
+        for texture, old in pairs(state.tinyTextures) do
+            local path = texture:GetTexture()
+            if not (issecretvalue and issecretvalue(path)) and path == old.applied then texture:SetTexture(old.path) end
+            state.tinyTextures[texture] = nil
         end
-        for _, key in ipairs({"lineText1", "lineText2", "lineText3", "lineText4",
-            "lineText11", "lineText12", "lineText13", "lineText14"}) do
-            local text = row[key]
-            if H.Allowed(text) and text.SetFont and look.font then
-                if not state.texts[text] then state.texts[text] = {font = {text:GetFont()}, profile = Profile()} end
-                local size = (key == "lineText1" or key == "lineText11") and look.leftSize or look.rightSize
-                local oldFont, oldSize, oldFlags = text:GetFont()
-                if oldFont ~= look.font or oldSize ~= size or (oldFlags or "") ~= look.flags then
-                    text:SetFont(look.font, size, look.flags)
-                end
+        for text, old in pairs(state.tinyTexts) do
+            local path, size, flags = text:GetFont()
+            if not (issecretvalue and (issecretvalue(path) or issecretvalue(size) or issecretvalue(flags)))
+                and path == old.applied[1] and size == old.applied[2] and (flags or "") == old.applied[3] then
+                text:SetFont(unpack(old.font))
             end
+            state.tinyTexts[text] = nil
         end
-        -- Details owns class/spec atlas coordinates, highlights and row actions.
-        if state.layout then state.layout.Row(row) end
-    end
-    local function Rows(instance)
-        if state.applying or not MeterWanted(instance) or TinyWindow(instance) or not ns.IsEnabled(C.module) or Busy() then return end
-        for _, row in pairs(instance.barras or {}) do Row(row) end
-    end
-    state.Row = Row
-    local function Fade(art)
-        if not H.Allowed(art) or not art.SetAlpha then return end
-        local kind = art:GetObjectType()
-        if kind ~= "Texture" and kind ~= "FontString" then return end
-        if not state.textures[art] then
-            state.textures[art] = {alpha = art:GetAlpha(), profile = Profile(), instance = state.paintInstance}
-            local painting = false
-            H.Hook(art, "SetAlpha", function()
-                local snapshot = state.textures[art]
-                if painting or state.restoring or not snapshot or not MeterWanted(snapshot.instance) then return end
-                painting = true; art:SetAlpha(0); painting = false
-            end)
-        end
-        art:SetAlpha(0)
-    end
-    state.layout = ns.CreateDetailsLayout(H, function(instance) return not state.restoring and MeterWanted(instance) and ns.IsEnabled(C.module) end, refresh, Fade)
-    state.RestoreMeters = function()
-        if Busy() then return end
-        state.applying, state.restoring = true, true
-        -- Native ChangeSkin can reanchor controls; release our layout first.
-        if state.meterActive then state.layout.Restore() end
-        for _, instance in pairs(D:GetAllInstances() or {}) do
-            local restored = RestoreSettings(instance)
-            -- Details retains instances whose windows have not been built or were closed.
-            -- Restore their saved settings without asking its renderer to touch a missing frame.
-            if restored and H.Allowed(instance.baseframe) and instance.ChangeSkin then
-                H.Safe(instance.ChangeSkin, instance)
-            end
-        end
-        if not state.meterActive then state.applying, state.restoring = false, false; return end
-        state.meterActive = false
-        for _, entry in pairs(state.meters) do
-            entry.bg:SetAlpha(0)
-            if entry.header then entry.header:SetAlpha(0) end
-            if entry.title and entry.height then entry.title:SetHeight(entry.height) end
-            for frame, old in pairs(entry.backdrops) do
-                frame:SetBackdrop(old.backdrop)
-                if frame.SetBackdropColor and old.color[1] then frame:SetBackdropColor(unpack(old.color)) end
-                if frame.SetBackdropBorderColor and old.border[1] then frame:SetBackdropBorderColor(unpack(old.border)) end
-            end
-            entry.title, entry.height, entry.backdrops = nil, nil, {}
-        end
-        for art, old in pairs(state.textures) do
-            if old.alpha ~= nil then art:SetAlpha(old.alpha) end
-            if old.path and old.profile == Profile() then art:SetTexture(old.path) end
-        end
-        for text, old in pairs(state.texts) do
-            if old.profile == Profile() and old.font[1] then text:SetFont(unpack(old.font)) end
-        end
-        state.textures, state.texts = {}, {}
-        local plugin = TinyPlugin()
-        if plugin and plugin.RefreshRows then H.Safe(plugin.RefreshRows, plugin) end
-        state.applying, state.restoring = false, false
-    end
-    state.Meter = function(instance)
-        local f = instance and instance.baseframe
-        if not H.Allowed(f) then return end
-        state.paintInstance = instance
-        state.meterActive = true
-        local look = state.look
-        local entry = state.meters[f]
-        if not entry then
-            entry = {backdrops = {}}; state.meters[f] = entry
-            local bg = CreateFrame("Frame", nil, f)
-            bg:SetAllPoints(f); bg:SetFrameLevel(math.max(0, f:GetFrameLevel() - 1)); bg:EnableMouse(false)
-            entry.bg = bg:CreateTexture(nil, "BACKGROUND"); entry.bg:SetAllPoints(bg)
-            H.Script(f, "OnShow", refresh)
-        end
-        Backup(instance, true)
-        entry.bg:SetAlpha(1)
-        entry.bg:SetColorTexture(unpack(look.bg))
-        -- Hide only named native decoration, never the frame, rows or buttons.
-        for _, key in ipairs({"barra_esquerda", "barra_direita", "barra_fundo", "wallpaper"}) do Fade(f[key]) end
-        local header = f.cabecalho or {}
-        for _, key in ipairs({"ball", "ball_r", "emenda", "top_bg"}) do Fade(header[key]) end
-        local title = f.titleBar
-        if H.Allowed(title) then
-            if not entry.title then entry.title, entry.height = title, title:GetHeight() end
-            title:SetHeight(look.headerHeight)
-            Fade(title.texture)
-            if not entry.header then entry.header = title:CreateTexture(nil, "BACKGROUND"); entry.header:SetAllPoints(title) end
-            entry.header:SetAlpha(1)
-            local c = look.header; entry.header:SetColorTexture(c.r or 0, c.g or 0, c.b or 0, look.headerAlpha)
-        end
-        for _, frame in pairs({f, instance.bgdisplay}) do
-            if H.Allowed(frame) and frame.SetBackdrop then
-                if not entry.backdrops[frame] then
-                    entry.backdrops[frame] = {backdrop = frame:GetBackdrop(), color = {frame:GetBackdropColor()}, border = {frame:GetBackdropBorderColor()}}
-                end
-                frame:SetBackdrop(nil)
-            end
-        end
-        -- Native setters maintain Details' row geometry. Do not change window
-        -- anchors, size, groups, segment, combat data or click scripts.
-        local info = instance.row_info
-        if not TinyWindow(instance) and info and type(info.textR_show_data) == "table" and instance.SetBarRightTextSettings then
-            local data = info.textR_show_data
-            if instance.use_multi_fontstrings ~= false or info.textR_enable_custom_text
-                or not data[1] or not data[2] or data[3] or info.textR_bracket ~= "(" or info.textR_separator ~= "NONE" then
-                state.applying = true
-                instance.use_multi_fontstrings = false; info.textR_enable_custom_text = false
-                H.Safe(instance.SetBarRightTextSettings, instance, true, true, false, "(", "NONE")
-                state.applying = false
-            end
-        end
-        local media = LibStub and LibStub("LibSharedMedia-3.0", true)
-        local textureName
-        if media and media.Register then media:Register("statusbar", MEDIA_NAME, look.texture); textureName = MEDIA_NAME end
-        if info and instance.SetBarSettings and (info.height ~= look.height
-            or not info.space or info.space.between ~= look.spacing
-            or textureName and info.texture ~= textureName) then
-            state.applying = true
-            H.Safe(instance.SetBarSettings, instance, look.height, textureName, nil, nil, nil, nil, nil, nil, nil, nil, look.spacing)
-            state.applying = false
-            local plugin = TinyWindow(instance) and TinyPlugin()
-            if plugin and plugin.RefreshRows then H.Safe(plugin.RefreshRows, plugin) end
-        end
-        Rows(instance)
-        state.layout.Window(instance, look)
-        state.paintInstance = nil
     end
     state.TinyRow = function(row)
         local plugin = TinyPlugin()
         local instance = plugin and plugin.GetPluginInstance and plugin:GetPluginInstance()
-        if state.restoring or not instance or not TinyWindow(instance) or not MeterWanted(instance)
+        if not instance or not TinyWindow(instance) or not MeterWanted(instance)
             or not ns.IsEnabled(C.module) or Busy() then return end
         local bar = Frame(row)
         if not H.Allowed(bar) then return end
         local texture = bar.GetStatusBarTexture and H.Texture(bar:GetStatusBarTexture())
         if texture then
-            if not state.textures[texture] then state.textures[texture] = {path = texture:GetTexture(), profile = Profile()} end
-            if texture:GetTexture() ~= state.look.texture then texture:SetTexture(state.look.texture) end
+            local path = texture:GetTexture()
+            if not (issecretvalue and issecretvalue(path)) and path ~= state.look.texture then
+                local old = state.tinyTextures[texture]
+                if not old or path ~= old.applied then
+                    old = {path = path}; state.tinyTextures[texture] = old
+                end
+                old.applied = state.look.texture
+                texture:SetTexture(state.look.texture)
+            end
         end
         for _, key in ipairs({"lefttext", "righttext"}) do
             local text = bar[key]
             if H.Allowed(text) then
-                if not state.texts[text] then state.texts[text] = {font = {text:GetFont()}, profile = Profile()} end
-                text:SetFont(state.look.font, key == "lefttext" and state.look.leftSize or state.look.rightSize, state.look.flags)
+                local path, size, flags = text:GetFont()
+                local fontSize = key == "lefttext" and state.look.leftSize or state.look.rightSize
+                if not (issecretvalue and (issecretvalue(path) or issecretvalue(size) or issecretvalue(flags)))
+                    and (path ~= state.look.font or size ~= fontSize or (flags or "") ~= state.look.flags) then
+                    local old = state.tinyTexts[text]
+                    if not old or path ~= old.applied[1] or size ~= old.applied[2] or (flags or "") ~= old.applied[3] then
+                        old = {font = {path, size, flags or ""}}
+                        state.tinyTexts[text] = old
+                    end
+                    old.applied = {state.look.font, fontSize, state.look.flags}
+                    text:SetFont(unpack(old.applied))
+                end
             end
         end
     end
     state.BindTiny = function()
-        local plugin = TinyPlugin()
-        H.Hook(plugin, "RefreshRow", function(_, row) if state.look then state.TinyRow(row) end end)
+        H.Hook(TinyPlugin(), "RefreshRow", function(_, row) if state.look then state.TinyRow(row) end end)
     end
     state.ApplyMeters = function()
         if Busy() then return end
-        local wanted, kinds, changed = {}, {}, false
+        local live = {}
         for _, instance in pairs(D:GetAllInstances() or {}) do
-            wanted[instance], kinds[instance] = MeterWanted(instance), TinyWindow(instance)
-            if state.wanted and state.wanted[instance] ~= nil and (state.wanted[instance] ~= wanted[instance] or state.kinds[instance] ~= kinds[instance]) then changed = true end
+            if H.Allowed(instance.baseframe) then
+                live[instance] = true
+                state.meters[instance] = true
+                state.layout.Window(instance, state.look)
+            end
         end
-        if changed or not MeterWanted() then state.RestoreMeters() end
-        state.wanted, state.kinds = wanted, kinds
-        for instance, active in pairs(wanted) do if active then state.Meter(instance) end end
+        for instance in pairs(state.meters) do
+            if not live[instance] then state.layout.Release(instance); state.meters[instance] = nil end
+        end
         local plugin = TinyPlugin()
-        for _, row in pairs(plugin and plugin.Rows or {}) do state.TinyRow(row) end
+        local host = plugin and plugin.GetPluginInstance and plugin:GetPluginInstance()
+        if host ~= state.tinyHost or not host or not TinyWindow(host) or not MeterWanted(host) then RestoreTiny() end
+        state.tinyHost = host
+        if host and TinyWindow(host) and MeterWanted(host) then
+            for _, row in pairs(plugin.Rows or {}) do state.TinyRow(row) end
+        end
     end
 
     local function MenuTexts(frame, callback)
@@ -738,41 +558,39 @@ local function Setup(C, refresh)
             end
         end
     end
-    -- Cooltip is shared with other addons: change its existing native backdrop
-    -- only while owned by Details, and restore it on transfer or hiding.
+    local function TintBackdrop(frame, old, key, getColor, setColor, r, g, b, a)
+        local red, green, blue, alpha = getColor(frame)
+        if issecretvalue and (issecretvalue(red) or issecretvalue(green)
+            or issecretvalue(blue) or issecretvalue(alpha)) then return end
+        if red == nil or (red == r and green == g and blue == b and alpha == a) then return end
+        if not old[key] then old[key] = {red, green, blue, alpha} end
+        setColor(frame, r, g, b, a)
+    end
+
+    -- Cooltip geometry can become secret between show and hide. SetBackdrop
+    -- rebuilds Blizzard's nine-slice using that geometry, so tint native pieces
+    -- in place and leave rounded corners and background layers under Cooltip.
     local function Restore(frame)
         local old = state.snapshots[frame]
         if not old then return end
         state.snapshots[frame] = nil
-        frame:SetBackdrop(old.backdrop)
-        frame:SetBackdropColor(unpack(old.color)); frame:SetBackdropBorderColor(unpack(old.border))
+        if old.color then frame:SetBackdropColor(unpack(old.color)) end
+        if old.border then frame:SetBackdropBorderColor(unpack(old.border)) end
         for text, data in pairs(old.fonts) do text:SetFont(unpack(data)) end
         for art, data in pairs(old.art) do
             art:SetAlpha(data.alpha)
-            if data.changed then
-                art:SetTexture(data.texture)
-                if data.coords then art:SetTexCoord(unpack(data.coords)) end
-                art:SetVertexColor(unpack(data.color))
-            end
-        end
-        if old.rounded ~= nil then
-            if old.rounded then frame:EnableRoundedCorners() else frame:DisableRoundedCorners() end
+            art:SetTexture(data.texture)
+            if data.coords then art:SetTexCoord(unpack(data.coords)) end
+            art:SetVertexColor(unpack(data.color))
         end
     end
     local function MenuArt(old, art, color)
         if not H.Texture(art) then return end
         if not old.art[art] then
-            old.art[art] = {alpha = art:GetAlpha()}
-            if color then
-                local data = old.art[art]
-                data.changed = true
-                data.texture, data.color = art:GetTexture(), {art:GetVertexColor()}
-                if art.GetTexCoord then data.coords = {art:GetTexCoord()} end
-            end
+            old.art[art] = {alpha = art:GetAlpha(), texture = art:GetTexture(),
+                color = {art:GetVertexColor()}, coords = art.GetTexCoord and {art:GetTexCoord()}}
         end
-        if color then
-            art:SetTexture(WHITE); art:SetTexCoord(0, 1, 0, 1); art:SetVertexColor(unpack(color)); art:SetAlpha(1)
-        else art:SetAlpha(0) end
+        art:SetTexture(WHITE); art:SetTexCoord(0, 1, 0, 1); art:SetVertexColor(unpack(color)); art:SetAlpha(1)
     end
     local function Cooltip()
         local tip = _G.GameCooltip
@@ -780,25 +598,17 @@ local function Setup(C, refresh)
         local owner = tip.GetOwner and tip:GetOwner()
         local owned = ns.IsEnabled(C.module) and ns.DetailsSettings().menus ~= false and Owned(owner)
         for _, f in pairs({tip.frame1, tip.frame2}) do
-            if H.Allowed(f) and f.SetBackdrop and f.GetBackdropColor and f.GetBackdropBorderColor then
+            if H.Allowed(f) and f.SetBackdropColor and f.SetBackdropBorderColor
+                and f.GetBackdropColor and f.GetBackdropBorderColor then
                 if not owned then Restore(f)
                 else
                     if not state.snapshots[f] then
-                        local old = {backdrop = f:GetBackdrop(), color = {f:GetBackdropColor()}, border = {f:GetBackdropBorderColor()}, fonts = {}, art = {}}
-                        if f.HaveRoundedCorners and f.DisableRoundedCorners and f.EnableRoundedCorners then old.rounded = not f.disabled end
-                        state.snapshots[f] = old
-                        MenuTexts(f, function(text)
-                            local font, size, flags = text:GetFont()
-                            if font then old.fonts[text] = {font, size, flags or ""} end
-                        end)
+                        state.snapshots[f] = {fonts = {}, art = {}}
                     end
                     local old = state.snapshots[f]
-                    if old.rounded ~= nil then f:DisableRoundedCorners() end
-                    MenuArt(old, f.frameBackgroundTexture)
-                    MenuArt(old, f.gradientTexture)
-                    f:SetBackdrop({bgFile = WHITE, edgeFile = WHITE, edgeSize = 1})
-                    local r, g, b, a = S.GetPanelColor(); f:SetBackdropColor(r, g, b, a)
-                    f:SetBackdropBorderColor(0.055, 0.055, 0.055, 1)
+                    local r, g, b, a = S.GetPanelColor()
+                    TintBackdrop(f, old, "color", f.GetBackdropColor, f.SetBackdropColor, r, g, b, a)
+                    TintBackdrop(f, old, "border", f.GetBackdropBorderColor, f.SetBackdropBorderColor, 0.055, 0.055, 0.055, 1)
                     MenuTexts(f, function(text)
                         -- Pooled submenu lines can appear after the first show.
                         local old = state.snapshots[f]
@@ -826,7 +636,7 @@ local function Setup(C, refresh)
     state.Cooltip = Cooltip
     state.Restore = Restore
     ns.DetailsSettingsChanged = function(key)
-        if key == "meter" or key == "tiny" then C.RefreshNow() end
+        if key == "meter" or key == "tiny" or key == "toolbar" then C.RefreshNow() end
         state.Cooltip()
         refresh()
     end
@@ -839,11 +649,11 @@ local function Setup(C, refresh)
         state.quickAdded = true
         tip:AddLine("EUI AddonSkins")
         tip:AddMenu(1, function() end)
-        for _, option in ipairs({{"meter", "Style Details meters"}, {"tiny", "Style Tiny Threat"}, {"menus", "Skin menus and options (reload)"}}) do
+        for _, option in ipairs({{"meter", "Style meter surfaces"}, {"toolbar", "Style toolbar artwork"}, {"tiny", "Style Tiny Threat"}, {"menus", "Skin menus and options (reload)"}}) do
             local key, label = option[1], option[2]
-            tip:AddLine(label, ns.DetailsSettings()[key] and "On" or "Off", 2)
+            tip:AddLine(label, ns.ReadDetailsSetting(key) and "On" or "Off", 2)
             tip:AddMenu(2, function()
-                ns.SetDetailsSetting(key, not ns.DetailsSettings()[key])
+                ns.SetDetailsSetting(key, not ns.ReadDetailsSetting(key))
                 if tip.Hide then tip:Hide() end
             end)
         end
@@ -855,17 +665,15 @@ local function Setup(C, refresh)
         for _, event in ipairs({"DETAILS_STARTED", "DETAILS_INSTANCE_OPEN", "DETAILS_INSTANCE_SIZECHANGED", "DETAILS_PROFILE_APPLYED"}) do
             state.listener:RegisterEvent(event, function() if ns.IsEnabled(C.module) then refresh() end end)
         end
-        state.listener:RegisterEvent("DETAILS_INSTANCE_NEWROW", function(_, instance, row)
-            if ns.IsEnabled(C.module) and MeterWanted(instance) and not TinyWindow(instance) then H.Safe(Row, row) end
+    end
+    -- Completed native setters, never data/timer updates, refresh cosmetic state.
+    H.Hook(D, "ToolbarMenuSetButtons", state.layout.Toolbar)
+    H.Hook(D, "AttributeMenu", function(instance) state.layout.Title(instance) end)
+    for _, name in ipairs({"SetTitleBarSettings", "ToolbarSide"}) do
+        H.Hook(D, name, function(instance)
+            if state.look and not Busy() then state.layout.Window(instance, state.look) end
         end)
     end
-    H.Hook(D, "InstanceRefreshRows", Rows)
-    for _, method in ipairs({"RefreshTitleBarText", "TitleTextTickTimer", "SetTitleBarText"}) do
-        H.Hook(D, method, function(instance, other)
-            state.layout.Title(method == "TitleTextTickTimer" and other or instance)
-        end)
-    end
-    H.Hook(D, "RefreshMainWindow", function(_, instance) state.layout.Title(instance) end)
     local function PaintMetersNow()
         if state.look and not state.applying then state.ApplyMeters() end
     end
@@ -903,14 +711,6 @@ local function Setup(C, refresh)
             if callback == original then tip.FunctionsTableMain[index] = state.raidSwitch end
         end
     end)
-    local meterRefresh = {}
-    for _, name in ipairs({"SetBarSettings", "SetBarTextSettings"}) do
-        H.Hook(D, name, function()
-            if not state.applying then
-                H.Queue(meterRefresh, function() if state.look then state.ApplyMeters() end end)
-            end
-        end)
-    end
     for _, name in ipairs({"ChangeSkin", "ApplyProfile", "CreateInstance"}) do
         H.Hook(D, name, function() if not state.applying then refresh() end end)
     end
@@ -951,6 +751,9 @@ ns.RegisterScopedSkin("Details", "Details!", {
     roots = function(C)
         local state = C.details
         state.combatPending = false; state.look = Look(C.S)
+        local config = _G._EDM_DB
+        config = config and config.profile and config.profile.dm
+        state.look.titleAccent = not config or config.hdrTextUseAccent ~= false
         state.fontEpoch = (state.fontEpoch or 0) + 1
         for _, instance in pairs(_G.Details:GetAllInstances() or {}) do
             for _, key in ipairs({"baseframe", "rowframe", "windowSwitchButton", "bgframe"}) do

@@ -5,6 +5,7 @@ function ns.DetailsSettings()
     local db = EUIAddonSkinsDB
     db.details = db.details or {menus = true, meter = false}
     if db.details.tiny == nil then db.details.tiny = db.details.meter == true end
+    if db.details.toolbar == nil then db.details.toolbar = db.details.meter == true end
     return db.details
 end
 
@@ -13,8 +14,8 @@ function ns.ReadDetailsSetting(key)
     local db = EUIAddonSkinsDB and EUIAddonSkinsDB.details
     if key == "menus" then return not db or db.menus == true end
     if key == "meter" then return db and db.meter == true or false end
-    if key == "tiny" then
-        if db and db.tiny ~= nil then return db.tiny == true end
+    if key == "tiny" or key == "toolbar" then
+        if db and db[key] ~= nil then return db[key] == true end
         return db and db.meter == true or false
     end
 end
@@ -27,7 +28,7 @@ local function PreferenceChanged(id, key, value)
 end
 
 function ns.SetDetailsSetting(key, value)
-    if key ~= "menus" and key ~= "meter" and key ~= "tiny" then return end
+    if key ~= "menus" and key ~= "meter" and key ~= "tiny" and key ~= "toolbar" then return end
     ns.DetailsSettings()[key] = value == true
     if ns.DetailsSettingsChanged then ns.DetailsSettingsChanged(key) end
     PreferenceChanged("Details", key, value == true)
@@ -87,11 +88,12 @@ function ns.CreateDetailsSettingsPanel()
     panel.rxpArrow = Check("arrow", "Skin navigation arrow", "Use the themed arrow. Turn off to restore RestedXP's original arrow appearance.", -104, ns.ReadRXPSetting, ns.SetRXPSetting)
     Text("Details!", "GameFontNormal", -190)
     panel.menus = Check("menus", "Skin menus and options", "Styles Details dialogs, dropdowns and options. Reload after changing this setting.", -216)
-    panel.meter = Check("meter", "Match EUI meter appearance", "Manages meter fonts, bars, headers and spacing. Off by default.", -306)
-    panel.tiny = Check("tiny", "Style Tiny Threat", "Independent styling for Tiny Threat rows and their Details window.", -396)
-    Text("Turning meter matching off restores the visual settings captured when it was enabled.", "GameFontHighlightSmall", -482)
-    Text("Window positions, sizes, groups, statistics and interactions remain controlled by Details.", "GameFontHighlightSmall", -506)
-    Text("Quick access: hover the meter settings icon > EUI AddonSkins.", "GameFontHighlightSmall", -540)
+    panel.meter = Check("meter", "Style meter surfaces", "Styles window surfaces and the title accent. Details controls text, fonts, bars and layout.", -294)
+    panel.toolbar = Check("toolbar", "Style toolbar artwork", "Uses EUI icons within native button bounds. Details controls size, visibility and placement.", -372)
+    panel.tiny = Check("tiny", "Style Tiny Threat", "Independent styling for Tiny Threat rows and their Details window.", -450)
+    Text("Details controls title text, timers, fonts, bars and window geometry.", "GameFontHighlightSmall", -530)
+    Text("Window positions, sizes, groups, statistics and interactions remain controlled by Details.", "GameFontHighlightSmall", -554)
+    Text("Quick access: hover the meter settings icon > EUI AddonSkins.", "GameFontHighlightSmall", -578)
     if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
         category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
         Settings.RegisterAddOnCategory(category)

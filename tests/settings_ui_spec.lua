@@ -186,7 +186,7 @@ for _,oldInfo in ipairs({false,true}) do
     end
     local function Choose(label) h:Press(Buttons(label)[1]) end
     local check=Checks()
-    assert(#check==3 and not check[1].checked and check[2].checked and not check[3].checked)
+    assert(#check==4 and not check[1].checked and check[2].checked and check[3].checked and not check[4].checked)
     assert(calls==0 and arrowCalls==0 and not db.settingsUI and db.restedXP.opacity==0,"opening wrote preferences")
     local firstShow=h.counts.frames
     assert(#root.textures==1 and not root.textures[1].allPoints,"settings canvas covers the native background")
@@ -203,7 +203,7 @@ for _,oldInfo in ipairs({false,true}) do
     assert(db.details.meter and calls==2 and db.details.backups.keep)
     local search=assert(Search())
     search:SetText("xP")
-    assert(#Buttons("Details!")==0 and #Buttons("RestedXP")==1 and #Checks()==3,"search changed active detail")
+    assert(#Buttons("Details!")==0 and #Buttons("RestedXP")==1 and #Checks()==4,"search changed active detail")
     search.scripts.OnEnterPressed(search)
     assert(Buttons("RestedXP")[1].fill:IsVisible(),"sidebar selection highlight did not follow search")
     check=Checks()

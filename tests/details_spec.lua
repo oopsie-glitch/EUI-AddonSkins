@@ -14,7 +14,8 @@ local function texture(kind, parent)
     local t = {kind = kind or 'Texture', alpha = 1, path = 'native', parent = parent, points = {}}
     function t:GetObjectType() return self.kind end
     function t:GetTexture() return self.path end
-    function t:SetTexture(v) self.path = v end
+    function t:GetText() return self.text end
+    function t:SetTexture(v) self.path = v; self.textureWrites = (self.textureWrites or 0) + 1 end
     function t:GetAlpha() return self.alpha end
     function t:SetAlpha(v) self.alpha = v end
     function t:GetDrawLayer() return self.layer or 'ARTWORK' end
@@ -95,6 +96,9 @@ local function frame(kind, name, parent)
     function f:CreateTexture() local t = texture(nil, self); self.regions[#self.regions + 1] = t; return t end
     function f:CreateFontString(_, _, template) local t = texture('FontString', self); t.font = template; self.regions[#self.regions + 1] = t; return t end
     function f:GetNormalTexture() return self.normal end
+    function f:GetLeft() return self.left end
+    function f:GetRight() return self.left and self.left + self:GetWidth() end
+    function f:GetEffectiveScale() return self.effectiveScale or 1 end
     function f:GetWidth() return self.width or 24 end
     function f:GetHeight() return self.height or 24 end
     function f:GetFontString() return self.label end
@@ -218,7 +222,9 @@ local function instance()
     obj.baseframe.cabecalho = {ball = obj.baseframe:CreateTexture(), fechar = frame('Button', nil, obj.baseframe)}
     obj.baseframe:SetSize(340, 160)
     obj.use_multi_fontstrings = true
+    obj.baseframe.titleBar:SetHeight(16)
     obj.baseframe.titleBar:Hide()
+    obj.baseframe.UPFrame = frame('Frame', nil, obj.baseframe); obj.baseframe.UPFrame:SetHeight(20)
     obj.nativeTitle = font(obj.baseframe); obj.nativeTitle:SetText('00:06 Damage Done')
     obj.baseframe.lock_button = frame('Button', nil, obj.baseframe); obj.baseframe.lock_button.label = font(obj.baseframe.lock_button)
     obj.baseframe.resize_direita = frame('Button', nil, obj.baseframe); obj.baseframe.resize_direita.texture = obj.baseframe.resize_direita:CreateTexture()
@@ -238,8 +244,34 @@ local callbacks, setterCalls = {}, 0
 Details = {
     GetTitleBarFontString = function(self) return {widget = self.nativeTitle} end,
     GetInstanceAttributeText = function() return 'Damage Done' end,
+    ToolbarMenuSetButtons = function(self, size, side)
+        self.menu_icons_size, self.menu_anchor = size, {side = side}
+        local prior = self.baseframe
+        local keys = {'modo_selecao', 'segmento', 'atributo', 'report', 'reset', 'fechar'}
+        for i, key in ipairs(keys) do
+            local control = self.baseframe.cabecalho[key]
+            local button = control.widget or control
+            local point = side == 1 and 'LEFT' or 'RIGHT'
+            button:ClearAllPoints(); button:SetPoint(point, prior, point, 0, 0)
+            button:SetSize(16 * size, 16 * size)
+            button:SetFrameLevel(4)
+            button.left = side == 1 and (i - 1) * (16 * size) or self.baseframe:GetWidth() - i * (16 * size)
+            prior = button
+        end
+        return 'native-toolbar'
+    end,
     GetShowingCombat = function(self) return {GetCombatTime = function() return self.elapsed or 6 end} end,
-    SetTitleBarText = function() return 'title-native' end,
+    SetTitleBarText = function(self, text) self.nativeTitle:SetText(text); return 'title-native' end,
+    AttributeMenu = function(self, enabled, _, _, fontPath, size, color, _, _, timer)
+        self.titleEnabled, self.showTimer = enabled, timer
+        self.nativeTitle:SetFont(fontPath or 'chosen-title', size or 17, 'OUTLINE')
+        self.nativeTitle:SetTextColor(table.unpack(color or {0.2, 0.3, 0.4, 1}))
+        self.nativeTitle:SetAlpha(enabled and 1 or 0)
+    end,
+    SetTitleBarSettings = function(self, shown, height)
+        self.baseframe.titleBar:SetHeight(height)
+        if shown then self.baseframe.titleBar:Show() else self.baseframe.titleBar:Hide() end
+    end,
     SetMode = function(self, mode) self.modo = mode; return 'mode-native' end,
     SetDisplay = function() return 'display-native', nil, 3 end,
     RefreshMainWindow = function() return 'refresh-native' end,
@@ -293,12 +325,41 @@ _EDM_DB = {profile = {dm = {barHeight = 18, barSpacing = 2, barTexture = 'test',
 _EDM_BarTextures = {test = 'eui-bar'}
 EllesmereUI = {GetFontPath = function() return 'eui-meter-font' end, GetFontOutlineFlag = function() return 'OUTLINE' end}
 local tip1, tip2 = frame(), frame()
+local secretWidth = setmetatable({}, {__div = function() error('attempt to divide secret tooltip width') end})
+local fadeFrame = function(_, tip, state)
+    assert(state == 1)
+    tip.hidden, tip.faded, tip.fading_out, tip.fading_in = true, true, false, false
+    tip:SetAlpha(0)
+    tip:Hide()
+end
+local backdropFixture
+local extractedSource = os.getenv('DETAILS_COOLTIP_SOURCE_FIXTURE')
+if extractedSource then fadeFrame, backdropFixture = assert(loadfile(extractedSource))() end
+local backdropCalls = 0
 for _, f in ipairs({tip1, tip2}) do
     f:SetBackdrop({bgFile = 'native-tooltip'}); f:SetBackdropColor(0.2, 0.2, 0.2, 1); f:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
     local line = frame(); f.Lines = {line}; local bar = frame('StatusBar', nil, line); line.leftText = font(bar); line.rightText = font(bar)
     f.HaveRoundedCorners = true
     function f:EnableRoundedCorners() self.disabled = false end
     function f:DisableRoundedCorners() self.disabled = true end
+    local setBackdrop, nativeHide = f.SetBackdrop, f.Hide
+    function f:SetBackdrop(info)
+        backdropCalls = backdropCalls + 1
+        if info and self.secretWidth then
+            if backdropFixture then backdropFixture(self) end
+            error('attempt to divide secret tooltip width')
+        end
+        setBackdrop(self, info)
+    end
+    function f:SetAlpha(alpha) self.alpha = alpha end
+    function f:GetAlpha() return self.alpha end
+    function f:GetWidth() return self.secretWidth or 220 end
+    function f:GetEffectiveScale() return 1 end
+    function f:GetEdgeSize() return 1 end
+    function f:Hide()
+        nativeHide(self)
+        if self.hooks.OnHide then self.hooks.OnHide(self) end
+    end
     f.frameBackgroundTexture, f.gradientTexture = f:CreateTexture(), f:CreateTexture()
     line.background, line.divbar, line.leftIcon = bar:CreateTexture(), line:CreateTexture(), bar:CreateTexture()
     line.divbar:SetAlpha(0.1); line.divbar:SetTexCoord(0.2, 0.8, 0, 0.1)
@@ -310,7 +371,10 @@ GameCooltip = {ExecFunc = function(_, host)
 end, entries = {}, Reset = function(self) self.entries = {} end,
     AddLine = function(self, text, right, level) self.entries[#self.entries + 1] = {text = text, right = right, level = level or 1} end,
     AddMenu = function(self, level, action) self.entries[#self.entries].action = action end,
-    Hide = function(self) self.hidden = true end, frame1 = tip1, frame2 = tip2, GetOwner = function(self) return self.owner end,
+    Hide = function(self)
+        self.hidden, self.owner = true, nil
+        fadeFrame(nil, self.frame1, 1); fadeFrame(nil, self.frame2, 1)
+    end, frame1 = tip1, frame2 = tip2, GetOwner = function(self) return self.owner end,
     SetHost = function(self, owner) self.owner = owner end,
     ShowCooltip = function() return 'menu-native' end, BuildCooltip = function() end,
     BuildTooltip = function() end, BuildTooltipSecondFrame = function() end,
@@ -325,48 +389,59 @@ GameCooltip:SetHost(frame())
 local settingsPanel = ns.CreateDetailsSettingsPanel()
 settingsPanel.meter:SetChecked(true); settingsPanel.meter.hooks.OnClick(settingsPanel.meter); flush()
 SlashCmdList.EUIDETAILS(); assert(settingsRegistered == 1 and openedCategory == 123, 'settings panel must register once and be reachable')
-assert(setterCalls == 1 and meter.row_info.height == 18 and meter.row_info.space.between == 2)
+assert(setterCalls == 0 and meter.row_info.height == 24 and meter.row_info.space.between == 0)
 assert(meter.position.x == 100 and meter.position.y == 200 and meter.segment == 3)
-assert(meter.baseframe.cabecalho.ball.alpha == 0 and meter.baseframe.titleBar.height == 22)
+assert(meter.baseframe.cabecalho.ball.alpha == 0 and meter.baseframe.titleBar.height == 16)
 assert(meter.baseframe.cabecalho.fechar.action() == 'close-native')
-assert(meter.nativeTitle.alpha == 0 and meter.baseframe.lock_button.label.alpha == 0 and meter.baseframe.resize_direita.texture.alpha == 0)
-assert(meter.use_multi_fontstrings == false and meter.row_info.textR_show_data[3] == false and meter.row_info.textR_bracket == '(')
-local ownHeader
-for _, f in ipairs(meter.baseframe.children) do if f.regions[2] and f.regions[2].text == 'Damage Done' then ownHeader = f end end
-assert(ownHeader and not ownHeader.hidden and ownHeader.regions[3].text == ' (0:06)', 'independent header/timer missing')
+assert(meter.nativeTitle.alpha == 1 and meter.nativeTitle.text == '00:06 Damage Done' and meter.nativeTitle.font == 'native')
+assert(meter.use_multi_fontstrings and meter.row_info.textR_show_data[3] and meter.row_info.textR_bracket == '[')
+assert(meter.baseframe.lock_button.label.alpha == 1 and meter.baseframe.resize_direita.texture.alpha == 1)
+assert(not callbacks.DETAILS_INSTANCE_NEWROW, 'ordinary pooled rows gained a skin update listener')
+local closeButton = meter.baseframe.cabecalho.fechar
+ns.SetDetailsSetting('toolbar', true); flush()
 local icons = {}
-for _, key in ipairs({'modo_selecao', 'segmento', 'atributo', 'report', 'reset', 'fechar'}) do
+for _, key in ipairs({'modo_selecao','segmento','atributo','report','reset','fechar'}) do
     local value = meter.baseframe.cabecalho[key]
     local button = value.widget or value
-    for _, region in ipairs(ownHeader.regions) do
-        if region.kind == 'Texture' and region.points[1] and region.points[1][2] == button then icons[key] = region end
-    end
-    assert(icons[key] and icons[key].alpha == 1, 'toolbar icon must render independently of native button alpha: ' .. key)
-    assert(icons[key].width == 22 and icons[key].height == 22, 'header icon size depends on native startup geometry: ' .. key)
+    icons[key] = button.normal
+    assert(icons[key].path:find('EllesmereUIDamageMeters', 1, true))
     button:SetWidth(12); button:SetHeight(12)
-    assert(button:GetWidth() == 22 and button:GetHeight() == 22, 'late startup dimensions shrank toolbar hit area: ' .. key)
+    assert(button:GetWidth() == 12 and button:GetHeight() == 12)
+    assert(not button.hooks.OnSizeChanged, 'toolbar geometry gained an observer')
 end
-local closeButton = meter.baseframe.cabecalho.fechar
-closeButton:Hide(); closeButton.hooks.OnHide()
-assert(icons.fechar.alpha == 0, 'hidden native button left a floating icon')
-closeButton:Show(); closeButton.hooks.OnShow(); flush()
-assert(icons.fechar.alpha == 1, 'shown native button did not recover its icon')
-assert(meter.baseframe.titleBar.hidden, 'native title-bar visibility should remain unchanged')
-assert(meter.baseframe.cabecalho.fechar.normal.alpha == 0 and meter.baseframe.cabecalho.fechar.points[1][1] == 'RIGHT')
-assert(meter.baseframe.cabecalho.reset.widget.hooks.OnClick() == 'reset-native', 'toolbar action changed')
-meter.elapsed = 65; assert(Details:RefreshMainWindow(meter) == 'refresh-native'); assert(ownHeader.regions[3].text == ' (1:05)')
-local secret = {}; issecretvalue = function(v) return v == secret end
-meter.elapsed = secret; Details:RefreshMainWindow(meter); assert(ownHeader.regions[3].text == '', 'secret timer must not be formatted')
-meter.elapsed = 6; issecretvalue = nil
-Details:RefreshMainWindow(meter)
-meter.baseframe.cabecalho.fechar:SetPoint('BOTTOMRIGHT', meter.baseframe, 'TOPRIGHT', 99, 99)
-assert(meter.baseframe.cabecalho.fechar.points[1][1] == 'RIGHT', 'native toolbar redraw escaped the header')
+closeButton:Hide()
+assert(closeButton.hidden and closeButton.normal.parent == closeButton, 'cosmetics escaped native visibility')
+closeButton:Show()
+assert(meter:ToolbarMenuSetButtons(0.75, 1) == 'native-toolbar')
+assert(closeButton:GetWidth() == 12 and closeButton.points[1][1] == 'LEFT')
+assert(meter:ToolbarMenuSetButtons(1.25, 2) == 'native-toolbar')
+assert(closeButton:GetWidth() == 20 and closeButton.points[1][1] == 'RIGHT')
+assert(meter:SetTitleBarText('Custom native title') == 'title-native')
+meter.elapsed = setmetatable({}, {__div = function() error('secret timer used') end})
+assert(Details:RefreshMainWindow(meter) == 'refresh-native' and meter.nativeTitle.text == 'Custom native title')
+meter:AttributeMenu(true, nil, nil, 'chosen-title', 19, {0.2,0.3,0.4,1}, nil, nil, false)
+assert(meter.nativeTitle.font == 'chosen-title' and meter.nativeTitle.size == 19 and meter.showTimer == false)
+meter:SetTitleBarSettings(true, 27)
+assert(meter.baseframe.titleBar:GetHeight() == 27 and not meter.baseframe.titleBar.hidden)
+_EDM_DB.profile.dm.hdrTextUseAccent = false
+S.looks(); flush()
+assert(meter.nativeTitle.textColor[1] == 0.2, 'disabling title accent restored stale native color')
 local r = meter.barras[1]
-assert(r.textura.path == 'eui-bar' and r.lineText1.font == 'eui-meter-font' and r.lineText1.size == 11 and r.lineText4.size == 10)
-assert(r.statusbar.value == 937 and r.statusbar.classColour[2] == 0.7 and r.lineText1.textColor[4] == 0.8 and r.icone_classe.crop[1] == 0.25 and r.action() == 'breakdown-native')
-local writes = r.lineText1.writes
-for _ = 1, 20 do assert(meter:InstanceRefreshRows() == 'rows-native'); modules.Details.refresh(); flush() end
-assert(setterCalls == 1 and r.lineText1.writes == writes, 'warm refresh repeated geometry/font writes')
+local function NativeCustomization()
+    meter:SetBarSettings(21, 'user-texture', nil,nil,nil,nil,nil,nil,nil,nil, 3)
+    r.textura:SetTexture('user-texture')
+    r.lineText1:SetFont('user-font', 16, 'THICKOUTLINE')
+    r.lineText4:SetFont('user-values', 15, '')
+    r.lineText4:ClearAllPoints(); r.lineText4:SetPoint('CENTER', r.statusbar, 'CENTER', 7, 2)
+    r.lineText1:SetText('native actor'); r.lineText1:SetTextColor(0.3,0.7,1,0.8)
+    meter.row_info.textR_enable_custom_text = true
+end
+NativeCustomization(); flush()
+for _ = 1,20 do assert(meter:InstanceRefreshRows() == 'rows-native'); modules.Details.refresh(); flush() end
+assert(meter.row_info.height == 21 and meter.row_info.space.between == 3 and meter.row_info.texture == 'user-texture')
+assert(r.textura.path == 'user-texture' and r.lineText1.font == 'user-font' and r.lineText1.size == 16)
+assert(r.lineText4.points[1][1] == 'CENTER' and r.lineText1.text == 'native actor')
+assert(r.statusbar.value == 937 and r.statusbar.classColour[2] == 0.7 and r.action() == 'breakdown-native')
 assert(Details:OpenOptionsWindow() == 'options-native' and DetailsOptionsWindow.shellOptions.noBorder)
 -- Source-shaped category reset: a page OnShow scan runs before Details applies
 -- the final selected template. Styling must be settled when the click returns.
@@ -752,12 +827,38 @@ if not auditBaseline then assert(auditScans[DetailsOptionsWindow] == 0 and audit
 
 -- Shared menu/submenu ownership must not leak to another addon.
 GameCooltip:SetHost(meter.baseframe.cabecalho.fechar); assert(GameCooltip:ShowCooltip() == 'menu-native')
-assert(tip1.backdrop.bgFile ~= 'native-tooltip' and tip2.border[1] == 0.055 and tip1.Lines[1].leftText.font == 'eui')
+-- A width can become secret after the tooltip is skinned. Run the actual
+-- fade/hide order while the width remains secret and check native cleanup.
+local previousBackdropCalls = backdropCalls
+tip1.secretWidth, tip2.secretWidth = secretWidth, secretWidth
+issecretvalue = function(value) return value == secretWidth end
+GameCooltip:Hide()
+assert(tip1:GetAlpha() == 0 and tip2:GetAlpha() == 0 and GameCooltip:GetOwner() == nil)
+assert(backdropCalls == previousBackdropCalls, 'Details! hide reapplied a backdrop with secret geometry')
+assert(tip1.border[1] == 0.4 and tip2.border[1] == 0.4 and tip1.Lines[1].leftText.font == 'native')
+GameCooltip:SetHost(meter.baseframe.cabecalho.fechar)
+GameCooltip:ShowCooltip()
+assert(tip1.backdrop.bgFile == 'native-tooltip' and tip2.border[1] == 0.055 and tip1.Lines[1].leftText.font == 'eui')
+assert(backdropCalls == previousBackdropCalls, 'opening a secret-width tooltip rebuilt its backdrop')
+GameCooltip:Hide()
+ns.SetDetailsSetting('menus', false)
+GameCooltip:SetHost(meter.baseframe.cabecalho.fechar); GameCooltip:ShowCooltip(); GameCooltip:Hide()
+assert(backdropCalls == previousBackdropCalls and tip1.border[1] == 0.4, 'disabled menu skin touched the tooltip')
+ns.SetDetailsSetting('menus', true)
+tip1.secretWidth, tip2.secretWidth, issecretvalue = nil, nil, nil
+GameCooltip:SetHost(meter.baseframe.cabecalho.fechar); GameCooltip:ShowCooltip()
+for _ = 1, 100 do
+    GameCooltip:Hide()
+    GameCooltip:SetHost(meter.baseframe.cabecalho.fechar); GameCooltip:ShowCooltip()
+end
+assert(backdropCalls == previousBackdropCalls, 'warm Cooltip cycles rebuilt backdrop geometry')
+print('PASS: Details Cooltip secret-width hide/show, native fade, disabled skin and 100 geometry-free cycles')
 GameCooltip:ShowRoundedCorner()
-assert(tip1.disabled and tip2.disabled and tip1.backdrop.bgFile == 'Interface\\Buttons\\WHITE8X8', 'rounded menu art overwrote EUI shell')
-assert(tip1.frameBackgroundTexture.alpha == 0 and tip2.gradientTexture.alpha == 0, 'native menu background overlays were left visible')
+assert(not tip1.disabled and not tip2.disabled and tip1.backdrop == nil, 'EUI changed the native rounded state')
+assert(tip1.frameBackgroundTexture.alpha == 1 and tip2.gradientTexture.alpha == 1, 'EUI changed native background layers')
 assert(tip1.Lines[1].background.path == 'Interface\\Buttons\\WHITE8X8' and tip1.Lines[1].background.color[4] == 0.14)
 assert(tip1.Lines[1].leftIcon.color[1] == 1 and tip1.Lines[1].leftIcon.color[2] == 0 and tip1.Lines[1].action() == 'delete-native', 'semantic icon/action was changed')
+for _, f in ipairs({tip1, tip2}) do f:SetBackdrop({bgFile = 'native-tooltip'}) end
 local pooled = frame(); tip2.Lines[2] = pooled; pooled.leftText = font(pooled); pooled.background = pooled:CreateTexture()
 GameCooltip:BuildTooltipSecondFrame()
 assert(pooled.leftText.font == 'eui' and pooled.background.color[4] == 0.14, 'new submenu row was not styled synchronously')
@@ -769,7 +870,7 @@ auditScans[editor] = 0; flush()
 assert(auditScans[editor] == 0, 'queued designer refresh ignored disabled menu styling')
 assert(not tip1.disabled and tip1.frameBackgroundTexture.alpha == 1 and pooled.background.path == 'native', 'menu toggle did not restore the shared popup')
 ns.SetDetailsSetting('menus', true); flush()
-assert(tip1.disabled and tip1.frameBackgroundTexture.alpha == 0, 'menu toggle did not restyle the open popup')
+assert(tip1.border[1] == 0.055 and tip1.Lines[1].leftText.font == 'eui', 'menu toggle did not restyle the open popup')
 accent = 0.4
 local stranger = frame(); GameCooltip:SetHost(stranger)
 assert(tip1.backdrop.bgFile == 'native-tooltip' and tip2.border[1] == 0.4 and tip1.Lines[1].leftText.font == 'native')
@@ -779,200 +880,90 @@ GameCooltip:SetHost(meter.baseframe); tip1.hooks.OnHide()
 assert(tip1.backdrop.bgFile == 'native-tooltip', 'hidden menu was not restored')
 GameCooltip:SetHost(stranger)
 local second = instance(); Details.instances[2] = second
+second:ToolbarMenuSetButtons(0.625, 1)
 callbacks.DETAILS_INSTANCE_OPEN('DETAILS_INSTANCE_OPEN', second); flush()
-assert(second.baseframe.cabecalho.ball.alpha == 0 and setterCalls == 2, 'late meter was not styled')
+assert(second.baseframe.cabecalho.ball.alpha == 0 and second.baseframe.cabecalho.fechar:GetWidth() == 10)
+assert(closeButton:GetWidth() == 20, 'windows shared toolbar geometry')
 local late = row(); meter.barras[2] = late
-callbacks.DETAILS_INSTANCE_NEWROW('DETAILS_INSTANCE_NEWROW', meter, late)
-assert(late.lineText1.font == 'eui-meter-font' and late.textura.path == 'eui-bar')
+assert(meter:InstanceRefreshRows() == 'rows-native')
+assert(late.lineText1.font == 'native' and late.textura.path == 'native', 'pooled row was restyled')
 combat = true
-local deferred = row(); meter.barras[3] = deferred
-callbacks.DETAILS_INSTANCE_NEWROW('DETAILS_INSTANCE_NEWROW', meter, deferred); flush()
-assert(deferred.lineText1.font == 'native')
+meter:SetBarSettings(29, 'combat-texture', nil,nil,nil,nil,nil,nil,nil,nil, 4)
+ns.SetDetailsSetting('meter', false); flush()
+assert(meter.row_info.height == 29 and meter.baseframe.cabecalho.ball.alpha == 0)
 combat = false
-for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
-flush(); assert(deferred.lineText1.font == 'eui-meter-font')
-_EDM_DB.profile.dm.barHeight = 20; _EDM_DB.profile.dm.barSpacing = 0
-S.looks(); flush(); assert(meter.row_info.height == 20 and meter.row_info.space.between == 0 and setterCalls == 4)
-assert(_EDM_DB.profile.dm.bgAlpha == 0.7, 'EUI profile was modified')
-_EDM_DB, _EDM_BarTextures = nil, nil
-S.looks(); flush(); assert(meter.row_info.height == 18 and r.textura.path == 'Interface\\Buttons\\WHITE8X8', 'missing EUI meter must use safe defaults')
-assert(meter.baseframe.cabecalho.fechar.hooks.OnClick() == 'fechar-native', 'native close action was changed')
--- Independent controls: disabling meter matching restores its owned settings.
-ns.SetDetailsSetting('meter', false); flush()
-assert(meter.row_info.height == 24 and meter.row_info.space.between == 0 and meter.row_info.texture == 'native', 'meter settings not restored')
-for _, icon in pairs(icons) do assert(icon.alpha == 0, 'header icon survived disabling meter matching') end
-assert(meter.baseframe.cabecalho.modo_selecao.widget.alpha == 0, 'native button fade preference was changed')
-assert(meter.baseframe.cabecalho.ball.alpha == 1 and r.lineText1.font == 'native', 'meter artwork/fonts not restored')
-assert(ownHeader.hidden and meter.nativeTitle.alpha == 1 and meter.baseframe.cabecalho.fechar.normal.alpha == 1)
-assert(meter.baseframe.cabecalho.fechar.points[1][1] == 'BOTTOMRIGHT' and meter.use_multi_fontstrings and meter.row_info.textR_show_data[3] and meter.row_info.textR_bracket == '[' and meter.row_info.textR_enable_custom_text, 'format/control placement not restored')
-assert(meter.position.x == 100 and meter.segment == 3)
-local menuOnlyRow = row(); meter.barras[5] = menuOnlyRow
-callbacks.DETAILS_INSTANCE_NEWROW('DETAILS_INSTANCE_NEWROW', meter, menuOnlyRow)
-assert(menuOnlyRow.textura.path == 'native' and DetailsOptionsWindow.shellOptions.noBorder, 'menu-only mode changed the meter')
-ns.SetDetailsSetting('menus', false); flush()
-GameCooltip:SetHost(meter.baseframe); GameCooltip:ShowCooltip(); assert(tip1.backdrop.bgFile == 'native-tooltip')
-local untouchedOptions = frame('Frame', 'DetailsReportWindow')
-modules.Details.refresh(); flush(); assert(not untouchedOptions.shell, 'disabled menu skin changed a new window')
+for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f,'PLAYER_REGEN_ENABLED') end end
+flush()
+assert(meter.baseframe.cabecalho.ball.alpha == 1 and meter.row_info.height == 29)
+assert(closeButton.normal.path:find('EllesmereUIDamageMeters', 1, true), 'surface toggle disabled toolbar')
+ns.SetDetailsSetting('toolbar', false); flush()
+assert(closeButton.normal.path == 'native' and closeButton:GetWidth() == 20 and closeButton.points[1][1] == 'RIGHT')
 ns.SetDetailsSetting('meter', true); flush()
-assert(meter.row_info.height == 18 and menuOnlyRow.lineText1.font == 'eui-meter-font' and not untouchedOptions.shell, 'meter-only mode must not enable menus')
-ns.SetDetailsSetting('meter', false); flush()
-assert(meter.row_info.height == 24 and menuOnlyRow.lineText1.font == 'native', 'second toggle lost original appearance')
-ns.SetDetailsSetting('meter', true); flush()
-enabled = false; local disabledRow = row(); meter.barras[4] = disabledRow
-callbacks.DETAILS_INSTANCE_NEWROW('DETAILS_INSTANCE_NEWROW', meter, disabledRow); modules.Details.refresh(); flush()
-assert(disabledRow.textura.path == 'native' and disabledRow.lineText1.font == 'native')
-assert(not meter.baseframe.hooks.OnUpdate, 'skinning must not add polling')
--- Recovery still runs if EUI never dispatches a disabled skin after reloading.
-local savedProfile = next(ns.DetailsSettings().backups)
-ns.DetailsSettings().meter = false
-ns.DetailsSettings().backups[savedProfile][meter.meu_id] = {height = 28, spacing = 3, texture = 'pre-reload'}
-meter.row_info.height = 18
-for _, f in ipairs(events) do
-    if f.events and f.events.PLAYER_LOGIN and f.events.ADDON_LOADED and not f.events.PLAYER_REGEN_ENABLED then
-        f.hooks.OnEvent(f, 'PLAYER_LOGIN')
-    end
-end
-assert(meter.row_info.height == 28 and meter.row_info.space.between == 3 and meter.row_info.texture == 'pre-reload', 'disabled-skin reload recovery failed')
-ns.DetailsSettings().backups[savedProfile][meter.meu_id] = {height = 29, spacing = 2, texture = 'pre-profile'}
-assert(Details:ApplyProfile() == 'profile-native')
-assert(meter.row_info.height == 29 and meter.row_info.texture == 'pre-profile', 'disabled-skin profile recovery failed')
--- Separate Details profiles must not inherit another profile's baseline.
-enabled = true
-local profileName = 'Profile A'
-Details.GetCurrentProfileName = function() return profileName end
-ns.SetDetailsSetting('meter', true); flush()
-profileName = 'Profile B'
+assert(closeButton.normal.path == 'native', 'surface toggle enabled toolbar')
+assert(meter.nativeTitle.text == 'Custom native title' and meter.nativeTitle.font == 'chosen-title')
+local backup = {['::Default'] = {[meter.meu_id] = {height=28,spacing=8,texture='stale'}}}
+ns.DetailsSettings().backups = backup
+assert(Details:ApplyProfile() == 'profile-native'); flush()
+assert(meter.row_info.height == 29 and ns.DetailsSettings().backups == backup, 'old backups overwrote native choices')
+-- A reload/profile refresh retains the saved values and never invokes native setters.
 meter.row_info.height, meter.row_info.space.between, meter.row_info.texture = 35, 4, 'profile-b'
+local baselineSetters = setterCalls
 callbacks.DETAILS_PROFILE_APPLYED('DETAILS_PROFILE_APPLYED'); flush()
 ns.SetDetailsSetting('meter', false); flush()
-assert(meter.row_info.height == 35 and meter.row_info.space.between == 4 and meter.row_info.texture == 'profile-b', 'restoration crossed profile boundaries')
--- Quick controls append to the settings pop-out without replacing native entries.
-assert(ns.DetailsSettings().tiny == false, 'Tiny Threat must be opt-in for new installations')
+assert(meter.row_info.height == 35 and meter.row_info.texture == 'profile-b' and setterCalls == baselineSetters)
+assert(meter.nativeTitle.text == 'Custom native title' and meter.showTimer == false)
+-- Quick entries are independent and remain synchronized with the panel.
 GameCooltip:Reset(); GameCooltip:AddLine('Native entry')
-Details:SetMenuOwner(meter.baseframe.cabecalho.fechar, meter)
-assert(#GameCooltip.entries == 1, 'submenu added to an unrelated pop-out')
 local gear = meter.baseframe.cabecalho.modo_selecao.widget
-assert(Details:SetMenuOwner(gear, meter) == 'owner-native')
-assert(#GameCooltip.entries == 6 and GameCooltip.entries[1].text == 'Native entry')
-assert(GameCooltip.entries[2].text == 'EUI AddonSkins' and GameCooltip.entries[3].level == 2)
-Details:SetMenuOwner(gear, meter); assert(#GameCooltip.entries == 6, 'submenu duplicated during reuse')
-GameCooltip.entries[6].action(); assert(openedCategory == 123)
+Details:SetMenuOwner(gear, meter)
+assert(#GameCooltip.entries == 7)
+assert(GameCooltip.entries[3].text == 'Style meter surfaces' and GameCooltip.entries[4].text == 'Style toolbar artwork')
 GameCooltip.entries[4].action(); flush()
-assert(ns.DetailsSettings().tiny and GameCooltip.hidden, 'Tiny Threat menu toggle did not apply')
-GameCooltip.entries[4].action(); flush(); assert(not ns.DetailsSettings().tiny)
-assert(GameCooltip.entries[5].text:find('reload'), 'menu setting must explain reload')
-GameCooltip:Reset(); Details:SetMenuOwner(gear, meter)
-assert(#GameCooltip.entries == 5, 'reset did not rebuild the submenu exactly once')
--- Tiny Threat is a plugin hosted by one Details instance; DF rows are wrappers.
+assert(ns.ReadDetailsSetting('toolbar') and not ns.ReadDetailsSetting('meter'))
+GameCooltip.entries[5].action(); flush()
+assert(ns.ReadDetailsSetting('tiny'))
+ns.SetDetailsSetting('tiny', false)
 local tinyHost = instance(); tinyHost.modo = 4; tinyHost.current_raid_plugin = 'DETAILS_PLUGIN_TINY_THREAT'
 Details.instances[3] = tinyHost
 local bar = frame('StatusBar'); bar.fill = bar:CreateTexture()
 bar.lefttext, bar.righttext = font(bar), font(bar)
-bar.lefttext:SetText('Tank'); bar.righttext:SetText('100%'); bar.lefttext:SetTextColor(1, 0, 0, 1)
+bar.lefttext:SetText('Tank'); bar.righttext:SetText('100%'); bar.lefttext:SetTextColor(1,0,0,1)
 bar.GetStatusBarTexture = function(self) return self.fill end
-local tinyRow = {widget = bar}
-local tiny = {Rows = {tinyRow}, GetPluginInstance = function() return tinyHost end,
-    RefreshRow = function(_, r)
-        r.widget.fill:SetTexture('tiny-native'); r.widget.lefttext:SetFont('tiny-font'); r.widget.righttext:SetFont('tiny-font')
+local tinyRow = {widget=bar}
+local tiny = {Rows={tinyRow},GetPluginInstance=function() return tinyHost end,
+    RefreshRow=function(_,row)
+        row.widget.fill:SetTexture('tiny-native')
+        row.widget.lefttext:SetFont('tiny-font',13,'OUTLINE')
+        row.widget.righttext:SetFont('tiny-font',13,'OUTLINE')
         return 'tiny-native-return'
     end}
-tiny.RefreshRows = function(self) for _, r in ipairs(self.Rows) do self:RefreshRow(r) end end
-Details.GetPlugin = function(_, id) if id == 'DETAILS_PLUGIN_TINY_THREAT' then return tiny end end
-tiny:RefreshRows(); ns.SetDetailsSetting('meter', true); flush()
-assert(meter.row_info.height == 18 and tinyHost.row_info.height == 24 and bar.lefttext.font == 'tiny-font', 'Details toggle leaked into Tiny Threat')
-ns.SetDetailsSetting('tiny', true); flush()
-assert(tinyHost.row_info.height == 18 and bar.lefttext.font == 'eui-meter-font' and bar.fill.path == 'Interface\\Buttons\\WHITE8X8')
-assert(tinyHost.use_multi_fontstrings and tinyHost.row_info.textR_show_data[3], 'Tiny Threat inherited damage-number formatting')
-for _ = 1, 3 do modules.Details.refresh(); flush() end
+tiny.RefreshRows = function(self) for _,row in ipairs(self.Rows) do self:RefreshRow(row) end end
+Details.GetPlugin = function(_,id) if id=='DETAILS_PLUGIN_TINY_THREAT' then return tiny end end
+tiny:RefreshRows(); ns.SetDetailsSetting('tiny', true); flush()
+assert(tinyHost.row_info.height == 24 and bar.lefttext.font == 'eui-meter-font')
+assert(tinyHost.use_multi_fontstrings and tinyHost.row_info.textR_show_data[3])
 local writes = bar.lefttext.writes
-assert(tiny:RefreshRow(tinyRow) == 'tiny-native-return' and bar.lefttext.font == 'eui-meter-font', 'native Tiny redraw lost styling or return value')
-assert(bar.lefttext.writes - writes == 2, 'Tiny Threat refresh hook was duplicated')
-assert(bar.lefttext.text == 'Tank' and bar.righttext.text == '100%' and bar.lefttext.textColor[2] == 0, 'Tiny Threat data/colours changed')
-ns.SetDetailsSetting('meter', false); flush()
-assert(meter.row_info.height == 35 and tinyHost.row_info.height == 18 and bar.lefttext.font == 'eui-meter-font', 'independent Tiny-only mode failed')
-ns.SetDetailsSetting('tiny', false); flush()
-assert(tinyHost.row_info.height == 24 and bar.lefttext.font == 'tiny-font' and bar.fill.path == 'tiny-native', 'Tiny Threat toggle did not restore native style')
-ns.SetDetailsSetting('tiny', true); flush()
+for _ = 1,3 do modules.Details.refresh(); flush() end
+assert(bar.lefttext.writes == writes, 'warm Tiny refresh rewrote its font')
+assert(tiny:RefreshRow(tinyRow) == 'tiny-native-return' and bar.lefttext.font == 'eui-meter-font')
+assert(bar.lefttext.text == 'Tank' and bar.lefttext.textColor[1] == 1)
 tinyHost.modo = 2; modules.Details.refresh(); flush()
-assert(tinyHost.row_info.height == 24, 'leaving Tiny Threat retained its host styling')
+assert(bar.lefttext.font == 'tiny-font' and tinyHost.row_info.height == 24)
 tinyHost.modo = 4; modules.Details.refresh(); flush()
-assert(tinyHost.row_info.height == 18 and bar.lefttext.font == 'eui-meter-font', 'returning to Tiny Threat did not restyle')
 combat = true; ns.SetDetailsSetting('tiny', false); flush()
-assert(tinyHost.row_info.height == 18, 'combat toggle changed UI immediately')
+assert(bar.lefttext.font == 'eui-meter-font')
 combat = false
-for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end end
-flush()
-assert(tinyHost.row_info.height == 24 and bar.lefttext.font == 'tiny-font', 'combat-deferred independent restoration failed')
-ns.SetDetailsSetting('meter', true); flush()
-tinyHost.baseframe.cabecalho.ball:SetAlpha(0.7)
-assert(tinyHost.baseframe.cabecalho.ball.alpha == 0.7, 'disabled Tiny window retained a fade guard from Details')
--- A retained instance can have saved appearance settings but no live window.
-local retained = instance()
-retained.baseframe = nil
-retained.ChangeSkin = function(self)
-    assert(self.baseframe, 'ChangeSkin called without a live window')
-    self.skinResets = (self.skinResets or 0) + 1
-end
-Details.instances[4] = retained
-local backups = ns.DetailsSettings().backups
-local profile = '::' .. profileName
-assert(backups[profile], 'fixture profile is missing')
-backups[profile][retained.meu_id] = {height = 27, spacing = 3, texture = 'retained-native'}
-retained.row_info.height = 18
-ns.SetDetailsSetting('meter', false); flush()
-assert(retained.row_info.height == 27 and retained.row_info.space.between == 3 and retained.row_info.texture == 'retained-native', 'unbuilt instance settings were not restored')
-assert(not retained.skinResets and not backups[profile][retained.meu_id], 'unbuilt instance reset or backup was retained')
--- A previously styled window may also disappear before the toggle is clicked.
-ns.SetDetailsSetting('meter', true); flush()
+for _,f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f,'PLAYER_REGEN_ENABLED') end end
+flush(); assert(bar.lefttext.font == 'tiny-font' and bar.fill.path == 'tiny-native')
+-- Removed windows must not invoke renderers or restore old preferences.
 local existingFrame = meter.baseframe
 meter.baseframe = nil
-meter.ChangeSkin = retained.ChangeSkin
-ns.SetDetailsSetting('meter', false); flush()
-assert(not meter.skinResets and meter.row_info.height == 35, 'closed instance restoration called its renderer or lost settings')
+modules.Details.refresh(); flush()
+assert(meter.row_info.height == 35)
 meter.baseframe = existingFrame
 ns.SetDetailsSetting('meter', true); flush()
-assert(meter.row_info.height == 18, 'restored window could not be styled again')
--- Native header redraws must never introduce sibling anchor cycles.
-local isolated = instance()
-local activeLayout = true
-local helper = ns.CreateSkinHelper(S, modules.Details)
-local layout = ns.CreateDetailsLayout(helper, function() return activeLayout end, function() end, function() end)
-local controls = {}
-for _, key in ipairs({'modo_selecao', 'segmento', 'atributo', 'report', 'reset', 'fechar'}) do
-    local obj = isolated.baseframe.cabecalho[key]
-    controls[#controls + 1] = obj.widget or obj
-end
-local nativePrevious = isolated.baseframe
-for _, b in ipairs(controls) do b:ClearAllPoints(); b:SetPoint('RIGHT', nativePrevious, 'LEFT', -4, 0); nativePrevious = b end
-layout.Window(isolated, ns.GetMeterStyle(S))
--- Native order reverses our old sibling chain: this failed before the fix.
-controls[2]:ClearAllPoints(); controls[2]:SetPoint('RIGHT', controls[1], 'LEFT', -4, 0)
-assert(controls[1].points[1][2] == controls[2].points[1][2], 'custom buttons should anchor independently to the header')
-local clearing, firstRestorePoint = {}, true
-activeLayout = false
-for _, b in ipairs(controls) do
-    local clear, set = b.ClearAllPoints, b.SetPoint
-    b.ClearAllPoints = function(self) clearing[self] = true; clear(self) end
-    b.SetPoint = function(self, ...)
-        if firstRestorePoint then
-            for _, other in ipairs(controls) do assert(clearing[other], 'restoring anchors before all custom links were cleared') end
-            firstRestorePoint = false
-        end
-        return set(self, ...)
-    end
-end
-layout.Restore()
-for i, b in ipairs(controls) do assert(b.points[1][2] == (i == 1 and isolated.baseframe or controls[i-1]), 'native anchor graph was not restored') end
--- Release EUI anchors before native ChangeSkin starts rebuilding its graph.
-local nativeResetChecked = false
-meter.ChangeSkin = function(self)
-    local button = self.baseframe.cabecalho.modo_selecao.widget
-    assert(button.points[1][2] == self.baseframe, 'native renderer ran before releasing the custom layout')
-    nativeResetChecked = true
-    return 'skin-native'
-end
-ns.SetDetailsSetting('meter', false); flush()
-assert(nativeResetChecked, 'restoration did not rebuild the live native skin')
+assert(meter.baseframe.cabecalho.ball.alpha == 0)
+assert(meter.row_info.height == 35 and r.lineText1.font == 'user-font')
 -- Source-shaped modern menu refresh: button has OnEnter, no injected CoolTip.
 local attribute = meter.baseframe.cabecalho.atributo.widget
 assert(not attribute.CoolTip)
@@ -1005,9 +996,9 @@ bound(attribute, 'fixed-native', 'vanguard', meter)
 assert(GameCooltip.hidden and meter.selectedPlugin == 'vanguard', 'missing menu handler did not close safely')
 local currentSettings = EUIAddonSkinsDB.details
 EUIAddonSkinsDB.details = {meter = true, menus = false}
-assert(ns.DetailsSettings().tiny == true, 'existing meter users lost Tiny Threat appearance during migration')
-EUIAddonSkinsDB.details.tiny = false
-assert(ns.DetailsSettings().tiny == false, 'migration overwrote an explicit Tiny Threat choice')
+assert(ns.DetailsSettings().tiny == true and ns.DetailsSettings().toolbar == true, 'existing opt-ins were lost during migration')
+EUIAddonSkinsDB.details.tiny, EUIAddonSkinsDB.details.toolbar = false, false
+assert(not ns.DetailsSettings().tiny and not ns.DetailsSettings().toolbar, 'migration overwrote explicit opt-outs')
 EUIAddonSkinsDB.details = currentSettings
 -- A real DF slider refresh can call Details' bar-setting method. Such meter
 -- work must not refresh the options or invalidate every category's font cache.

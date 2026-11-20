@@ -551,7 +551,8 @@ local function Toggle(key, label, description, get, set)
 end
 ns.RegisterSettingsProvider("Details", {label="Details!", options={
     Toggle("menus", "Skin menus and options", "Styles Details! dialogs and dropdowns. Reload after changing.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
-    Toggle("meter", "Match EUI meter appearance", "Matches fonts, bars and spacing. Turning it off restores the captured appearance.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
+    Toggle("meter", "Style meter surfaces", "Styles surfaces and the title accent. Details! controls title text, timers, fonts, bars and layout.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
+    Toggle("toolbar", "Style toolbar artwork", "Uses EUI icons inside native buttons. Details! controls size, scale, visibility and placement.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
     Toggle("tiny", "Style Tiny Threat", "Styles Tiny Threat independently of other Details! meters.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
 }})
 ns.RegisterSettingsProvider("RXPGuides", {label="RestedXP", options={

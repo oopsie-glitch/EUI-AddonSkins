@@ -145,7 +145,10 @@ jobs:
               for trial in range(5):
                   env = dict(os.environ, DETAILS_BENCH_MODE=mode)
                   result = subprocess.run(['python3','/tmp/details-run-one.py','/tmp/details-bench.lua'],
-                                          env=env,text=True,capture_output=True,check=True)
+                                          env=env,text=True,capture_output=True)
+                  if result.returncode:
+                      print(result.stdout, result.stderr, flush=True)
+                      result.check_returncode()
                   for line in result.stdout.splitlines():
                       if not line.startswith('DETAILS_BENCH '):
                           continue

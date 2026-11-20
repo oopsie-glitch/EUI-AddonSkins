@@ -90,7 +90,7 @@ jobs:
           import os, subprocess, re, statistics, json
           test = Path('tests/details_spec.lua').read_text()
           prefix = test.split('modules.Details.install(S, modules.Details); flush()',1)[0]
-          prefix = 'local counts={frames=0,textures=0,fonts=0,hooks=0,events=0,writes=0,geometry=0,reads=0}\n' + prefix
+          prefix = 'SlashCmdList={}\nlocal counts={frames=0,textures=0,fonts=0,hooks=0,events=0,writes=0,geometry=0,reads=0}\n' + prefix
           changes = {
               'local function frame(kind, name, parent)': 'counts.frames=counts.frames+1',
               'local function texture(kind, parent)': "if kind=='FontString' then counts.fonts=counts.fonts+1 else counts.textures=counts.textures+1 end",

@@ -32,7 +32,7 @@ local Look = ns.GetMeterStyle
 local function Setup(C, refresh)
     if C.details then return C.details end
     local S, H, D = C.S, C.H, _G.Details
-    local state = {meters = {}, owners = {}, roots = {}, sections = {}, designerRows = {}, designers = {}, snapshots = {}, tinyTexts = {}, tinyTextures = {}, applying = false}
+    local state = {meters = {}, owners = {}, roots = {}, sections = {}, designerRows = {}, designers = {}, snapshots = {}, tinyTexts = {}, tinyTextures = {}}
     C.details = state
     -- The public Font primitive reapplies its FontObject/shadow and font on
     -- every call. Details shows/re-enables whole groups at once; cache only
@@ -675,7 +675,7 @@ local function Setup(C, refresh)
         end)
     end
     local function PaintMetersNow()
-        if state.look and not state.applying then state.ApplyMeters() end
+        if state.look then state.ApplyMeters() end
     end
     for _, name in ipairs({"SetMode", "SetDisplay"}) do H.Hook(D, name, PaintMetersNow) end
     H.Hook(D.RaidTables, "EnableRaidMode", PaintMetersNow)
@@ -712,7 +712,7 @@ local function Setup(C, refresh)
         end
     end)
     for _, name in ipairs({"ChangeSkin", "ApplyProfile", "CreateInstance"}) do
-        H.Hook(D, name, function() if not state.applying then refresh() end end)
+        H.Hook(D, name, refresh)
     end
     for _, name in ipairs({"OpenOptionsWindow", "InitializeOptionsWindow", "OpenBreakdownWindow", "OpenSpecificBreakdownWindow",
         "FastReportWindow", "SendReportWindow", "SendReportTextWindow", "Reportar"}) do

@@ -615,6 +615,7 @@ local function Setup(C, refresh)
     end
     -- Completed native setters, never data/timer updates, refresh cosmetic state.
     H.Hook(D, "ToolbarMenuSetButtons", state.layout.Toolbar)
+    H.Hook(D, "InstanceButtonsColors", state.layout.Toolbar)
     H.Hook(D, "AttributeMenu", function(instance) state.layout.Title(instance) end)
     for _, name in ipairs({type(D.RefreshTitleBar) == "function" and "RefreshTitleBar" or "SetTitleBarSettings", "ToolbarSide"}) do
         H.Hook(D, name, function(instance)

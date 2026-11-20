@@ -97,7 +97,7 @@ local function frame(kind, name, parent)
     function f:GetBackdropBorderColor() return table.unpack(self.border or {1, 1, 1, 1}) end
     function f:SetBackdropColor(...) self.color = {...} end
     function f:SetBackdropBorderColor(...) self.border = {...} end
-    function f:CreateTexture() local t = texture(nil, self); self.regions[#self.regions + 1] = t; return t end
+    function f:CreateTexture(_, layer) local t = texture(nil, self); t.layer = layer; self.regions[#self.regions + 1] = t; return t end
     function f:CreateFontString(_, _, template) local t = texture('FontString', self); t.font = template; self.regions[#self.regions + 1] = t; return t end
     function f:GetNormalTexture() return self.normal end
     function f:GetLeft() return self.left end
@@ -162,7 +162,7 @@ frame = function(...)
     function f:GetPoint(i) return table.unpack(self.points[i]) end
     function f:GetFrameLevel() return self.level or 5 end
     function f:SetFrameLevel(level) self.level = level end
-    function f:SetAllPoints() end
+    function f:SetAllPoints(anchor) self.anchor = anchor end
     function f:EnableMouse(value) self.mouse = value end
     function f:SetHeight(h)
         local changed = self.height ~= h; self.height = h
@@ -226,6 +226,9 @@ local function instance()
     obj.baseframe.titleBar = frame('Frame', nil, obj.baseframe); obj.baseframe.titleBar.texture = obj.baseframe.titleBar:CreateTexture()
     obj.baseframe.cabecalho = {ball = obj.baseframe:CreateTexture(), fechar = frame('Button', nil, obj.baseframe)}
     obj.baseframe:SetSize(340, 160)
+    obj.baseframe:SetBackdrop({bgFile='native-body',edgeFile='native-border'})
+    obj.baseframe:SetBackdropColor(0.15,0.2,0.25,0.9)
+    obj.baseframe:SetBackdropBorderColor(0.2,0.3,0.4,0.8)
     obj.use_multi_fontstrings = true
     obj.baseframe.titleBar:SetHeight(16)
     obj.baseframe.titleBar:Hide()
@@ -239,13 +242,15 @@ local function instance()
     for _, key in ipairs({'modo_selecao', 'segmento', 'atributo', 'report', 'reset', 'fechar'}) do
         local b = key == 'fechar' and obj.baseframe.cabecalho.fechar or frame('Button', nil, obj.baseframe)
         obj.baseframe.cabecalho[key] = key == 'fechar' and b or {widget = b}
-        b.normal = b:CreateTexture(); b:SetPoint('BOTTOMRIGHT', obj.baseframe, 'TOPRIGHT', 5, -6)
+        b.normal = b:CreateTexture(); b.texture = b:CreateTexture(); b:SetPoint('BOTTOMRIGHT', obj.baseframe, 'TOPRIGHT', 5, -6)
         -- Details can fade the button itself while its mouse scripts remain live.
         b.alpha = key == 'reset' and 1 or 0
         b.hooks.OnClick = function() return key .. '-native' end
     end
     obj.baseframe.cabecalho.fechar.action = function() return 'close-native' end
-    obj.bgdisplay = frame(); obj.attribute_text = font(obj.baseframe)
+    obj.bgdisplay = frame(); obj.bgdisplay:SetBackdrop({bgFile='native-canvas'})
+    obj.bgdisplay:SetBackdropColor(0.2,0.1,0.05,1)
+    obj.attribute_text = font(obj.baseframe)
     obj.baseframe.Center = obj.baseframe:CreateTexture()
     obj.bgdisplay.Center = obj.bgdisplay:CreateTexture()
     return setmetatable(obj, {__index = Details})
@@ -255,6 +260,13 @@ local nativeProfile = 'Existing customized profile'
 Details = {
     GetCurrentProfileName = function() return nativeProfile end,
     GetTitleBarFontString = function(self) return {widget = self.nativeTitle} end,
+    InstanceButtonsColors = function(self, r,g,b,alpha)
+        for _, value in pairs(self.baseframe.cabecalho) do
+            local button = value.widget or value
+            if button.normal then button.normal:SetVertexColor(r,g,b,alpha) end
+        end
+        return 'native-colors'
+    end,
     GetInstanceAttributeText = function() return 'Damage Done' end,
     ToolbarMenuSetButtons = function(self, size, side)
         self.menu_icons_size, self.menu_anchor = size, {side = side}
@@ -422,19 +434,47 @@ assert(meter.baseframe.cabecalho.ball.alpha == 0 and meter.baseframe.titleBar.he
 assert(meter.baseframe.Center.alpha == 0 and meter.bgdisplay.Center.alpha == 0
     and meter.baseframe.fullWindowFrame.CenterBlock.alpha == 0, 'native fills obscure or stack with the EUI body')
 local body, header
-for _, art in ipairs(meter.bgdisplay.regions) do
-    if art.anchor == meter.baseframe and art.color and art.color[4] == 0.7 then body = art end
+for _, child in ipairs(meter.baseframe.children) do
+    if child.anchor == meter.baseframe and child.mouse == false and child:GetFrameLevel() == meter.baseframe:GetFrameLevel()-1 then
+        for _, art in ipairs(child.regions) do if art.color and art.color[4] == 0.7 then body = art end end
+    end
 end
 for _, art in ipairs(meter.baseframe.regions) do
     if art.anchor == meter.baseframe.UPFrame then header = art end
 end
-assert(body and body.parent == meter.bgdisplay and header and header.parent == meter.baseframe,
-    'surface parent or native header fade masks the EUI materials')
+assert(body and body.parent.parent == meter.baseframe and header and header.parent == meter.baseframe,
+    'historical below-window body host or native header anchoring was lost')
+assert(body:GetDrawLayer()=='BACKGROUND' and header:GetDrawLayer()=='BACKGROUND')
+assert(body.color[1]==0 and body.color[2]==0 and body.color[3]==0 and body.color[4]==0.7)
+assert(header.color[1]==27/255 and header.color[2]==27/255 and header.color[3]==27/255 and header.color[4]==1)
+assert(meter.baseframe.backdrop.bgFile=='native-body' and meter.baseframe.color[4]==0 and meter.baseframe.border[4]==0)
+assert(meter.bgdisplay.color[4]==0 and meter.bgdisplay.backdrop.bgFile=='native-canvas')
+-- Backdrop colors are native rendering state, not exposed Center texture fields.
+-- Model a client/path without those fields, then a native backdrop rebuild.
+local retainedCenter = meter.baseframe.Center
+meter.baseframe.Center = nil
+meter.baseframe:SetBackdrop({bgFile='native-redraw',edgeFile='native-redraw-border'})
+meter.baseframe:SetBackdropColor(0.3,0.4,0.5,1)
+assert(meter.baseframe.color[4]==0 and meter.baseframe.border[4]==0,
+    'native backdrop redraw obscured the historical EUI surface')
+meter.baseframe.Center = retainedCenter
+meter.baseframe.cabecalho.ball:SetAlpha(0.8)
+assert(meter.baseframe.cabecalho.ball.alpha==0, 'native decoration alpha redraw escaped suppression')
+meter.baseframe.cabecalho.ball:SetAlpha(1)
+_EDM_DB.profile.dm.bgR, _EDM_DB.profile.dm.bgG, _EDM_DB.profile.dm.bgB = 0.12,0.08,0.03
+_EDM_DB.profile.dm.hdrBgColor, _EDM_DB.profile.dm.hdrBgAlpha = {r=0.16,g=0.14,b=0.11},0.6
+S.looks();flush()
+assert(body.color[1]==0.12 and body.color[2]==0.08 and body.color[3]==0.03 and body.color[4]==0.7)
+assert(header.color[1]==0.16 and header.color[2]==0.14 and header.color[3]==0.11 and header.color[4]==0.6)
+_EDM_DB.profile.dm.bgR, _EDM_DB.profile.dm.bgG, _EDM_DB.profile.dm.bgB = nil,nil,nil
+_EDM_DB.profile.dm.hdrBgColor, _EDM_DB.profile.dm.hdrBgAlpha = nil,nil
+S.looks();flush()
 assert(header.color[1] > 0 and meter.baseframe.UPFrame.alpha == 0, 'skin changed native header fade instead of painting independent materials')
 assert(meter.baseframe.cabecalho.fechar.action() == 'close-native')
 assert(meter.nativeTitle.alpha == 1 and meter.nativeTitle.text == '00:06 Damage Done' and meter.nativeTitle.font == 'native')
 assert(meter.use_multi_fontstrings and meter.row_info.textR_show_data[3] and meter.row_info.textR_bracket == '[')
-assert(meter.baseframe.lock_button.label.alpha == 1 and meter.baseframe.resize_direita.texture.alpha == 1)
+assert(meter.baseframe.lock_button.label.alpha == 0 and meter.baseframe.resize_direita.texture.alpha == 0,
+    'historical native grip/lock decoration suppression was lost')
 assert(not callbacks.DETAILS_INSTANCE_NEWROW, 'ordinary pooled rows gained a skin update listener')
 local closeButton = meter.baseframe.cabecalho.fechar
 ns.SetDetailsSetting('toolbar', true); flush()
@@ -444,10 +484,13 @@ for _, key in ipairs({'modo_selecao','segmento','atributo','report','reset','fec
     local button = value.widget or value
     icons[key] = button.normal
     assert(icons[key].path:find('EllesmereUIDamageMeters', 1, true))
+    assert(icons[key].color[1]==0.55 and button.texture.alpha==0, 'native foreground covers the approved toolbar glyph')
     button:SetWidth(12); button:SetHeight(12)
     assert(button:GetWidth() == 12 and button:GetHeight() == 12)
     assert(not button.hooks.OnSizeChanged, 'toolbar geometry gained an observer')
 end
+assert(meter:InstanceButtonsColors(1,0,0,0.4)=='native-colors')
+assert(closeButton.normal.color[1]==0.55 and closeButton.normal.color[4]==0.4, 'native toolbar tint reset EUI artwork or alpha')
 closeButton:Hide()
 assert(closeButton.hidden and closeButton.normal.parent == closeButton, 'cosmetics escaped native visibility')
 closeButton:Show()
@@ -944,6 +987,9 @@ for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then
 flush()
 assert(meter.baseframe.cabecalho.ball.alpha == 1 and meter.row_info.height == 29)
 assert(meter.baseframe.Center.alpha == 1 and meter.bgdisplay.Center.alpha == 1, 'native fill visibility was not restored')
+assert(meter.baseframe.color[1]==0.3 and meter.baseframe.color[4]==1 and meter.baseframe.border[4]==1,
+    'surface disable restored stale colors over the latest native backdrop redraw')
+assert(meter.baseframe.lock_button.label.alpha==1 and meter.baseframe.resize_direita.texture.alpha==1)
 assert(closeButton.normal.path:find('EllesmereUIDamageMeters', 1, true), 'surface toggle disabled toolbar')
 ns.SetDetailsSetting('toolbar', false); flush()
 assert(closeButton.normal.path == 'native' and closeButton:GetWidth() == 20 and closeButton.points[1][1] == 'RIGHT')

@@ -1,0 +1,76 @@
+name: Verify original Details baseline
+on:
+  push:
+    branches: [test/details-original-3553aca8]
+    paths: [.github/workflows/details-original-baseline.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 3553aca8e386c77be2c1af20a719117c14199df2
+          persist-credentials: false
+      - name: Install Lua regression runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Run unchanged baseline regressions and packaging
+        run: python3 scripts/package.py
+      - name: Verify original implementation and every archive byte
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from subprocess import check_output
+          from zipfile import ZipFile
+          baseline='3553aca8e386c77be2c1af20a719117c14199df2'
+          assert check_output(['git','rev-parse','HEAD']).decode().strip()==baseline
+          assert check_output(['git','status','--porcelain','--untracked-files=no'])==b''
+          layout=Path('EUIAddonSkins/DetailsLayout.lua').read_text()
+          settings=Path('EUIAddonSkins/DetailsSettings.lua').read_text()
+          skin=Path('EUIAddonSkins/Skins/Details.lua').read_text()
+          assert 'entry.timer' in layout and 'function L.Title(instance)' in layout
+          assert 'state.Meter = function(instance)' in skin
+          assert 'OpenDetailsRecommendedPreset' not in settings
+          assert 'ReadDetailsSetting("toolbar")' not in skin
+          with ZipFile('EUIAddonSkins.zip') as archive:
+              assert archive.testzip() is None
+              names=archive.namelist()
+              assert len(names)==len(set(names))==69
+              assert all(name.startswith('EUIAddonSkins/') for name in names)
+              assert not any(name.endswith(('.py','.md','.yml')) for name in names)
+              for name in names:
+                  assert archive.read(name)==check_output(['git','show',baseline+':'+name]),name
+              archive.extractall('/tmp/details-original-install')
+          print('BASELINE VERIFIED: original Details implementation, no PR90 preset or modular toolbar; all 69 runtime files match '+baseline)
+          PY
+      - name: Store original installable test ZIP
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-Details-Original-3553aca8
+          path: /tmp/details-original-install/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Verify downloaded uploaded ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/details-original-download.zip; then break; fi
+            if [ "$attempt" -eq 6 ]; then exit 1; fi
+            sleep 4
+          done
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          with ZipFile('/tmp/details-original-download.zip') as actual, ZipFile('EUIAddonSkins.zip') as expected:
+              files=[item.filename for item in actual.infolist() if not item.is_dir()]
+              assert actual.testzip() is None and sorted(files)==sorted(expected.namelist())
+              assert all(actual.read(name)==expected.read(name) for name in files)
+          print('UPLOADED ZIP VERIFIED: one installable EUIAddonSkins folder, exact historical runtime bytes')
+          PY

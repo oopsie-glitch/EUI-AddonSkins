@@ -4,10 +4,31 @@ local NAME = "Addonskins EUI"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local MEDIA = "Interface\\AddOns\\EllesmereUIDamageMeters\\Media\\"
 local ownDefinition
+local registrationStatus = "waiting for the Details integration to activate"
+-- GetSkin is overwritten by class_instance.lua with an instance-only getter.
+-- The native selector and InstallSkin share this authoritative named registry.
+local function FindSkin(name)
+    local D = _G.Details
+    return D and type(D.skins) == "table" and D.skins[name]
+end
+function ns.NativeDetailsRegistrationStatus()
+    local D = _G.Details
+    local metadata = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
+    local version = metadata and metadata("Details", "Version") or "unknown"
+    return registrationStatus .. " | Details: " .. tostring(version)
+        .. " | IsLoaded: " .. tostring(D and type(D.IsLoaded) == "function" and D.IsLoaded() or false)
+        .. " | combat: " .. tostring(InCombatLockdown and InCombatLockdown() or false)
+end
+if SlashCmdList then
+    SLASH_EUIDETAILSNATIVE1 = "/euidetailsnative"
+    SlashCmdList.EUIDETAILSNATIVE = function()
+        if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("Addonskins EUI: " .. ns.NativeDetailsRegistrationStatus()) end
+    end
+end
 function ns.IsNativeDetailsInstance(instance)
     local D = _G.Details
     return instance and instance.skin == NAME and ownDefinition ~= nil
-        and D and D.GetSkin and D:GetSkin(NAME) == ownDefinition or false
+        and D and FindSkin(NAME) == ownDefinition or false
 end
 
 -- Experimental adapter: native selection owns every profile/default write.
@@ -32,18 +53,46 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         local r,g,b,a = f:GetBackdropColor()
         if Plain(r) and Plain(g) and Plain(b) and Plain(a) then return {r,g,b,a} end
     end
+    local reported = {}
+    local function Status(code, message, warn)
+        P.status, P.reason = code, message
+        registrationStatus = message .. " | install attempts: " .. tostring(P.installAttempts or 0)
+        if warn and not reported[code] then
+            reported[code] = true
+            if DEFAULT_CHAT_FRAME then
+                DEFAULT_CHAT_FRAME:AddMessage("EUI AddonSkins: Addonskins EUI unavailable: " .. message .. ". /euidetailsnative")
+            end
+        end
+    end
     function P.Register(look)
-        if ownDefinition or not SafeUI() or not D.IsLoaded or not D.IsLoaded()
-            or type(D.InstallSkin) ~= "function" or type(D.GetSkin) ~= "function"
-            or type(D.CopyTable) ~= "function" or not D.instance_defaults then return end
+        if ownDefinition and FindSkin(NAME) == ownDefinition then
+            if P.status ~= "registered" then
+                Status("registered", "registered in Details.skins; native GetSkin is instance-dependent")
+            end
+            return
+        end
+        if not SafeUI() then Status("deferred", "waiting for enabled, out-of-combat refresh"); return end
+        if type(D.IsLoaded) ~= "function" then Status("unsupported", "missing Details.IsLoaded", true); return end
+        if not D.IsLoaded() then Status("initializing", "waiting for Details initialization / DETAILS_STARTED"); return end
+        if type(D.InstallSkin) ~= "function" or type(D.CopyTable) ~= "function"
+            or type(D.skins) ~= "table" or type(D.instance_defaults) ~= "table" then
+            Status("unsupported", "missing native InstallSkin, CopyTable, skins registry or instance defaults", true); return
+        end
         -- Foreign definitions, including differently implemented cached skins, win.
-        if D:GetSkin(NAME) then P.collision = true; return end
-        local base = D:GetSkin("Minimalistic")
-        if not base or type(base.file) ~= "string" or not base.icon_anchor_main or not base.icon_anchor_plugins then return end
+        if FindSkin(NAME) then
+            P.collision = true; Status("collision", "another definition owns Addonskins EUI", true); return
+        end
+        ownDefinition = nil
+        local base = FindSkin("Minimalistic")
+        if not base or type(base.file) ~= "string" or not base.icon_anchor_main or not base.icon_anchor_plugins then
+            Status("schema", "Minimalistic lacks the required native file/anchor schema", true); return
+        end
         local definition = D.CopyTable(base)
         local props = D.CopyTable(D.instance_defaults)
         local row = props.row_info
-        if not row or not row.space or not props.attribute_text then return end
+        if not row or not row.space or not props.attribute_text then
+            Status("defaults", "native row/space/title defaults are unavailable", true); return
+        end
         -- Do not inherit Minimalistic's numerous unrelated presentation defaults.
         -- Copy native defaults, then set only values derived from GetMeterStyle.
         definition.instance_cprops = props
@@ -53,7 +102,9 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         definition.site = "https://github.com/oopsie-glitch/EUI-AddonSkins"
         definition.desc = "Experimental community skin. Selecting a different native skin resets appearance settings. Back up your Details profile first. No official EllesmereUI affiliation."
         local media = LibStub and LibStub("LibSharedMedia-3.0", true)
-        if not media or not media.Register then return end
+        if not media or type(media.Register) ~= "function" then
+            Status("media", "LibSharedMedia-3.0 is not ready", true); return
+        end
         media:Register("statusbar", NAME .. " Bar", look.texture)
         media:Register("statusbar", NAME .. " Flat", WHITE)
         media:Register("background", NAME .. " Background", WHITE)
@@ -89,7 +140,14 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         ownDefinition = definition
         -- InstallSkin may synchronously restore a previously selected waiting
         -- instance. No explicit ChangeSkin call or profile migration is made.
-        if not D:InstallSkin(NAME, definition) then ownDefinition = nil end
+        P.installAttempts = (P.installAttempts or 0) + 1
+        D:InstallSkin(NAME, definition)
+        if FindSkin(NAME) ~= definition then
+            ownDefinition = nil
+            Status("rejected", "InstallSkin did not retain the submitted definition", true)
+            return
+        end
+        Status("registered", "registered in Details.skins; native GetSkin is instance-dependent")
     end
     local function SaveArt(entry, art, path, tint)
         if not H.Allowed(art) or not art.GetTexture or not art.SetTexture then return end

@@ -1122,13 +1122,24 @@ local function clone(v)
     local result={}; for k,x in pairs(v) do result[k]=clone(x) end; return result
 end
 Details.CopyTable=clone
-Details.IsLoaded=function() return true end
+local nativeReady=false
+Details.IsLoaded=function() return nativeReady end
 Details.instance_defaults={row_info={height=14,space={between=1}},attribute_text={show_timer=true}}
 Details.skins={Minimalistic={file='native-atlas',icon_anchor_main={0,0},icon_anchor_plugins={0,0}}}
-Details.GetSkin=function(_,name) return Details.skins[name] end
+Details.GetSkin=function(self) return Details.skins[self.skin] end
 Details.InstallSkin=function(_,name,definition) Details.skins[name]=definition; return true end
 modules.Details.refresh(); flush()
-assert(Details:GetSkin('Addonskins EUI'), 'prototype not registered by eligible native lifecycle')
+assert(not Details.skins['Addonskins EUI'], 'prototype registered before native initialization')
+nativeReady=true; combat=true
+callbacks.DETAILS_STARTED(); flush()
+assert(not Details.skins['Addonskins EUI'], 'startup callback registered during combat')
+combat=false
+for _, f in ipairs(events) do
+    if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f, 'PLAYER_REGEN_ENABLED') end
+end
+flush()
+assert(Details.skins['Addonskins EUI'], 'native startup/combat recovery did not retry registration')
+assert(Details.GetSkin({skin='Addonskins EUI'})==Details.skins['Addonskins EUI'], 'actual instance-only getter contract lost')
 meter.ChangeSkin=nil
 ns.SetDetailsSetting('meter',true); flush()
 -- Simulate the completed native selection, without changing any other window.

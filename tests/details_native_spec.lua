@@ -44,7 +44,7 @@ _G.Details = {
     },
     GetAllInstances = function() return Details.instances end,
     GetInstance = function(_, id) return Details.instances[id] end,
-    GetSkin = function(_, name) return Details.skins[name] end,
+    GetSkin = function(self) return Details.skins[self.skin] end,
     SetBackgroundColor = function(self,r,g,b)
         self.baseframe:SetBackdropColor(r,g,b,self.bg_alpha or 0.75)
         self.bgdisplay:SetBackdropColor(r,g,b,self.bg_alpha or 0.75)
@@ -65,18 +65,34 @@ end
 Details.InstallSkin = install
 local function change(self,name)
     if name ~= self.skin then
-        local props = copy(Details:GetSkin(name).instance_cprops)
+        local props = copy(Details.skins[name].instance_cprops)
         for k,v in pairs(props or {}) do self[k] = v end
     end
     self.skin = name
 end
 Details.ChangeSkin = change
+local buildMenu, installBuiltin
 local source = os.getenv("DETAILS_NATIVE_SOURCE")
 if source then
     local function read(p) local f=assert(io.open(source.."/"..p)); local s=f:read("*a"); f:close(); return (s:gsub("\r","")) end
     local skins = read("skins.lua")
     local registry = assert(skins:match("function _detalhes:InstallSkin.-\n\tend"))
     assert(load("local _detalhes=...; "..registry))(Details)
+    -- Reproduce the TOC order, not just the early skins.lua implementation.
+    local namedGetter=assert(skins:match("function _detalhes:GetSkin.-\n\tend"))
+    assert(load("local _detalhes=...; "..namedGetter))(Details)
+    local class=read("class_instance.lua")
+    local instanceGetter=assert(class:match("function Details:GetSkin%(%)%s+.-\nend"))
+    assert(load("local Details=...; "..instanceGetter))(Details)
+    local toc=read("Details_Camelot.toc")
+    assert(toc:find("functions\\skins.lua",1,true)<toc:find("classes\\class_instance.lua",1,true))
+    local first=assert(skins:find('_detalhes:InstallSkin ("Minimalistic",',1,true))
+    local last=assert(skins:find('_detalhes:InstallSkin ("Minimalistic v2",',first+1,true))
+    local builtIn=skins:sub(first,last-1)
+    installBuiltin=function()
+        assert(load("local _detalhes,Loc=...; "..builtIn))(Details,setmetatable({},{__index=function(_,k)return k end}))
+    end
+
     -- Execute the official reset/default-application portion without pretending
     -- that a hosted fixture implements the remaining WoW renderer.
     local main = read("window_main.lua")
@@ -90,8 +106,12 @@ if source then
     assert(load("local Details, Details222=...; "..prefix.."\nreturn self.skin\nend"))(Details,{RowTexts=rowTexts})
     local menu = read("window_options2_sections.lua")
     assert(menu:find("pairs(Details.skins)",1,true), "native selector no longer reads the skin registry")
+    local builder=assert(menu:match("(local buildSkinMenu = function%(%).-)\n            end"))
+    buildMenu=assert(load("local Details,onSelectSkin=...; "..builder.."\nend\nreturn buildSkinMenu"))(Details,function() end)
+    assert(menu:find("return buildSkinMenu()",1,true),"native option no longer rebuilds its choices")
+
     assert(main:find("this_skin.instance_cprops.row_info.space.left",1,true), "re-review native padding exception")
-    print("SOURCE: official InstallSkin, ChangeSkin default-application prefix, selector and padding contracts")
+    print("SOURCE: actual TOC-ordered GetSkin override, InstallSkin, Minimalistic definition, native dropdown builder and ChangeSkin prefix")
 end
 local function instance(id)
     local f = frame()
@@ -105,8 +125,11 @@ local function instance(id)
     return setmetatable({meu_id=id,skin="Original",baseframe=f,bgframe={},bgdisplay=frame(),
         row_info=copy(Details.instance_defaults.row_info), bg_alpha=0.75}, {__index=Details})
 end
-Details.skins.Minimalistic={file="native-atlas",icon_anchor_main={1,2},icon_anchor_plugins={3,4}, instance_cprops={row_info={height=99}}}
+Details.skins.Minimalistic={author="Details!",version="fixture",site="",desc="",file="native-atlas",icon_anchor_main={1,2},icon_anchor_plugins={3,4}, instance_cprops={row_info={height=99}}}
+if installBuiltin then installBuiltin() end
 Details.skins.Original=copy(Details.skins.Minimalistic)
+assert(Details:GetSkin("Minimalistic")==nil, "fixture missed the real late instance-only GetSkin override")
+assert(Details.GetSkin({skin="Minimalistic"})==Details.skins.Minimalistic)
 Details.instances={instance(1),instance(2)}
 InCombatLockdown=function() return combat end
 C_AddOns={IsAddOnLoaded=function() return true end}
@@ -129,22 +152,50 @@ local look={texture="approved-bar",font="approved-font",flags="",bg={0,0,0,0.75}
     titleColor={1,0.7,0.3,1},height=18,spacing=2,leftSize=11,rightSize=10}
 local original=copy(Details.skins.Minimalistic)
 P.Refresh(look)
-assert(not Details:GetSkin("Addonskins EUI") and released==0, "registered before Details ready")
+assert(not Details.skins["Addonskins EUI"] and released==0, "registered before Details ready")
 Details.loaded=true; combat=true; P.Refresh(look)
-assert(not Details:GetSkin("Addonskins EUI"),"registered in combat")
+assert(not Details.skins["Addonskins EUI"],"registered in combat")
 combat=false
 local profileBefore=copy(Details.instances[1].row_info)
+if os.getenv("DETAILS_REGISTRATION_REPRO") then
+    P.Refresh(look)
+    assert(Details.skins["Addonskins EUI"], "REPRO: late instance GetSkin prevents prototype registration")
+    return
+end
+local savedLibStub=LibStub
+local messages={}
+DEFAULT_CHAT_FRAME={AddMessage=function(_,message) messages[#messages+1]=message end}
+LibStub=function() return nil end
+for _=1,10 do P.Refresh(look) end
+assert(P.status=="media" and #messages==1 and not P.installAttempts,"missing SharedMedia was silent or retried InstallSkin")
+LibStub=savedLibStub
+-- Optional artwork provider is not required for registration.
+C_AddOns.IsAddOnLoaded=function() return false end
+if buildMenu then
+    for _,option in ipairs(buildMenu()) do assert(option.value~="Addonskins EUI") end
+end
 P.Refresh(look)
-local def=assert(Details:GetSkin("Addonskins EUI"))
+local def=assert(Details.skins["Addonskins EUI"])
+assert(Details.GetSkin({skin="Addonskins EUI"})==def, "native instance getter does not resolve the registered skin")
+if buildMenu then
+    local found=0
+    for _,option in ipairs(buildMenu()) do
+        if option.value=="Addonskins EUI" then assert(option.label=="Addonskins EUI"); found=found+1 end
+    end
+    assert(found==1,"native dropdown failed to discover the newly registered skin")
+end
+assert(P.status=="registered" and P.installAttempts==1)
+assert(ns.NativeDetailsRegistrationStatus():find("registered in Details.skins",1,true))
+C_AddOns.IsAddOnLoaded=function() return true end
 assert(def.file==original.file and def.no_cache and not def.is_cached_skin)
-assert(Details.skins.Minimalistic.instance_cprops.row_info.height==99,"mutated source definition")
+assert(Details.skins.Minimalistic.instance_cprops.row_info.height==original.instance_cprops.row_info.height,"mutated source definition")
 assert(Details.instances[1].skin=="Original" and Details.instances[1].row_info.height==profileBefore.height and released==0,"installation selected a skin or changed a profile")
 assert(def.instance_cprops.bg_alpha==0.75 and def.instance_cprops.titlebar_texture_color[1]==27/255)
 assert(def.instance_cprops.row_info.height==18 and def.instance_cprops.row_info.space.between==2)
 assert(def.instance_cprops.attribute_text.show_timer==true)
 assert(def.instance_cprops.row_info.texts[1].font.face=="approved-font", "modern row text needs a concrete font file")
 for _=1,20 do P.Refresh(look) end
-assert(Details:GetSkin("Addonskins EUI")==def and #hooks==2,"duplicate registration/hooks")
+assert(Details.skins["Addonskins EUI"]==def and #hooks==2,"duplicate registration/hooks")
 -- A real native selection (only explicit test action), then normal customization.
 local a,b=Details.instances[1],Details.instances[2]
 a:ChangeSkin("Addonskins EUI")

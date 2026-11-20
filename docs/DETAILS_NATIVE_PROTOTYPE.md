@@ -56,3 +56,15 @@ Source fixtures execute official InstallSkin and the reset/default portion of Ch
 7. Switch away, confirm no duplicate header/icons or retained background suppression, then test removing the prototype after saving an alternate skin.
 
 Visual parity, installed-client compatibility, native disk persistence and live taint safety require WoW testing. This draft must not replace production behavior before approval.
+
+## Registration correction after first in-game test
+
+The initial prototype incorrectly used Details:GetSkin(name) for named lookups. In both pinned official sources, functions/skins.lua first defines a named getter, but classes/class_instance.lua loads later and replaces it with GetSkin() returning Details.skins[self.skin]. The global Details object has no selected instance skin, so the Minimalistic lookup returned nil before InstallSkin was reached. The original source fixture executed InstallSkin without the later getter override and missed this failure.
+
+The adapter now reads Details.skins by name for template, collision, registration and ownership checks, exactly as the native dropdown builder does. Native GetSkin is not modified. Verify by-name registration through Details.skins["Addonskins EUI"], or use GetSkin() on an instance already selecting that skin. Calling Details:GetSkin("Addonskins EUI") is not a supported by-name query after the native override and cannot be made one without altering the upstream global method.
+
+The real TOC order, both GetSkin definitions, official Minimalistic definition, InstallSkin and native menu builder are now executed by source fixtures. Opening the native menu rebuilds its choices from the registry; no additional dropdown refresh hook is required. Existing DETAILS_STARTED and combat-recovery refreshes retry initialization without polling.
+
+All registration early exits now retain a bounded status. /euidetailsnative reports status, install-attempt count, Details version, IsLoaded and combat state. Persistent incompatibility, schema, collision, media or rejection reasons report once per reason. Optional EUI meter artwork is not required to register.
+
+This is a source-reproduced defect, not proof of the exact installed Forever version. The corrected entry still requires in-game confirmation.

@@ -109,6 +109,25 @@ if source then
     local builder=assert(menu:match("(local buildSkinMenu = function%(%).-)\n            end"))
     buildMenu=assert(load("local Details,onSelectSkin=...; "..builder.."\nend\nreturn buildSkinMenu"))(Details,function() end)
     assert(menu:find("return buildSkinMenu()",1,true),"native option no longer rebuilds its choices")
+    -- Execute the real dropdown opening path through native choice generation.
+    -- Its existing interception callback stops before WoW frame painting.
+    local dropdown=read("dropdown.lua")
+    local mouseDown=assert(dropdown:match("(function DetailsFrameworkDropDownOnMouseDown.-)\nend"))
+    local open=assert(load("local DF=...; "..mouseDown.."\nend\nreturn DetailsFrameworkDropDownOnMouseDown"))({
+        Dispatch=function(_,fn,...) return fn(...) end,
+    })
+    local generator=buildMenu
+    buildMenu=function()
+        local choices
+        local object={func=generator,realsizeW=120,OnMouseDownHook=function(_,_,options)
+            choices=options; return true
+        end}
+        local button={MyObject=object,GetName=function() return "NativeSkinChoiceFixture" end,
+            text={GetText=function() return "" end}}
+        open(button,"LeftButton")
+        return assert(choices,"native dropdown did not invoke its menu generator")
+    end
+
 
     assert(main:find("this_skin.instance_cprops.row_info.space.left",1,true), "re-review native padding exception")
     print("SOURCE: actual TOC-ordered GetSkin override, InstallSkin, Minimalistic definition, native dropdown builder and ChangeSkin prefix")

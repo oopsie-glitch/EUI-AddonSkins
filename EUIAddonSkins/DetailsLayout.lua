@@ -6,7 +6,12 @@ local buttons = {
     {"atributo", "dm_sheet.png"}, {"report", "dm_report.png"},
     {"reset", "dm_reset.png"}, {"novo", "dm_open.png"}, {"fechar", "dm_close.png"},
 }
-local nativeTextures = {"GetNormalTexture", "GetHighlightTexture", "GetPushedTexture", "GetDisabledTexture"}
+local nativeTextures = {
+    {"GetNormalTexture", 0.55}, {"GetHighlightTexture", 1},
+    {"GetPushedTexture", 1}, {"GetDisabledTexture", 0.35},
+}
+local roundedFills = {"CenterBlock", "TopHorizontalEdge", "BottomHorizontalEdge",
+    "TopLeft", "TopRight", "BottomLeft", "BottomRight"}
 local function Readable(value)
     return not (issecretvalue and issecretvalue(value))
 end
@@ -34,8 +39,17 @@ function ns.CreateDetailsLayout(H, wanted, defer)
                 art:SetTexture(old.path)
                 if old.coords then art:SetTexCoord(unpack(old.coords)) end
             end
+            if old.color and Same({art:GetVertexColor()}, old.tint) then art:SetVertexColor(unpack(old.color)) end
             saved[art] = nil
         end
+    end
+    local function RestoreTitle(entry)
+        if entry.title and Same({entry.title:GetTextColor()}, entry.titleApplied) then
+            entry.tinting = true
+            entry.title:SetTextColor(unpack(entry.titleColor))
+            entry.tinting = false
+        end
+        entry.title, entry.titleColor, entry.titleApplied = nil, nil, nil
     end
     local function RestoreSurface(entry)
         if entry.body then entry.body:SetAlpha(0) end
@@ -45,11 +59,7 @@ function ns.CreateDetailsLayout(H, wanted, defer)
             if Readable(current) and current == 0 then art:SetAlpha(alpha) end
             entry.faded[art] = nil
         end
-        if entry.title then
-            local current = {entry.title:GetTextColor()}
-            if Same(current, entry.titleApplied) then entry.title:SetTextColor(unpack(entry.titleColor)) end
-            entry.title, entry.titleColor, entry.titleApplied = nil, nil, nil
-        end
+        RestoreTitle(entry)
     end
     local function Entry(instance)
         local f = instance.baseframe
@@ -77,7 +87,8 @@ function ns.CreateDetailsLayout(H, wanted, defer)
             local obj = header[spec[1]]
             local button = obj and (obj.widget or obj)
             if H.Allowed(button) then
-                for _, getter in ipairs(nativeTextures) do
+                for _, specTexture in ipairs(nativeTextures) do
+                    local getter, shade = specTexture[1], specTexture[2]
                     local art = button[getter] and H.Texture(button[getter](button))
                     if art and art.GetTexture then
                         local current = art:GetTexture()
@@ -90,6 +101,15 @@ function ns.CreateDetailsLayout(H, wanted, defer)
                             end
                             if current ~= old.applied then art:SetTexture(old.applied) end
                             if coords and not Same(coords, {0, 1, 0, 1}) then art:SetTexCoord(0, 1, 0, 1) end
+                            local color = {art:GetVertexColor()}
+                            local readable = true
+                            for _, value in ipairs(color) do if not Readable(value) then readable = false end end
+                            if readable and #color == 4 then
+                                if not old.tint or not Same(color, old.tint) then old.color = color end
+                                local tint = {shade, shade, shade, color[4]}
+                                if not Same(color, tint) then art:SetVertexColor(unpack(tint)) end
+                                old.tint = tint
+                            end
                         end
                     end
                 end
@@ -104,8 +124,7 @@ function ns.CreateDetailsLayout(H, wanted, defer)
         local obj = instance.GetTitleBarFontString and instance:GetTitleBarFontString()
         local title = obj and (obj.widget or obj)
         if entry.title and (entry.title ~= title or not wanted(instance, "meter") or not look.titleAccent) then
-            if Same({entry.title:GetTextColor()}, entry.titleApplied) then entry.title:SetTextColor(unpack(entry.titleColor)) end
-            entry.title, entry.titleColor, entry.titleApplied = nil, nil, nil
+            RestoreTitle(entry)
         end
         if not wanted(instance, "meter") or not look.titleAccent or not H.Allowed(title) or not title.GetTextColor then return end
         local current = {title:GetTextColor()}
@@ -113,8 +132,17 @@ function ns.CreateDetailsLayout(H, wanted, defer)
         if not entry.title or not Same(current, entry.titleApplied) then entry.titleColor = current end
         entry.title = title
         local color = look.titleColor
-        if not Same(current, color) then title:SetTextColor(unpack(color)) end
+        if not Same(current, color) then
+            entry.tinting = true
+            title:SetTextColor(unpack(color))
+            entry.tinting = false
+        end
         entry.titleApplied = color
+        -- AttributeMenu also writes this color from its delayed native callback.
+        -- Observe only this instance's native title; never read or rewrite its text.
+        H.Hook(title, "SetTextColor", function()
+            if not entry.tinting and entry.title == title and wanted(instance, "meter") then L.Title(instance) end
+        end)
     end
     function L.Window(instance, look)
         if not Ready(instance) then return end
@@ -123,7 +151,9 @@ function ns.CreateDetailsLayout(H, wanted, defer)
         local f = instance.baseframe
         if wanted(instance, "meter") then
             if not entry.body then
-                entry.body = f:CreateTexture(nil, "BACKGROUND")
+                local canvas = instance.windowBackgroundDisplay or instance.bgdisplay
+                if not H.Allowed(canvas) then canvas = f end
+                entry.body = canvas:CreateTexture(nil, "BACKGROUND")
                 entry.body:SetAllPoints(f)
             end
             if not Same(entry.bg or {}, look.bg) then entry.body:SetColorTexture(unpack(look.bg)); entry.bg = look.bg end
@@ -136,7 +166,9 @@ function ns.CreateDetailsLayout(H, wanted, defer)
                     if entry.header then entry.header:SetAlpha(0) end
                     entry.header = entry.headers[header]
                     if not entry.header then
-                        entry.header = header:CreateTexture(nil, "BACKGROUND")
+                        -- Native header decoration can be faded independently of
+                        -- its geometry. Paint on the meter without inheriting that fade.
+                        entry.header = f:CreateTexture(nil, "BACKGROUND")
                         entry.header:SetAllPoints(header)
                         entry.headers[header] = entry.header
                     end
@@ -153,6 +185,10 @@ function ns.CreateDetailsLayout(H, wanted, defer)
             local background = instance.windowBackgroundDisplay or instance.bgdisplay
             if H.Allowed(background) then Fade(entry, background.Center) end
             Fade(entry, header and header.Center)
+            local rounded = f.fullWindowFrame
+            if H.Allowed(rounded) then
+                for _, key in ipairs(roundedFills) do Fade(entry, rounded[key]) end
+            end
             for _, key in ipairs({"barra_esquerda", "barra_direita", "barra_fundo", "wallpaper"}) do Fade(entry, f[key]) end
             local native = f.cabecalho or {}
             for _, key in ipairs({"ball", "ball_r", "emenda", "top_bg"}) do Fade(entry, native[key]) end

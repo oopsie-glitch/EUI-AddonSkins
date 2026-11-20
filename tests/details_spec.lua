@@ -206,7 +206,8 @@ EUIAddonSkinsDB = nil; EllesmereUIDB = nil
 assert(loadfile('EUIAddonSkins/MeterStyle.lua'))('EUIAddonSkins', ns)
 assert(loadfile('EUIAddonSkins/DetailsLayout.lua'))('EUIAddonSkins', ns)
 assert(loadfile('EUIAddonSkins/DetailsSettings.lua'))('EUIAddonSkins', ns)
-assert(ns.DetailsSettings().meter == false and ns.DetailsSettings().menus == true, 'meter matching must be opt-in')
+assert(ns.DetailsSettings().meter and ns.DetailsSettings().toolbar and ns.DetailsSettings().menus and not ns.DetailsSettings().tiny,
+    'new cosmetic defaults must enable surfaces and toolbar without applying a native preset')
 assert(loadfile('EUIAddonSkins/Skins/Details.lua'))('EUIAddonSkins', ns)
 assert(not modules.Details.available(), 'Details must remain optional')
 local function flush()
@@ -225,6 +226,9 @@ local function instance()
     obj.baseframe.titleBar:SetHeight(16)
     obj.baseframe.titleBar:Hide()
     obj.baseframe.UPFrame = frame('Frame', nil, obj.baseframe); obj.baseframe.UPFrame:SetHeight(20)
+    obj.baseframe.UPFrame.alpha = 0
+    obj.baseframe.fullWindowFrame = frame('Frame', nil, obj.baseframe)
+    obj.baseframe.fullWindowFrame.CenterBlock = obj.baseframe.fullWindowFrame:CreateTexture()
     obj.nativeTitle = font(obj.baseframe); obj.nativeTitle:SetText('00:06 Damage Done')
     obj.baseframe.lock_button = frame('Button', nil, obj.baseframe); obj.baseframe.lock_button.label = font(obj.baseframe.lock_button)
     obj.baseframe.resize_direita = frame('Button', nil, obj.baseframe); obj.baseframe.resize_direita.texture = obj.baseframe.resize_direita:CreateTexture()
@@ -242,8 +246,10 @@ local function instance()
     obj.bgdisplay.Center = obj.bgdisplay:CreateTexture()
     return setmetatable(obj, {__index = Details})
 end
-local callbacks, setterCalls = {}, 0
+local callbacks, setterCalls, presetTextCalls, presetFormatCalls = {}, 0, 0, 0
+local nativeProfile = 'Existing customized profile'
 Details = {
+    GetCurrentProfileName = function() return nativeProfile end,
     GetTitleBarFontString = function(self) return {widget = self.nativeTitle} end,
     GetInstanceAttributeText = function() return 'Damage Done' end,
     ToolbarMenuSetButtons = function(self, size, side)
@@ -279,7 +285,13 @@ Details = {
     SetDisplay = function() return 'display-native', nil, 3 end,
     RefreshMainWindow = function() return 'refresh-native' end,
     SetMenuOwner = function(_, owner) GameCooltip:SetHost(owner); return 'owner-native' end,
+    SetBarTextSettings = function(self, size, name, _, _, _, _, _, custom)
+        presetTextCalls = presetTextCalls + 1
+        self.row_info.font_size, self.row_info.font_face = size, name
+        self.row_info.textR_enable_custom_text = custom
+    end,
     SetBarRightTextSettings = function(self, total, ps, percent, bracket, sep)
+        presetFormatCalls = presetFormatCalls + 1
         self.row_info.textR_show_data = {total, ps, percent}; self.row_info.textR_bracket = bracket; self.row_info.textR_separator = sep
     end,
     CreateEventListener = function() return {RegisterEvent = function(_, event, fn) assert(not callbacks[event]); callbacks[event] = fn end} end,
@@ -322,7 +334,14 @@ local function row()
     return r
 end
 meter.barras[1] = row()
-local media = {Register = function(self, kind, name, path) self[kind] = {name, path} end}
+local media = {values = {}}
+function media:Register(kind, name, path)
+    self.values[kind] = self.values[kind] or {}
+    if self.values[kind][name] then return false end
+    self.values[kind][name] = path
+    return true
+end
+function media:Fetch(kind, name) return self.values[kind] and self.values[kind][name] end
 LibStub = function(name) if name == 'LibSharedMedia-3.0' then return media end end
 _EDM_DB = {profile = {dm = {barHeight = 18, barSpacing = 2, barTexture = 'test', leftFontSize = 11, rightFontSize = 10, bgAlpha = 0.7}}}
 _EDM_BarTextures = {test = 'eui-bar'}
@@ -385,7 +404,8 @@ end, entries = {}, Reset = function(self) self.entries = {} end,
         for _, f in ipairs({self.frame1, self.frame2}) do f:EnableRoundedCorners(); f:SetBackdrop(nil) end
     end}
 modules.Details.install(S, modules.Details); flush()
-assert(setterCalls == 0 and meter.baseframe.cabecalho.ball.alpha == 1, 'default menu-only mode changed the meter')
+assert(setterCalls == 0 and presetTextCalls == 0 and presetFormatCalls == 0
+    and meter.baseframe.cabecalho.ball.alpha == 0, 'cosmetic activation applied native bar preferences')
 GameCooltip:SetHost(meter.baseframe.cabecalho.fechar); GameCooltip:ShowCooltip()
 assert(tip1.border[1] == 0.055, 'menu-only mode missed a meter popup')
 GameCooltip:SetHost(frame())
@@ -395,7 +415,18 @@ SlashCmdList.EUIDETAILS(); assert(settingsRegistered == 1 and openedCategory == 
 assert(setterCalls == 0 and meter.row_info.height == 24 and meter.row_info.space.between == 0)
 assert(meter.position.x == 100 and meter.position.y == 200 and meter.segment == 3)
 assert(meter.baseframe.cabecalho.ball.alpha == 0 and meter.baseframe.titleBar.height == 16)
-assert(meter.baseframe.Center.alpha == 0 and meter.bgdisplay.Center.alpha == 0, 'native fills obscure or stack with the EUI body')
+assert(meter.baseframe.Center.alpha == 0 and meter.bgdisplay.Center.alpha == 0
+    and meter.baseframe.fullWindowFrame.CenterBlock.alpha == 0, 'native fills obscure or stack with the EUI body')
+local body, header
+for _, art in ipairs(meter.bgdisplay.regions) do
+    if art.anchor == meter.baseframe and art.color and art.color[4] == 0.7 then body = art end
+end
+for _, art in ipairs(meter.baseframe.regions) do
+    if art.anchor == meter.baseframe.UPFrame then header = art end
+end
+assert(body and body.parent == meter.bgdisplay and header and header.parent == meter.baseframe,
+    'surface parent or native header fade masks the EUI materials')
+assert(header.color[1] > 0 and meter.baseframe.UPFrame.alpha == 0, 'skin changed native header fade instead of painting independent materials')
 assert(meter.baseframe.cabecalho.fechar.action() == 'close-native')
 assert(meter.nativeTitle.alpha == 1 and meter.nativeTitle.text == '00:06 Damage Done' and meter.nativeTitle.font == 'native')
 assert(meter.use_multi_fontstrings and meter.row_info.textR_show_data[3] and meter.row_info.textR_bracket == '[')
@@ -428,8 +459,17 @@ assert(meter.nativeTitle.font == 'chosen-title' and meter.nativeTitle.size == 19
 meter:SetTitleBarSettings(true, 27); assert(meter:RefreshTitleBar() == 'header-native')
 assert(meter.baseframe.titleBar:GetHeight() == 27 and not meter.baseframe.titleBar.hidden)
 _EDM_DB.profile.dm.hdrTextUseAccent = false
+_EDM_DB.profile.dm.hdrTextColor = {r=0.7,g=0.6,b=0.5}
 S.looks(); flush()
-assert(meter.nativeTitle.textColor[1] == 0.2, 'disabling title accent restored stale native color')
+assert(meter.nativeTitle.textColor[1] == 0.7, 'custom EUI header color accidentally disabled title styling')
+C_Timer.After(1, function() meter.nativeTitle:SetTextColor(0.02,0.02,0.02,1) end)
+flush()
+assert(meter.nativeTitle.textColor[1] == 0.7 and meter.nativeTitle.font == 'chosen-title' and meter.nativeTitle.size == 19,
+    'delayed native color reset broke readability or changed native typography')
+_EDM_DB.profile.dm.bgAlpha = 0
+S.looks(); flush(); assert(body.color[4] == 0 and meter.bgdisplay.Center.alpha == 0, 'zero cosmetic opacity left an opaque fill')
+_EDM_DB.profile.dm.bgAlpha = 0.7
+S.looks(); flush(); assert(body.color[4] == 0.7)
 local r = meter.barras[1]
 local function NativeCustomization()
     meter:SetBarSettings(21, 'user-texture', nil,nil,nil,nil,nil,nil,nil,nil, 3)
@@ -921,7 +961,7 @@ assert(meter.nativeTitle.text == 'Custom native title' and meter.showTimer == fa
 GameCooltip:Reset(); GameCooltip:AddLine('Native entry')
 local gear = meter.baseframe.cabecalho.modo_selecao.widget
 Details:SetMenuOwner(gear, meter)
-assert(#GameCooltip.entries == 7)
+assert(#GameCooltip.entries == 8)
 assert(GameCooltip.entries[3].text == 'Style meter surfaces' and GameCooltip.entries[4].text == 'Style toolbar artwork')
 GameCooltip.entries[4].action(); flush()
 assert(ns.ReadDetailsSetting('toolbar') and not ns.ReadDetailsSetting('meter'))
@@ -945,21 +985,21 @@ local tiny = {Rows={tinyRow},GetPluginInstance=function() return tinyHost end,
 tiny.RefreshRows = function(self) for _,row in ipairs(self.Rows) do self:RefreshRow(row) end end
 Details.GetPlugin = function(_,id) if id=='DETAILS_PLUGIN_TINY_THREAT' then return tiny end end
 tiny:RefreshRows(); ns.SetDetailsSetting('tiny', true); flush()
-assert(tinyHost.row_info.height == 24 and bar.lefttext.font == 'eui-meter-font')
+assert(tinyHost.row_info.height == 24 and bar.lefttext.font == 'tiny-font')
 assert(tinyHost.use_multi_fontstrings and tinyHost.row_info.textR_show_data[3])
 local writes = bar.lefttext.writes
 for _ = 1,3 do modules.Details.refresh(); flush() end
-assert(bar.lefttext.writes == writes, 'warm Tiny refresh rewrote its font')
-assert(tiny:RefreshRow(tinyRow) == 'tiny-native-return' and bar.lefttext.font == 'eui-meter-font')
+assert(bar.lefttext.writes == writes, 'Tiny cosmetics wrote a native row font')
+assert(tiny:RefreshRow(tinyRow) == 'tiny-native-return' and bar.lefttext.font == 'tiny-font')
 assert(bar.lefttext.text == 'Tank' and bar.lefttext.textColor[1] == 1)
 tinyHost.modo = 2; modules.Details.refresh(); flush()
 assert(bar.lefttext.font == 'tiny-font' and tinyHost.row_info.height == 24)
 tinyHost.modo = 4; modules.Details.refresh(); flush()
 combat = true; ns.SetDetailsSetting('tiny', false); flush()
-assert(bar.lefttext.font == 'eui-meter-font')
+assert(tinyHost.baseframe.cabecalho.ball.alpha == 0)
 combat = false
 for _,f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f,'PLAYER_REGEN_ENABLED') end end
-flush(); assert(bar.lefttext.font == 'tiny-font' and bar.fill.path == 'tiny-native')
+flush(); assert(bar.lefttext.font == 'tiny-font' and bar.fill.path == 'tiny-native' and tinyHost.baseframe.cabecalho.ball.alpha == 1)
 -- Removed windows must not invoke renderers or restore old preferences.
 local existingFrame = meter.baseframe
 meter.baseframe = nil
@@ -1027,4 +1067,61 @@ for _ = 1, 20 do
 end
 print(('BENCH details_meter_modes callbacks=40 options_scans=%d'):format(auditScans[DetailsOptionsWindow] or 0))
 if not auditBaseline then assert((auditScans[DetailsOptionsWindow] or 0) == 0, 'meter mode/display changes rescanned options') end
+
+-- A native confirmation is the only path that applies bar defaults.
+local popups, presetMessages = {}, {}
+StaticPopupDialogs = {}
+StaticPopup_Show = function(key, text, _, data)
+    local edit = {text=''}
+    function edit:SetText(value) self.text = value end
+    function edit:GetText() return self.text end
+    function edit:HighlightText() self.highlighted = true end
+    local popup = {editBox=edit, text=text, data=data}
+    function popup:GetEditBox() return self.editBox end
+    popups[#popups+1]=popup
+    StaticPopupDialogs[key].OnShow(popup,data)
+    return popup
+end
+UIErrorsFrame = {AddMessage=function(_,text) presetMessages[#presetMessages+1]=text end}
+local beforeApply = setterCalls
+local popup = ns.OpenDetailsRecommendedPreset(second)
+assert(popup and popup.text:find('common EUI font',1,true) and popup.text:find(nativeProfile,1,true))
+assert(setterCalls == beforeApply and not ns.DetailsSettings().presetMedia, 'opening or canceling the preset changed settings')
+local accept = StaticPopupDialogs.EUI_ADDONSKINS_DETAILS_RECOMMENDED.OnAccept
+combat = true; accept(popup,popup.data); combat = false
+assert(setterCalls == beforeApply, 'preset applied during combat')
+nativeProfile = 'Different profile'; accept(popup,popup.data)
+assert(setterCalls == beforeApply, 'preset crossed a profile switch')
+nativeProfile = popup.data.profile
+popup.editBox:SetText(tostring(second.meu_id))
+accept(popup,popup.data)
+assert(setterCalls == beforeApply+1 and presetTextCalls == 1 and presetFormatCalls == 1)
+assert(second.row_info.height == 18 and second.row_info.space.between == 2)
+assert(second.row_info.font_size == 11 and second.row_info.textR_enable_custom_text == false)
+assert(second.row_info.textR_show_data[1] and second.row_info.textR_show_data[2] and not second.row_info.textR_show_data[3])
+assert(second.row_info.textR_bracket == '(' and second.row_info.textR_separator == 'NONE')
+assert(meter.row_info.height == 35 and meter.position.x == 100, 'preset touched another window or geometry')
+assert(second.use_multi_fontstrings, 'preset bypassed the native aligned-column controls')
+local registeredFont, registeredTexture = second.row_info.font_face, second.row_info.texture
+assert(media:Fetch('font',registeredFont) == 'eui-meter-font' and media:Fetch('statusbar',registeredTexture) == 'eui-bar')
+second:SetBarSettings(23,'custom-after-preset',nil,nil,nil,nil,nil,nil,nil,nil,5)
+second:SetBarTextSettings(17,'custom-font',nil,nil,nil,nil,nil,true)
+second:SetBarRightTextSettings(true,false,true,'[',',')
+local afterCustom = setterCalls
+for _=1,10 do
+    modules.Details.refresh(); S.looks(); flush()
+    second:ApplyProfile()
+    ns.SetDetailsSetting('meter',false); ns.SetDetailsSetting('meter',true); flush()
+end
+assert(setterCalls == afterCustom and second.row_info.height == 23 and second.row_info.texture == 'custom-after-preset')
+assert(second.row_info.font_face == 'custom-font' and second.row_info.textR_show_data[3] and second.row_info.textR_enable_custom_text)
+local reloaded = {}
+assert(loadfile('EUIAddonSkins/DetailsSettings.lua'))('EUIAddonSkins',reloaded)
+assert(media:Fetch('font',registeredFont) == 'eui-meter-font' and media:Fetch('statusbar',registeredTexture) == 'eui-bar')
+assert(setterCalls == afterCustom and second.row_info.texture == 'custom-after-preset', 'media restoration reapplied a preset')
+local again = ns.OpenDetailsRecommendedPreset(second)
+accept(again,again.data)
+assert(second.row_info.height == 18 and second.row_info.font_size == 11, 'explicit reapplication failed')
+print('PASS: explicit per-window preset, disclosure, cancel/combat/profile guards, media persistence and subsequent native customization')
+
 print('PASS: Details quick submenu, independent Tiny Threat modes, native plugin redraws/restoration, meter styles, actions/data, dynamic controls, themes and combat guards')

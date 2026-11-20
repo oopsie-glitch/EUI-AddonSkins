@@ -553,7 +553,11 @@ ns.RegisterSettingsProvider("Details", {label="Details!", options={
     Toggle("menus", "Skin menus and options", "Styles Details! dialogs and dropdowns. Reload after changing.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
     Toggle("meter", "Style meter surfaces", "Styles surfaces and the title accent. Details! controls title text, timers, fonts, bars and layout.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
     Toggle("toolbar", "Style toolbar artwork", "Uses EUI icons inside native buttons. Details! controls size, scale, visibility and placement.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
-    Toggle("tiny", "Style Tiny Threat", "Styles Tiny Threat independently of other Details! meters.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
+    Toggle("tiny", "Style Tiny Threat", "Styles the Tiny Threat window surfaces independently. Its rows use native settings.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
+    {kind="action", key="recommendedPreset", label="EUI Recommended Preset", buttonLabel="Review preset...",
+        description="Optional bar setup for one window. Review its changes before applying; native customization remains available afterward.",
+        enabled=function() return ns.CanOpenDetailsRecommendedPreset and ns.CanOpenDetailsRecommendedPreset() end,
+        run=function() ns.OpenDetailsRecommendedPreset() end},
 }})
 ns.RegisterSettingsProvider("RXPGuides", {label="RestedXP", options={
     Toggle("arrow", "Skin navigation arrow", "Turn off to restore RestedXP's original arrow. Separate from guide style and opacity.", ns.ReadRXPSetting, ns.SetRXPSetting),

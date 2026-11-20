@@ -7,6 +7,8 @@ local function environment(modern,db)
     CreateFrame=function(kind,name,parent)
         local f={kind=kind,name=name,parent=parent,hooks={},events={},texts={}}
         function f:SetPoint(...)self.point={...}end
+        function f:SetSize(w,h) self.width,self.height=w,h end
+        function f:SetText(text) self.text=text end
         function f:RegisterEvent(event)self.events[event]=true end
         function f:SetScript(event,fn)self.hooks[event]=fn end
         function f:HookScript(event,fn)local old=self.hooks[event];self.hooks[event]=function(...)if old then old(...)end;fn(...)end end
@@ -35,7 +37,7 @@ local function environment(modern,db)
     local panel=ns.CreateDetailsSettingsPanel()
     ns.CreateDetailsSettingsPanel();SlashCmdList.EUIDETAILS()
     assert(categories==1 and opened==(modern and 123 or panel),'shared panel registered twice or broke existing shortcut')
-    assert(panel.menus and panel.meter and panel.tiny and panel.rxpArrow,'existing controls or arrow toggle missing')
+    assert(panel.menus and panel.meter and panel.tiny and panel.rxpArrow and panel.preset,'existing controls or arrow toggle missing')
     return ns,panel
 end
 for _,modern in ipairs({true,false})do

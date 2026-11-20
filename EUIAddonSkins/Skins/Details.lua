@@ -32,8 +32,9 @@ local Look = ns.GetMeterStyle
 local function Setup(C, refresh)
     if C.details then return C.details end
     local S, H, D = C.S, C.H, _G.Details
-    local state = {meters = {}, owners = {}, roots = {}, sections = {}, designerRows = {}, designers = {}, snapshots = {}, tinyTexts = {}, tinyTextures = {}}
+    local state = {meters = {}, owners = {}, roots = {}, sections = {}, designerRows = {}, designers = {}, snapshots = {}}
     C.details = state
+    ns.RegisterDetailsPresetMedia()
     -- The public Font primitive reapplies its FontObject/shadow and font on
     -- every call. Details shows/re-enables whole groups at once; cache only
     -- unchanged outputs within this adapter, with full-refresh invalidation.
@@ -469,61 +470,6 @@ local function Setup(C, refresh)
     state.layout = ns.CreateDetailsLayout(H, function(instance, area)
         return ns.IsEnabled(C.module) and MeterWanted(instance, area)
     end, refresh)
-    local function RestoreTiny()
-        for texture, old in pairs(state.tinyTextures) do
-            local path = texture:GetTexture()
-            if not (issecretvalue and issecretvalue(path)) and path == old.applied then texture:SetTexture(old.path) end
-            state.tinyTextures[texture] = nil
-        end
-        for text, old in pairs(state.tinyTexts) do
-            local path, size, flags = text:GetFont()
-            if not (issecretvalue and (issecretvalue(path) or issecretvalue(size) or issecretvalue(flags)))
-                and path == old.applied[1] and size == old.applied[2] and (flags or "") == old.applied[3] then
-                text:SetFont(unpack(old.font))
-            end
-            state.tinyTexts[text] = nil
-        end
-    end
-    state.TinyRow = function(row)
-        local plugin = TinyPlugin()
-        local instance = plugin and plugin.GetPluginInstance and plugin:GetPluginInstance()
-        if not instance or not TinyWindow(instance) or not MeterWanted(instance)
-            or not ns.IsEnabled(C.module) or Busy() then return end
-        local bar = Frame(row)
-        if not H.Allowed(bar) then return end
-        local texture = bar.GetStatusBarTexture and H.Texture(bar:GetStatusBarTexture())
-        if texture then
-            local path = texture:GetTexture()
-            if not (issecretvalue and issecretvalue(path)) and path ~= state.look.texture then
-                local old = state.tinyTextures[texture]
-                if not old or path ~= old.applied then
-                    old = {path = path}; state.tinyTextures[texture] = old
-                end
-                old.applied = state.look.texture
-                texture:SetTexture(state.look.texture)
-            end
-        end
-        for _, key in ipairs({"lefttext", "righttext"}) do
-            local text = bar[key]
-            if H.Allowed(text) then
-                local path, size, flags = text:GetFont()
-                local fontSize = key == "lefttext" and state.look.leftSize or state.look.rightSize
-                if not (issecretvalue and (issecretvalue(path) or issecretvalue(size) or issecretvalue(flags)))
-                    and (path ~= state.look.font or size ~= fontSize or (flags or "") ~= state.look.flags) then
-                    local old = state.tinyTexts[text]
-                    if not old or path ~= old.applied[1] or size ~= old.applied[2] or (flags or "") ~= old.applied[3] then
-                        old = {font = {path, size, flags or ""}}
-                        state.tinyTexts[text] = old
-                    end
-                    old.applied = {state.look.font, fontSize, state.look.flags}
-                    text:SetFont(unpack(old.applied))
-                end
-            end
-        end
-    end
-    state.BindTiny = function()
-        H.Hook(TinyPlugin(), "RefreshRow", function(_, row) if state.look then state.TinyRow(row) end end)
-    end
     state.ApplyMeters = function()
         if Busy() then return end
         local live = {}
@@ -536,13 +482,6 @@ local function Setup(C, refresh)
         end
         for instance in pairs(state.meters) do
             if not live[instance] then state.layout.Release(instance); state.meters[instance] = nil end
-        end
-        local plugin = TinyPlugin()
-        local host = plugin and plugin.GetPluginInstance and plugin:GetPluginInstance()
-        if host ~= state.tinyHost or not host or not TinyWindow(host) or not MeterWanted(host) then RestoreTiny() end
-        state.tinyHost = host
-        if host and TinyWindow(host) and MeterWanted(host) then
-            for _, row in pairs(plugin.Rows or {}) do state.TinyRow(row) end
         end
     end
 
@@ -640,6 +579,9 @@ local function Setup(C, refresh)
         state.Cooltip()
         refresh()
     end
+    ns.DetailsPresetStyle = function()
+        if ns.IsEnabled(C.module) then return Look(C.S) end
+    end
     state.QuickMenu = function(_, owner, instance)
         local tip = _G.GameCooltip
         local header = instance and instance.baseframe and instance.baseframe.cabecalho
@@ -657,6 +599,8 @@ local function Setup(C, refresh)
                 if tip.Hide then tip:Hide() end
             end)
         end
+        tip:AddLine("EUI recommended preset...", nil, 2)
+        tip:AddMenu(2, function() ns.OpenDetailsRecommendedPreset(instance) end)
         tip:AddLine("Open skin settings", nil, 2)
         tip:AddMenu(2, ns.OpenDetailsSettings)
     end
@@ -736,7 +680,6 @@ ns.RegisterScopedSkin("Details", "Details!", {
     end,
     hooks = function(C, refresh)
         local state = Setup(C, refresh)
-        state.BindTiny()
         local options = _G.Details222 and _G.Details222.OptionsPanel
         C.H.Hook(options, "SelectOptionsSection", state.SelectedOptions)
         local framework = _G.DetailsFramework
@@ -751,9 +694,7 @@ ns.RegisterScopedSkin("Details", "Details!", {
     roots = function(C)
         local state = C.details
         state.combatPending = false; state.look = Look(C.S)
-        local config = _G._EDM_DB
-        config = config and config.profile and config.profile.dm
-        state.look.titleAccent = not config or config.hdrTextUseAccent ~= false
+        state.look.titleAccent = true
         state.fontEpoch = (state.fontEpoch or 0) + 1
         for _, instance in pairs(_G.Details:GetAllInstances() or {}) do
             for _, key in ipairs({"baseframe", "rowframe", "windowSwitchButton", "bgframe"}) do

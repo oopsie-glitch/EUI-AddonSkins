@@ -1,0 +1,76 @@
+name: Native Details prototype verification
+on:
+  push:
+    branches: [skin/details-native-prototype]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: details-native-prototype
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install Lua runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Full regression and package verification
+        run: python3 scripts/package.py
+      - name: Pinned official Details source compatibility
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          root = Path('/tmp/details-native-source')
+          for sha in ('2efa4b10628e0e4a91c346138cf8325e81d0a43c', '4316feb434bcc9751455ae2c6435d93fc20f034f'):
+              folder = root / sha
+              folder.mkdir(parents=True)
+              for path in ('functions/skins.lua', 'frames/window_main.lua', 'frames/window_options2_sections.lua'):
+                  with urlopen('https://raw.githubusercontent.com/Tercioo/Details-Damage-Meter/'+sha+'/'+path, timeout=30) as response:
+                      (folder / Path(path).name).write_bytes(response.read())
+          PY
+          for source in /tmp/details-native-source/*; do
+            DETAILS_NATIVE_SOURCE="$source" python3 tests/run_lua.py
+          done
+      - name: Five-trial hosted comparison
+        run: |
+          for mode in unskinned legacy native; do
+            DETAILS_NATIVE_BENCH="$mode" python3 tests/run_lua.py > "/tmp/$mode.log"
+            grep -E 'BENCH (unskinned|legacy|native)|INVENTORY' "/tmp/$mode.log"
+          done
+      - name: Prepare installation artifact
+        run: python3 -m zipfile -e EUIAddonSkins.zip /tmp/details-native-install
+      - name: Store temporary installation artifact
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-DetailsNative-${{ github.sha }}-test
+          path: /tmp/details-native-install/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Verify uploaded bytes against the exact checkout
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          gh api "repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/verified-native.zip
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          from hashlib import sha256
+          with ZipFile('/tmp/verified-native.zip') as actual, ZipFile('EUIAddonSkins.zip') as expected:
+              assert actual.testzip() is None
+              assert sorted(actual.namelist()) == sorted(expected.namelist())
+              for name in expected.namelist():
+                  assert actual.read(name) == expected.read(name) == Path(name).read_bytes(), name
+              assert {name.split('/')[0] for name in actual.namelist()} == {'EUIAddonSkins'}
+              print('Verified exact-commit artifact:', len(actual.namelist()), 'runtime files')
+          print('Artifact SHA256:', sha256(Path('/tmp/verified-native.zip').read_bytes()).hexdigest())
+          PY

@@ -15,6 +15,7 @@ local function TinyWindow(instance)
     return plugin and plugin.GetPluginInstance and plugin:GetPluginInstance() == instance or false
 end
 local function MeterWanted(instance)
+    if ns.IsNativeDetailsInstance and ns.IsNativeDetailsInstance(instance) then return false end
     local eui = _G.EllesmereUIDB
     local cfg = ns.DetailsSettings()
     local wanted
@@ -53,6 +54,7 @@ local function Backup(instance, create)
     return saved[id], saved, id
 end
 local function RestoreSettings(instance)
+    if ns.IsNativeDetailsInstance and ns.IsNativeDetailsInstance(instance) then return end
     local old, saved, id = Backup(instance)
     local info = instance.row_info
     if old and info and info.space then
@@ -583,6 +585,36 @@ local function Setup(C, refresh)
         if art:GetAlpha() ~= 0 then art:SetAlpha(0) end
     end
     state.layout = ns.CreateDetailsLayout(H, function(instance) return not state.restoring and MeterWanted(instance) and ns.IsEnabled(C.module) end, refresh, Fade)
+    -- Native ChangeSkin has already established new settings and geometry.
+    -- Release only our old artwork; never restore a stale native snapshot.
+    state.ReleaseNative = function(instance)
+        state.nativeReleased = state.nativeReleased or setmetatable({}, {__mode = "k"})
+        if state.nativeReleased[instance] then return end
+        state.nativeReleased[instance] = true
+        local entry = state.meters[instance.baseframe]
+        if entry and not entry.suspended then
+            state.layout.ReleaseNative(instance)
+            entry.bg:SetAlpha(0)
+            if entry.header then entry.header:SetAlpha(0) end
+            entry.title, entry.height, entry.backdrops, entry.suspended = nil, nil, {}, true
+        end
+        for art, old in pairs(state.textures) do
+            if old.instance == instance then
+                state.textures[art] = nil
+                if old.alpha ~= nil then art:SetAlpha(old.alpha) end
+            end
+        end
+        for _, row in pairs(instance.barras or {}) do
+            for _, key in ipairs({"lineText1", "lineText2", "lineText3", "lineText4", "lineText11", "lineText12", "lineText13", "lineText14"}) do
+                if row[key] then state.texts[row[key]] = nil end
+            end
+            if row.textura then state.textures[row.textura] = nil end
+        end
+        local db = EUIAddonSkinsDB and EUIAddonSkinsDB.details
+        local saved = db and db.backups and db.backups[Profile()]
+        local id = instance.meu_id or (instance.GetId and instance:GetId())
+        if saved and id then saved[id] = nil end
+    end
     state.RestoreMeters = function()
         if Busy() then return end
         state.applying, state.restoring = true, true
@@ -599,6 +631,7 @@ local function Setup(C, refresh)
         if not state.meterActive then state.applying, state.restoring = false, false; return end
         state.meterActive = false
         for _, entry in pairs(state.meters) do
+            if not entry.suspended then
             entry.bg:SetAlpha(0)
             if entry.header then entry.header:SetAlpha(0) end
             if entry.title and entry.height then entry.title:SetHeight(entry.height) end
@@ -608,6 +641,7 @@ local function Setup(C, refresh)
                 if frame.SetBackdropBorderColor and old.border[1] then frame:SetBackdropBorderColor(unpack(old.border)) end
             end
             entry.title, entry.height, entry.backdrops = nil, nil, {}
+            end
         end
         for art, old in pairs(state.textures) do
             if old.alpha ~= nil then art:SetAlpha(old.alpha) end
@@ -635,6 +669,8 @@ local function Setup(C, refresh)
             entry.bg = bg:CreateTexture(nil, "BACKGROUND"); entry.bg:SetAllPoints(bg)
             H.Script(f, "OnShow", refresh)
         end
+        entry.suspended = false
+        if state.nativeReleased then state.nativeReleased[instance] = nil end
         Backup(instance, true)
         entry.bg:SetAlpha(1)
         entry.bg:SetColorTexture(unpack(look.bg))
@@ -851,7 +887,10 @@ local function Setup(C, refresh)
     end
     H.Hook(D, "InstanceRefreshRows", Rows)
     -- Details finishes sizing, placing and resetting its native toolbar art here.
-    H.Hook(D, "ToolbarMenuSetButtons", state.layout.Toolbar)
+    H.Hook(D, "ToolbarMenuSetButtons", function(instance)
+        state.layout.Toolbar(instance)
+        if state.native then state.native.Toolbar(instance) end
+    end)
     for _, method in ipairs({"RefreshTitleBarText", "TitleTextTickTimer", "SetTitleBarText"}) do
         H.Hook(D, method, function(instance, other)
             state.layout.Title(method == "TitleTextTickTimer" and other or instance)
@@ -904,12 +943,17 @@ local function Setup(C, refresh)
         end)
     end
     for _, name in ipairs({"ChangeSkin", "ApplyProfile", "CreateInstance"}) do
-        H.Hook(D, name, function() if not state.applying then refresh() end end)
+        H.Hook(D, name, function(instance)
+            if state.applying then return end
+            if name == "ChangeSkin" and state.native then state.native.Apply(instance) end
+            refresh()
+        end)
     end
     for _, name in ipairs({"OpenOptionsWindow", "InitializeOptionsWindow", "OpenBreakdownWindow", "OpenSpecificBreakdownWindow",
         "FastReportWindow", "SendReportWindow", "SendReportTextWindow", "Reportar"}) do
         H.Hook(D, name, C.RefreshNow)
     end
+    if ns.CreateNativeDetailsPrototype then state.native = ns.CreateNativeDetailsPrototype(C, state.ReleaseNative) end
     return state
 end
 
@@ -950,6 +994,7 @@ ns.RegisterScopedSkin("Details", "Details!", {
                 if C.H.Allowed(owner) then state.owners[owner] = true end
             end
         end
+        if state.native then state.native.Refresh(state.look) end
         state.ApplyMeters()
         local result = {}
         local function Add(value)

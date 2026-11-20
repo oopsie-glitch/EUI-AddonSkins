@@ -13,6 +13,7 @@ Core.lua
 MeterStyle.lua
 DetailsSettings.lua
 DetailsLayout.lua
+DetailsNative.lua
 Accent.lua
 Widgets.lua
 Scoped.lua

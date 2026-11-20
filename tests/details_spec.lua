@@ -1,3 +1,4 @@
+local inventory = {frames=0,textures=0,fontstrings=0,hooks=0}
 -- Native-control fixtures: actions, geometry, status colours, redraws and reuse.
 local enabled, combat, accent, timers, events = true, false, 0.4, {}, {}
 local ns = {IsEnabled = function() return enabled end, AttachAccent = function(_, f) f.accent = true end}
@@ -5,12 +6,14 @@ C_Timer = {After = function(_, fn) timers[#timers + 1] = fn end}
 InCombatLockdown = function() return combat end
 geterrorhandler = function() return function(e) error(debug.traceback(e, 2)) end end
 hooksecurefunc = function(object, name, callback)
+    inventory.hooks = inventory.hooks + 1
     local original = object[name]
     object[name] = function(...)
         local values = table.pack(original(...)); callback(...); return table.unpack(values, 1, values.n)
     end
 end
 local function texture(kind, parent)
+    local key = kind == 'FontString' and 'fontstrings' or 'textures'; inventory[key] = inventory[key] + 1
     local t = {kind = kind or 'Texture', alpha = 1, path = 'native', parent = parent, points = {}}
     function t:GetObjectType() return self.kind end
     function t:GetTexture() return self.path end
@@ -44,6 +47,7 @@ local function texture(kind, parent)
     return t
 end
 local function frame(kind, name, parent)
+    inventory.frames = inventory.frames + 1
     local f = {kind = kind or 'Frame', name = name, parent = parent, regions = {}, children = {}, hooks = {}}
     function f:GetObjectType() return self.kind end
     function f:SetPoint(...)
@@ -203,6 +207,7 @@ assert(loadfile('EUIAddonSkins/Scoped.lua'))('EUIAddonSkins', ns)
 Details = nil
 EUIAddonSkinsDB = nil; EllesmereUIDB = nil
 assert(loadfile('EUIAddonSkins/MeterStyle.lua'))('EUIAddonSkins', ns)
+assert(loadfile('EUIAddonSkins/DetailsNative.lua'))('EUIAddonSkins', ns)
 assert(loadfile('EUIAddonSkins/DetailsLayout.lua'))('EUIAddonSkins', ns)
 assert(loadfile('EUIAddonSkins/DetailsSettings.lua'))('EUIAddonSkins', ns)
 assert(ns.DetailsSettings().meter == false and ns.DetailsSettings().menus == true, 'meter matching must be opt-in')
@@ -1109,3 +1114,69 @@ end
 print(('BENCH details_meter_modes callbacks=40 options_scans=%d'):format(auditScans[DetailsOptionsWindow] or 0))
 if not auditBaseline then assert((auditScans[DetailsOptionsWindow] or 0) == 0, 'meter mode/display changes rescanned options') end
 print('PASS: Details quick submenu, independent Tiny Threat modes, native plugin redraws/restoration, meter styles, actions/data, dynamic controls, themes and combat guards')
+
+-- Switch a previously legacy-styled live window into the registered prototype.
+-- The native renderer has already set new fonts/settings before our posthook.
+local function clone(v)
+    if type(v) ~= 'table' then return v end
+    local result={}; for k,x in pairs(v) do result[k]=clone(x) end; return result
+end
+Details.CopyTable=clone
+Details.IsLoaded=function() return true end
+Details.instance_defaults={row_info={height=14,space={between=1}},attribute_text={show_timer=true}}
+Details.skins={Minimalistic={file='native-atlas',icon_anchor_main={0,0},icon_anchor_plugins={0,0}}}
+Details.GetSkin=function(_,name) return Details.skins[name] end
+Details.InstallSkin=function(_,name,definition) Details.skins[name]=definition; return true end
+modules.Details.refresh(); flush()
+assert(Details:GetSkin('Addonskins EUI'), 'prototype not registered by eligible native lifecycle')
+meter.ChangeSkin=nil
+ns.SetDetailsSetting('meter',true); flush()
+-- Simulate the completed native selection, without changing any other window.
+meter.skin='Addonskins EUI'
+meter.row_info.height=33; meter.row_info.texture='chosen-native'
+meter.nativeTitle:SetAlpha(1)
+meter.barras[1].lineText1:SetFont('chosen-font',15,'')
+Details.ChangeSkin(meter); flush()
+assert(meter.row_info.height==33 and meter.row_info.texture=='chosen-native','legacy restoration overwrote selected native defaults')
+assert(meter.nativeTitle.alpha==1 and meter.barras[1].lineText1.font=='chosen-font','legacy title/font survived handoff')
+assert(ownHeader.hidden,'legacy replacement header survived native selection')
+for _=1,10 do modules.Details.refresh(); flush() end
+assert(meter.row_info.height==33 and meter.row_info.texture=='chosen-native','legacy refresh reapplied row settings')
+ns.SetDetailsSetting('meter',false); flush()
+assert(meter.row_info.height==33 and meter.barras[1].lineText1.font=='chosen-font','legacy disable restored stale native settings')
+meter.skin='Original'
+Details.ChangeSkin(meter); flush()
+ns.SetDetailsSetting('meter',true); flush()
+assert(meter.row_info.height==18 and not ownHeader.hidden,'legacy appearance did not resume when leaving native prototype')
+print('PASS: legacy-to-native handoff preserves newly selected settings; prototype and original windows remain isolated')
+
+if os.getenv('DETAILS_NATIVE_BENCH') then
+    DetailsOptionsWindow:Hide()
+    ns.DetailsSettings().menus=false
+    local mode=os.getenv('DETAILS_NATIVE_BENCH')
+    if mode=='native' then meter.skin='Addonskins EUI'
+    else meter.skin='Original' end
+    ns.SetDetailsSetting('meter',mode~='unskinned'); flush()
+    Details.ChangeSkin(meter); flush()
+    local function benchmark(label,fn)
+        local before={frames=inventory.frames,textures=inventory.textures,fontstrings=inventory.fontstrings,hooks=inventory.hooks}
+        local samples={}
+        for trial=1,5 do
+            collectgarbage('collect')
+            local start=os.clock(); fn(); samples[trial]=(os.clock()-start)*1000
+        end
+        table.sort(samples)
+        collectgarbage('collect'); local heap=collectgarbage('count')
+        fn(); collectgarbage('collect')
+        print(('BENCH %s %s median_ms=%.3f retained_delta_KiB=%.3f frame_delta=%d texture_delta=%d fontstring_delta=%d hook_delta=%d'):format(
+            mode,label,samples[3],collectgarbage('count')-heap,
+            inventory.frames-before.frames,inventory.textures-before.textures,
+            inventory.fontstrings-before.fontstrings,inventory.hooks-before.hooks))
+    end
+    benchmark('1000_row_updates',function() for _=1,1000 do meter:InstanceRefreshRows() end end)
+    benchmark('100_toolbar_refreshes',function() for _=1,100 do meter:ToolbarMenuSetButtons(0.875,2) end end)
+    benchmark('100_warm_refreshes',function() for _=1,100 do modules.Details.refresh(); flush() end end)
+    benchmark('100_profile_callbacks',function() for _=1,100 do Details:ApplyProfile(); flush() end end)
+    benchmark('100_theme_callbacks',function() for _=1,100 do S.looks(); flush() end end)
+    print(('INVENTORY %s cumulative_fixture_frames=%d textures=%d fontstrings=%d hooks=%d'):format(mode,inventory.frames,inventory.textures,inventory.fontstrings,inventory.hooks))
+end

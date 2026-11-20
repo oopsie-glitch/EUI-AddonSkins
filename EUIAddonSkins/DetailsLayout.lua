@@ -166,6 +166,21 @@ function ns.CreateDetailsLayout(H, active, defer, fade)
             end
         end
     end
+    -- Native skin selection already rebuilt these rows. Discard old snapshots
+    -- instead of restoring their geometry over the new native layout.
+    function L.ReleaseNative(instance)
+        local entry = windows[instance]
+        if entry then
+            entry.frame:Hide()
+            entry.bg:SetAlpha(0)
+            for _, control in pairs(entry.controls) do control:SetAlpha(0) end
+        end
+        for _, row in pairs(instance.barras or {}) do
+            for _, key in ipairs({"lineText4", "lineText14"}) do
+                if row[key] then originals[row[key]] = nil end
+            end
+        end
+    end
     function L.Restore()
         for _, entry in pairs(windows) do
             entry.frame:Hide()

@@ -44,6 +44,26 @@ jobs:
             DETAILS_NATIVE_BENCH="$mode" python3 tests/run_lua.py > "/tmp/$mode.log"
             grep -E 'BENCH (unskinned|legacy|native)|INVENTORY' "/tmp/$mode.log"
           done
+      - name: Approved PR91 baseline comparison
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          from shutil import copytree
+          root = Path('/tmp/approved-details-baseline')
+          copytree('.', root, ignore=lambda directory, names: ['.git'] if '.git' in names else [])
+          for path in ('EUIAddonSkins/Skins/Details.lua', 'EUIAddonSkins/DetailsLayout.lua'):
+              with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/017efd5f483d7bba14fef62e32224ccd42e042ae/'+path, timeout=30) as response:
+                  (root / path).write_bytes(response.read())
+          path = root / 'tests/details_spec.lua'
+          text = path.read_text()
+          baseline = text.split('-- Switch a previously legacy-styled live window')[0]
+          benchmark = "if os.getenv('DETAILS_NATIVE_BENCH') then" + text.split("if os.getenv('DETAILS_NATIVE_BENCH') then")[1]
+          path.write_text(baseline + benchmark)
+          PY
+          cd /tmp/approved-details-baseline
+          DETAILS_NATIVE_BENCH=legacy python3 tests/run_lua.py > /tmp/approved-baseline.log
+          grep -E 'BENCH legacy|INVENTORY legacy' /tmp/approved-baseline.log
       - name: Prepare installation artifact
         run: python3 -m zipfile -e EUIAddonSkins.zip /tmp/details-native-install
       - name: Store temporary installation artifact

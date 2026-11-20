@@ -104,8 +104,18 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         old.applied = path
         if current ~= path then art:SetTexture(path) end
         if art.GetTexCoord and art.SetTexCoord then
-            local l,r,t,b = art:GetTexCoord()
-            if Plain(l) and Plain(r) and Plain(t) and Plain(b) and (l ~= 0 or r ~= 1 or t ~= 0 or b ~= 1) then art:SetTexCoord(0,1,0,1) end
+            local x1,y1,x2,y2,x3,y3,x4,y4 = art:GetTexCoord()
+            if Plain(x1) and Plain(y1) and Plain(x2) and Plain(y2)
+                and Plain(x3) and Plain(y3) and Plain(x4) and Plain(y4) then
+                -- WoW returns eight corner coordinates; the four-value form
+                -- remains accepted for older wrappers and source fixtures.
+                local full
+                if x3 ~= nil then
+                    full = x1 == 0 and y1 == 0 and x2 == 0 and y2 == 1
+                        and x3 == 1 and y3 == 0 and x4 == 1 and y4 == 1
+                else full = x1 == 0 and y1 == 1 and x2 == 0 and y2 == 1 end
+                if not full then art:SetTexCoord(0,1,0,1) end
+            end
         end
         if art.GetVertexColor and art.SetVertexColor then
             local r,g,b,a = art:GetVertexColor()

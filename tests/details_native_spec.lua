@@ -6,12 +6,16 @@ local function copy(t)
 end
 local function art()
     allocations = allocations + 1
-    local a = {path = "native", coords = {0.2,0.4,0.2,0.4}, color = {1,1,1,1}, alpha = 1}
+    local a = {path = "native", coords = {0.2,0.2,0.2,0.4,0.4,0.2,0.4,0.4}, color = {1,1,1,1}, alpha = 1}
     function a:GetObjectType() return "Texture" end
     function a:GetTexture() return self.path end
     function a:SetTexture(p) self.path = p; writes = writes + 1 end
     function a:GetTexCoord() return table.unpack(self.coords) end
-    function a:SetTexCoord(...) self.coords = {...}; writes = writes + 1 end
+    function a:SetTexCoord(...)
+        local v={...}
+        self.coords = #v==4 and {v[1],v[3],v[1],v[4],v[2],v[3],v[2],v[4]} or v
+        writes = writes + 1
+    end
     function a:GetVertexColor() return table.unpack(self.color) end
     function a:SetVertexColor(...) self.color = {...}; writes = writes + 1 end
     function a:GetAlpha() return self.alpha end

@@ -223,7 +223,7 @@ for _,oldInfo in ipairs({false,true}) do
     h.combat=false;h:Event("PLAYER_REGEN_ENABLED")
     assert(Checks()[1].enabled and not Checks()[1].checked)
     h.disabled.RXPGuides=true; ns.SettingsAvailabilityChanged("RXPGuides")
-    assert(#Buttons("RestedXP")==0 and #Checks()==3,"disabled addon stayed visible or selection did not fall back")
+    assert(#Buttons("RestedXP")==0 and #Checks()==4,"disabled addon stayed visible or selection did not fall back")
     assert(db.settingsUI.lastAddonID=="RXPGuides","temporary fallback overwrote saved selection")
     h.disabled.RXPGuides=nil; h.loaded.RXPGuides=false
     ns.SettingsAvailabilityChanged("RXPGuides")
@@ -232,7 +232,7 @@ for _,oldInfo in ipairs({false,true}) do
     ns.SettingsAvailabilityChanged("RXPGuides")
     assert(#Buttons("RestedXP")==0,"registered provider without an active module appeared")
     ns.modules[2].active=true; ns.SettingsAvailabilityChanged("RXPGuides")
-    assert(#Buttons("RestedXP")==1 and #Checks()==3,"late activation displaced valid selection or failed to list")
+    assert(#Buttons("RestedXP")==1 and #Checks()==4,"late activation displaced valid selection or failed to list")
     Choose("RestedXP")
     assert(Checks()[1].enabled)
 
@@ -268,7 +268,7 @@ for _,oldInfo in ipairs({false,true}) do
     root:Show();assert(#Checks()==1,"last valid selection not retained")
     Choose("Legacy options")
     assert(h.opened.name=="EUI AddonSkins (Legacy)" and #h.categories==2,"legacy fallback was not available")
-    SlashCmdList.EUIDETAILS();assert(h.opened==root and #Checks()==3 and #h.categories==2)
+    SlashCmdList.EUIDETAILS();assert(h.opened==root and #Checks()==4 and #h.categories==2)
     h.installed.Details=false;h.installed.RXPGuides=false;ns.SettingsAvailabilityChanged()
     assert(#Checks()==0 and #Buttons("Details!")==0 and #Buttons("RestedXP")==0,"absent providers leaked into sidebar")
 

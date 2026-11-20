@@ -6,6 +6,7 @@ local buttons = {
     {"atributo", "dm_sheet.png"}, {"report", "dm_report.png"},
     {"reset", "dm_reset.png"}, {"novo", "dm_open.png"}, {"fechar", "dm_close.png"},
 }
+local nativeTextures = {"GetNormalTexture", "GetHighlightTexture", "GetPushedTexture", "GetDisabledTexture"}
 local function Readable(value)
     return not (issecretvalue and issecretvalue(value))
 end
@@ -76,7 +77,7 @@ function ns.CreateDetailsLayout(H, wanted, defer)
             local obj = header[spec[1]]
             local button = obj and (obj.widget or obj)
             if H.Allowed(button) then
-                for _, getter in ipairs({"GetNormalTexture", "GetHighlightTexture", "GetPushedTexture", "GetDisabledTexture"}) do
+                for _, getter in ipairs(nativeTextures) do
                     local art = button[getter] and H.Texture(button[getter](button))
                     if art and art.GetTexture then
                         local current = art:GetTexture()

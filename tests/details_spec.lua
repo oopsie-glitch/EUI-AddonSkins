@@ -970,11 +970,34 @@ assert(tip1.Lines[1].background.path == 'native' and tip1.Lines[1].divbar.crop[1
 GameCooltip:SetHost(meter.baseframe); tip1.hooks.OnHide()
 assert(tip1.backdrop.bgFile == 'native-tooltip', 'hidden menu was not restored')
 GameCooltip:SetHost(stranger)
+-- Cosmetic callbacks themselves, not just full refreshes, must defer in combat.
+combat = true
+meter.baseframe:SetBackdropColor(0.31,0.42,0.53,0.91)
+meter.baseframe.cabecalho.ball:SetAlpha(0.6)
+assert(meter.baseframe.color[4]==0.91 and meter.baseframe.cabecalho.ball.alpha==0.6,
+    'a direct native redraw performed cosmetic work in combat')
+combat = false
+for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f,'PLAYER_REGEN_ENABLED') end end
+flush()
+assert(meter.baseframe.color[4]==0 and meter.baseframe.cabecalho.ball.alpha==0, 'combat recovery missed deferred surface redraw')
+meter.baseframe:SetBackdropColor(0.3,0.4,0.5,1)
+meter.baseframe.cabecalho.ball:SetAlpha(1)
+local originalWidth = meter.baseframe.GetWidth
+meter.baseframe.GetWidth = function() error('cosmetic backdrop suppression read native geometry') end
+meter.baseframe:SetBackdropColor(0.3,0.4,0.5,1)
+assert(meter.baseframe.color[4]==0)
+meter.baseframe.GetWidth=originalWidth
 local second = instance(); Details.instances[2] = second
 second:ToolbarMenuSetButtons(0.625, 1)
 callbacks.DETAILS_INSTANCE_OPEN('DETAILS_INSTANCE_OPEN', second); flush()
 assert(second.baseframe.cabecalho.ball.alpha == 0 and second.baseframe.cabecalho.fechar:GetWidth() == 10)
 assert(closeButton:GetWidth() == 20, 'windows shared toolbar geometry')
+second.GetTitleBarFontString=false
+second.menu_attribute_string={widget=second.nativeTitle}
+modules.Details.refresh();flush()
+assert(second.nativeTitle.textColor[1]==meter.nativeTitle.textColor[1] and second.nativeTitle.font=='native',
+    'native title field fallback changed font or lost accent')
+second.GetTitleBarFontString=nil
 local late = row(); meter.barras[2] = late
 assert(meter:InstanceRefreshRows() == 'rows-native')
 assert(late.lineText1.font == 'native' and late.textura.path == 'native', 'pooled row was restyled')

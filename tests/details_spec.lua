@@ -970,6 +970,15 @@ assert(tip1.Lines[1].background.path == 'native' and tip1.Lines[1].divbar.crop[1
 GameCooltip:SetHost(meter.baseframe); tip1.hooks.OnHide()
 assert(tip1.backdrop.bgFile == 'native-tooltip', 'hidden menu was not restored')
 GameCooltip:SetHost(stranger)
+-- Explicit native transparency must not restore an older nonzero value.
+meter.baseframe:SetBackdropColor(0,0,0,0)
+meter.baseframe.cabecalho.ball:SetAlpha(0)
+ns.SetDetailsSetting('meter',false);flush()
+assert(meter.baseframe.color[4]==0 and meter.baseframe.cabecalho.ball.alpha==0,
+    'disabling cosmetics restored stale values over explicit native zero')
+ns.SetDetailsSetting('meter',true);flush()
+meter.baseframe:SetBackdropColor(0.3,0.4,0.5,1)
+meter.baseframe.cabecalho.ball:SetAlpha(1)
 -- Cosmetic callbacks themselves, not just full refreshes, must defer in combat.
 combat = true
 meter.baseframe:SetBackdropColor(0.31,0.42,0.53,0.91)

@@ -83,12 +83,18 @@ function ns.CreateDetailsLayout(H, wanted, defer)
         if not H.Allowed(art) or not art.GetAlpha or not art.SetAlpha then return end
         local saved = toolbar and entry.toolbarFaded or entry.faded
         local Paint = entry.fadeHooks[art]
-        if not Paint then Paint = function()
-            if entry.restoring or not wanted(instance, toolbar and "toolbar" or "meter")
+        if not Paint then
+            local writing = false
+            Paint = function(_, nativeAlpha)
+            if writing or entry.restoring or not wanted(instance, toolbar and "toolbar" or "meter")
                 or not toolbar and not entry.surfaceActive or not Ready(instance) then return end
+            if nativeAlpha ~= nil and Readable(nativeAlpha) then saved[art] = nativeAlpha end
             local alpha = art:GetAlpha()
             if not Readable(alpha) then return end
-            if alpha ~= 0 then saved[art] = alpha; art:SetAlpha(0) end
+            if alpha ~= 0 then
+                saved[art] = alpha
+                writing = true; art:SetAlpha(0); writing = false
+            end
         end
             entry.fadeHooks[art] = Paint
             H.Hook(art, "SetAlpha", Paint)
@@ -120,8 +126,20 @@ function ns.CreateDetailsLayout(H, wanted, defer)
             entry.backdropHooks[frame] = Paint
             -- Tint native material in place: unlike historical SetBackdrop(nil),
             -- these setters never rebuild nine-slice geometry.
-            H.Hook(frame, "SetBackdropColor", Paint)
-            H.Hook(frame, "SetBackdropBorderColor", Paint)
+            local function NativeColor(key, ...)
+                if entry.paintingBackdrop or entry.restoring or not entry.surfaceActive or not wanted(instance, "meter") then return end
+                local color = {...}
+                local plain = #color == 4
+                for _, value in ipairs(color) do if not Readable(value) then plain = false end end
+                if plain then
+                    local old = entry.backdrops[frame]
+                    if not old then old = {}; entry.backdrops[frame] = old end
+                    old[key] = color
+                end
+                Paint()
+            end
+            H.Hook(frame, "SetBackdropColor", function(_, ...) NativeColor("fill", ...) end)
+            H.Hook(frame, "SetBackdropBorderColor", function(_, ...) NativeColor("border", ...) end)
             H.Hook(frame, "SetBackdrop", Paint)
         end
         Paint()

@@ -147,6 +147,12 @@ function ns.CreateDetailsLayout(H, wanted, defer)
                 if not Same(entry.headerColor or {}, color) then entry.header:SetColorTexture(unpack(color)); entry.headerColor = color end
                 if entry.header:GetAlpha() ~= 1 then entry.header:SetAlpha(1) end
             end
+            -- Native backdrops remain allocated. Hide only their fill regions so
+            -- layered backgrounds cannot obscure or multiply the EUI surface.
+            Fade(entry, f.Center)
+            local background = instance.windowBackgroundDisplay or instance.bgdisplay
+            if H.Allowed(background) then Fade(entry, background.Center) end
+            Fade(entry, header and header.Center)
             for _, key in ipairs({"barra_esquerda", "barra_direita", "barra_fundo", "wallpaper"}) do Fade(entry, f[key]) end
             local native = f.cabecalho or {}
             for _, key in ipairs({"ball", "ball_r", "emenda", "top_bg"}) do Fade(entry, native[key]) end

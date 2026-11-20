@@ -238,6 +238,8 @@ local function instance()
     end
     obj.baseframe.cabecalho.fechar.action = function() return 'close-native' end
     obj.bgdisplay = frame(); obj.attribute_text = font(obj.baseframe)
+    obj.baseframe.Center = obj.baseframe:CreateTexture()
+    obj.bgdisplay.Center = obj.bgdisplay:CreateTexture()
     return setmetatable(obj, {__index = Details})
 end
 local callbacks, setterCalls = {}, 0
@@ -393,6 +395,7 @@ SlashCmdList.EUIDETAILS(); assert(settingsRegistered == 1 and openedCategory == 
 assert(setterCalls == 0 and meter.row_info.height == 24 and meter.row_info.space.between == 0)
 assert(meter.position.x == 100 and meter.position.y == 200 and meter.segment == 3)
 assert(meter.baseframe.cabecalho.ball.alpha == 0 and meter.baseframe.titleBar.height == 16)
+assert(meter.baseframe.Center.alpha == 0 and meter.bgdisplay.Center.alpha == 0, 'native fills obscure or stack with the EUI body')
 assert(meter.baseframe.cabecalho.fechar.action() == 'close-native')
 assert(meter.nativeTitle.alpha == 1 and meter.nativeTitle.text == '00:06 Damage Done' and meter.nativeTitle.font == 'native')
 assert(meter.use_multi_fontstrings and meter.row_info.textR_show_data[3] and meter.row_info.textR_bracket == '[')
@@ -896,6 +899,7 @@ combat = false
 for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f,'PLAYER_REGEN_ENABLED') end end
 flush()
 assert(meter.baseframe.cabecalho.ball.alpha == 1 and meter.row_info.height == 29)
+assert(meter.baseframe.Center.alpha == 1 and meter.bgdisplay.Center.alpha == 1, 'native fill visibility was not restored')
 assert(closeButton.normal.path:find('EllesmereUIDamageMeters', 1, true), 'surface toggle disabled toolbar')
 ns.SetDetailsSetting('toolbar', false); flush()
 assert(closeButton.normal.path == 'native' and closeButton:GetWidth() == 20 and closeButton.points[1][1] == 'RIGHT')

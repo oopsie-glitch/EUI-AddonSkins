@@ -979,6 +979,15 @@ assert(meter.baseframe.color[4]==0 and meter.baseframe.cabecalho.ball.alpha==0,
 ns.SetDetailsSetting('meter',true);flush()
 meter.baseframe:SetBackdropColor(0.3,0.4,0.5,1)
 meter.baseframe.cabecalho.ball:SetAlpha(1)
+combat=true
+meter.baseframe.cabecalho.ball:SetAlpha(0)
+ns.SetDetailsSetting('meter',false);flush()
+combat=false
+for _, f in ipairs(events) do if f.events and f.events.PLAYER_REGEN_ENABLED then f.hooks.OnEvent(f,'PLAYER_REGEN_ENABLED') end end
+flush()
+assert(meter.baseframe.cabecalho.ball.alpha==0, 'combat deferral lost explicit native zero')
+ns.SetDetailsSetting('meter',true);flush()
+meter.baseframe.cabecalho.ball:SetAlpha(1)
 -- Cosmetic callbacks themselves, not just full refreshes, must defer in combat.
 combat = true
 meter.baseframe:SetBackdropColor(0.31,0.42,0.53,0.91)

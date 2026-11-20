@@ -87,8 +87,9 @@ function ns.CreateDetailsLayout(H, wanted, defer)
             local writing = false
             Paint = function(_, nativeAlpha)
             if writing or entry.restoring or not wanted(instance, toolbar and "toolbar" or "meter")
-                or not toolbar and not entry.surfaceActive or not Ready(instance) then return end
+                or not toolbar and not entry.surfaceActive then return end
             if nativeAlpha ~= nil and Readable(nativeAlpha) then saved[art] = nativeAlpha end
+            if not Ready(instance) then return end
             local alpha = art:GetAlpha()
             if not Readable(alpha) then return end
             if alpha ~= 0 then

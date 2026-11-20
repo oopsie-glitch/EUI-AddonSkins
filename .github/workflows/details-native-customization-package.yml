@@ -1,4 +1,4 @@
-name: Validate modular Details customization
+name: Validate restored Details surfaces and optional preset
 on:
   push:
     branches: [test/details-native-customization-package]
@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: 1897215b102d9fc3aeedefc8039639597eea94bf
+          ref: f3906826d4f28d06cff676fa14d09475b843dbd0
           persist-credentials: false
       - name: Install Lua runtime
         run: |
@@ -40,11 +40,158 @@ jobs:
               assert 'option("attribute_text.show_timer", "toggle"' in designer
               assert 'instanceObject:RefreshTitleBar()' in designer
               def method(name):
-                  return re.search(r'^function Details:' + name + r'\([^\n]*\)\n.*?^end$',main,re.M|re.S).group()
+                  return re.search(r'^function Details:' + name + r'\([^\n]*\)\n.*?^end      - name: Run full regression and package validation
+        run: |
+          python3 scripts/package.py
+      - name: Verify latest and previous native toolbar and title lifecycle
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          base = Path('tests/details_spec.lua')
+          original = base.read_bytes()
+          try:
+              base.write_text(original.decode() + "do\n    local Native = assert(loadfile('/tmp/details-native.lua'))()\n    local helper = ns.CreateSkinHelper(S, modules.Details)\n    local layout = ns.CreateDetailsLayout(helper, function() return true end, function() end)\n    local look = ns.GetMeterStyle(S); look.titleAccent = true\n    hooksecurefunc(Native, 'ToolbarMenuSetButtons', function(window) layout.Toolbar(window) end)\n    hooksecurefunc(Native, 'RefreshTitleBar', function(window) layout.Window(window, look) end)\n    local keys = {'modo_selecao','segmento','atributo','report','reset','fechar'}\n    local function make(size, side)\n        local window = instance()\n        window.menu_icons_size, window.menu_anchor = size, {side = side}\n        window.menu_icons = {true,true,true,true,true,true,space=2}\n        window.toolbar_icon_file = 'native-toolbar-image'\n        for _, key in ipairs({'ToolbarMenuButtonsSize','ToolbarMenuButtons','ToolbarMenuSetButtons',\n            'SetTitleBarText','GetTitleBarText','GetTitleBarFontString','SetTitleBarSettings','RefreshTitleBar'}) do\n            window[key] = Native[key]\n        end\n        window.GetMenuAnchorPoint = function(self)\n            local point = self.menu_anchor.side == 1 and 'left' or 'right'\n            return self.baseframe, point, point\n        end\n        window.IsLowerInstance = function() return false end\n        window.RefreshAttributeTextSize = function() end\n        window.menu_attribute_string = window.nativeTitle\n        window.nativeTitle.SetParent = function(self, parent) self.parent = parent end\n        window.baseframe.titleBar.SetShown = function(self, shown) self.hidden = not shown end\n        window.baseframe.UPFrame = frame()\n        local header = window.baseframe.cabecalho\n        header.PluginIconsSeparator = frame()\n        for _, key in ipairs(keys) do\n            local button = header[key].widget or header[key]\n            header[key] = button\n            function button:SetParent(parent) self.parent = parent end\n            function button:SetNormalTexture(path) self.normal:SetTexture(path) end\n            function button:SetHighlightTexture(path) self.nativeHighlight = path end\n            function button:SetPushedTexture(path) self.nativePushed = path end\n        end\n        assert(window:ToolbarMenuButtons() == true)\n        layout.Window(window, look)\n        return window\n    end\n    local function verify(window, size, side)\n        for i, key in ipairs(keys) do\n            local button = window.baseframe.cabecalho[key]\n            assert(button:GetWidth() == 16 * size and button:GetHeight() == 16 * size)\n            local previous = i + (side == 1 and -1 or 1)\n            local expected = keys[previous] and window.baseframe.cabecalho[keys[previous]] or window.baseframe\n            assert(button:GetPoint(1) == (side == 1 and 'left' or 'right'))\n            assert(button.points[1][2] == expected and button.hooks.OnClick() == key .. '-native')\n        end\n    end\n    local first, second = make(1,1), make(1,2)\n    assert(first:ToolbarMenuButtonsSize(0.6) == true)\n    assert(second:ToolbarMenuButtonsSize(1.4) == true)\n    verify(first,0.6,1); verify(second,1.4,2)\n    local reloaded = make(second.menu_icons_size,2); verify(reloaded,1.4,2)\n    second:SetTitleBarText('Native custom display')\n    assert(second:GetTitleBarText() == 'Native custom display')\n    second:SetTitleBarSettings(true,29,'native-material',{0.2,0.3,0.4,1})\n    second:RefreshTitleBar()\n    assert(second.baseframe.titleBar:GetHeight() == 29 and not second.baseframe.titleBar.hidden)\n    second:SetTitleBarSettings(false,11,'different',{0.1,0.1,0.1,1})\n    second:RefreshTitleBar()\n    assert(second.baseframe.titleBar.hidden and second:GetTitleBarText() == 'Native custom display')\n    -- Exercise the preset through the actual native exported setters.\n    local target = second\n    for _, key in ipairs({'SetBarSettings','SetBarTextSettings','SetBarRightTextSettings','SetBarTextFontSize','SetBarTextFontFace'}) do\n        target[key] = Native[key]\n    end\n    target.InstanceReset, target.InstanceRefreshRows, target.ReajustaGump = function() end, function() end, function() end\n    target.row_info.textR_show_data = {false,false,true}\n    target.row_info.texture_custom = 'OldCustom'\n    target.row_info.texture_class_colors = true\n    target.row_info.textR_enable_custom_text = true\n    target.row_info.texts = {{font='per-column-native'}}\n    local oldInstances = Details.instances\n    Details.instances = {target}\n    local request = {profile=Details:GetCurrentProfileName(),look=look,windows={[target.meu_id]=target}}\n    assert(ns.ApplyDetailsRecommendedPreset(target.meu_id,request))\n    assert(target.row_info.height==look.height and target.row_info.space.between==look.spacing)\n    assert(target.row_info.texture_custom=='' and target.row_info.texture_class_colors==true)\n    assert(target.row_info.font_size==look.leftSize and target.row_info.texts[1].font=='per-column-native')\n    assert(not target.row_info.textR_enable_custom_text and not target.row_info.textR_show_data[3])\n    target:SetBarSettings(27,'new-native-choice',nil,nil,nil,nil,nil,nil,nil,nil,3)\n    target:SetBarTextSettings(19,'new-native-font')\n    layout.Window(target,look); layout.Toolbar(target)\n    assert(target.row_info.height==27 and target.row_info.texture=='new-native-choice' and target.row_info.font_size==19)\n    Details.instances=oldInstances\n    print('PINNED PRESET PASS: documented setters, scoped target, custom texture cleared, native class/column settings and later customization')\n    print('PINNED NATIVE PASS: six toolbar controls, two windows, restored size, title content and header height/visibility')\nend\n")
+              for index in (0,1):
+                  Path('/tmp/details-native.lua').write_bytes(Path(f'/tmp/details-native-{index}.lua').read_bytes())
+                  subprocess.run(['python3','tests/run_lua.py'],check=True)
+          finally:
+              base.write_bytes(original)
+          
+          PY
+      - name: Measure native, main, combined and refactored workloads
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import os, subprocess, re, statistics, json
+          test = Path('tests/details_spec.lua').read_text()
+          prefix = test.split('modules.Details.install(S, modules.Details); flush()',1)[0]
+          prefix = re.sub(r"assert\(ns.DetailsSettings\(\).meter[\s\S]*?native preset'\)","",prefix)
+          prefix = 'SlashCmdList={}\nlocal counts={frames=0,textures=0,fonts=0,hooks=0,events=0,writes=0,geometry=0,reads=0}\n' + prefix
+          changes = {
+              'local function frame(kind, name, parent)': 'counts.frames=counts.frames+1',
+              'local function texture(kind, parent)': "if kind=='FontString' then counts.fonts=counts.fonts+1 else counts.textures=counts.textures+1 end",
+              'hooksecurefunc = function(object, name, callback)': 'counts.hooks=counts.hooks+1',
+              'function f:RegisterEvent(e)': 'counts.events=counts.events+1;',
+              'function f:GetChildren()': 'counts.reads=counts.reads+1;',
+              'function f:GetRegions()': 'counts.reads=counts.reads+1;',
+              'function f:SetPoint(...)': 'counts.geometry=counts.geometry+1;',
+              'function f:SetSize(w, h)': 'counts.geometry=counts.geometry+1;',
+              'function f:SetWidth(w)': 'counts.geometry=counts.geometry+1;',
+              'function f:SetHeight(h)': 'counts.geometry=counts.geometry+1;',
+              'function t:SetVertexColor(...)': 'counts.writes=counts.writes+1;',
+              'function t:SetTexture(v)': 'counts.writes=counts.writes+1;',
+              'function t:SetAlpha(v)': 'counts.writes=counts.writes+1;',
+              'function t:SetFont(path, size, flags)': 'counts.writes=counts.writes+1;',
+              'function t:SetTextColor(...)': 'counts.writes=counts.writes+1;',
+              'function t:SetColorTexture(...)': 'counts.writes=counts.writes+1;',
+          }
+          for token, code in changes.items():
+              assert token in prefix, token
+              prefix = prefix.replace(token,token+' '+code)
+          base = 'https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/'
+          sources = {'main':'3553aca8e386c77be2c1af20a719117c14199df2',
+                     'combined':'017efd5f483d7bba14fef62e32224ccd42e042ae',
+                     'phase90':'1897215b102d9fc3aeedefc8039639597eea94bf'}
+          files = ['EUIAddonSkins/Skins/Details.lua','EUIAddonSkins/DetailsLayout.lua','EUIAddonSkins/DetailsSettings.lua']
+          for mode,sha in sources.items():
+              for index,path in enumerate(files):
+                  with urlopen(base+sha+'/'+path,timeout=30) as response:
+                      Path(f'/tmp/details-{mode}-{index}.lua').write_bytes(response.read())
+          runner = Path('tests/run_lua.py').read_text().split('state = lua.luaL_newstate()')[0]
+          runner += '''
+          import sys
+          state = lua.luaL_newstate()
+          lua.luaL_openlibs(state)
+          try:
+              rc = lua.luaL_loadfilex(state, sys.argv[1].encode(), None)
+              if not rc:
+                  rc = lua.lua_pcallk(state,0,0,0,0,None)
+              if rc:
+                  raise RuntimeError(lua.lua_tolstring(state,-1,None).decode())
+          finally:
+              lua.lua_close(state)
+          '''
+          Path('/tmp/details-run-one.py').write_text(runner)
+          suffix = "\nlocal mode = os.getenv('DETAILS_BENCH_MODE')\nlocal cfg = ns.DetailsSettings()\ncfg.meter, cfg.tiny, cfg.toolbar = true, false, true\nfor i = 1, 40 do meter.barras[i] = row() end\nlocal snapshots = {}\nlocal function snap() return {frames=counts.frames,textures=counts.textures,fonts=counts.fonts,hooks=counts.hooks,events=counts.events,\n    writes=counts.writes,geometry=counts.geometry,reads=counts.reads} end\nlocal function measure(name, fn)\n    collectgarbage('collect')\n    local before, heap = snap(), collectgarbage('count')\n    local start = os.clock()\n    fn()\n    local ms = (os.clock()-start)*1000\n    collectgarbage('collect')\n    local after = snap()\n    print(string.format('DETAILS_BENCH %s %s ms=%.4f frames=%d textures=%d fonts=%d hooks=%d events=%d writes=%d geometry=%d reads=%d retained=%.3f',\n        mode,name,ms,after.frames-before.frames,after.textures-before.textures,after.fonts-before.fonts,\n        after.hooks-before.hooks,after.events-before.events,after.writes-before.writes,after.geometry-before.geometry,\n        after.reads-before.reads,collectgarbage('count')-heap))\nend\nmeasure('cold',function() if mode ~= 'native' then modules.Details.install(S,modules.Details); flush() end end)\nmeasure('rows1000',function() for _=1,1000 do meter:InstanceRefreshRows() end; flush() end)\nmeasure('title1000',function() for _=1,1000 do Details:RefreshMainWindow(meter) end; flush() end)\nmeasure('open100',function() for _=1,100 do\n    meter.baseframe:Hide(); meter.baseframe:Show()\n    if meter.baseframe.hooks.OnShow then meter.baseframe.hooks.OnShow(meter.baseframe) end\n    flush()\nend end)\nmeasure('toolbar100',function() for _=1,100 do meter:ToolbarMenuSetButtons(1,2) end; flush() end)\nmeasure('closed_idle',function() meter.baseframe:Hide(); for _=1,1000 do meter:InstanceRefreshRows() end; flush() end)\n\nmeasure('theme100',function() if mode ~= 'native' then for _=1,100 do S.looks(); flush() end end end)\nmeasure('profile100',function() for _=1,100 do meter:ApplyProfile(); flush() end end)\nmeasure('warm_theme100',function() if mode ~= 'native' then for _=1,100 do S.looks(); flush() end end end)\n"
+          results = {}
+          for mode in ('native','main','combined','phase90','candidate'):
+              script = prefix
+              if mode in sources:
+                  for index,path in enumerate(files):
+                      script = script.replace("'"+path+"'","'/tmp/details-"+mode+"-"+str(index)+".lua'")
+              Path('/tmp/details-bench.lua').write_text(script+suffix)
+              for trial in range(5):
+                  env = dict(os.environ, DETAILS_BENCH_MODE=mode)
+                  result = subprocess.run(['python3','/tmp/details-run-one.py','/tmp/details-bench.lua'],
+                                          env=env,text=True,capture_output=True)
+                  if result.returncode:
+                      print(result.stdout,result.stderr,flush=True)
+                      result.check_returncode()
+                  for line in result.stdout.splitlines():
+                      if not line.startswith('DETAILS_BENCH '):
+                          continue
+                      print(line)
+                      pieces=line.split()
+                      data={key:float(value) for key,value in (piece.split('=') for piece in pieces[3:])}
+                      results.setdefault(mode+' '+pieces[2],[]).append(data)
+          summary={key:{metric:statistics.median(row[metric] for row in rows) for metric in rows[0]}
+                   for key,rows in results.items()}
+          print('DETAILS BENCHMARK MEDIANS',json.dumps(summary,sort_keys=True))
+          Path('/tmp/details-benchmarks.json').write_text(json.dumps(summary,indent=2,sort_keys=True))
+          
+          PY
+      - name: Verify exact committed runtime archive
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from subprocess import check_output
+          from zipfile import ZipFile
+          assert check_output(['git','rev-parse','HEAD']).decode().strip() == 'f3906826d4f28d06cff676fa14d09475b843dbd0'
+          with ZipFile('EUIAddonSkins.zip') as archive:
+              assert archive.testzip() is None
+              names=archive.namelist()
+              assert len(names)==len(set(names))==69
+              assert all(name.startswith('EUIAddonSkins/') for name in names)
+              for name in names:
+                  assert archive.read(name)==check_output(['git','show','HEAD:'+name]),name
+              archive.extractall('/tmp/details-modular-install')
+          print('INSTALL ARCHIVE VERIFIED against commit f3906826d4f28d06cff676fa14d09475b843dbd0')
+          PY
+      - name: Store installable test ZIP
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-Details-Restored-f3906826
+          path: /tmp/details-modular-install/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Verify the uploaded artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/details-modular-download.zip; then break; fi
+            if [ "$attempt" -eq 6 ]; then exit 1; fi
+            sleep 4
+          done
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          with ZipFile('/tmp/details-modular-download.zip') as actual, ZipFile('EUIAddonSkins.zip') as expected:
+              files = [item.filename for item in actual.infolist() if not item.is_dir()]
+              assert actual.testzip() is None and sorted(files)==sorted(expected.namelist())
+              assert all(actual.read(name)==expected.read(name) for name in files)
+          print('UPLOADED ZIP VERIFIED against the committed runtime files')
+          PY
+,main,re.M|re.S).group()
               functions = ['ToolbarMenuButtonsSize','ToolbarMenuSetButtons','ToolbarMenuButtons',
-                           'SetTitleBarText','GetTitleBarText','GetTitleBarFontString','SetTitleBarSettings','RefreshTitleBar']
+                           'SetTitleBarText','GetTitleBarText','GetTitleBarFontString','SetTitleBarSettings','RefreshTitleBar',
+                           'SetBarSettings','SetBarTextSettings','SetBarRightTextSettings','SetBarTextFontSize','SetBarTextFontFace']
               result = ['local Details = {Destroy = function(_,keys) for key in pairs(keys) do keys[key]=nil end end}',
                         'local tbuttons = {}',
+                        'local Details222 = {RowTexts={ApplyStyleToAllRows=function() end,ApplyAnchorsToAllRows=function() end}}',
                         'local SharedMedia = {Fetch = function(_,kind,path) return path end}',
                         'local DetailsFramework = {ParseColors = function(_,color) return table.unpack(color) end}']
               result.extend(method(name) for name in functions)
@@ -54,16 +201,7 @@ jobs:
           
           df = read('Tercioo/Details-Damage-Meter',versions[0],'Libs/DF/fw.lua')
           backdrop = read('Gethe/wow-ui-source','3d8abb1da73acd38e412e24fb3f99454a6392346','Interface/AddOns/Blizzard_SharedXML/Backdrop.lua')
-          fade = re.search(r'^function DF:FadeFrame\(frame, t\)\n.*?^end$',df,re.M|re.S).group()
-          coords = re.search(r'^function BackdropTemplateMixin:SetupTextureCoordinates\(\)\n.*?^end$',backdrop,re.M|re.S).group()
-          start = re.search(r'^local coordStart\s*=\s*([^;\n]+)',backdrop,re.M).group(1)
-          fixture = ('local DF,BackdropTemplateMixin = {},{}\nlocal max,textureUVs = math.max,{}\n'
-                     f'local coordStart = {start}\n{fade}\n{coords}\n'
-                     'return DF.FadeFrame,BackdropTemplateMixin.SetupTextureCoordinates\n')
-          Path('/tmp/details-cooltip-source.lua').write_text(fixture)
-          
-          PY
-      - name: Run full regression and package validation
+          fade = re.search(r'^function DF:FadeFrame\(frame, t\)\n.*?^end      - name: Run full regression and package validation
         run: |
           python3 scripts/package.py
       - name: Verify latest and previous native toolbar and title lifecycle
@@ -90,7 +228,7 @@ jobs:
           import os, subprocess, re, statistics, json
           test = Path('tests/details_spec.lua').read_text()
           prefix = test.split('modules.Details.install(S, modules.Details); flush()',1)[0]
-          prefix = 'SlashCmdList={}\nlocal counts={frames=0,textures=0,fonts=0,hooks=0,events=0,writes=0,geometry=0,reads=0}\n' + prefix
+          prefix = 'local counts={frames=0,textures=0,fonts=0,hooks=0,events=0,writes=0,geometry=0,reads=0}\n' + prefix
           changes = {
               'local function frame(kind, name, parent)': 'counts.frames=counts.frames+1',
               'local function texture(kind, parent)': "if kind=='FontString' then counts.fonts=counts.fonts+1 else counts.textures=counts.textures+1 end",
@@ -145,10 +283,7 @@ jobs:
               for trial in range(5):
                   env = dict(os.environ, DETAILS_BENCH_MODE=mode)
                   result = subprocess.run(['python3','/tmp/details-run-one.py','/tmp/details-bench.lua'],
-                                          env=env,text=True,capture_output=True)
-                  if result.returncode:
-                      print(result.stdout, result.stderr, flush=True)
-                      result.check_returncode()
+                                          env=env,text=True,capture_output=True,check=True)
                   for line in result.stdout.splitlines():
                       if not line.startswith('DETAILS_BENCH '):
                           continue
@@ -168,7 +303,7 @@ jobs:
           from pathlib import Path
           from subprocess import check_output
           from zipfile import ZipFile
-          assert check_output(['git','rev-parse','HEAD']).decode().strip() == '1897215b102d9fc3aeedefc8039639597eea94bf'
+          assert check_output(['git','rev-parse','HEAD']).decode().strip() == 'f3906826d4f28d06cff676fa14d09475b843dbd0'
           with ZipFile('EUIAddonSkins.zip') as archive:
               assert archive.testzip() is None
               names=archive.namelist()
@@ -177,13 +312,300 @@ jobs:
               for name in names:
                   assert archive.read(name)==check_output(['git','show','HEAD:'+name]),name
               archive.extractall('/tmp/details-modular-install')
-          print('INSTALL ARCHIVE VERIFIED against commit 1897215b102d9fc3aeedefc8039639597eea94bf')
+          print('INSTALL ARCHIVE VERIFIED against commit f3906826d4f28d06cff676fa14d09475b843dbd0')
           PY
       - name: Store installable test ZIP
         id: upload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: EUIAddonSkins-Details-Modular-1897215b
+          name: EUIAddonSkins-Details-Restored-f3906826
+          path: /tmp/details-modular-install/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Verify the uploaded artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/details-modular-download.zip; then break; fi
+            if [ "$attempt" -eq 6 ]; then exit 1; fi
+            sleep 4
+          done
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          with ZipFile('/tmp/details-modular-download.zip') as actual, ZipFile('EUIAddonSkins.zip') as expected:
+              files = [item.filename for item in actual.infolist() if not item.is_dir()]
+              assert actual.testzip() is None and sorted(files)==sorted(expected.namelist())
+              assert all(actual.read(name)==expected.read(name) for name in files)
+          print('UPLOADED ZIP VERIFIED against the committed runtime files')
+          PY
+,df,re.M|re.S).group()
+          coords = re.search(r'^function BackdropTemplateMixin:SetupTextureCoordinates\(\)\n.*?^end      - name: Run full regression and package validation
+        run: |
+          python3 scripts/package.py
+      - name: Verify latest and previous native toolbar and title lifecycle
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          base = Path('tests/details_spec.lua')
+          original = base.read_bytes()
+          try:
+              base.write_text(original.decode() + "do\n    local Native = assert(loadfile('/tmp/details-native.lua'))()\n    local helper = ns.CreateSkinHelper(S, modules.Details)\n    local layout = ns.CreateDetailsLayout(helper, function() return true end, function() end)\n    local look = ns.GetMeterStyle(S); look.titleAccent = true\n    hooksecurefunc(Native, 'ToolbarMenuSetButtons', function(window) layout.Toolbar(window) end)\n    hooksecurefunc(Native, 'RefreshTitleBar', function(window) layout.Window(window, look) end)\n    local keys = {'modo_selecao','segmento','atributo','report','reset','fechar'}\n    local function make(size, side)\n        local window = instance()\n        window.menu_icons_size, window.menu_anchor = size, {side = side}\n        window.menu_icons = {true,true,true,true,true,true,space=2}\n        window.toolbar_icon_file = 'native-toolbar-image'\n        for _, key in ipairs({'ToolbarMenuButtonsSize','ToolbarMenuButtons','ToolbarMenuSetButtons',\n            'SetTitleBarText','GetTitleBarText','GetTitleBarFontString','SetTitleBarSettings','RefreshTitleBar'}) do\n            window[key] = Native[key]\n        end\n        window.GetMenuAnchorPoint = function(self)\n            local point = self.menu_anchor.side == 1 and 'left' or 'right'\n            return self.baseframe, point, point\n        end\n        window.IsLowerInstance = function() return false end\n        window.RefreshAttributeTextSize = function() end\n        window.menu_attribute_string = window.nativeTitle\n        window.nativeTitle.SetParent = function(self, parent) self.parent = parent end\n        window.baseframe.titleBar.SetShown = function(self, shown) self.hidden = not shown end\n        window.baseframe.UPFrame = frame()\n        local header = window.baseframe.cabecalho\n        header.PluginIconsSeparator = frame()\n        for _, key in ipairs(keys) do\n            local button = header[key].widget or header[key]\n            header[key] = button\n            function button:SetParent(parent) self.parent = parent end\n            function button:SetNormalTexture(path) self.normal:SetTexture(path) end\n            function button:SetHighlightTexture(path) self.nativeHighlight = path end\n            function button:SetPushedTexture(path) self.nativePushed = path end\n        end\n        assert(window:ToolbarMenuButtons() == true)\n        layout.Window(window, look)\n        return window\n    end\n    local function verify(window, size, side)\n        for i, key in ipairs(keys) do\n            local button = window.baseframe.cabecalho[key]\n            assert(button:GetWidth() == 16 * size and button:GetHeight() == 16 * size)\n            local previous = i + (side == 1 and -1 or 1)\n            local expected = keys[previous] and window.baseframe.cabecalho[keys[previous]] or window.baseframe\n            assert(button:GetPoint(1) == (side == 1 and 'left' or 'right'))\n            assert(button.points[1][2] == expected and button.hooks.OnClick() == key .. '-native')\n        end\n    end\n    local first, second = make(1,1), make(1,2)\n    assert(first:ToolbarMenuButtonsSize(0.6) == true)\n    assert(second:ToolbarMenuButtonsSize(1.4) == true)\n    verify(first,0.6,1); verify(second,1.4,2)\n    local reloaded = make(second.menu_icons_size,2); verify(reloaded,1.4,2)\n    second:SetTitleBarText('Native custom display')\n    assert(second:GetTitleBarText() == 'Native custom display')\n    second:SetTitleBarSettings(true,29,'native-material',{0.2,0.3,0.4,1})\n    second:RefreshTitleBar()\n    assert(second.baseframe.titleBar:GetHeight() == 29 and not second.baseframe.titleBar.hidden)\n    second:SetTitleBarSettings(false,11,'different',{0.1,0.1,0.1,1})\n    second:RefreshTitleBar()\n    assert(second.baseframe.titleBar.hidden and second:GetTitleBarText() == 'Native custom display')\n    print('PINNED NATIVE PASS: six toolbar controls, two windows, restored size, title content and header height/visibility')\nend\n")
+              for index in (0,1):
+                  Path('/tmp/details-native.lua').write_bytes(Path(f'/tmp/details-native-{index}.lua').read_bytes())
+                  subprocess.run(['python3','tests/run_lua.py'],check=True)
+          finally:
+              base.write_bytes(original)
+          
+          PY
+      - name: Measure native, main, combined and refactored workloads
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import os, subprocess, re, statistics, json
+          test = Path('tests/details_spec.lua').read_text()
+          prefix = test.split('modules.Details.install(S, modules.Details); flush()',1)[0]
+          prefix = 'local counts={frames=0,textures=0,fonts=0,hooks=0,events=0,writes=0,geometry=0,reads=0}\n' + prefix
+          changes = {
+              'local function frame(kind, name, parent)': 'counts.frames=counts.frames+1',
+              'local function texture(kind, parent)': "if kind=='FontString' then counts.fonts=counts.fonts+1 else counts.textures=counts.textures+1 end",
+              'hooksecurefunc = function(object, name, callback)': 'counts.hooks=counts.hooks+1',
+              'function f:RegisterEvent(e)': 'counts.events=counts.events+1;',
+              'function f:GetChildren()': 'counts.reads=counts.reads+1;',
+              'function f:GetRegions()': 'counts.reads=counts.reads+1;',
+              'function f:SetPoint(...)': 'counts.geometry=counts.geometry+1;',
+              'function f:SetSize(w, h)': 'counts.geometry=counts.geometry+1;',
+              'function f:SetWidth(w)': 'counts.geometry=counts.geometry+1;',
+              'function f:SetHeight(h)': 'counts.geometry=counts.geometry+1;',
+              'function t:SetTexture(v)': 'counts.writes=counts.writes+1;',
+              'function t:SetAlpha(v)': 'counts.writes=counts.writes+1;',
+              'function t:SetFont(path, size, flags)': 'counts.writes=counts.writes+1;',
+              'function t:SetTextColor(...)': 'counts.writes=counts.writes+1;',
+              'function t:SetColorTexture(...)': 'counts.writes=counts.writes+1;',
+          }
+          for token, code in changes.items():
+              assert token in prefix, token
+              prefix = prefix.replace(token,token+' '+code)
+          base = 'https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/'
+          sources = {'main':'3553aca8e386c77be2c1af20a719117c14199df2',
+                     'combined':'017efd5f483d7bba14fef62e32224ccd42e042ae'}
+          files = ['EUIAddonSkins/Skins/Details.lua','EUIAddonSkins/DetailsLayout.lua','EUIAddonSkins/DetailsSettings.lua']
+          for mode,sha in sources.items():
+              for index,path in enumerate(files):
+                  with urlopen(base+sha+'/'+path,timeout=30) as response:
+                      Path(f'/tmp/details-{mode}-{index}.lua').write_bytes(response.read())
+          runner = Path('tests/run_lua.py').read_text().split('state = lua.luaL_newstate()')[0]
+          runner += '''
+          import sys
+          state = lua.luaL_newstate()
+          lua.luaL_openlibs(state)
+          try:
+              rc = lua.luaL_loadfilex(state, sys.argv[1].encode(), None)
+              if not rc:
+                  rc = lua.lua_pcallk(state,0,0,0,0,None)
+              if rc:
+                  raise RuntimeError(lua.lua_tolstring(state,-1,None).decode())
+          finally:
+              lua.lua_close(state)
+          '''
+          Path('/tmp/details-run-one.py').write_text(runner)
+          suffix = "\nlocal mode = os.getenv('DETAILS_BENCH_MODE')\nlocal cfg = ns.DetailsSettings()\ncfg.meter, cfg.tiny, cfg.toolbar = true, false, true\nfor i = 1, 40 do meter.barras[i] = row() end\nlocal snapshots = {}\nlocal function snap() return {frames=counts.frames,textures=counts.textures,fonts=counts.fonts,hooks=counts.hooks,events=counts.events,\n    writes=counts.writes,geometry=counts.geometry,reads=counts.reads} end\nlocal function measure(name, fn)\n    collectgarbage('collect')\n    local before, heap = snap(), collectgarbage('count')\n    local start = os.clock()\n    fn()\n    local ms = (os.clock()-start)*1000\n    collectgarbage('collect')\n    local after = snap()\n    print(string.format('DETAILS_BENCH %s %s ms=%.4f frames=%d textures=%d fonts=%d hooks=%d events=%d writes=%d geometry=%d reads=%d retained=%.3f',\n        mode,name,ms,after.frames-before.frames,after.textures-before.textures,after.fonts-before.fonts,\n        after.hooks-before.hooks,after.events-before.events,after.writes-before.writes,after.geometry-before.geometry,\n        after.reads-before.reads,collectgarbage('count')-heap))\nend\nmeasure('cold',function() if mode ~= 'native' then modules.Details.install(S,modules.Details); flush() end end)\nmeasure('rows1000',function() for _=1,1000 do meter:InstanceRefreshRows() end; flush() end)\nmeasure('title1000',function() for _=1,1000 do Details:RefreshMainWindow(meter) end; flush() end)\nmeasure('open100',function() for _=1,100 do\n    meter.baseframe:Hide(); meter.baseframe:Show()\n    if meter.baseframe.hooks.OnShow then meter.baseframe.hooks.OnShow(meter.baseframe) end\n    flush()\nend end)\nmeasure('toolbar100',function() for _=1,100 do meter:ToolbarMenuSetButtons(1,2) end; flush() end)\nmeasure('closed_idle',function() meter.baseframe:Hide(); for _=1,1000 do meter:InstanceRefreshRows() end; flush() end)\n"
+          results = {}
+          for mode in ('native','main','combined','candidate'):
+              script = prefix
+              if mode in sources:
+                  for index,path in enumerate(files):
+                      script = script.replace("'"+path+"'","'/tmp/details-"+mode+"-"+str(index)+".lua'")
+              Path('/tmp/details-bench.lua').write_text(script+suffix)
+              for trial in range(5):
+                  env = dict(os.environ, DETAILS_BENCH_MODE=mode)
+                  result = subprocess.run(['python3','/tmp/details-run-one.py','/tmp/details-bench.lua'],
+                                          env=env,text=True,capture_output=True,check=True)
+                  for line in result.stdout.splitlines():
+                      if not line.startswith('DETAILS_BENCH '):
+                          continue
+                      print(line)
+                      pieces=line.split()
+                      data={key:float(value) for key,value in (piece.split('=') for piece in pieces[3:])}
+                      results.setdefault(mode+' '+pieces[2],[]).append(data)
+          summary={key:{metric:statistics.median(row[metric] for row in rows) for metric in rows[0]}
+                   for key,rows in results.items()}
+          print('DETAILS BENCHMARK MEDIANS',json.dumps(summary,sort_keys=True))
+          Path('/tmp/details-benchmarks.json').write_text(json.dumps(summary,indent=2,sort_keys=True))
+          
+          PY
+      - name: Verify exact committed runtime archive
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from subprocess import check_output
+          from zipfile import ZipFile
+          assert check_output(['git','rev-parse','HEAD']).decode().strip() == 'f3906826d4f28d06cff676fa14d09475b843dbd0'
+          with ZipFile('EUIAddonSkins.zip') as archive:
+              assert archive.testzip() is None
+              names=archive.namelist()
+              assert len(names)==len(set(names))==69
+              assert all(name.startswith('EUIAddonSkins/') for name in names)
+              for name in names:
+                  assert archive.read(name)==check_output(['git','show','HEAD:'+name]),name
+              archive.extractall('/tmp/details-modular-install')
+          print('INSTALL ARCHIVE VERIFIED against commit f3906826d4f28d06cff676fa14d09475b843dbd0')
+          PY
+      - name: Store installable test ZIP
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-Details-Restored-f3906826
+          path: /tmp/details-modular-install/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Verify the uploaded artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/details-modular-download.zip; then break; fi
+            if [ "$attempt" -eq 6 ]; then exit 1; fi
+            sleep 4
+          done
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          with ZipFile('/tmp/details-modular-download.zip') as actual, ZipFile('EUIAddonSkins.zip') as expected:
+              files = [item.filename for item in actual.infolist() if not item.is_dir()]
+              assert actual.testzip() is None and sorted(files)==sorted(expected.namelist())
+              assert all(actual.read(name)==expected.read(name) for name in files)
+          print('UPLOADED ZIP VERIFIED against the committed runtime files')
+          PY
+,backdrop,re.M|re.S).group()
+          start = re.search(r'^local coordStart\s*=\s*([^;\n]+)',backdrop,re.M).group(1)
+          fixture = ('local DF,BackdropTemplateMixin = {},{}\nlocal max,textureUVs = math.max,{}\n'
+                     f'local coordStart = {start}\n{fade}\n{coords}\n'
+                     'return DF.FadeFrame,BackdropTemplateMixin.SetupTextureCoordinates\n')
+          Path('/tmp/details-cooltip-source.lua').write_text(fixture)
+          
+          PY
+      - name: Run full regression and package validation
+        run: |
+          python3 scripts/package.py
+      - name: Verify latest and previous native toolbar and title lifecycle
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          base = Path('tests/details_spec.lua')
+          original = base.read_bytes()
+          try:
+              base.write_text(original.decode() + "do\n    local Native = assert(loadfile('/tmp/details-native.lua'))()\n    local helper = ns.CreateSkinHelper(S, modules.Details)\n    local layout = ns.CreateDetailsLayout(helper, function() return true end, function() end)\n    local look = ns.GetMeterStyle(S); look.titleAccent = true\n    hooksecurefunc(Native, 'ToolbarMenuSetButtons', function(window) layout.Toolbar(window) end)\n    hooksecurefunc(Native, 'RefreshTitleBar', function(window) layout.Window(window, look) end)\n    local keys = {'modo_selecao','segmento','atributo','report','reset','fechar'}\n    local function make(size, side)\n        local window = instance()\n        window.menu_icons_size, window.menu_anchor = size, {side = side}\n        window.menu_icons = {true,true,true,true,true,true,space=2}\n        window.toolbar_icon_file = 'native-toolbar-image'\n        for _, key in ipairs({'ToolbarMenuButtonsSize','ToolbarMenuButtons','ToolbarMenuSetButtons',\n            'SetTitleBarText','GetTitleBarText','GetTitleBarFontString','SetTitleBarSettings','RefreshTitleBar'}) do\n            window[key] = Native[key]\n        end\n        window.GetMenuAnchorPoint = function(self)\n            local point = self.menu_anchor.side == 1 and 'left' or 'right'\n            return self.baseframe, point, point\n        end\n        window.IsLowerInstance = function() return false end\n        window.RefreshAttributeTextSize = function() end\n        window.menu_attribute_string = window.nativeTitle\n        window.nativeTitle.SetParent = function(self, parent) self.parent = parent end\n        window.baseframe.titleBar.SetShown = function(self, shown) self.hidden = not shown end\n        window.baseframe.UPFrame = frame()\n        local header = window.baseframe.cabecalho\n        header.PluginIconsSeparator = frame()\n        for _, key in ipairs(keys) do\n            local button = header[key].widget or header[key]\n            header[key] = button\n            function button:SetParent(parent) self.parent = parent end\n            function button:SetNormalTexture(path) self.normal:SetTexture(path) end\n            function button:SetHighlightTexture(path) self.nativeHighlight = path end\n            function button:SetPushedTexture(path) self.nativePushed = path end\n        end\n        assert(window:ToolbarMenuButtons() == true)\n        layout.Window(window, look)\n        return window\n    end\n    local function verify(window, size, side)\n        for i, key in ipairs(keys) do\n            local button = window.baseframe.cabecalho[key]\n            assert(button:GetWidth() == 16 * size and button:GetHeight() == 16 * size)\n            local previous = i + (side == 1 and -1 or 1)\n            local expected = keys[previous] and window.baseframe.cabecalho[keys[previous]] or window.baseframe\n            assert(button:GetPoint(1) == (side == 1 and 'left' or 'right'))\n            assert(button.points[1][2] == expected and button.hooks.OnClick() == key .. '-native')\n        end\n    end\n    local first, second = make(1,1), make(1,2)\n    assert(first:ToolbarMenuButtonsSize(0.6) == true)\n    assert(second:ToolbarMenuButtonsSize(1.4) == true)\n    verify(first,0.6,1); verify(second,1.4,2)\n    local reloaded = make(second.menu_icons_size,2); verify(reloaded,1.4,2)\n    second:SetTitleBarText('Native custom display')\n    assert(second:GetTitleBarText() == 'Native custom display')\n    second:SetTitleBarSettings(true,29,'native-material',{0.2,0.3,0.4,1})\n    second:RefreshTitleBar()\n    assert(second.baseframe.titleBar:GetHeight() == 29 and not second.baseframe.titleBar.hidden)\n    second:SetTitleBarSettings(false,11,'different',{0.1,0.1,0.1,1})\n    second:RefreshTitleBar()\n    assert(second.baseframe.titleBar.hidden and second:GetTitleBarText() == 'Native custom display')\n    print('PINNED NATIVE PASS: six toolbar controls, two windows, restored size, title content and header height/visibility')\nend\n")
+              for index in (0,1):
+                  Path('/tmp/details-native.lua').write_bytes(Path(f'/tmp/details-native-{index}.lua').read_bytes())
+                  subprocess.run(['python3','tests/run_lua.py'],check=True)
+          finally:
+              base.write_bytes(original)
+          
+          PY
+      - name: Measure native, main, combined and refactored workloads
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import os, subprocess, re, statistics, json
+          test = Path('tests/details_spec.lua').read_text()
+          prefix = test.split('modules.Details.install(S, modules.Details); flush()',1)[0]
+          prefix = 'local counts={frames=0,textures=0,fonts=0,hooks=0,events=0,writes=0,geometry=0,reads=0}\n' + prefix
+          changes = {
+              'local function frame(kind, name, parent)': 'counts.frames=counts.frames+1',
+              'local function texture(kind, parent)': "if kind=='FontString' then counts.fonts=counts.fonts+1 else counts.textures=counts.textures+1 end",
+              'hooksecurefunc = function(object, name, callback)': 'counts.hooks=counts.hooks+1',
+              'function f:RegisterEvent(e)': 'counts.events=counts.events+1;',
+              'function f:GetChildren()': 'counts.reads=counts.reads+1;',
+              'function f:GetRegions()': 'counts.reads=counts.reads+1;',
+              'function f:SetPoint(...)': 'counts.geometry=counts.geometry+1;',
+              'function f:SetSize(w, h)': 'counts.geometry=counts.geometry+1;',
+              'function f:SetWidth(w)': 'counts.geometry=counts.geometry+1;',
+              'function f:SetHeight(h)': 'counts.geometry=counts.geometry+1;',
+              'function t:SetTexture(v)': 'counts.writes=counts.writes+1;',
+              'function t:SetAlpha(v)': 'counts.writes=counts.writes+1;',
+              'function t:SetFont(path, size, flags)': 'counts.writes=counts.writes+1;',
+              'function t:SetTextColor(...)': 'counts.writes=counts.writes+1;',
+              'function t:SetColorTexture(...)': 'counts.writes=counts.writes+1;',
+          }
+          for token, code in changes.items():
+              assert token in prefix, token
+              prefix = prefix.replace(token,token+' '+code)
+          base = 'https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/'
+          sources = {'main':'3553aca8e386c77be2c1af20a719117c14199df2',
+                     'combined':'017efd5f483d7bba14fef62e32224ccd42e042ae'}
+          files = ['EUIAddonSkins/Skins/Details.lua','EUIAddonSkins/DetailsLayout.lua','EUIAddonSkins/DetailsSettings.lua']
+          for mode,sha in sources.items():
+              for index,path in enumerate(files):
+                  with urlopen(base+sha+'/'+path,timeout=30) as response:
+                      Path(f'/tmp/details-{mode}-{index}.lua').write_bytes(response.read())
+          runner = Path('tests/run_lua.py').read_text().split('state = lua.luaL_newstate()')[0]
+          runner += '''
+          import sys
+          state = lua.luaL_newstate()
+          lua.luaL_openlibs(state)
+          try:
+              rc = lua.luaL_loadfilex(state, sys.argv[1].encode(), None)
+              if not rc:
+                  rc = lua.lua_pcallk(state,0,0,0,0,None)
+              if rc:
+                  raise RuntimeError(lua.lua_tolstring(state,-1,None).decode())
+          finally:
+              lua.lua_close(state)
+          '''
+          Path('/tmp/details-run-one.py').write_text(runner)
+          suffix = "\nlocal mode = os.getenv('DETAILS_BENCH_MODE')\nlocal cfg = ns.DetailsSettings()\ncfg.meter, cfg.tiny, cfg.toolbar = true, false, true\nfor i = 1, 40 do meter.barras[i] = row() end\nlocal snapshots = {}\nlocal function snap() return {frames=counts.frames,textures=counts.textures,fonts=counts.fonts,hooks=counts.hooks,events=counts.events,\n    writes=counts.writes,geometry=counts.geometry,reads=counts.reads} end\nlocal function measure(name, fn)\n    collectgarbage('collect')\n    local before, heap = snap(), collectgarbage('count')\n    local start = os.clock()\n    fn()\n    local ms = (os.clock()-start)*1000\n    collectgarbage('collect')\n    local after = snap()\n    print(string.format('DETAILS_BENCH %s %s ms=%.4f frames=%d textures=%d fonts=%d hooks=%d events=%d writes=%d geometry=%d reads=%d retained=%.3f',\n        mode,name,ms,after.frames-before.frames,after.textures-before.textures,after.fonts-before.fonts,\n        after.hooks-before.hooks,after.events-before.events,after.writes-before.writes,after.geometry-before.geometry,\n        after.reads-before.reads,collectgarbage('count')-heap))\nend\nmeasure('cold',function() if mode ~= 'native' then modules.Details.install(S,modules.Details); flush() end end)\nmeasure('rows1000',function() for _=1,1000 do meter:InstanceRefreshRows() end; flush() end)\nmeasure('title1000',function() for _=1,1000 do Details:RefreshMainWindow(meter) end; flush() end)\nmeasure('open100',function() for _=1,100 do\n    meter.baseframe:Hide(); meter.baseframe:Show()\n    if meter.baseframe.hooks.OnShow then meter.baseframe.hooks.OnShow(meter.baseframe) end\n    flush()\nend end)\nmeasure('toolbar100',function() for _=1,100 do meter:ToolbarMenuSetButtons(1,2) end; flush() end)\nmeasure('closed_idle',function() meter.baseframe:Hide(); for _=1,1000 do meter:InstanceRefreshRows() end; flush() end)\n"
+          results = {}
+          for mode in ('native','main','combined','candidate'):
+              script = prefix
+              if mode in sources:
+                  for index,path in enumerate(files):
+                      script = script.replace("'"+path+"'","'/tmp/details-"+mode+"-"+str(index)+".lua'")
+              Path('/tmp/details-bench.lua').write_text(script+suffix)
+              for trial in range(5):
+                  env = dict(os.environ, DETAILS_BENCH_MODE=mode)
+                  result = subprocess.run(['python3','/tmp/details-run-one.py','/tmp/details-bench.lua'],
+                                          env=env,text=True,capture_output=True,check=True)
+                  for line in result.stdout.splitlines():
+                      if not line.startswith('DETAILS_BENCH '):
+                          continue
+                      print(line)
+                      pieces=line.split()
+                      data={key:float(value) for key,value in (piece.split('=') for piece in pieces[3:])}
+                      results.setdefault(mode+' '+pieces[2],[]).append(data)
+          summary={key:{metric:statistics.median(row[metric] for row in rows) for metric in rows[0]}
+                   for key,rows in results.items()}
+          print('DETAILS BENCHMARK MEDIANS',json.dumps(summary,sort_keys=True))
+          Path('/tmp/details-benchmarks.json').write_text(json.dumps(summary,indent=2,sort_keys=True))
+          
+          PY
+      - name: Verify exact committed runtime archive
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from subprocess import check_output
+          from zipfile import ZipFile
+          assert check_output(['git','rev-parse','HEAD']).decode().strip() == 'f3906826d4f28d06cff676fa14d09475b843dbd0'
+          with ZipFile('EUIAddonSkins.zip') as archive:
+              assert archive.testzip() is None
+              names=archive.namelist()
+              assert len(names)==len(set(names))==69
+              assert all(name.startswith('EUIAddonSkins/') for name in names)
+              for name in names:
+                  assert archive.read(name)==check_output(['git','show','HEAD:'+name]),name
+              archive.extractall('/tmp/details-modular-install')
+          print('INSTALL ARCHIVE VERIFIED against commit f3906826d4f28d06cff676fa14d09475b843dbd0')
+          PY
+      - name: Store installable test ZIP
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-Details-Restored-f3906826
           path: /tmp/details-modular-install/
           retention-days: 30
           if-no-files-found: error

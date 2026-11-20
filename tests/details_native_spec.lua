@@ -98,7 +98,7 @@ if source then
     local main = read("window_main.lua")
     local prefix = assert(main:match("(function Details:ChangeSkin.-)\n\tlocal skin_file"))
     local rowTexts = {Prepare=function() end}
-    Details.StatusBar = {Reset=function() end}
+    Details.StatusBar = {Reset=function() end, ApplyOptions=function() end, SetPlugin=function() end}
     Details.ResetInstanceConfigKeepingValues = function(self)
         for k,v in pairs(Details.instance_defaults) do self[k]=copy(v) end
     end

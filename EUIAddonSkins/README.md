@@ -66,7 +66,7 @@ Toggle individual skins in **Blizzard Skins+ > Window Skins > Third-Party Addons
 
 Open **Options > AddOns > EUI AddonSkins** for a searchable list of active configurable addons. The panel shows only the controls each integration supports. **Legacy options** remains available for the original shared page.
 
-- Details! offers independent meter surface, toolbar artwork, Tiny Threat and menus/options switches. Native Details! controls title text, timers, bar styling and geometry. Use the meter settings icon or `/euidetails` for quick access.
+- Details! offers independent meter surface, toolbar artwork, Tiny Threat and menus/options switches. Native Details! controls title text, timers, bar styling and geometry. Use the meter settings icon or `/euidetails` for quick access. **EUI Recommended Preset** optionally sets up one window's native bars after confirmation; it never reapplies settings automatically.
 - Spy offers Automatic, EUI Standard and EUI Forever, decorative background opacity and Reset Appearance. Use its right-click **EUI AddonSkins** menu or `/euispy` for quick access. The Forever look requires the supported Forever client and EUI appearance API.
 - RestedXP offers style, opacity and its separate navigation-arrow toggle. Appearance Reset preserves the arrow preference.
 - AllTheThings, RareScanner and KiwiFarm expose their existing appearance controls. KiwiFarm can also restore its native statistics font. Nova Instance Tracker windows retain their 80% background opacity.
@@ -94,7 +94,7 @@ DBM timer and range/radar/info appearance can be adjusted through **Skin Options
 
 ## Development
 
-See [the documentation index](../docs/README.md) for contribution rules, engineering checks, benchmarks and releases.
+See [the documentation index](docs/README.md) for contribution rules, engineering checks, benchmarks and releases.
 
 ## License
 
@@ -110,4 +110,4 @@ EUI AddonSkins integrates with EllesmereUI's public skinning API. EllesmereUI an
 
 ## Addon authors
 
-If you prefer that your addon is not supported by this skin collection, please [open an issue](https://github.com/oopsie-glitch/EUI-AddonSkins/issues). The skin will be removed on request.
+If you are an addon author and have any concerns regarding an EUI AddonSkins integration, please contact me through CurseForge or GitHub.

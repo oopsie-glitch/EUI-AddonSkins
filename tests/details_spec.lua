@@ -78,6 +78,10 @@ local function frame(kind, name, parent)
     function f:SetChecked(v) self.checked = v end
     function f:GetChecked() return self.checked end
     function f:GetName() return self.name end
+    function f:SetText(value)
+        if not self.label then self.label = self:CreateFontString(nil,'OVERLAY','GameFontHighlight') end
+        self.label:SetText(value)
+    end
     function f:GetParent() return self.parent end
     function f:IsForbidden() return self.forbidden end
     function f:IsProtected() return self.protected end

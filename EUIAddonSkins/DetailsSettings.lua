@@ -120,7 +120,7 @@ function ns.ApplyDetailsRecommendedPreset(id, request)
         return false
     end
     local instance = PresetWindow(id)
-    if not PresetReady(instance) or not ns.DetailsPresetStyle() then
+    if not PresetReady(instance) or request.windows[id] ~= instance or not ns.DetailsPresetStyle() then
         PresetMessage("The selected Details window is unavailable or cannot be changed in combat.")
         return false
     end
@@ -144,7 +144,7 @@ function ns.ApplyDetailsRecommendedPreset(id, request)
     -- The documented native setters change only the disclosed bar preferences.
     -- Per-column font overrides, class/status colors, title/timer and geometry
     -- remain native. Selecting a profile or toggling cosmetics never calls here.
-    instance:SetBarSettings(look.height, textureName, nil, nil, nil, nil, nil, nil, nil, nil, look.spacing)
+    instance:SetBarSettings(look.height, textureName, nil, nil, nil, nil, nil, nil, nil, nil, look.spacing, "")
     instance:SetBarTextSettings(look.leftSize, fontName, nil, nil, nil, nil, nil, false)
     instance:SetBarRightTextSettings(true, true, false, "(", "NONE")
     if type(instance.SetSimpleFormattingSettings) == "function" then instance:SetSimpleFormattingSettings(false) end
@@ -155,10 +155,11 @@ function ns.OpenDetailsRecommendedPreset(preferred)
     local look = ns.DetailsPresetStyle()
     if not look then return end
     local details = _G.Details
-    local ids, first = {}, nil
+    local ids, first, windows = {}, nil, {}
     for _, instance in pairs(details:GetAllInstances() or {}) do
         if PresetReady(instance) then
             ids[#ids + 1] = instance.meu_id
+            windows[instance.meu_id] = instance
             if not first or instance.meu_id < first then first = instance.meu_id end
         end
     end
@@ -184,11 +185,11 @@ function ns.OpenDetailsRecommendedPreset(preferred)
             end,
         }
     end
-    local request = {profile = details:GetCurrentProfileName(), look = look,
+    local request = {profile = details:GetCurrentProfileName(), look = look, windows = windows,
         id = preferred and PresetReady(preferred) and preferred.meu_id or first}
     local disclosure = string.format(
         "EUI Recommended Preset\n\nProfile: %s\nAvailable window numbers: %s\n\n"
-        .. "Changes only the selected window's bars:\nEUI texture, common EUI font (%g), height %g, spacing %g, "
+        .. "Changes only the selected window's bars:\nEUI texture (custom texture override off), common EUI font (%g), height %g, spacing %g, "
         .. "native total/per-second values, no percentage, parentheses and no separator, custom right text off.\n\n"
         .. "Keeps per-column font overrides, class/status colors, title/timer, toolbar and window layout. "
         .. "This replaces these bar preferences in the active profile once. You can customize them afterward.\n\n"

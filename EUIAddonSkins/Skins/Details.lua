@@ -600,7 +600,10 @@ local function Setup(C, refresh)
             end)
         end
         tip:AddLine("EUI recommended preset...", nil, 2)
-        tip:AddMenu(2, function() ns.OpenDetailsRecommendedPreset(instance) end)
+        tip:AddMenu(2, function()
+            if tip.Hide then tip:Hide() end
+            ns.OpenDetailsRecommendedPreset(instance)
+        end)
         tip:AddLine("Open skin settings", nil, 2)
         tip:AddMenu(2, ns.OpenDetailsSettings)
     end

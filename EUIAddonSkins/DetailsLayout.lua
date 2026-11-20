@@ -140,9 +140,12 @@ function ns.CreateDetailsLayout(H, wanted, defer)
         entry.titleApplied = color
         -- AttributeMenu also writes this color from its delayed native callback.
         -- Observe only this instance's native title; never read or rewrite its text.
-        H.Hook(title, "SetTextColor", function()
-            if not entry.tinting and entry.title == title and wanted(instance, "meter") then L.Title(instance) end
-        end)
+        if entry.hookedTitle ~= title then
+            entry.hookedTitle = title
+            H.Hook(title, "SetTextColor", function()
+                if not entry.tinting and entry.title == title and wanted(instance, "meter") then L.Title(instance) end
+            end)
+        end
     end
     function L.Window(instance, look)
         if not Ready(instance) then return end

@@ -1004,6 +1004,10 @@ EUIAddonSkinsDB.details = {meter = true, menus = false}
 assert(ns.DetailsSettings().tiny == true and ns.DetailsSettings().toolbar == true, 'existing opt-ins were lost during migration')
 EUIAddonSkinsDB.details.tiny, EUIAddonSkinsDB.details.toolbar = false, false
 assert(not ns.DetailsSettings().tiny and not ns.DetailsSettings().toolbar, 'migration overwrote explicit opt-outs')
+EUIAddonSkinsDB.details = {meter=false, tiny=true, menus=true}
+assert(ns.ReadDetailsSetting('toolbar') and ns.DetailsSettings().toolbar, 'Tiny-only users lost their toolbar appearance')
+EUIAddonSkinsDB.details.toolbar = false
+assert(not ns.ReadDetailsSetting('toolbar'), 'explicit toolbar opt-out was overwritten')
 EUIAddonSkinsDB.details = currentSettings
 -- A real DF slider refresh can call Details' bar-setting method. Such meter
 -- work must not refresh the options or invalidate every category's font cache.

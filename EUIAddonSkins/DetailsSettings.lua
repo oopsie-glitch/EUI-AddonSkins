@@ -5,7 +5,7 @@ function ns.DetailsSettings()
     local db = EUIAddonSkinsDB
     db.details = db.details or {menus = true, meter = false}
     if db.details.tiny == nil then db.details.tiny = db.details.meter == true end
-    if db.details.toolbar == nil then db.details.toolbar = db.details.meter == true end
+    if db.details.toolbar == nil then db.details.toolbar = db.details.meter == true or db.details.tiny == true end
     return db.details
 end
 
@@ -14,7 +14,11 @@ function ns.ReadDetailsSetting(key)
     local db = EUIAddonSkinsDB and EUIAddonSkinsDB.details
     if key == "menus" then return not db or db.menus == true end
     if key == "meter" then return db and db.meter == true or false end
-    if key == "tiny" or key == "toolbar" then
+    if key == "toolbar" then
+        if db and db.toolbar ~= nil then return db.toolbar == true end
+        return db and (db.meter == true or db.tiny == true) or false
+    end
+    if key == "tiny" then
         if db and db[key] ~= nil then return db[key] == true end
         return db and db.meter == true or false
     end

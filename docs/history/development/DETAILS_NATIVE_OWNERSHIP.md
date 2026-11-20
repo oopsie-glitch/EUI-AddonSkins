@@ -32,7 +32,7 @@ The Designer Title Bar object exposes native height and toolbar icon size, spaci
 
 ## Settings compatibility
 
-Existing menus, meter and tiny keys retain their saved booleans. The new toolbar key initially follows the old meter preference when absent; an explicit false is retained. Reading the central settings page does not materialize defaults. All four controls share setters with the legacy page and quick menu.
+Existing menus, meter and tiny keys retain their saved booleans. The new toolbar key initially follows the old meter or Tiny Threat preference when absent; an explicit false is retained. Reading the central settings page does not materialize defaults. All four controls share setters with the legacy page and quick menu.
 
 The meter preference now affects surfaces and optional native title accent, without changing bar settings. Existing legacy backups are retained inert in EUI AddonSkins SavedVariables. Their values are ambiguous after later user edits, so the adapter neither reapplies nor deletes them. Users can choose their desired native bar settings in Details. No Details SavedVariables migration is performed.
 

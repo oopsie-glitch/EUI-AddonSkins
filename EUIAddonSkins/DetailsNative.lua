@@ -97,8 +97,11 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         if not Plain(current) then return end
         local old = entry.art[art]
         if not old then
-            old = {path = current, coords = art.GetTexCoord and {art:GetTexCoord()},
-                color = art.GetVertexColor and {art:GetVertexColor()}}
+            local coords = art.GetTexCoord and {art:GetTexCoord()}
+            local color = art.GetVertexColor and {art:GetVertexColor()}
+            for _, value in ipairs(coords or {}) do if not Plain(value) then return end end
+            for _, value in ipairs(color or {}) do if not Plain(value) then return end end
+            old = {path = current, coords = coords, color = color}
             entry.art[art] = old
         end
         old.applied = path

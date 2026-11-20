@@ -230,3 +230,17 @@ end
 table.sort(registration); table.sort(activation); table.sort(registryHeap)
 Details.instances, Details.waitingForSkins, Details.skins["Addonskins EUI"] = savedInstances, savedWaiting, savedDefinition
 print(("BENCH native registration median_ms=%.3f retained_KiB=%.3f first_cosmetic_activation_ms=%.3f trials=5"):format(registration[3],registryHeap[3],activation[3]))
+
+-- Secret UV/color inputs are neither changed nor retained for later restoration.
+Details.waitingForSkins=nil
+local secretNS={IsEnabled=ns.IsEnabled}
+assert(loadfile("EUIAddonSkins/DetailsNative.lua"))("EUIAddonSkins",secretNS)
+local secureP=secretNS.CreateNativeDetailsPrototype({H={Allowed=H.Allowed,Hook=function() end},S={},module={}},function() end)
+Details.skins["Addonskins EUI"]=nil; secureP.Register(look)
+local secretInstance=instance(9); secretInstance.skin="Addonskins EUI"
+local secretArt=secretInstance.baseframe.cabecalho.modo_selecao.normal
+secretArt.coords={{secret=true},0,0,1,1,0,1,1}
+secureP.Apply(secretInstance)
+assert(secretArt.path=="native" and not secureP.entries[secretInstance].art[secretArt],"retained or restyled secret texture coordinates")
+secretInstance.skin="Original"; secureP.Apply(secretInstance)
+print("PASS: secret texture coordinates are not cached or restored")

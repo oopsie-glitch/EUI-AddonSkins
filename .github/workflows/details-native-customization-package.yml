@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: cb4454a428b6a768dc51a89b36e3c5a36a7945a6
+          ref: 1897215b102d9fc3aeedefc8039639597eea94bf
           persist-credentials: false
       - name: Install Lua runtime
         run: |
@@ -168,7 +168,7 @@ jobs:
           from pathlib import Path
           from subprocess import check_output
           from zipfile import ZipFile
-          assert check_output(['git','rev-parse','HEAD']).decode().strip() == 'cb4454a428b6a768dc51a89b36e3c5a36a7945a6'
+          assert check_output(['git','rev-parse','HEAD']).decode().strip() == '1897215b102d9fc3aeedefc8039639597eea94bf'
           with ZipFile('EUIAddonSkins.zip') as archive:
               assert archive.testzip() is None
               names=archive.namelist()
@@ -177,13 +177,13 @@ jobs:
               for name in names:
                   assert archive.read(name)==check_output(['git','show','HEAD:'+name]),name
               archive.extractall('/tmp/details-modular-install')
-          print('INSTALL ARCHIVE VERIFIED against commit cb4454a428b6a768dc51a89b36e3c5a36a7945a6')
+          print('INSTALL ARCHIVE VERIFIED against commit 1897215b102d9fc3aeedefc8039639597eea94bf')
           PY
       - name: Store installable test ZIP
         id: upload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: EUIAddonSkins-Details-Modular-cb4454a4
+          name: EUIAddonSkins-Details-Modular-1897215b
           path: /tmp/details-modular-install/
           retention-days: 30
           if-no-files-found: error

@@ -82,7 +82,7 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         -- Older and modern Details layouts both retain their own row-text renderer.
         for i, text in ipairs(row.texts or {}) do
             if text.font then
-                text.font.face = NAME .. " Font"
+                text.font.face = look.font
                 text.font.size = i == 1 and look.leftSize or look.rightSize
             end
         end

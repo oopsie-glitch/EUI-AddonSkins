@@ -138,6 +138,7 @@ assert(Details.instances[1].skin=="Original" and Details.instances[1].row_info.h
 assert(def.instance_cprops.bg_alpha==0.75 and def.instance_cprops.titlebar_texture_color[1]==27/255)
 assert(def.instance_cprops.row_info.height==18 and def.instance_cprops.row_info.space.between==2)
 assert(def.instance_cprops.attribute_text.show_timer==true)
+assert(def.instance_cprops.row_info.texts[1].font.face=="approved-font", "modern row text needs a concrete font file")
 for _=1,20 do P.Refresh(look) end
 assert(Details:GetSkin("Addonskins EUI")==def and #hooks==2,"duplicate registration/hooks")
 -- A real native selection (only explicit test action), then normal customization.
@@ -203,3 +204,25 @@ P2.Register(look)
 assert(b.skin=="Addonskins EUI","did not account for native waiting-skin restoration")
 assert(not next(Details.installed_skins_cache),"waiting recovery cached prototype")
 print("PASS: foreign collision and prior-selection waiting restoration through native registration")
+
+-- Isolate registration and first cosmetic activation from warm-refresh timing.
+local savedInstances, savedWaiting, savedDefinition = Details.instances, Details.waitingForSkins, Details.skins["Addonskins EUI"]
+local registration, activation, registryHeap = {}, {}, {}
+for trial=1,5 do
+    local context={IsEnabled=function() return true end}
+    assert(loadfile("EUIAddonSkins/DetailsNative.lua"))("EUIAddonSkins",context)
+    local coldH={Allowed=H.Allowed,Hook=function() end}
+    local p=context.CreateNativeDetailsPrototype({H=coldH,S={},module={}},function() end)
+    Details.skins["Addonskins EUI"]=nil
+    Details.instances={}; Details.waitingForSkins=nil
+    collectgarbage('collect'); local heap=collectgarbage('count')
+    local start=os.clock(); p.Register(look); registration[trial]=(os.clock()-start)*1000
+    collectgarbage('collect'); registryHeap[trial]=collectgarbage('count')-heap
+    local inst=instance(1); inst.skin="Addonskins EUI"
+    local before=allocations
+    start=os.clock(); p.Apply(inst); activation[trial]=(os.clock()-start)*1000
+    assert(allocations==before,"cold cosmetics create UI objects")
+end
+table.sort(registration); table.sort(activation); table.sort(registryHeap)
+Details.instances, Details.waitingForSkins, Details.skins["Addonskins EUI"] = savedInstances, savedWaiting, savedDefinition
+print(("BENCH native registration median_ms=%.3f retained_KiB=%.3f first_cosmetic_activation_ms=%.3f trials=5"):format(registration[3],registryHeap[3],activation[3]))

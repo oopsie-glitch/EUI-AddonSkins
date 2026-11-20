@@ -140,6 +140,8 @@ function ns.ApplyDetailsRecommendedPreset(id, request)
     end
     local saved = ns.DetailsSettings()
     saved.presetMedia = saved.presetMedia or {font = {}, statusbar = {}}
+    saved.presetMedia.font = saved.presetMedia.font or {}
+    saved.presetMedia.statusbar = saved.presetMedia.statusbar or {}
     saved.presetMedia.font[fontName], saved.presetMedia.statusbar[textureName] = look.font, look.texture
     -- The documented native setters change only the disclosed bar preferences.
     -- Per-column font overrides, class/status colors, title/timer and geometry
@@ -229,7 +231,7 @@ function ns.CreateDetailsSettingsPanel()
     panel.menus = Check("menus", "Skin menus and options", "Styles Details dialogs, dropdowns and options. Reload after changing this setting.", -216)
     panel.meter = Check("meter", "Style meter surfaces", "Styles window surfaces and the title accent. Details controls text, fonts, bars and layout.", -294)
     panel.toolbar = Check("toolbar", "Style toolbar artwork", "Uses EUI icons within native button bounds. Details controls size, visibility and placement.", -372)
-    panel.tiny = Check("tiny", "Style Tiny Threat", "Independent styling for Tiny Threat rows and their Details window.", -450)
+    panel.tiny = Check("tiny", "Style Tiny Threat", "Styles the Tiny Threat window surfaces. Details and Tiny Threat control their native rows.", -450)
     panel.preset = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     panel.preset:SetPoint("TOPLEFT", 16, -530); panel.preset:SetSize(220, 22)
     panel.preset:SetText("EUI Recommended Preset...")

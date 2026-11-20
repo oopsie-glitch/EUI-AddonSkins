@@ -272,6 +272,7 @@ Details = {
         self.baseframe.titleBar:SetHeight(height)
         if shown then self.baseframe.titleBar:Show() else self.baseframe.titleBar:Hide() end
     end,
+    RefreshTitleBar = function() return 'header-native' end,
     SetMode = function(self, mode) self.modo = mode; return 'mode-native' end,
     SetDisplay = function() return 'display-native', nil, 3 end,
     RefreshMainWindow = function() return 'refresh-native' end,
@@ -421,7 +422,7 @@ meter.elapsed = setmetatable({}, {__div = function() error('secret timer used') 
 assert(Details:RefreshMainWindow(meter) == 'refresh-native' and meter.nativeTitle.text == 'Custom native title')
 meter:AttributeMenu(true, nil, nil, 'chosen-title', 19, {0.2,0.3,0.4,1}, nil, nil, false)
 assert(meter.nativeTitle.font == 'chosen-title' and meter.nativeTitle.size == 19 and meter.showTimer == false)
-meter:SetTitleBarSettings(true, 27)
+meter:SetTitleBarSettings(true, 27); assert(meter:RefreshTitleBar() == 'header-native')
 assert(meter.baseframe.titleBar:GetHeight() == 27 and not meter.baseframe.titleBar.hidden)
 _EDM_DB.profile.dm.hdrTextUseAccent = false
 S.looks(); flush()

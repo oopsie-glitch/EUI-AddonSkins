@@ -155,6 +155,7 @@ local function instance()
     f.titleBar=frame(nil,f);f.titleBar.stretch=true;f.titleBar.texture=frame("Texture",f.titleBar)
     Native(f.titleBar.SetPoint,f.titleBar,"BOTTOMLEFT",f,"TOPLEFT",0,0)
     i.bgdisplay=frame(nil,f);i.menu_points={frame(nil,f),frame(nil,f)}
+    for _,point in ipairs(i.menu_points) do point.width,point.height=1,1 end -- native constructor uses 1x1 anchors
     i.title=frame("FontString",f.titleBar);i.title.height=13;i.title.text="Damage Done"
     for _,key in ipairs({"modo_selecao","segmento","atributo","report","reset","fechar"})do
         local button=frame("Button",f);button.normal=frame("Texture",button);button.highlight=frame("Texture",button);button.pushed=frame("Texture",button)

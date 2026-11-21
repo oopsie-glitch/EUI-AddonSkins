@@ -228,8 +228,11 @@ local function DefineSkin()
                         -- Keep ItemTree's own art on the box (magnifier, key
                         -- hint); its input border is faded through Assets.Apply.
                         local shown = {}
+                        -- (InputBoxTemplate's own Left/Middle/Right are not kept.)
+                        local template = {}
+                        for key in pairs(TEMPLATE_PARTS) do if child[key] then template[child[key]] = true end end
                         for _, region in ipairs(H.Regions(child)) do
-                            if H.Texture(region) then shown[region] = region:GetAlpha() end
+                            if H.Texture(region) and not template[region] then shown[region] = region:GetAlpha() end
                         end
                         S.EditBox(child, {padInput = false})
                         for region, alpha in pairs(shown) do region:SetAlpha(alpha) end
@@ -412,6 +415,7 @@ local function DefineSkin()
             if Locked() then pending = true; return end
             pending = nil
             SkinWindow()
+            if done.main then SkinInfo() end
             for button in pairs(waiting) do SkinButton(button) end
             if looksPending then ApplyLooks() end
         end
@@ -422,6 +426,12 @@ local function DefineSkin()
         H.Hook(it.Assets, "Apply", Applied)
         H.Hook(Frame, "SelectTab", function() TopSelection(); Portrait() end)
         H.Hook(Frame, "Open", Portrait)
+        -- The info column is built when the first page needs it (InfoPanel.Attach).
+        if type(it.UI.InfoPanel) == "table" then
+            H.Hook(it.UI.InfoPanel, "Attach", function()
+                if Locked() then pending = true else SkinInfo() end
+            end)
+        end
         H.Hook(Frame, "Build", function() if Frame.frame and not done.main then Refresh() end end)
         if S.OnLooksChanged then
             S.OnLooksChanged(function()

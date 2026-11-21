@@ -101,7 +101,17 @@ local function fontString() local fs = region("FontString"); fs.color = {1, 1, 1
 function Frame.ItemId(key) return type(key) == "string" and tonumber(key:match("^item:(%d+)$")) or nil end
 function Frame.Open(key) Frame.rootKey = key end
 function Assets.ItemIcon(id) return "icon-" .. id end
+-- The info column (UI/InfoPanel.lua), built when the first page needs it, with its Dialog NineSlice.
 local InfoPanel = {}
+function InfoPanel.Attach(region)
+    if InfoPanel.frame then return true end
+    local column = CreateFrame("Frame", nil, region)
+    column.art = region and CreateFrame("Frame", nil, column) or nil
+    column.art.TopLeftCorner = column.art:CreateTexture()
+    column.icon = column:CreateTexture(nil, "ARTWORK")
+    InfoPanel.frame = column
+    return true
+end
 local drawnTitle
 function Frame.Build()
     Frame.builds = Frame.builds + 1
@@ -172,12 +182,7 @@ function Frame.Build()
     Frame.searchBox = search
     local note = region("EditBox", frame); note.multi = true; Frame.note = note
     for _, f in ipairs({frame.PortraitContainer, tick, search, note}) do frame.children[#frame.children + 1] = f end
-    -- The info column (UI/InfoPanel.lua) with its Dialog NineSlice and the item icon.
-    local column = region("Frame", frame)
-    column.art = region("Frame", column)
-    column.art.TopLeftCorner = column.art:CreateTexture()
-    column.icon = column:CreateTexture(nil, "ARTWORK")
-    InfoPanel.frame = column
+    search.Left, search.Middle, search.Right = search:CreateTexture(), search:CreateTexture(), search:CreateTexture()
     return frame
 end
 ItemTree = {Theme = Theme, Assets = Assets, UI = {Frame = Frame, InfoPanel = InfoPanel}}
@@ -274,7 +279,11 @@ tick.check:Hide(); assert(not fill.shown)
 local search = Frame.searchBox
 assert(search.skin == "EditBox" and search.opts.padInput == false and search.magnifier.alpha == 1)
 assert(search.border.alpha == 0 and not Frame.note.skin)
--- Info column: Dialog NineSlice faded for EUI's border, item icon squared.
+assert(search.Left.alpha == 0 and search.Middle.alpha == 0, "InputBoxTemplate edges came back")
+-- Info column: not there at the build; attached with the first page, then its
+-- Dialog NineSlice is faded for EUI's border and its item icon squared.
+assert(InfoPanel.frame == nil)
+InfoPanel.Attach(frame)
 local column = InfoPanel.frame
 assert(column.art.skin == "FadeNineSlice" and column.art.TopLeftCorner.alpha == 0 and column.icon.skin == "SquareIcon")
 -- Portrait: ring faded; an item page shows its icon square, another page the native portrait.

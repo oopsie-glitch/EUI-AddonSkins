@@ -25,6 +25,7 @@ local TOKENS = {
     ITEMTREE_COLOR_TEXT_DISABLED = {0.4, 0.4, 0.42, 1},
     ITEMTREE_COLOR_TEXT_SELECTED = "accent",
     ITEMTREE_COLOR_TEXT_SELECTED_MUTED = "accent",
+    ITEMTREE_COLOR_BAND_WORD = "accent",
     ITEMTREE_COLOR_STATE_HOVER = {1, 1, 1, 0.06},
     ITEMTREE_COLOR_STATE_SELECTED = "accent18",
     ITEMTREE_COLOR_STATE_FOCUS = "accent",
@@ -76,6 +77,8 @@ local function DefineSkin()
         local checks = setmetatable({}, {__mode = "k"})
         local boxes = setmetatable({}, {__mode = "k"})
         local fills = {}
+        local hovers = {}
+        local accented = setmetatable({}, {__mode = "k"})
         local edges = setmetatable({}, {__mode = "k"})
         local portrait
         local SkinCheck
@@ -132,7 +135,22 @@ local function DefineSkin()
                 local r, g, b = S.GetAccentColor()
                 for _, line in ipairs(underlines) do line:SetColorTexture(r, g, b, 1) end
                 for _, fill in ipairs(fills) do fill:SetColorTexture(r, g, b, 1) end
+                for _, hover in ipairs(hovers) do hover:SetColorTexture(r, g, b, 0.15) end
+                for _, paint in pairs(accented) do paint() end
             end
+        end
+
+        -- A hover in the accent colour, where the template's gold glow was.
+        local function Hover(tab, anchor)
+            local hover = tab:CreateTexture(nil, "HIGHLIGHT")
+            if anchor then
+                hover:SetPoint("TOPLEFT", anchor, "TOPLEFT", 0, 0)
+                hover:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
+            else
+                hover:SetAllPoints(tab)
+            end
+            hovers[#hovers + 1] = hover
+            return hover
         end
 
         local function Underline(tab)
@@ -151,6 +169,7 @@ local function DefineSkin()
         local function FlatTab(tab)
             if tabs[tab] or not H.Allowed(tab) or not tab.CreateTexture then return end
             for _, edge in ipairs(type(tab.edges) == "table" and tab.edges or {}) do H.Fade(H.Texture(edge)) end
+            Hover(tab)
             local line = Underline(tab)
             tabs[tab] = line
             local label = tab.label
@@ -174,6 +193,7 @@ local function DefineSkin()
             plate:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, 0)
             plate:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, 0)
             plate:SetHeight(TAB_HEIGHT)
+            Hover(tab, plate)
             plate:SetColorTexture(TAB_PLATE[1], TAB_PLATE[2], TAB_PLATE[3], TAB_PLATE[4])
             tabs[tab] = Underline(tab)
             local text = tab.tabText or tab.Text
@@ -222,6 +242,24 @@ local function DefineSkin()
             S.Button(button, keep)
             local label = button.GetFontString and button:GetFontString()
             if H.Allowed(label) and S.Font then S.Font(label) end
+            -- A labelled button's gold label (Recent, Add note) and its glyph:
+            -- the accent while enabled, grey while not.
+            if H.Allowed(label) and (label:GetText() or "") ~= "" then
+                local glyph = H.Texture(button.icon)
+                local function paint()
+                    local r, g, b = 0.5, 0.5, 0.5
+                    if not button.IsEnabled or button:IsEnabled() then
+                        r, g, b = 1, 0.82, 0
+                        if S.GetAccentColor then r, g, b = S.GetAccentColor() end
+                    end
+                    label:SetTextColor(r, g, b)
+                    if glyph then glyph:SetVertexColor(r, g, b, 1) end
+                end
+                accented[button] = paint
+                H.Script(button, "OnEnable", paint)
+                H.Script(button, "OnDisable", paint)
+                paint()
+            end
         end
 
         -- UIPanelButtonTemplate buttons (Recent, Add note, the band squares,

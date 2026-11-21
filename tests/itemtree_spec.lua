@@ -30,6 +30,8 @@ local function region(kind, parent)
     function f:SetVertexColor(r, g, b) self.tint = {r, g, b} end
     function f:GetTextColor() if self.color then return self.color[1], self.color[2], self.color[3] end end
     function f:GetFontString() return self.label end
+    function f:GetText() return self.text end
+    function f:IsEnabled() return self.enabled ~= false end
     function f:SetSize(w, h) self.width, self.height = w, h end
     function f:SetWidth(w) self.width = w end
     function f:GetEffectiveScale() return (self.parent and self.parent:GetEffectiveScale() or 1) * (self.scale or 1) end
@@ -166,7 +168,7 @@ function Frame.Build()
     for _, tab in ipairs(Frame.builtTabs) do frame.children[#frame.children + 1] = tab end
     recent.Left, recent.Middle, recent.Right = recent:CreateTexture(), recent:CreateTexture(), recent:CreateTexture()
     recent.icon = recent:CreateTexture(nil, "ARTWORK")
-    recent.label = fontString()
+    recent.label = fontString(); recent.label.text = "Recent"; recent.label:SetTextColor(1, 0.82, 0)
     recent.scripts.OnClick = function() return "native-recent" end
     Frame.recent = recent
     -- The portrait (template, round-masked by SetPortraitToTexture) and its ring.
@@ -282,6 +284,14 @@ view.label:SetTextColor(0.6, 0.6, 0.62); assert(not viewLine.shown)
 local recent = Frame.recent
 assert(recent.skin == "Button" and recent.icon.alpha == 1 and recent.Left.alpha == 0 and recent.label.skin == "Font")
 assert(recent.scripts.OnClick() == "native-recent")
+-- Its gold label and glyph take the accent; grey while disabled, accent again when enabled.
+assert(recent.label.color[2] == accent[2] and recent.icon.tint[2] == accent[2])
+recent.enabled = false; recent.scripts.OnDisable(recent); assert(recent.label.color[1] == 0.5)
+recent.enabled = nil; recent.scripts.OnEnable(recent); assert(recent.label.color[2] == accent[2])
+-- Hovers: tabs have an accent hover over their plate.
+local function hoverOf(f) for _, r in ipairs(f.regions) do if r.layer == "HIGHLIGHT" then return r end end end
+assert(hoverOf(tree) and hoverOf(tree).fill[2] == accent[2] and hoverOf(tree).fill[4] == 0.15)
+assert(hoverOf(Frame.viewTabs[1]) and hoverOf(Frame.viewTabs[1]).fill[2] == accent[2])
 
 -- Tick box: a frame later, EUI box with an accent fill that follows the tick.
 RunTimers()
@@ -350,6 +360,7 @@ accent = {0.9, 0.3, 0.1}; panel = {0.2, 0.2, 0.2}
 looks[1]()
 assert(colors.ITEMTREE_COLOR_TEXT_SELECTED.r == 0.9 and backing.fill[1] == 0.2)
 assert(Frame.builtTabs[2].Text.color[1] == 0.9 and Frame.builtTabs[1].Text.color[1] == 1)
+assert(Frame.recent.label.color[1] == 0.9)
 locked = true; panel = {0.3, 0.3, 0.3}; looks[1](); locked = false
 assert(backing.fill[1] == 0.2)
 events.PLAYER_REGEN_ENABLED.scripts.OnEvent(events.PLAYER_REGEN_ENABLED)

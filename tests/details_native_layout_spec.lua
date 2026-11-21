@@ -216,6 +216,12 @@ if os.getenv("DETAILS_LAYOUT_BENCH") then
     collectgarbage("collect")
     print(("LAYOUT_BENCH warm_refreshes=1000 median_ms=%.3f frame_growth=%d hook_growth=%d title_writes=%d retained_delta_KiB=%.3f"):format(
         samples[3],objects-objectCount,hooks-hookCount,writes.title-titleWrites,collectgarbage("count")-heap))
+    local refresh={}
+    for trial=1,5 do
+        local start=os.clock();for _=1,1000 do P.Register(look) end;refresh[trial]=(os.clock()-start)*1000
+    end
+    table.sort(refresh)
+    print(("ACCENT_DEFAULT_BENCH refreshes=1000 median_ms=%.3f added_ui_objects=%d added_hooks=%d"):format(refresh[3],objects-objectCount,hooks-hookCount))
     return
 end
 if os.getenv("DETAILS_LAYOUT_REPRO") then
@@ -233,6 +239,7 @@ colorEqual(selected.title.textColor,{accent[1],accent[2],accent[3],1})
 selected.attribute_text.text_color={.8,.21,.34,.53}
 timers={};Native(selected.AttributeMenu,selected);flushTimers()
 colorEqual(selected.title.textColor,selected.attribute_text.text_color)
+D.instances[#D.instances+1]=selected
 local beforeColor, beforeHooks, beforeObjects=selected.title.colorWrites,hooks,objects
 accent={.68,.37,.15}
 for _=1,1000 do P.Refresh(look) end

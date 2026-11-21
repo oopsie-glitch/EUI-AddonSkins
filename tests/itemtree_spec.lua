@@ -398,6 +398,12 @@ assert(not own.shown and Frame.portrait.alpha == 1)
 
 -- ItemTree_Professions loads after the skin activated: its border is hooked on its ADDON_LOADED.
 ItemTree.ProfessionsSkin = Skin
+-- Bar.Draw draws the rank bar and, last, the skill tag with its gold input-border pieces (shown).
+local Bar = {}
+function Bar.Draw(strip)
+    for _, piece in ipairs({strip.tag.left, strip.tag.middle, strip.tag.right}) do piece:Show() end
+end
+ItemTree.ProfessionsBar = Bar
 events.ADDON_LOADED.scripts.OnEvent(events.ADDON_LOADED, "ADDON_LOADED", "SomethingElse")
 events.ADDON_LOADED.scripts.OnEvent(events.ADDON_LOADED, "ADDON_LOADED", "ItemTree_Professions")
 -- Professions card: the bevel faded, a flat 1px edge in the card's own edge colour, the fill widened.
@@ -427,6 +433,9 @@ for _, r in ipairs(rank.regions) do if r.layer == "BACKGROUND" and r.sublevel ==
 assert(back and back.fill[4] == 0.85 and back.point[5] == -4 and back.width == 300)
 for _, r in ipairs(rank.regions) do assert(not (r.layer == "OVERLAY" and r.sublevel == 7), "a border on the bar") end
 assert(strip.tag.left.alpha == 0 and strip.tag.middle.alpha == 0 and strip.tag.right.alpha == 0)
+-- Bar.Draw shows the tag's pieces again; they are hidden after every draw.
+Bar.Draw(strip)
+assert(not strip.tag.left.shown and not strip.tag.middle.shown and not strip.tag.right.shown)
 -- The fill: the flipbook's rounded left cap is cropped off.
 local fill = rank:CreateTexture()
 function fill:GetTexCoord() local c = self.coords; return c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8] end

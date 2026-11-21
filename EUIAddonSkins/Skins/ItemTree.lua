@@ -675,6 +675,18 @@ local function DefineSkin()
                 H.Hook(skin, "ThreeSlice", FlatBarFrame)
                 H.Hook(skin, "Flipbook", FlatFill)
             end
+            -- The skill tag above the rank bar ("Blacksmithing 185/225") is drawn
+            -- inside Bar.Draw with a gold input-border edge: hidden after each draw.
+            local bar = it.ProfessionsBar
+            if type(bar) == "table" then
+                H.Hook(bar, "Draw", function(strip)
+                    local tag = type(strip) == "table" and rawget(strip, "tag") or nil
+                    if type(tag) ~= "table" then return end
+                    for _, piece in ipairs({tag.left, tag.middle, tag.right}) do
+                        if H.Texture(piece) then H.Fade(piece); piece:Hide() end
+                    end
+                end)
+            end
         end
         HookProfessions()
 

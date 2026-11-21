@@ -64,6 +64,35 @@ jobs:
           assert target.read_bytes() == fixed
           print('Confirmed: corrected runtime registers under the identical native source/load order')
           PY
+      - name: Reproduce old title overlap and compare identical layout workloads
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import subprocess, os, sys
+          target=Path('EUIAddonSkins/DetailsNative.lua')
+          fixed=target.read_bytes()
+          runner=Path('tests/run_lua.py').read_text()
+          start=runner.index('    for test in [')
+          end=runner.index(':\n',start)
+          runner=runner[:start]+"    for test in ['tests/details_native_layout_spec.lua']"+runner[end:]
+          env=dict(os.environ,DETAILS_NATIVE_SOURCE='/tmp/details-native-source/2efa4b10628e0e4a91c346138cf8325e81d0a43c')
+          with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/9fb9708a5a27132aea39b62524060f9515c2b630/EUIAddonSkins/DetailsNative.lua',timeout=30) as response:
+              old=response.read()
+          try:
+              target.write_bytes(old)
+              result=subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_REPRO='1'),capture_output=True,text=True)
+              assert result.returncode!=0 and 'REPRO: title and native toolbar overlap' in result.stderr,result.stdout+result.stderr
+              print('Confirmed: old registered skin overlaps title and toolbar under native placement')
+              print('Before layout correction:',flush=True)
+              subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          finally:
+              target.write_bytes(fixed)
+          subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_REPRO='1'),check=True)
+          print('After layout correction:',flush=True)
+          subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          assert target.read_bytes()==fixed
+          PY
       - name: Five-trial hosted comparison
         run: |
           for mode in unskinned legacy native; do

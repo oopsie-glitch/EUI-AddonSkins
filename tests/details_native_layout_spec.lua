@@ -105,7 +105,7 @@ assert(load("local _detalhes,SharedMedia,Details222=...; "..defaults))(D,media,{
 local function method(name,file)
     local body=assert((file or main):match("(function Details:"..name.."%s*%b().-)\nend"),name)
     local constants="local COORDS_LEFT_BALL_NO_ICON,COORDS_LEFT_CONNECTOR_NO_ICON,COORDS_LEFT_BALL,COORDS_LEFT_CONNECTOR,COORDS_RIGHT_BALL,COORDS_TOP_BACKGROUND,COORDS_BOTTOM_SIDE_BAR={0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1}\n"
-    assert(load("local Details,gump,SharedMedia,Details222,detailsFramework,tbuttons=...; "..constants..body.."\nend"))(D,{},media,{RowTexts=rowtexts,WindowSnap={RefreshGeometry=function()end}},framework,{})
+    assert(load("local Details,gump,SharedMedia,Details222,detailsFramework,tbuttons=...; local unpack=unpack or table.unpack; "..constants..body.."\nend"))(D,{},media,{RowTexts=rowtexts,WindowSnap={RefreshGeometry=function()end}},framework,{})
 end
 for _,name in ipairs({"GetMenuAnchorPoint","ToolbarMenuButtonsSize","ToolbarMenuSetButtons","ToolbarMenuButtons","MenuAnchor","LeftMenuAnchorSide","RefreshAttributeTextSize","AttributeMenu","RefreshTitleBar","SetBackdropTexture"}) do method(name) end
 method("SetBackgroundColor",read("class_instance.lua"));method("SetBackgroundAlpha",read("class_instance.lua"))
@@ -141,8 +141,10 @@ P.Register(look)
 local definition=assert(D.skins["Addonskins EUI"])
 local base=D.skins.Minimalistic
 assert(definition.icon_anchor_main[1]==base.icon_anchor_main[1] and definition.icon_anchor_plugins[2]==base.icon_anchor_plugins[2])
-assert(definition.instance_cprops.menu_anchor.side==base.instance_cprops.menu_anchor.side,"discarded coordinated native toolbar side")
-assert(definition.instance_cprops.attribute_text.anchor[1]==base.instance_cprops.attribute_text.anchor[1])
+if not os.getenv("DETAILS_LAYOUT_REPRO") and not os.getenv("DETAILS_LAYOUT_BENCH") then
+    assert(definition.instance_cprops.menu_anchor.side==base.instance_cprops.menu_anchor.side,"discarded coordinated native toolbar side")
+    assert(definition.instance_cprops.attribute_text.anchor[1]==base.instance_cprops.attribute_text.anchor[1])
+end
 local function instance()
     local i=copy(definition.instance_cprops);setmetatable(i,{__index=D});i.skin="Addonskins EUI"
     i.baseframe=frame();i.baseframe.width=380;i.baseframe.height=180
@@ -181,6 +183,22 @@ local function noOverlap(i)
 end
 local a,b=instance(),instance();D.instances={a,b}
 for _,i in ipairs({a,b})do P.Apply(i) end
+if os.getenv("DETAILS_LAYOUT_BENCH") then
+    a.menu_anchor.side=1;layout(a)
+    local samples={}
+    local objectCount,hookCount,titleWrites=objects,hooks,writes.title
+    for trial=1,5 do
+        collectgarbage("collect")
+        local start=os.clock();for _=1,1000 do P.Apply(a)end;samples[trial]=(os.clock()-start)*1000
+    end
+    table.sort(samples)
+    collectgarbage("collect");local heap=collectgarbage("count")
+    for _=1,1000 do P.Apply(a)end
+    collectgarbage("collect")
+    print(("LAYOUT_BENCH warm_refreshes=1000 median_ms=%.3f frame_growth=%d hook_growth=%d title_writes=%d retained_delta_KiB=%.3f"):format(
+        samples[3],objects-objectCount,hooks-hookCount,writes.title-titleWrites,collectgarbage("count")-heap))
+    return
+end
 if os.getenv("DETAILS_LAYOUT_REPRO") then
     -- Existing saved prototype profiles retain the old left-side setting.
     a.menu_anchor.side=1;layout(a);noOverlap(a);return

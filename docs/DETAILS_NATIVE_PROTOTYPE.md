@@ -68,3 +68,17 @@ The real TOC order, both GetSkin definitions, official Minimalistic definition, 
 All registration early exits now retain a bounded status. /euidetailsnative reports status, install-attempt count, Details version, IsLoaded and combat state. Persistent incompatibility, schema, collision, media or rejection reasons report once per reason. Optional EUI meter artwork is not required to register.
 
 This is a source-reproduced defect, not proof of the exact installed Forever version. The corrected entry still requires in-game confirmation.
+
+## Native title and toolbar layout correction
+
+The initial definition copied Minimalistic's atlas anchors but replaced its coordinated menu/title defaults with generic instance defaults. Those defaults assume the native title is disabled and put the toolbar on the left. Enabling the native title without preserving the working layout made the two overlap. icon_anchor_main and icon_anchor_plugins position the attribute/plugin icon, not the toolbar, and are preserved.
+
+The definition now copies the native template's menu_anchor, menu_anchor_down, toolbar_side, plugins_grow_direction, toolbar_icon_file and title anchor/side as initial native defaults. No numeric replacement toolbar offsets are introduced. Native selection applies them once; saved/customized instances are not silently migrated or reselected.
+
+The native RefreshAttributeTextSize subtracts a count-based button width but does not move a title past a left-side toolbar. A single prototype-scoped posthook fits the existing native FontString to the actual visible toolbar bounds, converting effective scales and keeping its native vertical placement. Buttons are only read. Font, size, text, timer, profile values and button geometry are not overwritten. Very narrow windows temporarily paint the title transparent when no space remains, restoring its previous alpha when space returns; native visibility and content remain intact. Long titles use the native bounded text region. Normal, bottom and hidden-button arrangements are respected. Native title anchors are released on switching away without overwriting newly applied native points.
+
+The hook runs on native title-layout changes, not row updates or timer ticks. Repeated unchanged cosmetic refreshes do not reanchor or resize the title. Original production helpers and PR #91 are unchanged.
+
+Material values remain derived from the unchanged historical GetMeterStyle sources: fallback body black at .75 alpha; header 27/255 RGB at alpha 1. Native SetBackgroundColor/SetBackgroundAlpha/SetBackdropTexture paths are exercised to verify one effective body fill, and native RefreshTitleBar applies the flat header. No extra material layer or new palette is added to guess at screenshot differences. Exact rendered parity still requires WoW screenshots.
+
+The source fixture runs native MenuAnchor, ToolbarSide, ToolbarMenuSetButtons, AttributeMenu, RefreshAttributeTextSize and surface setters across 432 geometry configurations, including narrow widths, scales, toolbar sides, sizes and visibility. Hosted anchor resolution is a model of UI geometry, not WoW rasterization or taint validation.

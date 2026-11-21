@@ -297,7 +297,7 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         local alpha = title.GetAlpha and title:GetAlpha()
         if Number(alpha) and title.SetAlpha then
             if width == 0 then
-                if entry.titleAlpha == nil then entry.titleAlpha = alpha end
+                if entry.titleAlpha == nil or alpha ~= 0 then entry.titleAlpha = alpha end
                 if alpha ~= 0 then title:SetAlpha(0) end
             elseif entry.titleAlpha ~= nil then
                 if alpha == 0 then title:SetAlpha(entry.titleAlpha) end

@@ -234,6 +234,13 @@ for _,key in ipairs({"menu_anchor","menu_anchor_down","menu_icons","menu_icons_s
 restored.baseframe.scale=a.baseframe.scale;restored.baseframe.width=a.baseframe.width
 layout(restored);noOverlap(restored)
 assert(restored.menu_icons_size==a.menu_icons_size and restored.menu_anchor.side==a.menu_anchor.side,"profile reconstruction lost native geometry")
+-- Native fade changes made while clipped become the latest restore value.
+a.baseframe.width=90;a.menu_anchor.side=1;a.menu_icons_size=1.4
+for index=1,6 do a.menu_icons[index]=true end
+layout(a);assert(a.title:GetAlpha()==0,"no-room title was auto-sized over controls")
+a.title:SetAlpha(.6);P.Apply(a);assert(a.title:GetAlpha()==0)
+a.baseframe.width=380;layout(a);assert(a.title:GetAlpha()==.6,"lost native alpha change while clipped")
+a.title:SetAlpha(1)
 layout(b);local bpoint={b.title:GetPoint(1)}
 a.title.text="user text";a.attribute_text.text_face="user-font";a.attribute_text.text_size=17
 layout(a);assert(a.title.text=="user text" and a.title.face=="user-font" and a.title.size==17)
@@ -250,6 +257,7 @@ assert(({a.title:GetPoint(1)})[2]==point[2],"switching away overwrote native tit
 print("PASS: native title/toolbar geometry across 432 configurations, native size/anchors, material RGBA, combat, independent windows and warm reuse")
 local samples={}
 a.skin="Addonskins EUI";layout(a)
+local measuredObjects,measuredWrites=objects,writes.title
 for trial=1,5 do local start=os.clock();for _=1,1000 do P.Apply(a)end;samples[trial]=(os.clock()-start)*1000 end
 table.sort(samples)
-print(("BENCH native source layout 1000 warm cosmetics median_ms=%.3f extra_hooks=%d frame_growth=%d title_geometry_writes=%d"):format(samples[3],hooks,objects-beforeObjects,writes.title-beforeWrites))
+print(("BENCH native source layout 1000 warm cosmetics median_ms=%.3f extra_hooks=%d frame_growth=%d title_geometry_writes=%d"):format(samples[3],hooks,objects-measuredObjects,writes.title-measuredWrites))

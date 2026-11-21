@@ -27,6 +27,7 @@ local function region(kind, parent)
     function f:SetShown(on) self.shown = on end
     function f:IsShown() return self.shown end
     function f:SetTextColor(r, g, b) self.color = {r, g, b} end
+    function f:SetVertexColor(r, g, b) self.tint = {r, g, b} end
     function f:GetTextColor() if self.color then return self.color[1], self.color[2], self.color[3] end end
     function f:GetFontString() return self.label end
     function f:SetSize(w, h) self.width, self.height = w, h end
@@ -266,8 +267,11 @@ assert(tree.Left.alpha == 0 and tree.Right.alpha == 0 and tree.icon.alpha == 1 a
 assert(tree.Text.skin == "Font")
 local treeLine, bossLine = tree.regions[#tree.regions], boss.regions[#boss.regions]
 assert(treeLine.shown and not bossLine.shown and treeLine.fill[2] == accent[2])
+-- Labels: the open tab white, the others (and their glyphs) in the accent colour.
+assert(tree.Text.color[1] == 1 and tree.Text.color[2] == 1 and boss.Text.color[2] == accent[2] and boss.icon.tint[2] == accent[2])
 Frame.SelectTab("BossLoot")
 assert(bossLine.shown and not treeLine.shown)
+assert(boss.Text.color[2] == 1 and boss.icon.tint[2] == 1 and tree.Text.color[2] == accent[2])
 -- The flat view tab: outline faded, underline follows its label's title colour.
 local view = Frame.viewTabs[1]
 local viewLine = view.regions[#view.regions]
@@ -345,6 +349,7 @@ assert(late.skin == "Button")
 accent = {0.9, 0.3, 0.1}; panel = {0.2, 0.2, 0.2}
 looks[1]()
 assert(colors.ITEMTREE_COLOR_TEXT_SELECTED.r == 0.9 and backing.fill[1] == 0.2)
+assert(Frame.builtTabs[2].Text.color[1] == 0.9 and Frame.builtTabs[1].Text.color[1] == 1)
 locked = true; panel = {0.3, 0.3, 0.3}; looks[1](); locked = false
 assert(backing.fill[1] == 0.2)
 events.PLAYER_REGEN_ENABLED.scripts.OnEvent(events.PLAYER_REGEN_ENABLED)

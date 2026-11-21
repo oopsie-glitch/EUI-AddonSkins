@@ -180,10 +180,24 @@ local function DefineSkin()
             if H.Allowed(text) and S.Font then S.Font(text) end
         end
 
+        -- The open tab's label white, the others in EUI's accent (the template
+        -- draws them gold); ItemTree tints each tab's glyph from its label, so
+        -- the glyph follows.
         local function TopSelection()
             local current = type(Frame.Tab) == "function" and Frame.Tab() or nil
+            local ar, ag, ab = 1, 0.82, 0
+            if S.GetAccentColor then ar, ag, ab = S.GetAccentColor() end
             for _, tab in ipairs(type(Frame.builtTabs) == "table" and Frame.builtTabs or {}) do
-                if tabs[tab] then tabs[tab]:SetShown(tab.tabName == current) end
+                if tabs[tab] then
+                    local open = tab.tabName == current
+                    tabs[tab]:SetShown(open)
+                    local r, g, b = 1, 1, 1
+                    if not open then r, g, b = ar, ag, ab end
+                    local text = tab.tabText or tab.Text
+                    if H.Allowed(text) then text:SetTextColor(r, g, b) end
+                    local glyph = H.Texture(tab.icon)
+                    if glyph then glyph:SetVertexColor(r, g, b, 1) end
+                end
             end
         end
 
@@ -434,6 +448,7 @@ local function DefineSkin()
             SetTokens()
             SetFonts()
             PaintBacking()
+            TopSelection()
         end
 
         local function Refresh()

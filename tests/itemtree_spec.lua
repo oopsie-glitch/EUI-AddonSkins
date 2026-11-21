@@ -129,6 +129,13 @@ function InfoPanel.Attach(region)
     InfoPanel.frame = column
     return true
 end
+function InfoPanel.NewSurface(region)
+    local column = CreateFrame("Frame", nil, region)
+    column.art = CreateFrame("Frame", nil, column)
+    column.art.TopLeftCorner = column.art:CreateTexture()
+    column.icon = column:CreateTexture(nil, "ARTWORK")
+    return {frame = column}
+end
 local drawnTitle
 function Frame.Build()
     Frame.builds = Frame.builds + 1
@@ -228,7 +235,7 @@ function Skin.Border(frame, w, h, style)
     pieces.FACE:SetPoint("TOPLEFT", frame, "TOPLEFT", 3, -3); pieces.FACE:Show()
     return true
 end
-ItemTree = {Theme = Theme, Assets = Assets, ProfessionsSkin = Skin, UI = {Frame = Frame, InfoPanel = InfoPanel, Tree = Tree}}
+ItemTree = {Theme = Theme, Assets = Assets, UI = {Frame = Frame, InfoPanel = InfoPanel, Tree = Tree}}
 
 local S = {}
 for _, name in ipairs({"Panel", "CloseButton", "Button", "Font", "FadeNineSlice", "SquareIcon", "EditBox", "ScrollBar"}) do
@@ -376,6 +383,10 @@ assert(not own.shown and Frame.portrait.alpha == 1)
 Frame.Open("zone:12")
 assert(not own.shown and Frame.portrait.alpha == 1)
 
+-- ItemTree_Professions loads after the skin activated: its border is hooked on its ADDON_LOADED.
+ItemTree.ProfessionsSkin = Skin
+events.ADDON_LOADED.scripts.OnEvent(events.ADDON_LOADED, "ADDON_LOADED", "SomethingElse")
+events.ADDON_LOADED.scripts.OnEvent(events.ADDON_LOADED, "ADDON_LOADED", "ItemTree_Professions")
 -- Professions card: the bevel faded, a flat 1px edge in the card's own edge colour, the fill widened.
 local card = CreateFrame("Frame", nil, frame)
 Skin.Border(card, 200, 80, {edge = "ITEMTREE_COLOR_PROFESSION_CARD_EDGE", fill = "ITEMTREE_COLOR_PROFESSION_CARD_FILL"})
@@ -395,12 +406,12 @@ assert(count == 4, "edges made twice")
 local boss = CreateFrame("Frame", nil, frame)
 local bar = CreateFrame("EventFrame", nil, boss)
 bar.kind = "EventFrame"; bar.Track, bar.Back, bar.Forward = {}, {}, {}
-local creature = CreateFrame("Frame", nil, boss)
-creature.art = CreateFrame("Frame", nil, creature)
-creature.art.TopLeftCorner = creature.art:CreateTexture()
-creature.icon = creature:CreateTexture(nil, "ARTWORK")
 Frame.SelectTab("BossLoot")
-assert(bar.skin == "ScrollBar" and creature.art.skin == "FadeNineSlice" and creature.art.TopLeftCorner.alpha == 0)
+assert(bar.skin == "ScrollBar")
+-- The creature column, built when a boss is first chosen (InfoPanel.NewSurface), after that walk.
+local creatureRegion = CreateFrame("Frame", nil, boss)
+local creature = InfoPanel.NewSurface(creatureRegion).frame
+assert(creature.art.skin == "FadeNineSlice" and creature.art.TopLeftCorner.alpha == 0)
 Frame.SelectTab("Tree")
 -- The ring round the list's creature portraits is faded as it is applied.
 local ring = boss:CreateTexture(nil, "OVERLAY"); Assets.Apply(ring, "PORTRAIT_RING"); assert(ring.alpha == 0)

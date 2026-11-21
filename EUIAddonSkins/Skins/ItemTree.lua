@@ -625,6 +625,17 @@ local function DefineSkin()
                 if H.Allowed(it.UI.Tree.search) then SkinEditBox(it.UI.Tree.search) end
             end)
         end
+        -- Boss loot's creature column: InfoPanel.NewSurface(region) builds it
+        -- when a boss is first chosen; its column frame is a child of region.
+        if type(it.UI.InfoPanel) == "table" then
+            H.Hook(it.UI.InfoPanel, "NewSurface", function(region)
+                if not H.Allowed(region) then return end
+                if Locked() then pending = true; return end
+                for _, child in ipairs(H.Children(region)) do
+                    if H.Allowed(child) and type(child.art) == "table" and child.art.TopLeftCorner then SkinColumn(child) end
+                end
+            end)
+        end
         -- The info column is built when the first page needs it (InfoPanel.Attach).
         if type(it.UI.InfoPanel) == "table" then
             H.Hook(it.UI.InfoPanel, "Attach", function()
@@ -639,7 +650,14 @@ local function DefineSkin()
         end
         local recovery = CreateFrame("Frame")
         recovery:RegisterEvent("PLAYER_REGEN_ENABLED")
-        recovery:SetScript("OnEvent", function()
+        -- ItemTree_Professions is an addon of its own and loads after ItemTree,
+        -- so usually after this skin has activated: hook its border then.
+        recovery:RegisterEvent("ADDON_LOADED")
+        recovery:SetScript("OnEvent", function(_, event, name)
+            if event == "ADDON_LOADED" then
+                if name == "ItemTree_Professions" and ns.IsEnabled(module) then HookProfessions() end
+                return
+            end
             if pending or looksPending then Refresh() end
         end)
         module.refresh = Refresh

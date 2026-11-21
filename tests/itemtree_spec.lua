@@ -34,6 +34,7 @@ local function region(kind, parent)
     function f:IsEnabled() return self.enabled ~= false end
     function f:SetSize(w, h) self.width, self.height = w, h end
     function f:SetWidth(w) self.width = w end
+    function f:ClearAllPoints() self.point = nil end
     function f:GetEffectiveScale() return (self.parent and self.parent:GetEffectiveScale() or 1) * (self.scale or 1) end
     function f:SetTexture(path) self.path = path end
     function f:SetTexCoord(...) self.coords = {...} end
@@ -88,9 +89,11 @@ local colors = {
     ITEMTREE_COLOR_MONEY_GOLD = {r = 1, g = 0.84, b = 0, a = 1, hex = "FFD700"},
     ITEMTREE_COLOR_PROFESSION_CARD_FILL = {r = 0.25, g = 0.18, b = 0.12, a = 1, hex = "3F2D1E"},
     ITEMTREE_COLOR_PROFESSION_CARD_GOLD = {r = 1, g = 0.83, b = 0.42, a = 1, hex = "FFD36B"},
+    ITEMTREE_COLOR_PROFESSION_CARD_EDGE = {r = 0.43, g = 0.32, b = 0.21, a = 1, hex = "6E5236"},
     ITEMTREE_FADE_BUTTON = {{r = 0.23, g = 0.14, b = 0.11, a = 1, hex = "3A231D"}, {r = 0.12, g = 0.07, b = 0.06, a = 1, hex = "1E120F"}},
 }
 local epic, new, money = colors.ITEMTREE_COLOR_QUALITY_EPIC, colors.ITEMTREE_COLOR_SEMANTIC_NEW, colors.ITEMTREE_COLOR_MONEY_GOLD
+local cardFill, cardGold = colors.ITEMTREE_COLOR_PROFESSION_CARD_FILL, colors.ITEMTREE_COLOR_PROFESSION_CARD_GOLD
 local OWN = {ITEMTREE_FONT_TITLE = "Fonts/FRIZQT__.TTF", ITEMTREE_FONT_BODY = "Fonts/ARIALN.TTF"}
 local Theme = {colors = colors, OWN_FONTS = OWN,
     -- body as ItemTree's ChooseFonts leaves it on a Latin client; title as a Korean client's game face
@@ -210,10 +213,25 @@ function Tree.Attach(region)
     Tree.search = box
     return true
 end
-ItemTree = {Theme = Theme, Assets = Assets, UI = {Frame = Frame, InfoPanel = InfoPanel, Tree = Tree}}
+-- ItemTree_Professions' card border (UI/Skin.lua Skin.Border): eight bevel pieces and a face.
+local Skin = {BORDER_ORDER = {"TL", "TOP", "TR", "LEFT", "RIGHT", "BL", "BOTTOM", "BR"}}
+function Skin.Colour(key) return Theme.ColorTable(key) end
+function Skin.Border(frame, w, h, style)
+    local pieces = rawget(frame, "borderPieces")
+    if not pieces then
+        pieces = {}
+        for _, name in ipairs(Skin.BORDER_ORDER) do pieces[name] = frame:CreateTexture(nil, "BACKGROUND", nil, -3) end
+        pieces.FACE = frame:CreateTexture(nil, "BACKGROUND", nil, -6)
+        frame.borderPieces = pieces
+    end
+    for _, name in ipairs(Skin.BORDER_ORDER) do pieces[name]:Show() end
+    pieces.FACE:SetPoint("TOPLEFT", frame, "TOPLEFT", 3, -3); pieces.FACE:Show()
+    return true
+end
+ItemTree = {Theme = Theme, Assets = Assets, ProfessionsSkin = Skin, UI = {Frame = Frame, InfoPanel = InfoPanel, Tree = Tree}}
 
 local S = {}
-for _, name in ipairs({"Panel", "CloseButton", "Button", "Font", "FadeNineSlice", "SquareIcon", "EditBox"}) do
+for _, name in ipairs({"Panel", "CloseButton", "Button", "Font", "FadeNineSlice", "SquareIcon", "EditBox", "ScrollBar"}) do
     S[name] = function(f, options)
         assert(not locked, "cosmetic write in combat: " .. name)
         calls = calls + 1
@@ -252,9 +270,8 @@ assert(colors.ITEMTREE_COLOR_BORDER_GOLD ~= GOLD and GOLD.r == 0.79, "original t
 assert(colors.ITEMTREE_COLOR_TEXT_SELECTED.g == accent[2] and colors.ITEMTREE_LIST_STATE_SELECTED.a == 0.18)
 assert(Theme.Hex("ITEMTREE_COLOR_TEXT_TITLE") == "ffffff")
 assert(Theme.fonts.ITEMTREE_FONT_BODY == "EUI.ttf" and Theme.fonts.ITEMTREE_FONT_TITLE == "Fonts/2002.TTF")
--- Professions: cards neutral, gold marks in the accent; fades are two-stop pairs.
-assert(colors.ITEMTREE_COLOR_PROFESSION_CARD_FILL.r == 0.11 and colors.ITEMTREE_COLOR_PROFESSION_CARD_FILL.hex == nil)
-assert(colors.ITEMTREE_COLOR_PROFESSION_CARD_GOLD.g == accent[2])
+-- Professions: the cards keep ItemTree's colours (state: recommended, locked); fades are two-stop pairs.
+assert(colors.ITEMTREE_COLOR_PROFESSION_CARD_FILL == cardFill and colors.ITEMTREE_COLOR_PROFESSION_CARD_GOLD == cardGold)
 local fade = colors.ITEMTREE_FADE_BUTTON
 assert(#fade == 2 and fade[1].r == 0.18 and fade[2].r == 0.1 and fade[1].hex == nil)
 assert(colors.ITEMTREE_COLOR_QUALITY_EPIC == epic and colors.ITEMTREE_COLOR_SEMANTIC_NEW == new and colors.ITEMTREE_COLOR_MONEY_GOLD == money)
@@ -359,6 +376,35 @@ assert(not own.shown and Frame.portrait.alpha == 1)
 Frame.Open("zone:12")
 assert(not own.shown and Frame.portrait.alpha == 1)
 
+-- Professions card: the bevel faded, a flat 1px edge in the card's own edge colour, the fill widened.
+local card = CreateFrame("Frame", nil, frame)
+Skin.Border(card, 200, 80, {edge = "ITEMTREE_COLOR_PROFESSION_CARD_EDGE", fill = "ITEMTREE_COLOR_PROFESSION_CARD_FILL"})
+local pieces = card.borderPieces
+assert(pieces.TL.alpha == 0 and pieces.BOTTOM.alpha == 0 and pieces.FACE.alpha == 1)
+local px = 768 / 1080
+assert(math.abs(pieces.FACE.point[4] - px) < 1e-9 and math.abs(pieces.FACE.width - (200 - 2 * px)) < 1e-9)
+local edges = {}
+for _, r in ipairs(card.regions) do if r.sublevel == -2 then edges[#edges + 1] = r end end
+assert(#edges == 4 and edges[1].fill[1] == 0.43 and math.abs(edges[1].height - px) < 1e-9 and edges[1].width == 200)
+assert(math.abs(edges[4].point[4] - (200 - px)) < 1e-9)
+Skin.Border(card, 200, 80, {edge = "ITEMTREE_COLOR_PROFESSION_CARD_EDGE"})
+local count = 0; for _, r in ipairs(card.regions) do if r.sublevel == -2 then count = count + 1 end end
+assert(count == 4, "edges made twice")
+
+-- Boss loot, built when its tab is first selected: EUI scroll bar, creature column.
+local boss = CreateFrame("Frame", nil, frame)
+local bar = CreateFrame("EventFrame", nil, boss)
+bar.kind = "EventFrame"; bar.Track, bar.Back, bar.Forward = {}, {}, {}
+local creature = CreateFrame("Frame", nil, boss)
+creature.art = CreateFrame("Frame", nil, creature)
+creature.art.TopLeftCorner = creature.art:CreateTexture()
+creature.icon = creature:CreateTexture(nil, "ARTWORK")
+Frame.SelectTab("BossLoot")
+assert(bar.skin == "ScrollBar" and creature.art.skin == "FadeNineSlice" and creature.art.TopLeftCorner.alpha == 0)
+Frame.SelectTab("Tree")
+-- The ring round the list's creature portraits is faded as it is applied.
+local ring = boss:CreateTexture(nil, "OVERLAY"); Assets.Apply(ring, "PORTRAIT_RING"); assert(ring.alpha == 0)
+
 -- Warm: the build is not repeated, nothing new is made or hooked.
 local warm = {calls, frames, textures, hooks}
 for _ = 1, 20 do
@@ -396,6 +442,6 @@ local other = frame:CreateTexture(nil, "BORDER")
 Assets.Apply(other, "INFO_FRAME_EDGE_TOP"); module.refresh(); looks[1](); RunTimers()
 assert(calls == before and other.alpha == 1)
 
-print("PASS: ItemTree EUI tokens before the build (quality/semantic/money kept, no shared tables mutated), EUI font (localized faces kept), window chrome, EUI tabs with accent underline, template and plate buttons keep their glyph, EUI tick boxes, search boxes, info column border and square item icons, combat, theme and disabled skin")
+print("PASS: ItemTree EUI tokens before the build (quality/semantic/money kept, no shared tables mutated), EUI font (localized faces kept), window chrome, EUI tabs with accent underline, template and plate buttons keep their glyph, EUI tick boxes, search boxes, info column border and square item icons, flat 1px Professions card edges, Boss loot scroll bars and creature column, combat, theme and disabled skin")
 for _, key in ipairs(globals) do _G[key] = saved[key] end
 end

@@ -44,23 +44,12 @@ local TOKENS = {
     -- Boss loot's level bands
     ITEMTREE_COLOR_BAND_FILL = {0.14, 0.14, 0.15, 1},
     ITEMTREE_COLOR_BAND_EDGE = {0.22, 0.22, 0.24, 1},
-    -- The Professions tab (ItemTree_Professions): cards, level bands, tags and
-    -- route marks. The locked cards keep a muted red, so locked still reads.
-    ITEMTREE_COLOR_PROFESSION_CARD_FILL = {0.11, 0.11, 0.12, 1},
-    ITEMTREE_COLOR_PROFESSION_CARD_EDGE = {0.28, 0.28, 0.3, 1},
-    ITEMTREE_COLOR_PROFESSION_HEADER_FILL = {0.14, 0.14, 0.15, 1},
-    ITEMTREE_COLOR_PROFESSION_HEADER_EDGE = {0.32, 0.32, 0.34, 1},
+    -- The Professions tab (ItemTree_Professions): its pane surfaces follow
+    -- EUI. Its cards, level bands, tags and route marks keep ItemTree's own
+    -- colours (they carry state: recommended, locked); only their borders
+    -- become EUI's flat 1px edge (see FlatBorder).
     ITEMTREE_COLOR_PROFESSION_PANEL_FILL = "panel",
     ITEMTREE_COLOR_PROFESSION_TOP_FILL = "inset",
-    ITEMTREE_COLOR_PROFESSION_LOCKED_FILL = {0.15, 0.09, 0.09, 1},
-    ITEMTREE_COLOR_PROFESSION_LOCKED_EDGE = {0.4, 0.2, 0.18, 1},
-    ITEMTREE_COLOR_PROFESSION_LOCKED_GOLD = "accent",
-    ITEMTREE_COLOR_PROFESSION_CARD_GOLD = "accent",
-    ITEMTREE_COLOR_PROFESSION_ROUTE_GOLD = "accent",
-    ITEMTREE_COLOR_PROFESSION_BAR_SPEC = "accent",
-    ITEMTREE_COLOR_PROFESSION_BAR_TICK = {0.6, 0.6, 0.62, 1},
-    ITEMTREE_COLOR_PROFESSION_TAG_FILL = {0.08, 0.08, 0.09, 0.96},
-    ITEMTREE_COLOR_PROFESSION_ADD_FILL = {1, 1, 1, 0.04},
 }
 
 -- Two-stop fades (a pair of colours): ItemTree's brown header and red button
@@ -78,6 +67,8 @@ local FADE_ASSETS = {
     INFO_FRAME_EDGE_LEFT = true, INFO_FRAME_EDGE_RIGHT = true,
     -- the search boxes' input border (S.EditBox draws EUI's)
     INPUT_BORDER_LEFT = true, INPUT_BORDER_RIGHT = true, INPUT_BORDER_MIDDLE = true,
+    -- the bevelled ring round creature portraits (Boss loot's lists)
+    PORTRAIT_RING = true,
 }
 -- The red panel button plate: its button gets EUI's button.
 local BUTTON_ASSETS = {BUTTON_UP = true, BUTTON_DOWN = true}
@@ -106,9 +97,12 @@ local function DefineSkin()
         local fills = {}
         local hovers = {}
         local accented = setmetatable({}, {__mode = "k"})
+        local scrolls = setmetatable({}, {__mode = "k"})
+        local borders = setmetatable({}, {__mode = "k"})
         local edges = setmetatable({}, {__mode = "k"})
         local portrait
         local SkinCheck
+        local SkinColumn
         local underlines = {}
         local fontSet
         local waiting = setmetatable({}, {__mode = "k"})
@@ -328,6 +322,12 @@ local function DefineSkin()
                         SkinCheck(child)
                     elseif kind == "EditBox" then
                         SkinEditBox(child)
+                    elseif child.Track and child.Back and child.Forward and not scrolls[child] and S.ScrollBar then
+                        -- MinimalScrollBar (Boss loot's lists)
+                        scrolls[child] = true
+                        S.ScrollBar(child)
+                    elseif type(child.art) == "table" and child.art.TopLeftCorner and child.icon then
+                        SkinColumn(child)
                     end
                     if kind ~= "PlayerModel" and kind ~= "ModelScene" then Walk(child, depth + 1) end
                 end
@@ -413,11 +413,10 @@ local function DefineSkin()
         -- fill and border frame take its place.
         -- The item info column: its Dialog NineSlice goes for EUI's border, and
         -- its item icon is cropped square (ItemTree's quality frame stays).
-        local function SkinInfo()
-            local info = it.UI.InfoPanel
-            local column = type(info) == "table" and info.frame
-            if done.info or not H.Allowed(column) then return end
-            done.info = true
+        local columns = setmetatable({}, {__mode = "k"})
+        function SkinColumn(column)
+            if columns[column] or not H.Allowed(column) then return end
+            columns[column] = true
             local art = column.art
             if H.Allowed(art) then
                 if S.FadeNineSlice then S.FadeNineSlice(art) end
@@ -430,6 +429,13 @@ local function DefineSkin()
                 S.Panel(edge, {noBg = true})
             end
             if H.Texture(column.icon) and S.SquareIcon then S.SquareIcon(column.icon) end
+        end
+        -- The item column (UI/InfoPanel.lua); Boss loot's creature column is a
+        -- surface InfoPanel builds the same way, found by the walk.
+        local function SkinInfo()
+            local info = it.UI.InfoPanel
+            local column = type(info) == "table" and info.frame
+            if H.Allowed(column) then SkinColumn(column) end
         end
 
         -- The portrait: ItemTree draws it round (SetPortraitToTexture for an
@@ -552,8 +558,65 @@ local function DefineSkin()
         SetTokens()
         SetFonts()
         H.Hook(it.Assets, "Apply", Applied)
-        H.Hook(Frame, "SelectTab", function() TopSelection(); Portrait() end)
+        H.Hook(Frame, "SelectTab", function()
+            TopSelection(); Portrait()
+            if done.main and not Locked() then SkinParts() end
+        end)
         H.Hook(Frame, "Open", Portrait)
+        -- ItemTree_Professions draws each card's border from the client's
+        -- tooltip art (ProfessionsSkin.Border): a soft 7px bevel. After each
+        -- draw the bevel is faded, a flat edge one physical pixel wide is drawn
+        -- in the card's own edge colour and the fill is widened to meet it.
+        local function FlatBorder(frame, w, h, style)
+            local skin = it.ProfessionsSkin
+            if type(skin) ~= "table" or not H.Allowed(frame) or not frame.CreateTexture then return end
+            w, h = tonumber(w), tonumber(h)
+            if not (w and h and w > 0 and h > 0) then return end
+            style = type(style) == "table" and style or {}
+            local pieces = rawget(frame, style.store and (style.store .. "Border") or "borderPieces")
+            if type(pieces) ~= "table" then return end
+            for _, name in ipairs(type(skin.BORDER_ORDER) == "table" and skin.BORDER_ORDER or {}) do
+                if H.Texture(pieces[name]) then H.Fade(pieces[name]) end
+            end
+            local px = Pixel(frame)
+            local face = H.Texture(pieces.FACE)
+            if face and face:IsShown() then
+                face:ClearAllPoints()
+                face:SetPoint("TOPLEFT", frame, "TOPLEFT", px, -px)
+                face:SetSize(math.max(0, w - 2 * px), math.max(0, h - 2 * px))
+            end
+            local lines = borders[frame]
+            if not lines then
+                lines = {}
+                for i = 1, 4 do
+                    local line = frame:CreateTexture(nil, "BACKGROUND", nil, -2)
+                    if line.SetSnapToPixelGrid then line:SetSnapToPixelGrid(false) end
+                    if line.SetTexelSnappingBias then line:SetTexelSnappingBias(0) end
+                    lines[i] = line
+                end
+                borders[frame] = lines
+            end
+            local edge = type(skin.Colour) == "function" and skin.Colour(style.edge) or nil
+            local spots = {{0, 0, w, px}, {0, -(h - px), w, px}, {0, 0, px, h}, {w - px, 0, px, h}}
+            for i, line in ipairs(lines) do
+                if edge then
+                    local s = spots[i]
+                    line:ClearAllPoints()
+                    line:SetPoint("TOPLEFT", frame, "TOPLEFT", s[1], s[2])
+                    line:SetSize(s[3], s[4])
+                    line:SetColorTexture(edge.r, edge.g, edge.b, edge.a or 1)
+                    line:Show()
+                else
+                    line:Hide()
+                end
+            end
+        end
+        local function HookProfessions()
+            local skin = it.ProfessionsSkin
+            if type(skin) == "table" then H.Hook(skin, "Border", FlatBorder) end
+        end
+        HookProfessions()
+
         -- The tree pane is built when the first page needs it (Tree.Attach),
         -- with its own search box ("Search sources").
         if type(it.UI.Tree) == "table" then

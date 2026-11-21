@@ -235,6 +235,15 @@ function Skin.Border(frame, w, h, style)
     pieces.FACE:SetPoint("TOPLEFT", frame, "TOPLEFT", 3, -3); pieces.FACE:Show()
     return true
 end
+function Skin.ThreeSlice(frame, key, x, y, w, h, store)
+    local pieces = rawget(frame, store)
+    if not pieces then
+        pieces = {LEFT = frame:CreateTexture(), MIDDLE = frame:CreateTexture(), RIGHT = frame:CreateTexture()}
+        frame[store] = pieces
+    end
+    for _, piece in pairs(pieces) do piece:Show() end
+    return true
+end
 ItemTree = {Theme = Theme, Assets = Assets, UI = {Frame = Frame, InfoPanel = InfoPanel, Tree = Tree}}
 
 local S = {}
@@ -399,6 +408,16 @@ for _, r in ipairs(card.regions) do if r.sublevel == -2 then edges[#edges + 1] =
 assert(#edges == 4 and edges[1].fill[1] == 0.43 and math.abs(edges[1].height - px) < 1e-9 and edges[1].width == 200)
 assert(math.abs(edges[4].point[4] - (200 - px)) < 1e-9)
 Skin.Border(card, 200, 80, {edge = "ITEMTREE_COLOR_PROFESSION_CARD_EDGE"})
+-- The rank bar: the client's gold bar frame (ThreeSlice PROFESSION_BAR_FRAME) faded for a flat 1px black edge.
+local rank = CreateFrame("Frame", nil, frame)
+Skin.ThreeSlice(rank, "PROFESSION_BAR_FRAME", 0, 4, 300, 14, "framePieces", "OVERLAY", 0)
+assert(rank.framePieces.LEFT.alpha == 0 and rank.framePieces.MIDDLE.alpha == 0)
+local barEdges = {}
+for _, r in ipairs(rank.regions) do if r.layer == "OVERLAY" and r.sublevel == 7 then barEdges[#barEdges + 1] = r end end
+assert(#barEdges == 4 and barEdges[1].fill[1] == 0 and barEdges[1].point[5] == -4 and barEdges[1].width == 300)
+local other = CreateFrame("Frame", nil, frame)
+Skin.ThreeSlice(other, "SOMETHING_ELSE", 0, 0, 50, 10, "framePieces")
+assert(other.framePieces.LEFT.alpha == 1)
 local count = 0; for _, r in ipairs(card.regions) do if r.sublevel == -2 then count = count + 1 end end
 assert(count == 4, "edges made twice")
 

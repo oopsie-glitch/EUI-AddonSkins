@@ -563,6 +563,37 @@ local function DefineSkin()
             if done.main and not Locked() then SkinParts() end
         end)
         H.Hook(Frame, "Open", Portrait)
+        -- Four lines one physical pixel wide round x, y, w, h on frame (from its
+        -- top left), kept per frame and slot; colour nil hides them.
+        local function EdgeLines(frame, slot, x, y, w, h, colour, layer)
+            borders[frame] = borders[frame] or {}
+            local lines = borders[frame][slot]
+            if not lines then
+                lines = {}
+                for i = 1, 4 do
+                    local line = frame:CreateTexture(nil, layer or "BACKGROUND", nil, layer == "OVERLAY" and 7 or -2)
+                    if line.SetSnapToPixelGrid then line:SetSnapToPixelGrid(false) end
+                    if line.SetTexelSnappingBias then line:SetTexelSnappingBias(0) end
+                    lines[i] = line
+                end
+                borders[frame][slot] = lines
+            end
+            local px = Pixel(frame)
+            local spots = {{x, y, w, px}, {x, y - (h - px), w, px}, {x, y, px, h}, {x + w - px, y, px, h}}
+            for i, line in ipairs(lines) do
+                if colour then
+                    local s = spots[i]
+                    line:ClearAllPoints()
+                    line:SetPoint("TOPLEFT", frame, "TOPLEFT", s[1], s[2])
+                    line:SetSize(s[3], s[4])
+                    line:SetColorTexture(colour.r, colour.g, colour.b, colour.a or 1)
+                    line:Show()
+                else
+                    line:Hide()
+                end
+            end
+        end
+
         -- ItemTree_Professions draws each card's border from the client's
         -- tooltip art (ProfessionsSkin.Border): a soft 7px bevel. After each
         -- draw the bevel is faded, a flat edge one physical pixel wide is drawn
@@ -585,35 +616,28 @@ local function DefineSkin()
                 face:SetPoint("TOPLEFT", frame, "TOPLEFT", px, -px)
                 face:SetSize(math.max(0, w - 2 * px), math.max(0, h - 2 * px))
             end
-            local lines = borders[frame]
-            if not lines then
-                lines = {}
-                for i = 1, 4 do
-                    local line = frame:CreateTexture(nil, "BACKGROUND", nil, -2)
-                    if line.SetSnapToPixelGrid then line:SetSnapToPixelGrid(false) end
-                    if line.SetTexelSnappingBias then line:SetTexelSnappingBias(0) end
-                    lines[i] = line
-                end
-                borders[frame] = lines
-            end
             local edge = type(skin.Colour) == "function" and skin.Colour(style.edge) or nil
-            local spots = {{0, 0, w, px}, {0, -(h - px), w, px}, {0, 0, px, h}, {w - px, 0, px, h}}
-            for i, line in ipairs(lines) do
-                if edge then
-                    local s = spots[i]
-                    line:ClearAllPoints()
-                    line:SetPoint("TOPLEFT", frame, "TOPLEFT", s[1], s[2])
-                    line:SetSize(s[3], s[4])
-                    line:SetColorTexture(edge.r, edge.g, edge.b, edge.a or 1)
-                    line:Show()
-                else
-                    line:Hide()
-                end
+            EdgeLines(frame, "card", 0, 0, w, h, edge, style.layer == "OVERLAY" and "OVERLAY" or "BACKGROUND")
+        end
+        -- The rank bar's frame: the client's gold profession bar art
+        -- (ThreeSlice "PROFESSION_BAR_FRAME"), faded for a flat 1px black edge.
+        local BAR_EDGE = {r = 0, g = 0, b = 0, a = 1}
+        local function FlatBarFrame(frame, key, x, y, w, h, store)
+            if key ~= "PROFESSION_BAR_FRAME" or not H.Allowed(frame) or not frame.CreateTexture then return end
+            x, y, w, h = tonumber(x) or 0, tonumber(y) or 0, tonumber(w), tonumber(h)
+            if not (w and h and w > 0 and h > 0) then return end
+            local pieces = type(store) == "string" and rawget(frame, store) or nil
+            if type(pieces) == "table" then
+                for _, piece in pairs(pieces) do if H.Texture(piece) then H.Fade(piece) end end
             end
+            EdgeLines(frame, "bar", x, -y, w, h, BAR_EDGE, "OVERLAY") -- (ItemTree's y runs down)
         end
         local function HookProfessions()
             local skin = it.ProfessionsSkin
-            if type(skin) == "table" then H.Hook(skin, "Border", FlatBorder) end
+            if type(skin) == "table" then
+                H.Hook(skin, "Border", FlatBorder)
+                H.Hook(skin, "ThreeSlice", FlatBarFrame)
+            end
         end
         HookProfessions()
 

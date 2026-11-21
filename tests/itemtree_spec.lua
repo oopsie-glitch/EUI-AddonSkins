@@ -19,6 +19,16 @@ local function region(kind, parent)
     function f:EnableMouse(value) self.mouse = value end
     function f:SetColorTexture(...) self.fill = {...} end
     function f:GetRegions() return table.unpack(self.regions) end
+    function f:GetChildren() return table.unpack(self.children) end
+    function f:SetHeight(h) self.height = h end
+    function f:SetPoint(...) self.point = {...} end
+    function f:Show() self.shown = true end
+    function f:Hide() self.shown = false end
+    function f:SetShown(on) self.shown = on end
+    function f:IsShown() return self.shown end
+    function f:SetTextColor(r, g, b) self.color = {r, g, b} end
+    function f:GetTextColor() if self.color then return self.color[1], self.color[2], self.color[3] end end
+    function f:GetFontString() return self.label end
     function f:CreateTexture(_, layer, _, sublevel)
         textures = textures + 1
         local t = region("Texture", self)
@@ -31,7 +41,12 @@ local function region(kind, parent)
     function f:RegisterEvent(event) events[event] = self end
     return f
 end
-CreateFrame = function(_, _, parent) frames = frames + 1; return region("Frame", parent) end
+CreateFrame = function(_, _, parent)
+    frames = frames + 1
+    local f = region("Frame", parent)
+    if parent then parent.children[#parent.children + 1] = f end
+    return f
+end
 hooksecurefunc = function(owner, key, fn)
     hooks = hooks + 1
     local native = owner[key]
@@ -63,7 +78,10 @@ local colors = {
     ITEMTREE_COLOR_MONEY_GOLD = {r = 1, g = 0.84, b = 0, a = 1, hex = "FFD700"},
 }
 local epic, new, money = colors.ITEMTREE_COLOR_QUALITY_EPIC, colors.ITEMTREE_COLOR_SEMANTIC_NEW, colors.ITEMTREE_COLOR_MONEY_GOLD
-local Theme = {colors = colors}
+local OWN = {ITEMTREE_FONT_TITLE = "Fonts/FRIZQT__.TTF", ITEMTREE_FONT_BODY = "Fonts/ARIALN.TTF"}
+local Theme = {colors = colors, OWN_FONTS = OWN,
+    -- body as ItemTree's ChooseFonts leaves it on a Latin client; title as a Korean client's game face
+    fonts = {ITEMTREE_FONT_TITLE = "Fonts/2002.TTF", ITEMTREE_FONT_BODY = OWN.ITEMTREE_FONT_BODY}}
 function Theme.ColorTable(key) return Theme.colors[key] end
 function Theme.Hex(key)
     local c = Theme.colors[key]
@@ -72,7 +90,10 @@ function Theme.Hex(key)
 end
 local Assets = {applied = 0}
 function Assets.Apply(texture, key) Assets.applied = Assets.applied + 1; texture.asset = key; return true end
-local Frame = {builds = 0}
+local Frame = {builds = 0, current = "Tree"}
+function Frame.Tab() return Frame.current end
+function Frame.SelectTab(name) Frame.current = name end
+local function fontString() local fs = region("FontString"); fs.color = {1, 1, 1}; return fs end
 local drawnTitle
 function Frame.Build()
     Frame.builds = Frame.builds + 1
@@ -101,6 +122,32 @@ function Frame.Build()
     button.glyph = button:CreateTexture(nil, "ARTWORK") -- after the plate, as the plate builders do
     Assets.Apply(button.glyph, "ICON_DICE")
     Frame.dice = button
+    -- Two top tabs from the client's tab template, with ItemTree's glyph.
+    Frame.builtTabs = {}
+    for index, name in ipairs({"Tree", "BossLoot"}) do
+        local tab = region("Button", frame)
+        tab.tabName = name
+        tab.Left, tab.Middle, tab.Right = tab:CreateTexture(), tab:CreateTexture(), tab:CreateTexture()
+        tab.icon = tab:CreateTexture(nil, "ARTWORK")
+        tab.Text = fontString(); tab.tabText = tab.Text
+        Frame.builtTabs[index] = tab
+    end
+    -- A flat view tab (buildTab) and the Recent button (UIPanelButtonTemplate).
+    local view = region("Button", frame)
+    view.background = view:CreateTexture(nil, "BACKGROUND")
+    view.edges = {view:CreateTexture(nil, "BORDER"), view:CreateTexture(nil, "BORDER")}
+    view.label = fontString(); view.label:SetTextColor(0.6, 0.6, 0.62)
+    Frame.viewTabs = {view}
+    local strip = region("Frame", frame)
+    local recent = region("Button", strip)
+    frame.children[#frame.children + 1] = strip
+    strip.children[#strip.children + 1] = recent
+    for _, tab in ipairs(Frame.builtTabs) do frame.children[#frame.children + 1] = tab end
+    recent.Left, recent.Middle, recent.Right = recent:CreateTexture(), recent:CreateTexture(), recent:CreateTexture()
+    recent.icon = recent:CreateTexture(nil, "ARTWORK")
+    recent.label = fontString()
+    recent.scripts.OnClick = function() return "native-recent" end
+    Frame.recent = recent
     return frame
 end
 ItemTree = {Theme = Theme, Assets = Assets, UI = {Frame = Frame}}
@@ -120,6 +167,7 @@ for _, name in ipairs({"Panel", "CloseButton", "Button", "Font", "FadeNineSlice"
     end
 end
 local panel, accent = {0.1, 0.1, 0.12}, {0.2, 0.7, 0.6}
+S.GetFont = function() return "EUI.ttf", "" end
 S.GetPanelColor = function() return panel[1], panel[2], panel[3], 1 end
 S.GetAccentColor = function() return accent[1], accent[2], accent[3] end
 S.OnLooksChanged = function(fn) looks[#looks + 1] = fn end
@@ -141,6 +189,7 @@ assert(frameToken.r == panel[1] and frameToken.hex == nil)
 assert(colors.ITEMTREE_COLOR_BORDER_GOLD ~= GOLD and GOLD.r == 0.79, "original token table changed in place")
 assert(colors.ITEMTREE_COLOR_TEXT_SELECTED.g == accent[2] and colors.ITEMTREE_LIST_STATE_SELECTED.a == 0.18)
 assert(Theme.Hex("ITEMTREE_COLOR_TEXT_TITLE") == "ffffff")
+assert(Theme.fonts.ITEMTREE_FONT_BODY == "EUI.ttf" and Theme.fonts.ITEMTREE_FONT_TITLE == "Fonts/2002.TTF")
 assert(colors.ITEMTREE_COLOR_QUALITY_EPIC == epic and colors.ITEMTREE_COLOR_SEMANTIC_NEW == new and colors.ITEMTREE_COLOR_MONEY_GOLD == money)
 
 -- The build (a tick after PLAYER_ENTERING_WORLD) reads the EUI tokens and gets the chrome.
@@ -161,9 +210,31 @@ RunTimers()
 assert(dice.skin == "Button" and dice.glyph.alpha == 1 and dice.plate.normal.alpha == 0)
 assert(dice.scripts.OnClick() == "native-dice")
 
+-- Top tabs: template art faded, glyph kept, underline on the open tab only.
+local tree, boss = Frame.builtTabs[1], Frame.builtTabs[2]
+assert(tree.Left.alpha == 0 and tree.Right.alpha == 0 and tree.icon.alpha == 1 and not tree.skin)
+assert(tree.Text.skin == "Font")
+local treeLine, bossLine = tree.regions[#tree.regions], boss.regions[#boss.regions]
+assert(treeLine.shown and not bossLine.shown and treeLine.fill[2] == accent[2])
+Frame.SelectTab("BossLoot")
+assert(bossLine.shown and not treeLine.shown)
+-- The flat view tab: outline faded, underline follows its label's title colour.
+local view = Frame.viewTabs[1]
+local viewLine = view.regions[#view.regions]
+assert(view.edges[1].alpha == 0 and view.background.alpha == 1 and not viewLine.shown)
+view.label:SetTextColor(1, 1, 1); assert(viewLine.shown)
+view.label:SetTextColor(0.6, 0.6, 0.62); assert(not viewLine.shown)
+-- Recent (UIPanelButtonTemplate, inside a strip): EUI button, glyph kept, template art not kept.
+local recent = Frame.recent
+assert(recent.skin == "Button" and recent.icon.alpha == 1 and recent.Left.alpha == 0 and recent.label.skin == "Font")
+assert(recent.scripts.OnClick() == "native-recent")
+
 -- Warm: the build is not repeated, nothing new is made or hooked.
 local warm = {calls, frames, textures, hooks}
-for _ = 1, 20 do Frame.Build(); Assets.Apply(dice.plate.normal, "BUTTON_UP"); RunTimers() end
+for _ = 1, 20 do
+    Frame.Build(); Assets.Apply(dice.plate.normal, "BUTTON_UP"); RunTimers()
+    frame.scripts.OnShow(frame); Frame.SelectTab("Tree")
+end
 assert(calls == warm[1] and frames == warm[2] and textures == warm[3] and hooks == warm[4])
 
 -- A plate button built in combat is styled after it.
@@ -193,6 +264,6 @@ local other = frame:CreateTexture(nil, "BORDER")
 Assets.Apply(other, "INFO_FRAME_EDGE_TOP"); module.refresh(); looks[1](); RunTimers()
 assert(calls == before and other.alpha == 1)
 
-print("PASS: ItemTree EUI tokens before the build (quality/semantic/money kept, no shared tables mutated), window chrome, faded metal frame, plate buttons keep their glyph, combat, theme and disabled skin")
+print("PASS: ItemTree EUI tokens before the build (quality/semantic/money kept, no shared tables mutated), EUI font (localized faces kept), window chrome, EUI tabs with accent underline, template and plate buttons keep their glyph, faded metal frame, combat, theme and disabled skin")
 for _, key in ipairs(globals) do _G[key] = saved[key] end
 end

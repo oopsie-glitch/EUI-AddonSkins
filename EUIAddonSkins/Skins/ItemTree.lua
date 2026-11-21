@@ -51,6 +51,10 @@ local FADE_ASSETS = {
 }
 -- The red panel button plate: its button gets EUI's button.
 local BUTTON_ASSETS = {BUTTON_UP = true, BUTTON_DOWN = true}
+-- UIPanelButtonTemplate's own art, never kept when such a button gets EUI's.
+local TEMPLATE_PARTS = {Left = true, Middle = true, Right = true}
+-- The plate EllesmereUI's own tabs draw (S.Tab), for ItemTree's tabs.
+local TAB_PLATE = {0.068, 0.056, 0.052, 1}
 
 local function DefineSkin()
     ns.RegisterModule("ItemTree", "ItemTree", function()
@@ -64,6 +68,9 @@ local function DefineSkin()
         local colors = it.Theme.colors
         local H = ns.CreateSkinHelper(S, module)
         local buttons = setmetatable({}, {__mode = "k"})
+        local tabs = setmetatable({}, {__mode = "k"})
+        local underlines = {}
+        local fontSet
         local waiting = setmetatable({}, {__mode = "k"})
         local done = {}
         local backing
@@ -91,10 +98,79 @@ local function DefineSkin()
             end
         end
 
+        -- ItemTree's faces (Theme.fonts) take EUI's font. A client whose
+        -- alphabet ItemTree's own files lack draws in the game's face for it
+        -- (ItemTree's Theme.ChooseFonts); that one is kept.
+        local function SetFonts()
+            local theme = it.Theme
+            if not (S.GetFont and type(theme.fonts) == "table" and type(theme.OWN_FONTS) == "table") then return end
+            local path = S.GetFont()
+            if type(path) ~= "string" or path == "" then return end
+            for key, own in pairs(theme.OWN_FONTS) do
+                local face = theme.fonts[key]
+                if face == own or (fontSet and face == fontSet) then theme.fonts[key] = path end
+            end
+            fontSet = path
+        end
+
         local function PaintBacking()
             if backing and S.GetPanelColor then
                 local r, g, b = S.GetPanelColor()
                 backing:SetColorTexture(r, g, b, 1)
+            end
+            if S.GetAccentColor then
+                local r, g, b = S.GetAccentColor()
+                for _, line in ipairs(underlines) do line:SetColorTexture(r, g, b, 1) end
+            end
+        end
+
+        local function Underline(tab)
+            local line = tab:CreateTexture(nil, "OVERLAY", nil, 7)
+            line:SetHeight(2)
+            line:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, 0)
+            line:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, 0)
+            line:Hide()
+            underlines[#underlines + 1] = line
+            PaintBacking()
+            return line
+        end
+
+        -- The view tabs and the Keep switch: ItemTree's flat tabs. The outline
+        -- goes; the open one (its label in the title colour) gets the underline.
+        local function FlatTab(tab)
+            if tabs[tab] or not H.Allowed(tab) or not tab.CreateTexture then return end
+            for _, edge in ipairs(type(tab.edges) == "table" and tab.edges or {}) do H.Fade(H.Texture(edge)) end
+            local line = Underline(tab)
+            tabs[tab] = line
+            local label = tab.label
+            if not H.Allowed(label) then return end
+            local function Track()
+                local r, g, b = label:GetTextColor()
+                line:SetShown(r and r > 0.95 and g > 0.95 and b > 0.95 or false)
+            end
+            H.Hook(label, "SetTextColor", Track)
+            Track()
+        end
+
+        -- The top tabs are the client's tab template: its art goes, EUI's
+        -- plate and underline take its place; the glyph and label stay.
+        local function TopTab(tab)
+            if tabs[tab] or not H.Allowed(tab) or not tab.CreateTexture then return end
+            for _, region in ipairs(H.Regions(tab)) do
+                if region ~= tab.icon and H.Texture(region) then H.Fade(region) end
+            end
+            local plate = tab:CreateTexture(nil, "BACKGROUND", nil, -8)
+            plate:SetAllPoints(tab)
+            plate:SetColorTexture(TAB_PLATE[1], TAB_PLATE[2], TAB_PLATE[3], TAB_PLATE[4])
+            tabs[tab] = Underline(tab)
+            local text = tab.tabText or tab.Text
+            if H.Allowed(text) and S.Font then S.Font(text) end
+        end
+
+        local function TopSelection()
+            local current = type(Frame.Tab) == "function" and Frame.Tab() or nil
+            for _, tab in ipairs(type(Frame.builtTabs) == "table" and Frame.builtTabs or {}) do
+                if tabs[tab] then tabs[tab]:SetShown(tab.tabName == current) end
             end
         end
 
@@ -112,9 +188,30 @@ local function DefineSkin()
             end
             local keep = {}
             for key, value in pairs(button) do
-                if type(key) == "string" and not plate[value] and H.Texture(value) then keep[#keep + 1] = key end
+                if type(key) == "string" and not TEMPLATE_PARTS[key] and not plate[value] and H.Texture(value) then
+                    keep[#keep + 1] = key
+                end
             end
             S.Button(button, keep)
+            local label = button.GetFontString and button:GetFontString()
+            if H.Allowed(label) and S.Font then S.Font(label) end
+        end
+
+        -- UIPanelButtonTemplate buttons (Recent, Add note, the band squares,
+        -- the step arrows ...), found in the window as it is built and shown.
+        local Walk
+        function Walk(f, depth)
+            if depth > 12 then return end
+            for _, child in ipairs(H.Children(f)) do
+                if H.Allowed(child) then
+                    local kind = child:GetObjectType()
+                    if kind == "Button" and child.Left and child.Right and child.Middle
+                        and not tabs[child] and child.tabName == nil then
+                        SkinButton(child)
+                    end
+                    if kind ~= "PlayerModel" and kind ~= "ModelScene" then Walk(child, depth + 1) end
+                end
+            end
         end
 
         -- After Assets.Apply: fade the metal frame; the red plate's button is
@@ -135,6 +232,7 @@ local function DefineSkin()
         -- on the window itself, so it is not given S.Shell (its restrip fades
         -- every texture on the frame); the template art is faded and an owned
         -- fill and border frame take its place.
+        local SkinParts
         local function SkinWindow()
             local frame = Frame.frame
             if done.main or not H.Allowed(frame) then return end
@@ -159,12 +257,27 @@ local function DefineSkin()
             local close = Frame.closeButton or frame.CloseButton
             if H.Allowed(close) and S.CloseButton then S.CloseButton(close) end
             if H.Allowed(Frame.title) and S.Font then S.Font(Frame.title) end
+            SkinParts()
+            H.Script(frame, "OnShow", function() if not Locked() then SkinParts() end end)
+        end
+
+        -- Tabs first (a tab template also has Left/Middle/Right), then buttons.
+        function SkinParts()
+            for _, tab in ipairs(type(Frame.builtTabs) == "table" and Frame.builtTabs or {}) do TopTab(tab) end
+            TopSelection()
+            for _, list in ipairs({Frame.viewTabs, Frame.keepSegments}) do
+                if type(list) == "table" then
+                    for _, tab in pairs(list) do FlatTab(tab) end
+                end
+            end
+            if Frame.frame then Walk(Frame.frame, 0) end
         end
 
         local function ApplyLooks()
             if Locked() then looksPending = true; return end
             looksPending = nil
             SetTokens()
+            SetFonts()
             PaintBacking()
         end
 
@@ -179,7 +292,9 @@ local function DefineSkin()
 
         -- Before the window exists: everything it builds reads the EUI tokens.
         SetTokens()
+        SetFonts()
         H.Hook(it.Assets, "Apply", Applied)
+        H.Hook(Frame, "SelectTab", TopSelection)
         H.Hook(Frame, "Build", function() if Frame.frame and not done.main then Refresh() end end)
         if S.OnLooksChanged then
             S.OnLooksChanged(function()

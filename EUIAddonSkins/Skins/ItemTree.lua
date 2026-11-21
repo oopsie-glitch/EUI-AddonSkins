@@ -41,6 +41,33 @@ local TOKENS = {
     ITEMTREE_COLOR_INFO_FILL_ALT = {1, 1, 1, 0.05},
     ITEMTREE_COLOR_INFO_FILL = {1, 1, 1, 0.04},
     ITEMTREE_COLOR_INFO_FILL_SOFT = {1, 1, 1, 0.03},
+    -- Boss loot's level bands
+    ITEMTREE_COLOR_BAND_FILL = {0.14, 0.14, 0.15, 1},
+    ITEMTREE_COLOR_BAND_EDGE = {0.22, 0.22, 0.24, 1},
+    -- The Professions tab (ItemTree_Professions): cards, level bands, tags and
+    -- route marks. The locked cards keep a muted red, so locked still reads.
+    ITEMTREE_COLOR_PROFESSION_CARD_FILL = {0.11, 0.11, 0.12, 1},
+    ITEMTREE_COLOR_PROFESSION_CARD_EDGE = {0.28, 0.28, 0.3, 1},
+    ITEMTREE_COLOR_PROFESSION_HEADER_FILL = {0.14, 0.14, 0.15, 1},
+    ITEMTREE_COLOR_PROFESSION_HEADER_EDGE = {0.32, 0.32, 0.34, 1},
+    ITEMTREE_COLOR_PROFESSION_PANEL_FILL = "panel",
+    ITEMTREE_COLOR_PROFESSION_TOP_FILL = "inset",
+    ITEMTREE_COLOR_PROFESSION_LOCKED_FILL = {0.15, 0.09, 0.09, 1},
+    ITEMTREE_COLOR_PROFESSION_LOCKED_EDGE = {0.4, 0.2, 0.18, 1},
+    ITEMTREE_COLOR_PROFESSION_LOCKED_GOLD = "accent",
+    ITEMTREE_COLOR_PROFESSION_CARD_GOLD = "accent",
+    ITEMTREE_COLOR_PROFESSION_ROUTE_GOLD = "accent",
+    ITEMTREE_COLOR_PROFESSION_BAR_SPEC = "accent",
+    ITEMTREE_COLOR_PROFESSION_BAR_TICK = {0.6, 0.6, 0.62, 1},
+    ITEMTREE_COLOR_PROFESSION_TAG_FILL = {0.08, 0.08, 0.09, 0.96},
+    ITEMTREE_COLOR_PROFESSION_ADD_FILL = {1, 1, 1, 0.04},
+}
+
+-- Two-stop fades (a pair of colours): ItemTree's brown header and red button
+-- gradients.
+local FADES = {
+    ITEMTREE_FADE_HEADER = {{0.12, 0.12, 0.13, 1}, {0.07, 0.07, 0.08, 1}},
+    ITEMTREE_FADE_BUTTON = {{0.18, 0.18, 0.2, 1}, {0.1, 0.1, 0.11, 1}},
 }
 
 -- Gold metal frame art ItemTree applies through Assets.Apply.
@@ -107,6 +134,13 @@ local function DefineSkin()
                     elseif value == "accent18" then r, g, b, a = ar, ag, ab, 0.18
                     else r, g, b, a = value[1], value[2], value[3], value[4] end
                     colors[key] = {r = r, g = g, b = b, a = a}
+                end
+            end
+            for key, stops in pairs(FADES) do
+                if type(colors[key]) == "table" then
+                    local fade = {}
+                    for i, c in ipairs(stops) do fade[i] = {r = c[1], g = c[2], b = c[3], a = c[4]} end
+                    colors[key] = fade
                 end
             end
         end
@@ -398,22 +432,34 @@ local function DefineSkin()
             if H.Texture(column.icon) and S.SquareIcon then S.SquareIcon(column.icon) end
         end
 
-        -- The portrait: ItemTree bakes the item icon into a round portrait
-        -- (SetPortraitToTexture). For an item page the same icon is drawn
-        -- square in the title bar instead; other pages keep the native one.
+        -- The portrait: ItemTree draws it round (SetPortraitToTexture for an
+        -- item, SetPortraitTexture / ...FromCreatureDisplayID for a creature).
+        -- It is drawn again square in the title bar: an item's icon cropped
+        -- like EUI's icons, a creature's portrait cropped to the square inside
+        -- its circle (ItemTree's own Frame.DrawCreaturePortrait draws it).
+        -- Any other page keeps the native portrait.
+        local INNER = 0.5 - 0.5 / math.sqrt(2) -- the square inscribed in a circle
         local function Portrait()
             local native = H.Texture(Frame.portrait)
             if not (native and portrait) then return end
-            local id = type(Frame.ItemId) == "function" and Frame.ItemId(Frame.rootKey) or nil
+            local key = Frame.rootKey
+            local drawn = false
+            local id = type(Frame.ItemId) == "function" and Frame.ItemId(key) or nil
             local icon = id and type(it.Assets.ItemIcon) == "function" and it.Assets.ItemIcon(id) or nil
             if icon then
                 portrait:SetTexture(icon)
-                portrait:Show()
-                native:SetAlpha(0)
-            else
-                portrait:Hide()
-                native:SetAlpha(1)
+                portrait:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                drawn = true
+            elseif key and type(Frame.IsCreatureRoot) == "function" and Frame.IsCreatureRoot(key)
+                and type(Frame.DrawCreaturePortrait) == "function" then
+                local ok, done = pcall(Frame.DrawCreaturePortrait, portrait, key)
+                if ok and done then
+                    portrait:SetTexCoord(INNER, 1 - INNER, INNER, 1 - INNER)
+                    drawn = true
+                end
             end
+            portrait:SetShown(drawn)
+            native:SetAlpha(drawn and 0 or 1)
         end
         local function SkinPortrait(frame)
             local native = H.Texture(Frame.portrait)

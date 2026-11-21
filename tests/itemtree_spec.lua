@@ -36,6 +36,7 @@ local function region(kind, parent)
     function f:SetWidth(w) self.width = w end
     function f:GetEffectiveScale() return (self.parent and self.parent:GetEffectiveScale() or 1) * (self.scale or 1) end
     function f:SetTexture(path) self.path = path end
+    function f:SetTexCoord(...) self.coords = {...} end
     function f:IsMultiLine() return self.multi end
     function f:CreateTexture(_, layer, _, sublevel)
         textures = textures + 1
@@ -85,6 +86,9 @@ local colors = {
     ITEMTREE_COLOR_QUALITY_EPIC = {r = 0.64, g = 0.21, b = 0.93, a = 1, hex = "A335EE"},
     ITEMTREE_COLOR_SEMANTIC_NEW = {r = 0.47, g = 0.72, b = 0.96, a = 1},
     ITEMTREE_COLOR_MONEY_GOLD = {r = 1, g = 0.84, b = 0, a = 1, hex = "FFD700"},
+    ITEMTREE_COLOR_PROFESSION_CARD_FILL = {r = 0.25, g = 0.18, b = 0.12, a = 1, hex = "3F2D1E"},
+    ITEMTREE_COLOR_PROFESSION_CARD_GOLD = {r = 1, g = 0.83, b = 0.42, a = 1, hex = "FFD36B"},
+    ITEMTREE_FADE_BUTTON = {{r = 0.23, g = 0.14, b = 0.11, a = 1, hex = "3A231D"}, {r = 0.12, g = 0.07, b = 0.06, a = 1, hex = "1E120F"}},
 }
 local epic, new, money = colors.ITEMTREE_COLOR_QUALITY_EPIC, colors.ITEMTREE_COLOR_SEMANTIC_NEW, colors.ITEMTREE_COLOR_MONEY_GOLD
 local OWN = {ITEMTREE_FONT_TITLE = "Fonts/FRIZQT__.TTF", ITEMTREE_FONT_BODY = "Fonts/ARIALN.TTF"}
@@ -106,6 +110,11 @@ local function fontString() local fs = region("FontString"); fs.color = {1, 1, 1
 function Frame.ItemId(key) return type(key) == "string" and tonumber(key:match("^item:(%d+)$")) or nil end
 function Frame.Open(key) Frame.rootKey = key end
 function Assets.ItemIcon(id) return "icon-" .. id end
+function Frame.IsCreatureRoot(key) return type(key) == "string" and key:find("^npc:") ~= nil end
+function Frame.DrawCreaturePortrait(texture, key)
+    if key == "npc:0" then return false end
+    texture:SetTexture("portrait-" .. key); return true
+end
 -- The info column (UI/InfoPanel.lua), built when the first page needs it, with its Dialog NineSlice.
 local InfoPanel = {}
 function InfoPanel.Attach(region)
@@ -243,6 +252,11 @@ assert(colors.ITEMTREE_COLOR_BORDER_GOLD ~= GOLD and GOLD.r == 0.79, "original t
 assert(colors.ITEMTREE_COLOR_TEXT_SELECTED.g == accent[2] and colors.ITEMTREE_LIST_STATE_SELECTED.a == 0.18)
 assert(Theme.Hex("ITEMTREE_COLOR_TEXT_TITLE") == "ffffff")
 assert(Theme.fonts.ITEMTREE_FONT_BODY == "EUI.ttf" and Theme.fonts.ITEMTREE_FONT_TITLE == "Fonts/2002.TTF")
+-- Professions: cards neutral, gold marks in the accent; fades are two-stop pairs.
+assert(colors.ITEMTREE_COLOR_PROFESSION_CARD_FILL.r == 0.11 and colors.ITEMTREE_COLOR_PROFESSION_CARD_FILL.hex == nil)
+assert(colors.ITEMTREE_COLOR_PROFESSION_CARD_GOLD.g == accent[2])
+local fade = colors.ITEMTREE_FADE_BUTTON
+assert(#fade == 2 and fade[1].r == 0.18 and fade[2].r == 0.1 and fade[1].hex == nil)
 assert(colors.ITEMTREE_COLOR_QUALITY_EPIC == epic and colors.ITEMTREE_COLOR_SEMANTIC_NEW == new and colors.ITEMTREE_COLOR_MONEY_GOLD == money)
 
 -- The build (a tick after PLAYER_ENTERING_WORLD) reads the EUI tokens and gets the chrome.
@@ -333,7 +347,16 @@ local own
 for _, r in ipairs(frame.regions) do if r.sublevel == 6 then own = r end end
 assert(own.path == "icon-4593" and own.shown and own.width == 28 and own.skin == "SquareIcon")
 assert(Frame.portrait.alpha == 0)
+assert(own.coords[1] == 0.08)
+-- A creature: ItemTree's portrait drawn on the square, cropped to the square inside its circle.
 Frame.Open("npc:4532")
+assert(own.shown and own.path == "portrait-npc:4532" and Frame.portrait.alpha == 0)
+assert(math.abs(own.coords[1] - (0.5 - 0.5 / math.sqrt(2))) < 1e-9 and math.abs(own.coords[2] - (0.5 + 0.5 / math.sqrt(2))) < 1e-9)
+-- Back to an item: the icon crop again. A page with no square portrait keeps the native one.
+Frame.Open("item:4593"); assert(own.coords[1] == 0.08)
+Frame.Open("npc:0")
+assert(not own.shown and Frame.portrait.alpha == 1)
+Frame.Open("zone:12")
 assert(not own.shown and Frame.portrait.alpha == 1)
 
 -- Warm: the build is not repeated, nothing new is made or hooked.

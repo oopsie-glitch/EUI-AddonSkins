@@ -103,7 +103,7 @@ local rowtexts={Prepare=function()end,GetDefaultTexts=function()return {{font={}
 local defaults=assert(read("include_instance.lua"):match("(_detalhes.instance_defaults = .*)"))
 assert(load("local _detalhes,SharedMedia,Details222=...; "..defaults))(D,media,{RowTexts=rowtexts})
 local function method(name,file)
-    local body=assert((file or main):match("(function Details:"..name.."%b().-)\nend"),name)
+    local body=assert((file or main):match("(function Details:"..name.."%s*%b().-)\nend"),name)
     local constants="local COORDS_LEFT_BALL_NO_ICON,COORDS_LEFT_CONNECTOR_NO_ICON,COORDS_LEFT_BALL,COORDS_LEFT_CONNECTOR,COORDS_RIGHT_BALL,COORDS_TOP_BACKGROUND,COORDS_BOTTOM_SIDE_BAR={0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1}\n"
     assert(load("local Details,gump,SharedMedia,Details222,detailsFramework,tbuttons=...; "..constants..body.."\nend"))(D,{},media,{RowTexts=rowtexts,WindowSnap={RefreshGeometry=function()end}},framework,{})
 end
@@ -169,7 +169,8 @@ local function layout(i)
     P.Apply(i)
 end
 local function noOverlap(i)
-    local t=i.title;local tl,tr,tt,tb=t:GetLeft(),t:GetRight(),t:GetTop(),t:GetBottom()
+    local t=i.title;if not t:IsShown() or t:GetAlpha()==0 then return end
+    local tl,tr,tt,tb=t:GetLeft(),t:GetRight(),t:GetTop(),t:GetBottom()
     assert(t:GetWidth()>=0)
     for _,key in ipairs({"modo_selecao","segmento","atributo","report","reset","fechar"})do
         local b=i.baseframe.cabecalho[key]
@@ -185,7 +186,7 @@ if os.getenv("DETAILS_LAYOUT_REPRO") then
     a.menu_anchor.side=1;layout(a);noOverlap(a);return
 end
 for _,scale in ipairs({.75,1,1.375})do
- for _,width in ipairs({180,380,600})do
+ for _,width in ipairs({90,180,380,600})do
   for _,side in ipairs({1,2})do
    for _,vertical in ipairs({1,2})do
     for _,size in ipairs({.6,1,1.4})do
@@ -208,6 +209,12 @@ for _,scale in ipairs({.75,1,1.375})do
   end
  end
 end
+-- Reconstruct native saved values in a fresh window, as a reload/profile does.
+local restored=instance()
+for _,key in ipairs({"menu_anchor","menu_anchor_down","menu_icons","menu_icons_size","toolbar_side","attribute_text"}) do restored[key]=copy(a[key]) end
+restored.baseframe.scale=a.baseframe.scale;restored.baseframe.width=a.baseframe.width
+layout(restored);noOverlap(restored)
+assert(restored.menu_icons_size==a.menu_icons_size and restored.menu_anchor.side==a.menu_anchor.side,"profile reconstruction lost native geometry")
 layout(b);local bpoint={b.title:GetPoint(1)}
 a.title.text="user text";a.attribute_text.text_face="user-font";a.attribute_text.text_size=17
 layout(a);assert(a.title.text=="user text" and a.title.face=="user-font" and a.title.size==17)
@@ -221,7 +228,7 @@ assert(writes.title==savedWrites,"adapter changed combat layout")
 combat=false;P.Apply(a);noOverlap(a)
 a.skin="Minimalistic";Native(a.AttributeMenu,a);local point={a.title:GetPoint(1)};P.Apply(a)
 assert(({a.title:GetPoint(1)})[2]==point[2],"switching away overwrote native title anchors")
-print("PASS: native title/toolbar geometry across 324 configurations, native size/anchors, material RGBA, combat, independent windows and warm reuse")
+print("PASS: native title/toolbar geometry across 432 configurations, native size/anchors, material RGBA, combat, independent windows and warm reuse")
 local samples={}
 a.skin="Addonskins EUI";layout(a)
 for trial=1,5 do local start=os.clock();for _=1,1000 do P.Apply(a)end;samples[trial]=(os.clock()-start)*1000 end

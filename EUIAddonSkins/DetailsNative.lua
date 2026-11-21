@@ -292,6 +292,18 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         end
         left = math.min(fw, left)
         local width = math.max(0, right - left)
+        -- A zero FontString width can mean auto-size in the client. Keep its
+        -- native visibility/content, but paint no title when controls use all space.
+        local alpha = title.GetAlpha and title:GetAlpha()
+        if Number(alpha) and title.SetAlpha then
+            if width == 0 then
+                if entry.titleAlpha == nil then entry.titleAlpha = alpha end
+                if alpha ~= 0 then title:SetAlpha(0) end
+            elseif entry.titleAlpha ~= nil then
+                if alpha == 0 then title:SetAlpha(entry.titleAlpha) end
+                entry.titleAlpha = nil
+            end
+        end
         if not OwnPoint(title, state, f) or state.x ~= left or state.y ~= state.bottom then
             title:ClearAllPoints()
             title:SetPoint("BOTTOMLEFT", f, "TOPLEFT", left, state.bottom)
@@ -304,6 +316,10 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         local entry = entries[instance]
         if not entry then return end
         local title = instance.GetTitleBarFontString and Frame(instance:GetTitleBarFontString())
+        if H.Allowed(title) and entry.titleAlpha ~= nil and title.GetAlpha and title.SetAlpha then
+            local alpha = title:GetAlpha()
+            if Number(alpha) and alpha == 0 then title:SetAlpha(entry.titleAlpha) end
+        end
         if H.Allowed(title) and entry.title and OwnPoint(title, entry.title, instance.baseframe) then
             title:ClearAllPoints()
             for _, point in ipairs(entry.title.points) do title:SetPoint(unpack(point)) end

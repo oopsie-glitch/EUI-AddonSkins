@@ -29,6 +29,10 @@ local function region(kind, parent)
     function f:SetTextColor(r, g, b) self.color = {r, g, b} end
     function f:GetTextColor() if self.color then return self.color[1], self.color[2], self.color[3] end end
     function f:GetFontString() return self.label end
+    function f:SetSize(w, h) self.width, self.height = w, h end
+    function f:SetWidth(w) self.width = w end
+    function f:SetTexture(path) self.path = path end
+    function f:IsMultiLine() return self.multi end
     function f:CreateTexture(_, layer, _, sublevel)
         textures = textures + 1
         local t = region("Texture", self)
@@ -94,6 +98,10 @@ local Frame = {builds = 0, current = "Tree"}
 function Frame.Tab() return Frame.current end
 function Frame.SelectTab(name) Frame.current = name end
 local function fontString() local fs = region("FontString"); fs.color = {1, 1, 1}; return fs end
+function Frame.ItemId(key) return type(key) == "string" and tonumber(key:match("^item:(%d+)$")) or nil end
+function Frame.Open(key) Frame.rootKey = key end
+function Assets.ItemIcon(id) return "icon-" .. id end
+local InfoPanel = {}
 local drawnTitle
 function Frame.Build()
     Frame.builds = Frame.builds + 1
@@ -148,17 +156,41 @@ function Frame.Build()
     recent.label = fontString()
     recent.scripts.OnClick = function() return "native-recent" end
     Frame.recent = recent
+    -- The portrait (template, round-masked by SetPortraitToTexture) and its ring.
+    frame.PortraitContainer = region("Frame", frame)
+    Frame.ring = frame.PortraitContainer:CreateTexture(nil, "OVERLAY")
+    Frame.portrait = frame.PortraitContainer:CreateTexture(nil, "OVERLAY")
+    -- A tick box (buildCheckBox), the search box (own magnifier) and a multi-line note box.
+    local tick = region("Button", frame)
+    tick.square = tick:CreateTexture(nil, "ARTWORK"); Assets.Apply(tick.square, "CHECKBOX_UP")
+    tick.check = tick:CreateTexture(nil, "OVERLAY"); Assets.Apply(tick.check, "CHECKBOX_CHECK")
+    tick.check:Hide()
+    Frame.tick = tick
+    local search = region("EditBox", frame)
+    search.magnifier = search:CreateTexture(nil, "OVERLAY")
+    search.border = search:CreateTexture(nil, "BORDER"); Assets.Apply(search.border, "INPUT_BORDER_MIDDLE")
+    Frame.searchBox = search
+    local note = region("EditBox", frame); note.multi = true; Frame.note = note
+    for _, f in ipairs({frame.PortraitContainer, tick, search, note}) do frame.children[#frame.children + 1] = f end
+    -- The info column (UI/InfoPanel.lua) with its Dialog NineSlice and the item icon.
+    local column = region("Frame", frame)
+    column.art = region("Frame", column)
+    column.art.TopLeftCorner = column.art:CreateTexture()
+    column.icon = column:CreateTexture(nil, "ARTWORK")
+    InfoPanel.frame = column
     return frame
 end
-ItemTree = {Theme = Theme, Assets = Assets, UI = {Frame = Frame}}
+ItemTree = {Theme = Theme, Assets = Assets, UI = {Frame = Frame, InfoPanel = InfoPanel}}
 
 local S = {}
-for _, name in ipairs({"Panel", "CloseButton", "Button", "Font", "FadeNineSlice"}) do
+for _, name in ipairs({"Panel", "CloseButton", "Button", "Font", "FadeNineSlice", "SquareIcon", "EditBox"}) do
     S[name] = function(f, options)
         assert(not locked, "cosmetic write in combat: " .. name)
         calls = calls + 1
         f.skin, f.opts = name, options
         if name == "FadeNineSlice" then f:SetAlpha(0) end
+        if name == "EditBox" then for _, r in ipairs(f.regions) do r:SetAlpha(0) end end
+        if name == "SquareIcon" then f.border = options end
         if name == "Button" then
             local keep = {}
             for _, key in ipairs(options or {}) do keep[f[key]] = true end
@@ -229,6 +261,32 @@ local recent = Frame.recent
 assert(recent.skin == "Button" and recent.icon.alpha == 1 and recent.Left.alpha == 0 and recent.label.skin == "Font")
 assert(recent.scripts.OnClick() == "native-recent")
 
+-- Tick box: a frame later, EUI box with an accent fill that follows the tick.
+RunTimers()
+local tick = Frame.tick
+assert(tick.square.alpha == 0 and tick.check.alpha == 0)
+local fill
+for _, r in ipairs(tick.regions) do if r.layer == "OVERLAY" and r ~= tick.check then fill = r end end
+assert(fill and not fill.shown and fill.fill[2] == accent[2])
+tick.check:Show(); assert(fill.shown)
+tick.check:Hide(); assert(not fill.shown)
+-- Search box: EUI's box, its magnifier kept, its input border faded; the multi-line box left alone.
+local search = Frame.searchBox
+assert(search.skin == "EditBox" and search.opts.padInput == false and search.magnifier.alpha == 1)
+assert(search.border.alpha == 0 and not Frame.note.skin)
+-- Info column: Dialog NineSlice faded for EUI's border, item icon squared.
+local column = InfoPanel.frame
+assert(column.art.skin == "FadeNineSlice" and column.art.TopLeftCorner.alpha == 0 and column.icon.skin == "SquareIcon")
+-- Portrait: ring faded; an item page shows its icon square, another page the native portrait.
+assert(Frame.ring.alpha == 0)
+Frame.Open("item:4593")
+local own
+for _, r in ipairs(frame.regions) do if r.sublevel == 6 then own = r end end
+assert(own.path == "icon-4593" and own.shown and own.width == 28 and own.skin == "SquareIcon")
+assert(Frame.portrait.alpha == 0)
+Frame.Open("npc:4532")
+assert(not own.shown and Frame.portrait.alpha == 1)
+
 -- Warm: the build is not repeated, nothing new is made or hooked.
 local warm = {calls, frames, textures, hooks}
 for _ = 1, 20 do
@@ -264,6 +322,6 @@ local other = frame:CreateTexture(nil, "BORDER")
 Assets.Apply(other, "INFO_FRAME_EDGE_TOP"); module.refresh(); looks[1](); RunTimers()
 assert(calls == before and other.alpha == 1)
 
-print("PASS: ItemTree EUI tokens before the build (quality/semantic/money kept, no shared tables mutated), EUI font (localized faces kept), window chrome, EUI tabs with accent underline, template and plate buttons keep their glyph, faded metal frame, combat, theme and disabled skin")
+print("PASS: ItemTree EUI tokens before the build (quality/semantic/money kept, no shared tables mutated), EUI font (localized faces kept), window chrome, EUI tabs with accent underline, template and plate buttons keep their glyph, EUI tick boxes, search boxes, info column border and square item icons, combat, theme and disabled skin")
 for _, key in ipairs(globals) do _G[key] = saved[key] end
 end

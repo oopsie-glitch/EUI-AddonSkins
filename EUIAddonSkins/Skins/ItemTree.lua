@@ -48,6 +48,8 @@ local FADE_ASSETS = {
     INFO_FRAME_CORNER_BL = true, INFO_FRAME_CORNER_BR = true,
     INFO_FRAME_EDGE_TOP = true, INFO_FRAME_EDGE_BOTTOM = true,
     INFO_FRAME_EDGE_LEFT = true, INFO_FRAME_EDGE_RIGHT = true,
+    -- the search boxes' input border (S.EditBox draws EUI's)
+    INPUT_BORDER_LEFT = true, INPUT_BORDER_RIGHT = true, INPUT_BORDER_MIDDLE = true,
 }
 -- The red panel button plate: its button gets EUI's button.
 local BUTTON_ASSETS = {BUTTON_UP = true, BUTTON_DOWN = true}
@@ -55,6 +57,8 @@ local BUTTON_ASSETS = {BUTTON_UP = true, BUTTON_DOWN = true}
 local TEMPLATE_PARTS = {Left = true, Middle = true, Right = true}
 -- The plate EllesmereUI's own tabs draw (S.Tab), for ItemTree's tabs.
 local TAB_PLATE = {0.068, 0.056, 0.052, 1}
+-- The top tabs' plate height: the template tab is taller than EUI's tabs.
+local TAB_HEIGHT = 24
 
 local function DefineSkin()
     ns.RegisterModule("ItemTree", "ItemTree", function()
@@ -69,6 +73,11 @@ local function DefineSkin()
         local H = ns.CreateSkinHelper(S, module)
         local buttons = setmetatable({}, {__mode = "k"})
         local tabs = setmetatable({}, {__mode = "k"})
+        local checks = setmetatable({}, {__mode = "k"})
+        local boxes = setmetatable({}, {__mode = "k"})
+        local fills = {}
+        local portrait
+        local SkinCheck
         local underlines = {}
         local fontSet
         local waiting = setmetatable({}, {__mode = "k"})
@@ -121,6 +130,7 @@ local function DefineSkin()
             if S.GetAccentColor then
                 local r, g, b = S.GetAccentColor()
                 for _, line in ipairs(underlines) do line:SetColorTexture(r, g, b, 1) end
+                for _, fill in ipairs(fills) do fill:SetColorTexture(r, g, b, 1) end
             end
         end
 
@@ -160,7 +170,9 @@ local function DefineSkin()
                 if region ~= tab.icon and H.Texture(region) then H.Fade(region) end
             end
             local plate = tab:CreateTexture(nil, "BACKGROUND", nil, -8)
-            plate:SetAllPoints(tab)
+            plate:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, 0)
+            plate:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, 0)
+            plate:SetHeight(TAB_HEIGHT)
             plate:SetColorTexture(TAB_PLATE[1], TAB_PLATE[2], TAB_PLATE[3], TAB_PLATE[4])
             tabs[tab] = Underline(tab)
             local text = tab.tabText or tab.Text
@@ -208,10 +220,58 @@ local function DefineSkin()
                     if kind == "Button" and child.Left and child.Right and child.Middle
                         and not tabs[child] and child.tabName == nil then
                         SkinButton(child)
+                    elseif kind == "Button" and child.square and child.check then
+                        SkinCheck(child)
+                    elseif kind == "EditBox" and not boxes[child] and S.EditBox
+                        and not (child.IsMultiLine and child:IsMultiLine()) then
+                        boxes[child] = true
+                        -- Keep ItemTree's own art on the box (magnifier, key
+                        -- hint); its input border is faded through Assets.Apply.
+                        local shown = {}
+                        for _, region in ipairs(H.Regions(child)) do
+                            if H.Texture(region) then shown[region] = region:GetAlpha() end
+                        end
+                        S.EditBox(child, {padInput = false})
+                        for region, alpha in pairs(shown) do region:SetAlpha(alpha) end
                     end
                     if kind ~= "PlayerModel" and kind ~= "ModelScene" then Walk(child, depth + 1) end
                 end
             end
+        end
+
+        -- ItemTree's tick boxes (buildCheckBox: a Button with .square and
+        -- .check): EUI's dark box with a 1px edge, the tick an accent fill.
+        local function Edge(parent, anchor, layer)
+            local function line(a, b, w, h)
+                local t = parent:CreateTexture(nil, layer, nil, 1)
+                t:SetPoint(a, anchor, a); t:SetPoint(b, anchor, b)
+                if w then t:SetWidth(w) else t:SetHeight(h) end
+                t:SetColorTexture(0.25, 0.25, 0.27, 1)
+            end
+            line("TOPLEFT", "TOPRIGHT", nil, 1); line("BOTTOMLEFT", "BOTTOMRIGHT", nil, 1)
+            line("TOPLEFT", "BOTTOMLEFT", 1, nil); line("TOPRIGHT", "BOTTOMRIGHT", 1, nil)
+        end
+        function SkinCheck(button)
+            if checks[button] or not H.Allowed(button) or not button.CreateTexture then return end
+            local square, tick = H.Texture(button.square), H.Texture(button.check)
+            if not (square and tick) then return end
+            checks[button] = true
+            H.Fade(square)
+            H.Fade(tick)
+            local bg = button:CreateTexture(nil, "ARTWORK", nil, 0)
+            bg:SetAllPoints(square)
+            bg:SetColorTexture(0.06, 0.06, 0.07, 1)
+            Edge(button, square, "ARTWORK")
+            local fill = button:CreateTexture(nil, "OVERLAY", nil, 2)
+            fill:SetPoint("TOPLEFT", square, "TOPLEFT", 3, -3)
+            fill:SetPoint("BOTTOMRIGHT", square, "BOTTOMRIGHT", -3, 3)
+            fills[#fills + 1] = fill
+            PaintBacking()
+            local function Track() fill:SetShown(tick:IsShown() and true or false) end
+            H.Hook(tick, "Show", Track)
+            H.Hook(tick, "Hide", Track)
+            H.Hook(tick, "SetShown", Track)
+            Track()
         end
 
         -- After Assets.Apply: fade the metal frame; the red plate's button is
@@ -220,6 +280,11 @@ local function DefineSkin()
             if not ns.IsEnabled(module) or type(key) ~= "string" then return end
             if FADE_ASSETS[key] then
                 H.Fade(H.Texture(texture))
+            elseif key == "CHECKBOX_UP" and H.Texture(texture) then
+                local button = texture:GetParent()
+                if H.Allowed(button) and not checks[button] then
+                    H.Queue(button, function() if not Locked() then SkinCheck(button) end end)
+                end
             elseif BUTTON_ASSETS[key] and H.Texture(texture) then
                 local button = texture:GetParent()
                 if H.Allowed(button) and not buttons[button] then
@@ -232,6 +297,65 @@ local function DefineSkin()
         -- on the window itself, so it is not given S.Shell (its restrip fades
         -- every texture on the frame); the template art is faded and an owned
         -- fill and border frame take its place.
+        -- The item info column: its Dialog NineSlice goes for EUI's border, and
+        -- its item icon is cropped square (ItemTree's quality frame stays).
+        local function SkinInfo()
+            local info = it.UI.InfoPanel
+            local column = type(info) == "table" and info.frame
+            if done.info or not H.Allowed(column) then return end
+            done.info = true
+            local art = column.art
+            if H.Allowed(art) then
+                if S.FadeNineSlice then S.FadeNineSlice(art) end
+                for _, region in ipairs(H.Regions(art)) do if H.Texture(region) then H.Fade(region) end end
+            end
+            if S.Panel and column.CreateTexture then
+                local edge = CreateFrame("Frame", nil, column)
+                edge:SetAllPoints(column)
+                edge:EnableMouse(false)
+                S.Panel(edge, {noBg = true})
+            end
+            if H.Texture(column.icon) and S.SquareIcon then S.SquareIcon(column.icon) end
+        end
+
+        -- The portrait: ItemTree bakes the item icon into a round portrait
+        -- (SetPortraitToTexture). For an item page the same icon is drawn
+        -- square in the title bar instead; other pages keep the native one.
+        local function Portrait()
+            local native = H.Texture(Frame.portrait)
+            if not (native and portrait) then return end
+            local id = type(Frame.ItemId) == "function" and Frame.ItemId(Frame.rootKey) or nil
+            local icon = id and type(it.Assets.ItemIcon) == "function" and it.Assets.ItemIcon(id) or nil
+            if icon then
+                portrait:SetTexture(icon)
+                portrait:Show()
+                native:SetAlpha(0)
+            else
+                portrait:Hide()
+                native:SetAlpha(1)
+            end
+        end
+        local function SkinPortrait(frame)
+            local native = H.Texture(Frame.portrait)
+            if portrait or not native or not frame.CreateTexture then return end
+            local container = frame.PortraitContainer
+            if H.Allowed(container) then
+                for _, region in ipairs(H.Regions(container)) do
+                    if region ~= native and H.Texture(region) then H.Fade(region) end
+                end
+            end
+            portrait = frame:CreateTexture(nil, "OVERLAY", nil, 6)
+            portrait:SetSize(28, 28)
+            portrait:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -6)
+            if S.SquareIcon then
+                local holder = CreateFrame("Frame", nil, frame)
+                holder:SetAllPoints(portrait)
+                holder:EnableMouse(false)
+                S.SquareIcon(portrait, holder)
+            end
+            Portrait()
+        end
+
         local SkinParts
         local function SkinWindow()
             local frame = Frame.frame
@@ -257,8 +381,9 @@ local function DefineSkin()
             local close = Frame.closeButton or frame.CloseButton
             if H.Allowed(close) and S.CloseButton then S.CloseButton(close) end
             if H.Allowed(Frame.title) and S.Font then S.Font(Frame.title) end
+            SkinPortrait(frame)
             SkinParts()
-            H.Script(frame, "OnShow", function() if not Locked() then SkinParts() end end)
+            H.Script(frame, "OnShow", function() if not Locked() then SkinParts(); Portrait() end end)
         end
 
         -- Tabs first (a tab template also has Left/Middle/Right), then buttons.
@@ -270,6 +395,7 @@ local function DefineSkin()
                     for _, tab in pairs(list) do FlatTab(tab) end
                 end
             end
+            SkinInfo()
             if Frame.frame then Walk(Frame.frame, 0) end
         end
 
@@ -294,7 +420,8 @@ local function DefineSkin()
         SetTokens()
         SetFonts()
         H.Hook(it.Assets, "Apply", Applied)
-        H.Hook(Frame, "SelectTab", TopSelection)
+        H.Hook(Frame, "SelectTab", function() TopSelection(); Portrait() end)
+        H.Hook(Frame, "Open", Portrait)
         H.Hook(Frame, "Build", function() if Frame.frame and not done.main then Refresh() end end)
         if S.OnLooksChanged then
             S.OnLooksChanged(function()

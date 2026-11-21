@@ -235,7 +235,7 @@ restored.baseframe.scale=a.baseframe.scale;restored.baseframe.width=a.baseframe.
 layout(restored);noOverlap(restored)
 assert(restored.menu_icons_size==a.menu_icons_size and restored.menu_anchor.side==a.menu_anchor.side,"profile reconstruction lost native geometry")
 -- Native fade changes made while clipped become the latest restore value.
-a.baseframe.width=90;a.menu_anchor.side=1;a.menu_icons_size=1.4
+a.baseframe.width=90;a.menu_anchor.side=1;a.toolbar_side=1;a.menu_icons_size=1.4
 for index=1,6 do a.menu_icons[index]=true end
 layout(a);assert(a.title:GetAlpha()==0,"no-room title was auto-sized over controls")
 a.title:SetAlpha(.6);P.Apply(a);assert(a.title:GetAlpha()==0)

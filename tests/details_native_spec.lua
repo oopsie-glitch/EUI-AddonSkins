@@ -164,11 +164,24 @@ H.Hook=function(object,name,fn)
     object[name]=function(...) local r=table.pack(old(...)); fn(...); return table.unpack(r,1,r.n) end
 end
 assert(loadfile("EUIAddonSkins/DetailsNative.lua"))("EUIAddonSkins",ns)
+local accent={.12,.63,.46}
+local skinAPI={GetAccentColor=function() return table.unpack(accent) end,
+    GetFont=function() return "approved-font","" end}
 local released=0
-local P=ns.CreateNativeDetailsPrototype({H=H,S={},module={}},function() released=released+1 end)
+local P=ns.CreateNativeDetailsPrototype({H=H,S=skinAPI,module={}},function() released=released+1 end)
 local look={texture="approved-bar",font="approved-font",flags="",bg={0,0,0,0.75},
     header={r=27/255,g=27/255,b=27/255},headerAlpha=1,headerHeight=22,headerSize=11,
     titleColor={1,0.7,0.3,1},height=18,spacing=2,leftSize=11,rightSize=10}
+-- The legacy shared helper deliberately supports a separate EDM title color.
+-- Native skin defaults must use the live EUI accent rather than that preference.
+local savedEDM, savedEUI = _EDM_DB, EllesmereUI
+_EDM_DB={profile={dm={hdrTextUseAccent=false,hdrTextColor={r=1,g=.82,b=0}}}}
+EllesmereUI={}
+assert(loadfile("EUIAddonSkins/MeterStyle.lua"))("EUIAddonSkins",ns)
+local legacyLook=ns.GetMeterStyle(skinAPI)
+assert(legacyLook.titleColor[1]==1 and legacyLook.titleColor[2]==.82 and legacyLook.titleColor[3]==0)
+look.titleColor=legacyLook.titleColor
+_EDM_DB,EllesmereUI=savedEDM,savedEUI
 local original=copy(Details.skins.Minimalistic)
 P.Refresh(look)
 assert(not Details.skins["Addonskins EUI"] and released==0, "registered before Details ready")
@@ -203,6 +216,15 @@ if buildMenu then
     end
     assert(found==1,"native dropdown failed to discover the newly registered skin")
 end
+local function equalColor(a,b) for i=1,4 do assert(a[i]==b[i],"REPRO: native title default did not use the live EUI accent") end end
+equalColor(def.instance_cprops.attribute_text.text_color,{accent[1],accent[2],accent[3],1})
+accent={.71,.32,.19}
+P.Refresh(look)
+equalColor(def.instance_cprops.attribute_text.text_color,{accent[1],accent[2],accent[3],1})
+if os.getenv("DETAILS_ACCENT_REPRO") then
+    print("PASS: native title ignores EDM custom yellow and refreshes its selection default with the live accent")
+    return
+end
 assert(P.status=="registered" and P.installAttempts==1)
 assert(ns.NativeDetailsRegistrationStatus():find("registered in Details.skins",1,true))
 C_AddOns.IsAddOnLoaded=function() return true end
@@ -219,6 +241,14 @@ assert(Details.skins["Addonskins EUI"]==def and #hooks==2,"duplicate registratio
 local a,b=Details.instances[1],Details.instances[2]
 a:ChangeSkin("Addonskins EUI")
 P.Apply(a)
+equalColor(a.attribute_text.text_color,{accent[1],accent[2],accent[3],1})
+assert(a.attribute_text.text_color~=def.instance_cprops.attribute_text.text_color,"native selection aliases the definition")
+a.attribute_text.text_color={.22,.34,.81,.6}
+local manualTitleColor=copy(a.attribute_text.text_color)
+accent={.18,.49,.77}
+P.Refresh(look)
+equalColor(a.attribute_text.text_color,manualTitleColor)
+equalColor(def.instance_cprops.attribute_text.text_color,{accent[1],accent[2],accent[3],1})
 assert(ns.IsNativeDetailsInstance(a) and not ns.IsNativeDetailsInstance(b))
 assert(a.bgdisplay.color[4]==0 and a.baseframe.color[4]==0.75,"duplicated background opacity")
 assert(a.baseframe.cabecalho.modo_selecao.normal.path:find("dm_settings.png",1,true))
@@ -231,6 +261,7 @@ for _=1,1000 do P.Apply(a) end
 assert(allocations==count and writes==stableWrites,"warm repaint allocates artwork or rewrites unchanged output")
 a:ChangeSkin("Addonskins EUI"); P.Apply(a)
 assert(a.row_info.height==31 and a.row_info.texture=="user-texture" and a.row_info.font_face=="user-font")
+equalColor(a.attribute_text.text_color,manualTitleColor)
 assert(not a.attribute_text.show_timer and a.menu_icons_size==0.61 and a.titlebar_height==29,"refresh overwrote native customization")
 assert(b.skin=="Original" and b.row_info.height==14,"affected another instance")
 a:SetBackgroundAlpha(0); assert(a.bgdisplay.color[4]==0 and a.baseframe.color[4]==0)
@@ -267,7 +298,7 @@ print(("BENCH native 1000 cosmetic refreshes median_ms=%.3f retained_delta_KiB=%
 
 local otherNS={IsEnabled=ns.IsEnabled}
 assert(loadfile("EUIAddonSkins/DetailsNative.lua"))("EUIAddonSkins",otherNS)
-local P2=otherNS.CreateNativeDetailsPrototype({H=H,S={},module={}},function() end)
+local P2=otherNS.CreateNativeDetailsPrototype({H=H,S=skinAPI,module={}},function() end)
 Details.skins["Addonskins EUI"]={file="foreign"}
 P2.Register(look)
 assert(P2.collision and Details.skins["Addonskins EUI"].file=="foreign","overwrote a foreign name")
@@ -286,7 +317,7 @@ for trial=1,5 do
     local context={IsEnabled=function() return true end}
     assert(loadfile("EUIAddonSkins/DetailsNative.lua"))("EUIAddonSkins",context)
     local coldH={Allowed=H.Allowed,Hook=function() end}
-    local p=context.CreateNativeDetailsPrototype({H=coldH,S={},module={}},function() end)
+    local p=context.CreateNativeDetailsPrototype({H=coldH,S=skinAPI,module={}},function() end)
     Details.skins["Addonskins EUI"]=nil
     Details.instances={}; Details.waitingForSkins=nil
     collectgarbage('collect'); local heap=collectgarbage('count')
@@ -305,7 +336,7 @@ print(("BENCH native registration median_ms=%.3f retained_KiB=%.3f first_cosmeti
 Details.waitingForSkins=nil
 local secretNS={IsEnabled=ns.IsEnabled}
 assert(loadfile("EUIAddonSkins/DetailsNative.lua"))("EUIAddonSkins",secretNS)
-local secureP=secretNS.CreateNativeDetailsPrototype({H={Allowed=H.Allowed,Hook=function() end},S={},module={}},function() end)
+local secureP=secretNS.CreateNativeDetailsPrototype({H={Allowed=H.Allowed,Hook=function() end},S=skinAPI,module={}},function() end)
 Details.skins["Addonskins EUI"]=nil; secureP.Register(look)
 local secretInstance=instance(9); secretInstance.skin="Addonskins EUI"
 local secretArt=secretInstance.baseframe.cabecalho.modo_selecao.normal

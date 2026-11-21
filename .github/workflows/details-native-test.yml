@@ -31,7 +31,7 @@ jobs:
           for sha in ('2efa4b10628e0e4a91c346138cf8325e81d0a43c', '4316feb434bcc9751455ae2c6435d93fc20f034f'):
               folder = root / sha
               folder.mkdir(parents=True)
-              for path in ('functions/skins.lua', 'frames/window_main.lua', 'frames/window_options2_sections.lua', 'classes/class_instance.lua', 'Details_Camelot.toc', 'Libs/DF/dropdown.lua', 'classes/include_instance.lua'):
+              for path in ('functions/skins.lua', 'frames/window_main.lua', 'frames/window_options2_sections.lua', 'classes/class_instance.lua', 'Details_Camelot.toc', 'Libs/DF/dropdown.lua', 'classes/include_instance.lua', 'functions/util.lua', 'Libs/DF/fw.lua'):
                   with urlopen('https://raw.githubusercontent.com/Tercioo/Details-Damage-Meter/'+sha+'/'+path, timeout=30) as response:
                       (folder / Path(path).name).write_bytes(response.read())
           PY
@@ -91,6 +91,37 @@ jobs:
           subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_REPRO='1'),check=True)
           print('After layout correction:',flush=True)
           subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          assert target.read_bytes()==fixed
+          PY
+      - name: Reproduce title default failure and measure exact prior baseline
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import subprocess, os, sys
+          target=Path('EUIAddonSkins/DetailsNative.lua')
+          fixed=target.read_bytes()
+          runner=Path('tests/run_lua.py').read_text()
+          start=runner.index('    for test in [')
+          end=runner.index(':\n',start)
+          color=runner[:start]+"    for test in ['tests/details_native_spec.lua']"+runner[end:]
+          bench=runner[:start]+"    for test in ['tests/details_native_layout_spec.lua']"+runner[end:]
+          source='/tmp/details-native-source/2efa4b10628e0e4a91c346138cf8325e81d0a43c'
+          env=dict(os.environ,DETAILS_NATIVE_SOURCE=source)
+          with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/01b74dc6c32e78032510c9fc6e47b05bf511f33c/EUIAddonSkins/DetailsNative.lua',timeout=30) as response:
+              old=response.read()
+          try:
+              target.write_bytes(old)
+              result=subprocess.run([sys.executable,'-c',color],env=dict(env,DETAILS_ACCENT_REPRO='1'),capture_output=True,text=True)
+              assert result.returncode!=0 and 'REPRO: native title default did not use the live EUI accent' in result.stderr,result.stdout+result.stderr
+              print('Confirmed: approved prior runtime imports the separate EDM yellow title preference',flush=True)
+              print('Before accent correction (01b74dc):',flush=True)
+              subprocess.run([sys.executable,'-c',bench],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          finally:
+              target.write_bytes(fixed)
+          subprocess.run([sys.executable,'-c',color],env=dict(env,DETAILS_ACCENT_REPRO='1'),check=True)
+          print('After accent correction:',flush=True)
+          subprocess.run([sys.executable,'-c',bench],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
           assert target.read_bytes()==fixed
           PY
       - name: Five-trial hosted comparison

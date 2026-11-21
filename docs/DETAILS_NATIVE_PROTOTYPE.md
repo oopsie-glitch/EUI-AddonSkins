@@ -18,7 +18,7 @@ DetailsNative.lua copies Minimalistic's compatible atlas/layout metadata without
 
 - GetMeterStyle supplies the exact existing EUI source values: fallback body RGB 0/0/0 and alpha .75; header RGB 27/255 each and alpha 1; header height 22 and title font size 11; bars height 18, spacing 2, left/right sizes 11 unless current EUI meter preferences specify otherwise.
 - SharedMedia registers the existing resolved font/bar paths and WHITE8X8 flat header/body resources.
-- Native title enabled, native timer/content retained, initial accent text color.
+- Native title enabled, native timer/content retained. Its initial text color comes directly from the live public Skin API GetAccentColor, independently of EUI Damage Meters' separate custom-title preference.
 - Native flat header, .5 subdued full border, no sidebars/status bar/rounded corners, hidden attribute icon.
 - Native class/status color defaults are retained; native bar texture/font/height/spacing and ordinary total/DPS formatting are initial settings, not refresh-time writes.
 - Menu size, position, visibility, scale, window position and other native ignored fields follow Details' own skin-switching rules.
@@ -82,3 +82,19 @@ The hook runs on native title-layout changes, not row updates or timer ticks. Re
 Material values remain derived from the unchanged historical GetMeterStyle sources: fallback body black at .75 alpha; header 27/255 RGB at alpha 1. Native SetBackgroundColor/SetBackgroundAlpha/SetBackdropTexture paths are exercised to verify one effective body fill, and native RefreshTitleBar applies the flat header. No extra material layer or new palette is added to guess at screenshot differences. Exact rendered parity still requires WoW screenshots.
 
 The source fixture runs native MenuAnchor, ToolbarSide, ToolbarMenuSetButtons, AttributeMenu, RefreshAttributeTextSize and surface setters across 432 geometry configurations, including narrow widths, scales, toolbar sides, sizes and visibility. Hosted anchor resolution is a model of UI geometry, not WoW rasterization or taint validation.
+
+## Native title accent default correction
+
+The approved prototype at 01b74dc6c32e78032510c9fc6e47b05bf511f33c copied GetMeterStyle.titleColor into its native definition once during registration. That shared helper intentionally follows EUI Damage Meters' hdrTextUseAccent / hdrTextColor preferences. A custom yellow EDM title therefore produced a yellow native selection default even when the current EUI accent was different. Registration also left the definition unchanged after an accent change before selection.
+
+The prototype alone now reads S.GetAccentColor(), the existing public EUI Skin API getter, for attribute_text.text_color in its own native definition. It updates that default through the existing safe appearance refresh, only when RGBA actually differs. It never recolors a FontString, changes an applied instance, installs another color hook, or writes saved preferences. All other rendering/default values and the legacy GetMeterStyle implementation are unchanged.
+
+Details' native ChangeSkin reset/default path deep-copies the definition when selecting a different skin. AttributeMenu reads the instance attribute_text.text_color, and native SetFontColor plus DF ParseColors apply that RGBA immediately and again in Details' own delayed callback. The correction adds no timer or retry. Native same-skin refresh and restored profile values remain authoritative.
+
+Accent/theme changes update **future selection defaults only**. Existing windows retain their current title color, whether originally chosen by the default or explicitly customized. This avoids guessing whether a saved yellow is intentional and introducing a second preference-tracking system. Previously saved yellow is not silently migrated; change it in Details' native title-color control if desired. Re-selecting the already selected skin does not reset its defaults. No automatic ChangeSkin or profile migration is performed.
+
+The screenshot alone cannot establish whether the installed window obtained yellow from the EDM custom preference, a stale definition, a saved Details profile, or embedded color markup in native title content. Hosted tests reproduce the first two defects and verify the native color pipeline; they cannot inspect the user's installed profile. Native title strings are never rewritten.
+
+Regression coverage uses the actual pinned official InstallSkin, ChangeSkin reset/default path, AttributeMenu, SetFontColor and DF ParseColors. It covers a conflicting EDM yellow preference, live accent default refresh, manual RGBA, the native delayed callback, independent windows, saved-profile reconstruction, combat deferral, and 1,000 unchanged refreshes without additional title writes, hooks or UI objects. The identical targeted test must fail against 01b74dc and pass after the correction. Existing geometry, toolbar and Cooltip tests remain in the full suite.
+
+In WoW Forever, verify a fresh explicit selection uses the current EUI accent; customize its title color, reload and switch profiles; check another window independently; then change the EUI accent and confirm existing saved colors stay unchanged while a new selection uses the new accent. Confirm title text, timer, font, geometry, toolbar and meter surfaces are unchanged. Installed-client persistence, taint and rendering remain live-client checks.

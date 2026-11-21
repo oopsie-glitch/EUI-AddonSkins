@@ -77,10 +77,21 @@ function F:SetPushedTexture(v) self.pushed:SetTexture(v) end
 function F:GetNormalTexture() return self.normal end
 function F:GetHighlightTexture() return self.highlight end
 function F:GetPushedTexture() return self.pushed end
+function F:SetTextColor(...)
+    assert(native,"adapter directly recolored native title")
+    self.textColor={...};self.colorWrites=(self.colorWrites or 0)+1
+end
 local combat=false
 InCombatLockdown=function() return combat end
 issecretvalue=function(v) return type(v)=="table" and v.secret end
-C_Timer={After=function() end} -- native AttributeMenu's deferred font/color only
+local timers
+C_Timer={After=function(_,fn) if timers then timers[#timers+1]=fn end end}
+local function flushTimers()
+    local pending=timers;timers=nil
+    for _,fn in ipairs(pending or {}) do
+        local old=native;native=true;fn();native=old
+    end
+end
 C_AddOns={IsAddOnLoaded=function() return true end}
 local registered={}
 local media={Register=function(_,kind,name,path) registered[kind..":"..name]=path end,
@@ -90,13 +101,19 @@ local D={skins={},instances={},loaded=true,CopyTable=copy,
     IsLoaded=function() return true end,GetAllInstances=function(self)return self.instances end,
     instance_skin_ignored_values={},StatusBar={Reset=function()end},ToolBar={Shown={}},
     SetFontFace=function(_,t,v)t.face=v end,SetFontSize=function(_,t,v)t.size=v end,
-    SetFontColor=function(_,t,v)t.textColor=v end,SetFontOutline=function()end,
+    SetFontOutline=function()end,
     Destroy=function(_,t)for k in pairs(t) do t[k]=nil end end,
     GetTitleBarFontString=function(self)return self.title end,
     IsLowerInstance=function()return false end,
 }
 _G.Details=D
-local framework={IsAddonApocalypseWow=function()return false end,ParseColors=function(_,v)return table.unpack(v)end}
+local framework={IsAddonApocalypseWow=function()return false end}
+-- Execute the real Details -> DF parser -> FontString color path, including
+-- AttributeMenu's native delayed color callback; no successful-color stub.
+local parse=assert(read("fw.lua"):match("(function DF:ParseColors.-)\n\tend"))
+assert(load("local DF=...; local unpack=unpack or table.unpack; local Saturate=function(v)return math.max(0,math.min(1,v))end; "..parse.."\nend"))(framework)
+local fontColor=assert(read("util.lua"):match("(function Details:SetFontColor.-)\n\tend"))
+assert(load("local Details,gump=...; "..fontColor.."\nend"))(D,framework)
 _G.DetailsFramework=framework
 local rowtexts={Prepare=function()end,GetDefaultTexts=function()return {{font={}}}end}
 -- Read the real native default table without running unrelated initializers.
@@ -105,7 +122,7 @@ assert(load("local _detalhes,SharedMedia,Details222=...; "..defaults))(D,media,{
 local function method(name,file)
     local body=assert((file or main):match("(function Details:"..name.."%s*%b().-)\nend"),name)
     local constants="local COORDS_LEFT_BALL_NO_ICON,COORDS_LEFT_CONNECTOR_NO_ICON,COORDS_LEFT_BALL,COORDS_LEFT_CONNECTOR,COORDS_RIGHT_BALL,COORDS_TOP_BACKGROUND,COORDS_BOTTOM_SIDE_BAR={0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1}\n"
-    assert(load("local Details,gump,SharedMedia,Details222,detailsFramework,tbuttons=...; local unpack=unpack or table.unpack; "..constants..body.."\nend"))(D,{},media,{RowTexts=rowtexts,WindowSnap={RefreshGeometry=function()end}},framework,{})
+    assert(load("local Details,gump,SharedMedia,Details222,detailsFramework,tbuttons=...; local unpack=unpack or table.unpack; "..constants..body.."\nend"))(D,framework,media,{RowTexts=rowtexts,WindowSnap={RefreshGeometry=function()end}},framework,{})
 end
 for _,name in ipairs({"GetMenuAnchorPoint","ToolbarMenuButtonsSize","ToolbarMenuSetButtons","ToolbarMenuButtons","MenuAnchor","LeftMenuAnchorSide","RefreshAttributeTextSize","AttributeMenu","RefreshTitleBar","SetBackdropTexture"}) do method(name) end
 method("SetBackgroundColor",read("class_instance.lua"));method("SetBackgroundAlpha",read("class_instance.lua"))
@@ -133,7 +150,8 @@ function H.Hook(o,name,fn)
     end
 end
 assert(loadfile("EUIAddonSkins/DetailsNative.lua"))("EUIAddonSkins",ns)
-local P=ns.CreateNativeDetailsPrototype({H=H,S={},module={}},function()end)
+local accent={.13,.62,.47}
+local P=ns.CreateNativeDetailsPrototype({H=H,S={GetAccentColor=function()return table.unpack(accent)end},module={}},function()end)
 local look={texture="approved-bar",font="approved-font",bg={0,0,0,.75},
     header={r=27/255,g=27/255,b=27/255},headerAlpha=1,headerHeight=22,headerSize=11,
     titleColor={1,.7,.3,1},height=18,spacing=2,leftSize=11,rightSize=10}
@@ -204,6 +222,41 @@ if os.getenv("DETAILS_LAYOUT_REPRO") then
     -- Existing saved prototype profiles retain the old left-side setting.
     a.menu_anchor.side=1;layout(a);noOverlap(a);return
 end
+-- A native skin selection initializes the instance once. Re-rendering uses
+-- the instance's own RGBA, including the native one-second callback.
+local function colorEqual(a,b)
+    for n=1,4 do assert(a[n]==b[n],"native rendered title color mismatch") end
+end
+local selected=instance()
+timers={};layout(selected);flushTimers()
+colorEqual(selected.title.textColor,{accent[1],accent[2],accent[3],1})
+selected.attribute_text.text_color={.8,.21,.34,.53}
+timers={};Native(selected.AttributeMenu,selected);flushTimers()
+colorEqual(selected.title.textColor,selected.attribute_text.text_color)
+local beforeColor, beforeHooks, beforeObjects=selected.title.colorWrites,hooks,objects
+accent={.68,.37,.15}
+for _=1,1000 do P.Refresh(look) end
+colorEqual(selected.attribute_text.text_color,{.8,.21,.34,.53})
+colorEqual(selected.title.textColor,{.8,.21,.34,.53})
+assert(selected.title.colorWrites==beforeColor and hooks==beforeHooks and objects==beforeObjects,"accent refresh touched native title or grew resources")
+colorEqual(definition.instance_cprops.attribute_text.text_color,{accent[1],accent[2],accent[3],1})
+-- A different/fresh window gets the new default; saved profile values win
+-- when reconstructed for reload or profile switching.
+local fresh=instance();timers={};layout(fresh);flushTimers()
+colorEqual(fresh.title.textColor,{accent[1],accent[2],accent[3],1})
+local profile=copy(selected.attribute_text)
+local restoredColor=instance();restoredColor.attribute_text=copy(profile)
+timers={};layout(restoredColor);flushTimers()
+colorEqual(restoredColor.title.textColor,profile.text_color)
+assert(restoredColor.attribute_text.text_color~=definition.instance_cprops.attribute_text.text_color)
+timers={};Native(restoredColor.AttributeMenu,restoredColor);accent={.28,.51,.78};P.Refresh(look);flushTimers()
+colorEqual(restoredColor.title.textColor,profile.text_color)
+combat=true;accent={.34,.67,.29};local previousDefault=copy(definition.instance_cprops.attribute_text.text_color)
+P.Refresh(look);colorEqual(definition.instance_cprops.attribute_text.text_color,previousDefault)
+combat=false;P.Refresh(look)
+colorEqual(definition.instance_cprops.attribute_text.text_color,{accent[1],accent[2],accent[3],1})
+print("PASS: actual native AttributeMenu / SetFontColor / DF ParseColors: live accent default, manual RGBA, deferred color, independent windows, profile reconstruction, combat and zero adapter color writes")
+
 for _,scale in ipairs({.75,1,1.375})do
  for _,width in ipairs({90,180,380,600})do
   for _,side in ipairs({1,2})do

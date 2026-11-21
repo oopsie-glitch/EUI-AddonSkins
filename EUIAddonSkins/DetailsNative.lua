@@ -64,14 +64,34 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
             end
         end
     end
+    -- Only the native definition follows the live accent. Details deep-copies
+    -- this value on selection; already applied profiles remain entirely native.
+    local function TitleAccentDefault(definition)
+        if type(S.GetAccentColor) ~= "function" then
+            Status("accent", "EUI accent source is unavailable", true); return false
+        end
+        local r,g,b = S.GetAccentColor()
+        if not Plain(r) or not Plain(g) or not Plain(b)
+            or type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then
+            Status("accent", "EUI accent is not ready", true); return false
+        end
+        local title = definition.instance_cprops.attribute_text
+        local color = title.text_color
+        if type(color) ~= "table" then color = {}; title.text_color = color end
+        if color[1] ~= r or color[2] ~= g or color[3] ~= b or color[4] ~= 1 then
+            color[1],color[2],color[3],color[4] = r,g,b,1
+        end
+        return true
+    end
     function P.Register(look)
+        if not SafeUI() then Status("deferred", "waiting for enabled, out-of-combat refresh"); return end
         if ownDefinition and FindSkin(NAME) == ownDefinition then
+            if not TitleAccentDefault(ownDefinition) then return end
             if P.status ~= "registered" then
                 Status("registered", "registered in Details.skins; native GetSkin is instance-dependent")
             end
             return
         end
-        if not SafeUI() then Status("deferred", "waiting for enabled, out-of-combat refresh"); return end
         if type(D.IsLoaded) ~= "function" then Status("unsupported", "missing Details.IsLoaded", true); return end
         if not D.IsLoaded() then Status("initializing", "waiting for Details initialization / DETAILS_STARTED"); return end
         if type(D.InstallSkin) ~= "function" or type(D.CopyTable) ~= "function"
@@ -127,7 +147,7 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         props.titlebar_texture_color = {look.header.r, look.header.g, look.header.b, look.headerAlpha}
         props.attribute_text.enabled = true
         props.attribute_text.text_face, props.attribute_text.text_size = NAME .. " Font", look.headerSize
-        props.attribute_text.text_color = {unpack(look.titleColor)}
+        if not TitleAccentDefault(definition) then return end
         -- Native title/timer settings and text are never maintained by this adapter.
         props.fullborder_shown, props.fullborder_size = true, 0.5
         props.fullborder_color = {0.055, 0.055, 0.055, 1}

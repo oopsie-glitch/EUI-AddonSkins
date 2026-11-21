@@ -6,7 +6,7 @@ local function read(name) local f=assert(io.open(source.."/"..name));local s=f:r
 local main,skins=read("window_main.lua"),read("skins.lua")
 local native=false
 local geometryEpoch=0
-local writes={title=0,button=0}, objects=0, hooks=0
+local writes, objects, hooks = {title=0,button=0}, 0, 0
 local function copy(v) if type(v)~="table" then return v end local t={};for k,x in pairs(v) do t[k]=copy(x) end;return t end
 local frac={BOTTOMLEFT={0,0},BOTTOMRIGHT={1,0},TOPLEFT={0,1},TOPRIGHT={1,1},LEFT={0,.5},RIGHT={1,.5},CENTER={.5,.5},TOP={.5,1},BOTTOM={.5,0}}
 local F={}; F.__index=F

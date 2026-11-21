@@ -90,6 +90,7 @@ local colors = {
     ITEMTREE_COLOR_PROFESSION_CARD_FILL = {r = 0.25, g = 0.18, b = 0.12, a = 1, hex = "3F2D1E"},
     ITEMTREE_COLOR_PROFESSION_CARD_GOLD = {r = 1, g = 0.83, b = 0.42, a = 1, hex = "FFD36B"},
     ITEMTREE_COLOR_PROFESSION_CARD_EDGE = {r = 0.43, g = 0.32, b = 0.21, a = 1, hex = "6E5236"},
+    ITEMTREE_COLOR_PROFESSION_TAG_FILL = {r = 0.15, g = 0.1, b = 0.03, a = 0.96},
     ITEMTREE_FADE_BUTTON = {{r = 0.23, g = 0.14, b = 0.11, a = 1, hex = "3A231D"}, {r = 0.12, g = 0.07, b = 0.06, a = 1, hex = "1E120F"}},
 }
 local epic, new, money = colors.ITEMTREE_COLOR_QUALITY_EPIC, colors.ITEMTREE_COLOR_SEMANTIC_NEW, colors.ITEMTREE_COLOR_MONEY_GOLD
@@ -292,6 +293,8 @@ assert(Theme.Hex("ITEMTREE_COLOR_TEXT_TITLE") == "ffffff")
 assert(Theme.fonts.ITEMTREE_FONT_BODY == "EUI.ttf" and Theme.fonts.ITEMTREE_FONT_TITLE == "Fonts/2002.TTF")
 -- Professions: the cards keep ItemTree's colours (state: recommended, locked); fades are two-stop pairs.
 assert(colors.ITEMTREE_COLOR_PROFESSION_CARD_FILL == cardFill and colors.ITEMTREE_COLOR_PROFESSION_CARD_GOLD == cardGold)
+-- ...but the rank bar's skill tag fill is EUI's dark neutral.
+assert(colors.ITEMTREE_COLOR_PROFESSION_TAG_FILL.r == 0.08 and colors.ITEMTREE_COLOR_PROFESSION_TAG_FILL.a == 0.96)
 local fade = colors.ITEMTREE_FADE_BUTTON
 assert(#fade == 2 and fade[1].r == 0.18 and fade[2].r == 0.1 and fade[1].hex == nil)
 assert(colors.ITEMTREE_COLOR_QUALITY_EPIC == epic and colors.ITEMTREE_COLOR_SEMANTIC_NEW == new and colors.ITEMTREE_COLOR_MONEY_GOLD == money)

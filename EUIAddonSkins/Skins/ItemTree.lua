@@ -50,6 +50,8 @@ local TOKENS = {
     -- become EUI's flat 1px edge (see FlatBorder).
     ITEMTREE_COLOR_PROFESSION_PANEL_FILL = "panel",
     ITEMTREE_COLOR_PROFESSION_TOP_FILL = "inset",
+    -- the skill tag above the rank bar (only Bar.lua uses it)
+    ITEMTREE_COLOR_PROFESSION_TAG_FILL = {0.08, 0.08, 0.09, 0.96},
 }
 
 -- Two-stop fades (a pair of colours): ItemTree's brown header and red button

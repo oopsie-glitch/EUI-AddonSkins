@@ -2,7 +2,7 @@
 -- the gold metal frame faded as Assets.Apply draws it, red plate buttons given
 -- EUI's button a frame later (their glyph kept), and the window chrome.
 do
-local globals = {"ItemTree", "CreateFrame", "hooksecurefunc", "InCombatLockdown", "geterrorhandler", "C_Timer"}
+local globals = {"GetPhysicalScreenSize", "ItemTree", "CreateFrame", "hooksecurefunc", "InCombatLockdown", "geterrorhandler", "C_Timer"}
 local saved = {}
 for _, key in ipairs(globals) do saved[key] = _G[key] end
 
@@ -31,6 +31,7 @@ local function region(kind, parent)
     function f:GetFontString() return self.label end
     function f:SetSize(w, h) self.width, self.height = w, h end
     function f:SetWidth(w) self.width = w end
+    function f:GetEffectiveScale() return (self.parent and self.parent:GetEffectiveScale() or 1) * (self.scale or 1) end
     function f:SetTexture(path) self.path = path end
     function f:IsMultiLine() return self.multi end
     function f:CreateTexture(_, layer, _, sublevel)
@@ -63,6 +64,7 @@ end
 InCombatLockdown = function() return locked end
 geterrorhandler = function() return function(message) error(message) end end
 C_Timer = {After = function(_, fn) timers[#timers + 1] = fn end}
+GetPhysicalScreenSize = function() return 1920, 1080 end
 local function RunTimers()
     local due = timers; timers = {}
     for _, fn in ipairs(due) do fn() end
@@ -185,7 +187,18 @@ function Frame.Build()
     search.Left, search.Middle, search.Right = search:CreateTexture(), search:CreateTexture(), search:CreateTexture()
     return frame
 end
-ItemTree = {Theme = Theme, Assets = Assets, UI = {Frame = Frame, InfoPanel = InfoPanel}}
+-- The tree pane (UI/Tree.lua), built on the first page too, with its SearchBoxTemplate box.
+local Tree = {}
+function Tree.Attach(region)
+    if Tree.search then return true end
+    local box = CreateFrame("EditBox", nil, region)
+    box.kind = "EditBox"
+    box.Left, box.Middle, box.Right = box:CreateTexture(), box:CreateTexture(), box:CreateTexture()
+    box.searchIcon = box:CreateTexture(nil, "OVERLAY")
+    Tree.search = box
+    return true
+end
+ItemTree = {Theme = Theme, Assets = Assets, UI = {Frame = Frame, InfoPanel = InfoPanel, Tree = Tree}}
 
 local S = {}
 for _, name in ipairs({"Panel", "CloseButton", "Button", "Font", "FadeNineSlice", "SquareIcon", "EditBox"}) do
@@ -275,6 +288,15 @@ for _, r in ipairs(tick.regions) do if r.layer == "OVERLAY" and r ~= tick.check 
 assert(fill and not fill.shown and fill.fill[2] == accent[2])
 tick.check:Show(); assert(fill.shown)
 tick.check:Hide(); assert(not fill.shown)
+-- Its edges are one physical pixel at the window's scale (1080p: 768/1080 units at scale 1),
+-- and follow a scale change on the next show.
+local edge
+for _, r in ipairs(tick.regions) do if r.layer == "ARTWORK" and r.sublevel == 1 and r.height then edge = r end end
+assert(edge and math.abs(edge.height - 768 / 1080) < 1e-6)
+frame.scale = 0.5
+frame.scripts.OnShow(frame)
+assert(math.abs(edge.height - 768 / 1080 / 0.5) < 1e-6)
+frame.scale = nil
 -- Search box: EUI's box, its magnifier kept, its input border faded; the multi-line box left alone.
 local search = Frame.searchBox
 assert(search.skin == "EditBox" and search.opts.padInput == false and search.magnifier.alpha == 1)
@@ -282,8 +304,12 @@ assert(search.border.alpha == 0 and not Frame.note.skin)
 assert(search.Left.alpha == 0 and search.Middle.alpha == 0, "InputBoxTemplate edges came back")
 -- Info column: not there at the build; attached with the first page, then its
 -- Dialog NineSlice is faded for EUI's border and its item icon squared.
-assert(InfoPanel.frame == nil)
+assert(InfoPanel.frame == nil and Tree.search == nil)
 InfoPanel.Attach(frame)
+-- "Search sources": built after the window pass, styled from Tree.Attach; template edges stay faded.
+Tree.Attach(frame)
+assert(Tree.search.skin == "EditBox" and Tree.search.opts.padInput == false)
+assert(Tree.search.Left.alpha == 0 and Tree.search.Right.alpha == 0 and Tree.search.searchIcon.alpha == 1)
 local column = InfoPanel.frame
 assert(column.art.skin == "FadeNineSlice" and column.art.TopLeftCorner.alpha == 0 and column.icon.skin == "SquareIcon")
 -- Portrait: ring faded; an item page shows its icon square, another page the native portrait.

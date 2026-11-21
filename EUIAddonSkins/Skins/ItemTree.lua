@@ -76,6 +76,7 @@ local function DefineSkin()
         local checks = setmetatable({}, {__mode = "k"})
         local boxes = setmetatable({}, {__mode = "k"})
         local fills = {}
+        local edges = setmetatable({}, {__mode = "k"})
         local portrait
         local SkinCheck
         local underlines = {}
@@ -211,6 +212,23 @@ local function DefineSkin()
 
         -- UIPanelButtonTemplate buttons (Recent, Add note, the band squares,
         -- the step arrows ...), found in the window as it is built and shown.
+        -- A search box: EUI's box. ItemTree's own art on it (magnifier, key
+        -- hint) is kept; InputBoxTemplate's Left/Middle/Right are not, and an
+        -- input border ItemTree draws is faded through Assets.Apply.
+        local function SkinEditBox(box)
+            if boxes[box] or not H.Allowed(box) or not S.EditBox then return end
+            if box.IsMultiLine and box:IsMultiLine() then return end
+            boxes[box] = true
+            local template = {}
+            for key in pairs(TEMPLATE_PARTS) do if box[key] then template[box[key]] = true end end
+            local shown = {}
+            for _, region in ipairs(H.Regions(box)) do
+                if H.Texture(region) and not template[region] then shown[region] = region:GetAlpha() end
+            end
+            S.EditBox(box, {padInput = false})
+            for region, alpha in pairs(shown) do region:SetAlpha(alpha) end
+        end
+
         local Walk
         function Walk(f, depth)
             if depth > 12 then return end
@@ -222,20 +240,8 @@ local function DefineSkin()
                         SkinButton(child)
                     elseif kind == "Button" and child.square and child.check then
                         SkinCheck(child)
-                    elseif kind == "EditBox" and not boxes[child] and S.EditBox
-                        and not (child.IsMultiLine and child:IsMultiLine()) then
-                        boxes[child] = true
-                        -- Keep ItemTree's own art on the box (magnifier, key
-                        -- hint); its input border is faded through Assets.Apply.
-                        local shown = {}
-                        -- (InputBoxTemplate's own Left/Middle/Right are not kept.)
-                        local template = {}
-                        for key in pairs(TEMPLATE_PARTS) do if child[key] then template[child[key]] = true end end
-                        for _, region in ipairs(H.Regions(child)) do
-                            if H.Texture(region) and not template[region] then shown[region] = region:GetAlpha() end
-                        end
-                        S.EditBox(child, {padInput = false})
-                        for region, alpha in pairs(shown) do region:SetAlpha(alpha) end
+                    elseif kind == "EditBox" then
+                        SkinEditBox(child)
                     end
                     if kind ~= "PlayerModel" and kind ~= "ModelScene" then Walk(child, depth + 1) end
                 end
@@ -244,15 +250,34 @@ local function DefineSkin()
 
         -- ItemTree's tick boxes (buildCheckBox: a Button with .square and
         -- .check): EUI's dark box with a 1px edge, the tick an accent fill.
+        -- One physical pixel in a region's own units. ItemTree scales its
+        -- window (Window scale), so a 1-unit line can round to 0 or 2 pixels.
+        local function Pixel(region)
+            local _, height = 0, 768
+            if GetPhysicalScreenSize then _, height = GetPhysicalScreenSize() end
+            local scale = region.GetEffectiveScale and region:GetEffectiveScale() or 1
+            if not (height and height > 0 and scale and scale > 0) then return 1 end
+            return 768 / height / scale
+        end
+        local function SizeEdges()
+            for line, vertical in pairs(edges) do
+                local px = Pixel(line)
+                if vertical then line:SetWidth(px) else line:SetHeight(px) end
+            end
+        end
         local function Edge(parent, anchor, layer)
-            local function line(a, b, w, h)
+            local function line(a, b, vertical)
                 local t = parent:CreateTexture(nil, layer, nil, 1)
                 t:SetPoint(a, anchor, a); t:SetPoint(b, anchor, b)
-                if w then t:SetWidth(w) else t:SetHeight(h) end
                 t:SetColorTexture(0.25, 0.25, 0.27, 1)
+                if t.SetSnapToPixelGrid then t:SetSnapToPixelGrid(false) end
+                if t.SetTexelSnappingBias then t:SetTexelSnappingBias(0) end
+                edges[t] = vertical
+                local px = Pixel(t)
+                if vertical then t:SetWidth(px) else t:SetHeight(px) end
             end
-            line("TOPLEFT", "TOPRIGHT", nil, 1); line("BOTTOMLEFT", "BOTTOMRIGHT", nil, 1)
-            line("TOPLEFT", "BOTTOMLEFT", 1, nil); line("TOPRIGHT", "BOTTOMRIGHT", 1, nil)
+            line("TOPLEFT", "TOPRIGHT", false); line("BOTTOMLEFT", "BOTTOMRIGHT", false)
+            line("TOPLEFT", "BOTTOMLEFT", true); line("TOPRIGHT", "BOTTOMRIGHT", true)
         end
         function SkinCheck(button)
             if checks[button] or not H.Allowed(button) or not button.CreateTexture then return end
@@ -386,7 +411,8 @@ local function DefineSkin()
             if H.Allowed(Frame.title) and S.Font then S.Font(Frame.title) end
             SkinPortrait(frame)
             SkinParts()
-            H.Script(frame, "OnShow", function() if not Locked() then SkinParts(); Portrait() end end)
+            -- (The window scale may have changed while it was closed.)
+            H.Script(frame, "OnShow", function() if not Locked() then SkinParts(); Portrait(); SizeEdges() end end)
         end
 
         -- Tabs first (a tab template also has Left/Middle/Right), then buttons.
@@ -415,7 +441,10 @@ local function DefineSkin()
             if Locked() then pending = true; return end
             pending = nil
             SkinWindow()
-            if done.main then SkinInfo() end
+            if done.main then
+                SkinInfo()
+                if type(it.UI.Tree) == "table" and H.Allowed(it.UI.Tree.search) then SkinEditBox(it.UI.Tree.search) end
+            end
             for button in pairs(waiting) do SkinButton(button) end
             if looksPending then ApplyLooks() end
         end
@@ -426,6 +455,14 @@ local function DefineSkin()
         H.Hook(it.Assets, "Apply", Applied)
         H.Hook(Frame, "SelectTab", function() TopSelection(); Portrait() end)
         H.Hook(Frame, "Open", Portrait)
+        -- The tree pane is built when the first page needs it (Tree.Attach),
+        -- with its own search box ("Search sources").
+        if type(it.UI.Tree) == "table" then
+            H.Hook(it.UI.Tree, "Attach", function()
+                if Locked() then pending = true; return end
+                if H.Allowed(it.UI.Tree.search) then SkinEditBox(it.UI.Tree.search) end
+            end)
+        end
         -- The info column is built when the first page needs it (InfoPanel.Attach).
         if type(it.UI.InfoPanel) == "table" then
             H.Hook(it.UI.InfoPanel, "Attach", function()

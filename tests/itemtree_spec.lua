@@ -235,6 +235,10 @@ function Skin.Border(frame, w, h, style)
     pieces.FACE:SetPoint("TOPLEFT", frame, "TOPLEFT", 3, -3); pieces.FACE:Show()
     return true
 end
+function Skin.Flipbook(texture, key, fraction)
+    texture.coords = {0, 0, 0, 0.5, 0.5 * fraction, 0, 0.5 * fraction, 0.5}
+    return true
+end
 function Skin.ThreeSlice(frame, key, x, y, w, h, store)
     local pieces = rawget(frame, store)
     if not pieces then
@@ -408,13 +412,31 @@ for _, r in ipairs(card.regions) do if r.sublevel == -2 then edges[#edges + 1] =
 assert(#edges == 4 and edges[1].fill[1] == 0.43 and math.abs(edges[1].height - px) < 1e-9 and edges[1].width == 200)
 assert(math.abs(edges[4].point[4] - (200 - px)) < 1e-9)
 Skin.Border(card, 200, 80, {edge = "ITEMTREE_COLOR_PROFESSION_CARD_EDGE"})
--- The rank bar: the client's gold bar frame (ThreeSlice PROFESSION_BAR_FRAME) faded for a flat 1px black edge.
-local rank = CreateFrame("Frame", nil, frame)
+-- The rank bar: flat, no border. Its gold frame and rounded background art are faded, an owned
+-- flat background takes the background's place, and the skill tag above loses its gold edge.
+local strip = CreateFrame("Frame", nil, frame)
+strip.tag = CreateFrame("Frame", nil, strip)
+strip.tag.left, strip.tag.middle, strip.tag.right = strip.tag:CreateTexture(), strip.tag:CreateTexture(), strip.tag:CreateTexture()
+local rank = CreateFrame("Frame", nil, strip)
+colors.ITEMTREE_COLOR_PROFESSION_BAR_EMPTY = {r = 0, g = 0, b = 0, a = 0.85}
+Skin.ThreeSlice(rank, "PROFESSION_BAR_BG", 0, 4, 300, 14, "bgPieces", "BACKGROUND", 1)
 Skin.ThreeSlice(rank, "PROFESSION_BAR_FRAME", 0, 4, 300, 14, "framePieces", "OVERLAY", 0)
-assert(rank.framePieces.LEFT.alpha == 0 and rank.framePieces.MIDDLE.alpha == 0)
-local barEdges = {}
-for _, r in ipairs(rank.regions) do if r.layer == "OVERLAY" and r.sublevel == 7 then barEdges[#barEdges + 1] = r end end
-assert(#barEdges == 4 and barEdges[1].fill[1] == 0 and barEdges[1].point[5] == -4 and barEdges[1].width == 300)
+assert(rank.framePieces.LEFT.alpha == 0 and rank.framePieces.MIDDLE.alpha == 0 and rank.bgPieces.RIGHT.alpha == 0)
+local back
+for _, r in ipairs(rank.regions) do if r.layer == "BACKGROUND" and r.sublevel == 1 then back = r end end
+assert(back and back.fill[4] == 0.85 and back.point[5] == -4 and back.width == 300)
+for _, r in ipairs(rank.regions) do assert(not (r.layer == "OVERLAY" and r.sublevel == 7), "a border on the bar") end
+assert(strip.tag.left.alpha == 0 and strip.tag.middle.alpha == 0 and strip.tag.right.alpha == 0)
+-- The fill: the flipbook's rounded left cap is cropped off.
+local fill = rank:CreateTexture()
+function fill:GetTexCoord() local c = self.coords; return c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8] end
+function fill:SetTexCoord(l, r, t, b) self.coords = {l, t, l, b, r, t, r, b} end
+ItemTree.ProfessionsSkin.Flipbook(fill, "PROFESSION_BAR_FILL_DEFAULT", 0.5)
+assert(math.abs(fill.coords[1] - 0.5 * 8 / 374) < 1e-9 and fill.coords[5] == 0.25)
+local untouched = rank:CreateTexture()
+function untouched:GetTexCoord() return 0, 0, 0, 1, 1, 0, 1, 1 end
+function untouched:SetTexCoord() error("not a bar fill") end
+ItemTree.ProfessionsSkin.Flipbook(untouched, "SOMETHING_ELSE", 1)
 local other = CreateFrame("Frame", nil, frame)
 Skin.ThreeSlice(other, "SOMETHING_ELSE", 0, 0, 50, 10, "framePieces")
 assert(other.framePieces.LEFT.alpha == 1)

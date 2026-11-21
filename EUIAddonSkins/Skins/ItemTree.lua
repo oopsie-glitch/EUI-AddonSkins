@@ -619,24 +619,61 @@ local function DefineSkin()
             local edge = type(skin.Colour) == "function" and skin.Colour(style.edge) or nil
             EdgeLines(frame, "card", 0, 0, w, h, edge, style.layer == "OVERLAY" and "OVERLAY" or "BACKGROUND")
         end
-        -- The rank bar's frame: the client's gold profession bar art
-        -- (ThreeSlice "PROFESSION_BAR_FRAME"), faded for a flat 1px black edge.
-        local BAR_EDGE = {r = 0, g = 0, b = 0, a = 1}
+        -- The rank bar, flat and borderless: the client's profession bar art
+        -- (ThreeSlice "PROFESSION_BAR_FRAME", the gold frame, and
+        -- "PROFESSION_BAR_BG", the background with rounded end caps) is faded;
+        -- an owned flat background in ItemTree's empty-bar colour takes the
+        -- background's place. The skill tag above the bar loses its gold edge.
+        local barBacks = setmetatable({}, {__mode = "k"})
         local function FlatBarFrame(frame, key, x, y, w, h, store)
-            if key ~= "PROFESSION_BAR_FRAME" or not H.Allowed(frame) or not frame.CreateTexture then return end
+            if (key ~= "PROFESSION_BAR_FRAME" and key ~= "PROFESSION_BAR_BG") or not H.Allowed(frame)
+                or not frame.CreateTexture then return end
             x, y, w, h = tonumber(x) or 0, tonumber(y) or 0, tonumber(w), tonumber(h)
             if not (w and h and w > 0 and h > 0) then return end
             local pieces = type(store) == "string" and rawget(frame, store) or nil
             if type(pieces) == "table" then
                 for _, piece in pairs(pieces) do if H.Texture(piece) then H.Fade(piece) end end
             end
-            EdgeLines(frame, "bar", x, -y, w, h, BAR_EDGE, "OVERLAY") -- (ItemTree's y runs down)
+            if key == "PROFESSION_BAR_BG" then
+                local back = barBacks[frame]
+                if not back then
+                    back = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+                    barBacks[frame] = back
+                end
+                local c = colors.ITEMTREE_COLOR_PROFESSION_BAR_EMPTY or {r = 0, g = 0, b = 0, a = 0.85}
+                back:ClearAllPoints()
+                back:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -y) -- (ItemTree's y runs down)
+                back:SetSize(w, h)
+                back:SetColorTexture(c.r, c.g, c.b, c.a or 1)
+                back:Show()
+            end
+            local strip = frame.GetParent and frame:GetParent()
+            local tag = type(strip) == "table" and rawget(strip, "tag") or nil
+            if type(tag) == "table" then
+                for _, piece in ipairs({tag.left, tag.middle, tag.right}) do
+                    if H.Texture(piece) then H.Fade(piece) end
+                end
+            end
+        end
+        -- The bar's fill is the first frame of the client's flipbook art, whose
+        -- left end is a rounded cap: its texture coordinates start past the cap.
+        local FILL_CAP = 8 / 374 -- the cap, of the art's 374 texel width
+        local function FlatFill(texture, key, fraction)
+            if type(key) ~= "string" or not key:find("^PROFESSION_BAR_FILL") or not H.Texture(texture) then return end
+            if not texture.GetTexCoord then return end
+            fraction = tonumber(fraction)
+            if not (fraction and fraction > 0) then return end
+            local l, t, _, b, r = texture:GetTexCoord()
+            if not (l and r and t and b and r > l) then return end
+            local whole = (r - l) / math.min(fraction, 1)
+            texture:SetTexCoord(math.min(l + whole * FILL_CAP, r), r, t, b)
         end
         local function HookProfessions()
             local skin = it.ProfessionsSkin
             if type(skin) == "table" then
                 H.Hook(skin, "Border", FlatBorder)
                 H.Hook(skin, "ThreeSlice", FlatBarFrame)
+                H.Hook(skin, "Flipbook", FlatFill)
             end
         end
         HookProfessions()

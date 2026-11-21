@@ -28,6 +28,7 @@ EllesmereUI skins for World of Warcraft addons.
 - HekiLight
 - Home Bound
 - ItemRack
+- ItemTree (WoW Forever)
 - KiwiFarm
 - LiteMount
 - Myslot

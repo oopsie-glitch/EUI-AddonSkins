@@ -1,0 +1,198 @@
+-- ItemTree v1.2.7 (Forever): EUI colour tokens before the window is built,
+-- the gold metal frame faded as Assets.Apply draws it, red plate buttons given
+-- EUI's button a frame later (their glyph kept), and the window chrome.
+do
+local globals = {"ItemTree", "CreateFrame", "hooksecurefunc", "InCombatLockdown", "geterrorhandler", "C_Timer"}
+local saved = {}
+for _, key in ipairs(globals) do saved[key] = _G[key] end
+
+local calls, frames, textures, hooks = 0, 0, 0, 0
+local locked, enabled = false, true
+local events, looks, timers = {}, {}, {}
+local function region(kind, parent)
+    local f = {kind = kind, alpha = 1, scripts = {}, regions = {}, children = {}, parent = parent}
+    function f:GetObjectType() return self.kind end
+    function f:GetParent() return self.parent end
+    function f:SetAlpha(value) self.alpha = value end
+    function f:GetAlpha() return self.alpha end
+    function f:SetAllPoints(target) self.allPoints = target end
+    function f:EnableMouse(value) self.mouse = value end
+    function f:SetColorTexture(...) self.fill = {...} end
+    function f:GetRegions() return table.unpack(self.regions) end
+    function f:CreateTexture(_, layer, _, sublevel)
+        textures = textures + 1
+        local t = region("Texture", self)
+        t.layer, t.sublevel = layer, sublevel
+        self.regions[#self.regions + 1] = t
+        return t
+    end
+    function f:HookScript(name, fn) hooks = hooks + 1; self.scripts[name] = fn end
+    function f:SetScript(name, fn) self.scripts[name] = fn end
+    function f:RegisterEvent(event) events[event] = self end
+    return f
+end
+CreateFrame = function(_, _, parent) frames = frames + 1; return region("Frame", parent) end
+hooksecurefunc = function(owner, key, fn)
+    hooks = hooks + 1
+    local native = owner[key]
+    owner[key] = function(...)
+        local result = table.pack(native(...))
+        fn(...)
+        return table.unpack(result, 1, result.n)
+    end
+end
+InCombatLockdown = function() return locked end
+geterrorhandler = function() return function(message) error(message) end end
+C_Timer = {After = function(_, fn) timers[#timers + 1] = fn end}
+local function RunTimers()
+    local due = timers; timers = {}
+    for _, fn in ipairs(due) do fn() end
+end
+
+-- ItemTree as UI/Theme.lua, UI/Assets.lua and UI/Frame.lua expose it.
+local GOLD = {r = 0.79, g = 0.65, b = 0.36, a = 1, hex = "C9A65C"}
+local colors = {
+    ITEMTREE_COLOR_SURFACE_FRAME = {r = 0.04, g = 0.04, b = 0.03, a = 1, hex = "0B0A08"},
+    ITEMTREE_COLOR_SURFACE_INSET = {r = 0.09, g = 0.07, b = 0.07, a = 1, hex = "161311"},
+    ITEMTREE_COLOR_BORDER_GOLD = GOLD,
+    ITEMTREE_COLOR_TEXT_TITLE = {r = 1, g = 0.82, b = 0, a = 1, hex = "FFD100"},
+    ITEMTREE_COLOR_TEXT_SELECTED = {r = 1, g = 0.82, b = 0, a = 1, hex = "FFD100"},
+    ITEMTREE_LIST_STATE_SELECTED = {r = 0.79, g = 0.65, b = 0.36, a = 0.18},
+    ITEMTREE_COLOR_QUALITY_EPIC = {r = 0.64, g = 0.21, b = 0.93, a = 1, hex = "A335EE"},
+    ITEMTREE_COLOR_SEMANTIC_NEW = {r = 0.47, g = 0.72, b = 0.96, a = 1},
+    ITEMTREE_COLOR_MONEY_GOLD = {r = 1, g = 0.84, b = 0, a = 1, hex = "FFD700"},
+}
+local epic, new, money = colors.ITEMTREE_COLOR_QUALITY_EPIC, colors.ITEMTREE_COLOR_SEMANTIC_NEW, colors.ITEMTREE_COLOR_MONEY_GOLD
+local Theme = {colors = colors}
+function Theme.ColorTable(key) return Theme.colors[key] end
+function Theme.Hex(key)
+    local c = Theme.colors[key]
+    if c.hex then return c.hex:lower() end
+    return string.format("%02x%02x%02x", math.floor(c.r * 255 + 0.5), math.floor(c.g * 255 + 0.5), math.floor(c.b * 255 + 0.5))
+end
+local Assets = {applied = 0}
+function Assets.Apply(texture, key) Assets.applied = Assets.applied + 1; texture.asset = key; return true end
+local Frame = {builds = 0}
+local drawnTitle
+function Frame.Build()
+    Frame.builds = Frame.builds + 1
+    if Frame.frame then return Frame.frame end
+    local frame = region("Frame")
+    frame.NineSlice = region("Frame", frame)
+    frame.Bg = frame:CreateTexture(nil, "BACKGROUND")
+    frame.CloseButton = region("Button", frame)
+    frame.CloseButton.scripts.OnClick = function() return "native-close" end
+    Frame.frame, Frame.closeButton = frame, frame.CloseButton
+    Frame.title = frame:CreateTexture(nil, "OVERLAY"); Frame.title.kind = "FontString"
+    -- The body surface and title colour, read from the tokens as the window is built.
+    local surface = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    local c = Theme.ColorTable("ITEMTREE_COLOR_SURFACE_FRAME")
+    surface:SetColorTexture(c.r, c.g, c.b, c.a)
+    Frame.surface = surface
+    drawnTitle = Theme.Hex("ITEMTREE_COLOR_TEXT_TITLE")
+    -- The info column's metal frame and a red plate button with its glyph.
+    Frame.corner = frame:CreateTexture(nil, "BORDER")
+    Assets.Apply(Frame.corner, "INFO_FRAME_CORNER_TL")
+    local button = region("Button", frame)
+    button.scripts.OnClick = function() return "native-dice" end
+    button.plate = {normal = button:CreateTexture(nil, "BACKGROUND"), pushed = button:CreateTexture(nil, "BACKGROUND")}
+    Assets.Apply(button.plate.normal, "BUTTON_UP")
+    Assets.Apply(button.plate.pushed, "BUTTON_DOWN")
+    button.glyph = button:CreateTexture(nil, "ARTWORK") -- after the plate, as the plate builders do
+    Assets.Apply(button.glyph, "ICON_DICE")
+    Frame.dice = button
+    return frame
+end
+ItemTree = {Theme = Theme, Assets = Assets, UI = {Frame = Frame}}
+
+local S = {}
+for _, name in ipairs({"Panel", "CloseButton", "Button", "Font", "FadeNineSlice"}) do
+    S[name] = function(f, options)
+        assert(not locked, "cosmetic write in combat: " .. name)
+        calls = calls + 1
+        f.skin, f.opts = name, options
+        if name == "FadeNineSlice" then f:SetAlpha(0) end
+        if name == "Button" then
+            local keep = {}
+            for _, key in ipairs(options or {}) do keep[f[key]] = true end
+            for _, r in ipairs(f.regions) do if not keep[r] then r:SetAlpha(0) end end
+        end
+    end
+end
+local panel, accent = {0.1, 0.1, 0.12}, {0.2, 0.7, 0.6}
+S.GetPanelColor = function() return panel[1], panel[2], panel[3], 1 end
+S.GetAccentColor = function() return accent[1], accent[2], accent[3] end
+S.OnLooksChanged = function(fn) looks[#looks + 1] = fn end
+
+local ns = {IsEnabled = function() return enabled end}
+local module = {}
+ns.RegisterModule = function(id, label, available, install)
+    assert(id == "ItemTree" and label == "ItemTree" and available())
+    install(S, module)
+end
+assert(loadfile("EUIAddonSkins/Widgets.lua"))("EUIAddonSkins", ns)
+ns.RegisterSkinDefinition = function(id, fn) assert(id == "ItemTree"); fn() end
+assert(loadfile("EUIAddonSkins/Skins/ItemTree.lua"))("EUIAddonSkins", ns)
+
+-- Activated at login, before ItemTree builds its window: tokens swapped, nothing styled yet.
+assert(calls == 0 and Frame.builds == 0)
+local frameToken = colors.ITEMTREE_COLOR_SURFACE_FRAME
+assert(frameToken.r == panel[1] and frameToken.hex == nil)
+assert(colors.ITEMTREE_COLOR_BORDER_GOLD ~= GOLD and GOLD.r == 0.79, "original token table changed in place")
+assert(colors.ITEMTREE_COLOR_TEXT_SELECTED.g == accent[2] and colors.ITEMTREE_LIST_STATE_SELECTED.a == 0.18)
+assert(Theme.Hex("ITEMTREE_COLOR_TEXT_TITLE") == "ffffff")
+assert(colors.ITEMTREE_COLOR_QUALITY_EPIC == epic and colors.ITEMTREE_COLOR_SEMANTIC_NEW == new and colors.ITEMTREE_COLOR_MONEY_GOLD == money)
+
+-- The build (a tick after PLAYER_ENTERING_WORLD) reads the EUI tokens and gets the chrome.
+local frame = Frame.Build()
+assert(Frame.surface.fill[1] == panel[1] and drawnTitle == "ffffff")
+assert(frame.NineSlice.skin == "FadeNineSlice" and frame.Bg.alpha == 0)
+assert(frame.CloseButton.skin == "CloseButton" and frame.CloseButton.scripts.OnClick() == "native-close")
+assert(Frame.title.skin == "Font")
+local backing = frame.regions[#frame.regions]
+for _, r in ipairs(frame.regions) do if r.sublevel == -8 then backing = r end end
+assert(backing.sublevel == -8 and backing.fill[1] == panel[1] and backing.allPoints == frame)
+assert(Frame.corner.alpha == 0 and Frame.corner.asset == "INFO_FRAME_CORNER_TL")
+Frame.corner:SetAlpha(1); assert(Frame.corner.alpha == 0, "metal frame came back")
+-- The plate button waits a frame, then keeps its glyph and loses the plate.
+local dice = Frame.dice
+assert(not dice.skin and #timers == 1)
+RunTimers()
+assert(dice.skin == "Button" and dice.glyph.alpha == 1 and dice.plate.normal.alpha == 0)
+assert(dice.scripts.OnClick() == "native-dice")
+
+-- Warm: the build is not repeated, nothing new is made or hooked.
+local warm = {calls, frames, textures, hooks}
+for _ = 1, 20 do Frame.Build(); Assets.Apply(dice.plate.normal, "BUTTON_UP"); RunTimers() end
+assert(calls == warm[1] and frames == warm[2] and textures == warm[3] and hooks == warm[4])
+
+-- A plate button built in combat is styled after it.
+locked = true
+local late = region("Button", frame)
+late.plate = {normal = late:CreateTexture(nil, "BACKGROUND")}
+Assets.Apply(late.plate.normal, "BUTTON_UP")
+RunTimers()
+assert(not late.skin)
+locked = false
+events.PLAYER_REGEN_ENABLED.scripts.OnEvent(events.PLAYER_REGEN_ENABLED)
+assert(late.skin == "Button")
+
+-- Theme change: tokens and owned fill follow; in combat it waits.
+accent = {0.9, 0.3, 0.1}; panel = {0.2, 0.2, 0.2}
+looks[1]()
+assert(colors.ITEMTREE_COLOR_TEXT_SELECTED.r == 0.9 and backing.fill[1] == 0.2)
+locked = true; panel = {0.3, 0.3, 0.3}; looks[1](); locked = false
+assert(backing.fill[1] == 0.2)
+events.PLAYER_REGEN_ENABLED.scripts.OnEvent(events.PLAYER_REGEN_ENABLED)
+assert(backing.fill[1] == 0.3)
+
+-- A disabled skin leaves new art alone.
+enabled = false
+local before = calls
+local other = frame:CreateTexture(nil, "BORDER")
+Assets.Apply(other, "INFO_FRAME_EDGE_TOP"); module.refresh(); looks[1](); RunTimers()
+assert(calls == before and other.alpha == 1)
+
+print("PASS: ItemTree EUI tokens before the build (quality/semantic/money kept, no shared tables mutated), window chrome, faded metal frame, plate buttons keep their glyph, combat, theme and disabled skin")
+for _, key in ipairs(globals) do _G[key] = saved[key] end
+end

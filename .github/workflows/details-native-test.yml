@@ -31,7 +31,7 @@ jobs:
           for sha in ('2efa4b10628e0e4a91c346138cf8325e81d0a43c', '4316feb434bcc9751455ae2c6435d93fc20f034f'):
               folder = root / sha
               folder.mkdir(parents=True)
-              for path in ('functions/skins.lua', 'frames/window_main.lua', 'frames/window_options2_sections.lua', 'classes/class_instance.lua', 'Details_Camelot.toc', 'Libs/DF/dropdown.lua'):
+              for path in ('functions/skins.lua', 'frames/window_main.lua', 'frames/window_options2_sections.lua', 'classes/class_instance.lua', 'Details_Camelot.toc', 'Libs/DF/dropdown.lua', 'classes/include_instance.lua'):
                   with urlopen('https://raw.githubusercontent.com/Tercioo/Details-Damage-Meter/'+sha+'/'+path, timeout=30) as response:
                       (folder / Path(path).name).write_bytes(response.read())
           PY

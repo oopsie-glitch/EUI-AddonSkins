@@ -96,6 +96,17 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         -- Do not inherit Minimalistic's numerous unrelated presentation defaults.
         -- Copy native defaults, then set only values derived from GetMeterStyle.
         definition.instance_cprops = props
+        -- Atlas anchors and native menu/title defaults form one layout contract.
+        -- Copy the working skin's initial layout, not generic disabled-title defaults.
+        local nativeLayout = base.instance_cprops or {}
+        for _, key in ipairs({"menu_anchor", "menu_anchor_down", "toolbar_side", "plugins_grow_direction", "toolbar_icon_file"}) do
+            if nativeLayout[key] ~= nil then props[key] = D.CopyTable(nativeLayout[key]) end
+        end
+        local nativeTitle = nativeLayout.attribute_text
+        if nativeTitle then
+            if nativeTitle.anchor then props.attribute_text.anchor = D.CopyTable(nativeTitle.anchor) end
+            if nativeTitle.side then props.attribute_text.side = nativeTitle.side end
+        end
         definition.micro_frames = nil
         definition.no_cache, definition.is_cached_skin = true, nil
         definition.author, definition.version = "EUI AddonSkins community", "experimental"
@@ -216,9 +227,87 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
             painting = false
         end
     end
+    -- Native RefreshAttributeTextSize subtracts a button count, but never moves
+    -- the left-anchored title past a left-side toolbar. Fit the existing title
+    -- to actual occupied bounds; never move or resize a button.
+    local function Number(v) return Plain(v) and type(v) == "number" end
+    local function Points(f)
+        local result = {}
+        for i = 1, f:GetNumPoints() do
+            local p,r,rp,x,y = f:GetPoint(i)
+            if not Plain(p) or not Plain(r) or not Plain(rp) or not Number(x) or not Number(y) then return end
+            result[i] = {p,r,rp,x,y}
+        end
+        return result
+    end
+    local function OwnPoint(title, state, f)
+        if not state or title:GetNumPoints() ~= 1 then return false end
+        local p,r,rp,x,y = title:GetPoint(1)
+        return Plain(p) and Plain(r) and Plain(rp) and Plain(x) and Plain(y)
+            and p == "BOTTOMLEFT" and r == f and rp == "TOPLEFT" and x == state.x and y == state.y
+    end
+    function P.Title(instance)
+        if not SafeUI() or not ns.IsNativeDetailsInstance(instance) then return end
+        local entry, f = entries[instance], instance.baseframe
+        local title = instance.GetTitleBarFontString and Frame(instance:GetTitleBarFontString())
+        if not entry or not H.Allowed(f) or not H.Allowed(title)
+            or not f.GetEffectiveScale or not title.GetEffectiveScale or not title.GetNumPoints
+            or not title.GetLeft or not title.GetBottom or not title.GetTop
+            or not f.GetLeft or not f.GetTop or not f.GetWidth then return end
+        local scale, ts = f:GetEffectiveScale(), title:GetEffectiveScale()
+        local fl, ft, fw = f:GetLeft(), f:GetTop(), f:GetWidth()
+        local tl, tb, tt = title:GetLeft(), title:GetBottom(), title:GetTop()
+        if not Number(scale) or not Number(ts) or scale <= 0 or ts <= 0
+            or not Number(fl) or not Number(ft) or not Number(fw)
+            or not Number(tl) or not Number(tb) or not Number(tt) then return end
+        local state = entry.title
+        if not OwnPoint(title, state, f) then
+            local points = Points(title)
+            if not points then return end
+            state = {points = points, left = tl * ts / scale - fl,
+                bottom = tb * ts / scale - ft, height = (tt - tb) * ts / scale}
+            entry.title = state
+        end
+        local left, right = math.max(0, state.left), fw
+        local bottom, top = ft + state.bottom, ft + state.bottom + state.height
+        local function Reserve(value)
+            local button = Frame(value)
+            if not H.Allowed(button) or button.IsShown and not button:IsShown()
+                or not button.GetLeft or not button.GetRight or not button.GetTop or not button.GetBottom
+                or not button.GetEffectiveScale then return end
+            local bs = button:GetEffectiveScale()
+            local bl,br,bt,bb = button:GetLeft(),button:GetRight(),button:GetTop(),button:GetBottom()
+            if not Number(bs) or bs <= 0 or not Number(bl) or not Number(br) or not Number(bt) or not Number(bb) then return end
+            bl,br,bt,bb = bl*bs/scale-fl,br*bs/scale-fl,bt*bs/scale,bb*bs/scale
+            if bt > bottom and bb < top then
+                if instance.menu_anchor and instance.menu_anchor.side == 1 then left = math.max(left, br)
+                else right = math.min(right, bl) end
+            end
+        end
+        local header = f.cabecalho or {}
+        for _, spec in ipairs(buttons) do Reserve(header[spec[1]]) end
+        for _, button in ipairs(D.ToolBar and D.ToolBar.Shown or {}) do
+            local raw = Frame(button)
+            if raw and raw.GetParent and raw:GetParent() == f then Reserve(raw) end
+        end
+        left = math.min(fw, left)
+        local width = math.max(0, right - left)
+        if not OwnPoint(title, state, f) or state.x ~= left or state.y ~= state.bottom then
+            title:ClearAllPoints()
+            title:SetPoint("BOTTOMLEFT", f, "TOPLEFT", left, state.bottom)
+            state.x, state.y = left, state.bottom
+        end
+        local current = title:GetWidth()
+        if Number(current) and current ~= width then title:SetWidth(width) end
+    end
     function P.Release(instance)
         local entry = entries[instance]
         if not entry then return end
+        local title = instance.GetTitleBarFontString and Frame(instance:GetTitleBarFontString())
+        if H.Allowed(title) and entry.title and OwnPoint(title, entry.title, instance.baseframe) then
+            title:ClearAllPoints()
+            for _, point in ipairs(entry.title.points) do title:SetPoint(unpack(point)) end
+        end
         for art, old in pairs(entry.art) do
             local path = art:GetTexture()
             -- Native ChangeSkin normally replaced these first; don't overwrite it.
@@ -262,6 +351,7 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         end
         P.Background(instance)
         P.Toolbar(instance)
+        P.Title(instance)
     end
     function P.Refresh(look)
         if not SafeUI() then return end
@@ -271,6 +361,7 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
     -- No row, combat-data, timer, font or geometry hooks.
     H.Hook(D, "SetBackgroundColor", P.Background)
     H.Hook(D, "SetBackgroundAlpha", P.Background)
+    H.Hook(D, "RefreshAttributeTextSize", P.Title)
     P.entries = entries -- bounded diagnostics/tests, not a second preference store
     return P
 end

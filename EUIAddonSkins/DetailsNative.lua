@@ -196,16 +196,52 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
                 text.font.size = 11
             end
         end
+        -- Details loads profiles before IsLoaded becomes true. WaitForSkin
+        -- temporarily changes the skin identity, causing ChangeSkin to reset
+        -- appearance to the fallback before this provider can register.
+        -- Recover only that pending selection, from Details' own saved profile,
+        -- through its native preset importer. No shadow preferences or hooks.
+        local waiting, pending, recovery = D.waitingForSkins, {}, {}
+        if type(waiting) == "table" then
+            local profile
+            for id, name in pairs(waiting) do
+                if name == NAME then
+                    local instance = D:GetInstance(id)
+                    if instance and instance.skin == NAME then
+                        if not profile and type(D.GetProfile) == "function"
+                            and type(D.GetCurrentProfileName) == "function" then
+                            profile = D:GetProfile(D:GetCurrentProfileName())
+                        end
+                        local saved = profile and profile.instances and profile.instances[id]
+                        if type(saved) ~= "table" or saved.skin ~= NAME
+                            or type(instance.ApplySavedSkin) ~= "function"
+                            or not Number(saved.version) or not Number(D.preset_version)
+                            or saved.version < D.preset_version then
+                            Status("profile", "cannot safely recover the waiting native saved window " .. tostring(id), true)
+                            return
+                        end
+                        recovery[#recovery + 1] = {instance = instance, saved = D.CopyTable(saved)}
+                    end
+                    pending[id] = name
+                end
+            end
+        end
         ownDefinition = definition
-        -- InstallSkin may synchronously restore a previously selected waiting
-        -- instance. No explicit ChangeSkin call or profile migration is made.
+        -- Consume only our waiting entries. Native InstallSkin would otherwise
+        -- reselect stale windows which the user already switched away from.
+        for id in pairs(pending) do waiting[id] = nil end
         P.installAttempts = (P.installAttempts or 0) + 1
         D:InstallSkin(NAME, definition)
         if FindSkin(NAME) ~= definition then
             ownDefinition = nil
+            for id, name in pairs(pending) do if waiting[id] == nil then waiting[id] = name end end
             Status("rejected", "InstallSkin did not retain the submitted definition", true)
             return
         end
+        for _, item in ipairs(recovery) do
+            if item.instance.skin == NAME then item.instance:ApplySavedSkin(item.saved) end
+        end
+        P.recoveredWindows = #recovery
         Status("registered", "registered in Details.skins; native GetSkin is instance-dependent")
     end
     local function SaveArt(entry, art, path, tint)

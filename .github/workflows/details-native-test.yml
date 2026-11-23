@@ -33,13 +33,40 @@ jobs:
           for sha in ('2efa4b10628e0e4a91c346138cf8325e81d0a43c', '4316feb434bcc9751455ae2c6435d93fc20f034f'):
               folder = root / sha
               folder.mkdir(parents=True)
-              for path in ('functions/skins.lua', 'frames/window_main.lua', 'frames/window_options2_sections.lua', 'classes/class_instance.lua', 'Details_Camelot.toc', 'Libs/DF/dropdown.lua', 'classes/include_instance.lua', 'functions/util.lua', 'Libs/DF/fw.lua', 'startup.lua', 'boot.lua', 'frames/window_designer/designer_objects.lua', 'Libs/DF/button.lua'):
+              for path in ('functions/skins.lua', 'frames/window_main.lua', 'frames/window_options2_sections.lua', 'classes/class_instance.lua', 'Details_Camelot.toc', 'Libs/DF/dropdown.lua', 'classes/include_instance.lua', 'functions/util.lua', 'Libs/DF/fw.lua', 'startup.lua', 'boot.lua', 'frames/window_designer/designer_objects.lua', 'Libs/DF/button.lua', 'functions/profiles.lua', 'functions/loaddata.lua', 'functions/savedata.lua', 'core/parser.lua'):
                   with urlopen('https://raw.githubusercontent.com/Tercioo/Details-Damage-Meter/'+sha+'/'+path, timeout=30) as response:
                       (folder / Path(path).name).write_bytes(response.read())
           PY
           for source in /tmp/details-native-source/*; do
             DETAILS_NATIVE_SOURCE="$source" python3 tests/run_lua.py
           done
+      - name: Reproduce reload reset against the exact prior head
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import subprocess, os, sys
+          target=Path('EUIAddonSkins/DetailsNative.lua')
+          fixed=target.read_bytes()
+          runner=Path('tests/run_lua.py').read_text()
+          start=runner.index('    for test in [')
+          end=runner.index(':\n',start)
+          runner=runner[:start]+"    for test in ['tests/details_native_persistence_spec.lua']"+runner[end:]
+          env=dict(os.environ,DETAILS_NATIVE_SOURCE='/tmp/details-native-source/2efa4b10628e0e4a91c346138cf8325e81d0a43c')
+          with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/309997d084cb4ce038174e2cea9b3510f77bab2b/EUIAddonSkins/DetailsNative.lua',timeout=30) as response:
+              previous=response.read()
+          try:
+              target.write_bytes(previous)
+              result=subprocess.run([sys.executable,'-c',runner],env=env,capture_output=True,text=True)
+              assert result.returncode!=0 and 'REPRO: reload registration lost native customization' in result.stderr,result.stdout+result.stderr
+              print('Confirmed exact prior head loses persisted customization through native startup/profile fallback',flush=True)
+              subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_PERSIST_BENCH='1'),check=True)
+          finally:
+              target.write_bytes(fixed)
+          subprocess.run([sys.executable,'-c',runner],env=env,check=True)
+          subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_PERSIST_BENCH='1'),check=True)
+          assert target.read_bytes()==fixed
+          PY
       - name: Verify regression sensitivity against the reported runtime
         run: |
           python3 - <<'PY'

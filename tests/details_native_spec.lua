@@ -391,9 +391,9 @@ Details.skins["Addonskins EUI"]=nil
 Details.waitingForSkins={[2]="Addonskins EUI"}
 b.skin="Original"
 P2.Register(look)
-assert(b.skin=="Addonskins EUI","did not account for native waiting-skin restoration")
+assert(b.skin=="Original" and not Details.waitingForSkins[2],"stale waiting skin replaced the current selection")
 assert(not next(Details.installed_skins_cache),"waiting recovery cached prototype")
-print("PASS: foreign collision and prior-selection waiting restoration through native registration")
+print("PASS: foreign collision and stale waiting-skin ownership during native registration")
 
 -- Isolate registration and first cosmetic activation from warm-refresh timing.
 local savedInstances, savedWaiting, savedDefinition = Details.instances, Details.waitingForSkins, Details.skins["Addonskins EUI"]

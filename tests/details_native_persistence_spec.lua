@@ -9,7 +9,8 @@ local function copy(v) if type(v)~="table" then return v end local t={};for k,x 
 local function encode(v)
     if type(v)=="table" then local t={"{"};for k,x in pairs(v)do t[#t+1]="["..encode(k).."]="..encode(x).."," end;t[#t+1]="}";return table.concat(t)
     elseif type(v)=="string" then return string.format("%q",v)
-    elseif type(v)=="number" or type(v)=="boolean" then return tostring(v) end
+    elseif type(v)=="number" then return string.format("%a",v)
+    elseif type(v)=="boolean" then return tostring(v) end
     error("non-SavedVariables value: "..type(v))
 end
 -- Table order is irrelevant across reconstructed Lua states.

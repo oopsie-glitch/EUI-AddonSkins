@@ -218,6 +218,7 @@ for id,wanted in ipairs(expectedA)do
     assert(same(prefs(reload.D:GetInstance(id)),wanted),"REPRO: reload registration lost native customization for window "..id)
 end
 assert(next(reload.D.waitingForSkins)==nil,"prototype waiting entries were not consumed")
+assert(reload.P.recoveredWindows==2 and reload.counts.recovery==0,"registration imported saved appearance instead of avoiding reset")
 local recovery=reload.counts.recovery
 local resets=reload.counts.resets
 for _=1,1000 do reload.P.Register() end
@@ -259,14 +260,15 @@ closedData.profiles.A.instances[2].__was_opened=false
 local closed=environment(encode(closedData))
 closed.boot();closed.P.Register()
 for id,wanted in ipairs(expectedA)do assert(same(prefs(closed.D:GetInstance(id)),wanted),"closed-window startup lost settings")end
-assert(closed.counts.recovery==1 and not closed.D:GetInstance(2):IsEnabled(),"closed window was unnecessarily recovered or opened")
+assert(closed.P.recoveredWindows==1 and closed.counts.recovery==0 and not closed.D:GetInstance(2):IsEnabled(),"closed window was unnecessarily recovered or opened")
 local incomplete=environment(reload.save())
 incomplete.boot()
-incomplete.D.profiles.A.instances[1].version=nil
+local missing=copy(incomplete.D.profiles.A.instances[1])
+incomplete.D.profiles.A.instances[1]=nil
 incomplete.P.Register()
-assert(incomplete.P.status=="profile" and not incomplete.D.skins["Addonskins EUI"],"missing saved version silently accepted")
+assert(incomplete.P.status=="profile" and not incomplete.D.skins["Addonskins EUI"],"missing saved window silently accepted")
 assert(incomplete.D.waitingForSkins[1]=="Addonskins EUI","failed recovery consumed its wait")
-incomplete.D.profiles.A.instances[1].version=1
+incomplete.D.profiles.A.instances[1]=missing
 local install=incomplete.D.InstallSkin
 incomplete.D.InstallSkin=function()return false end
 incomplete.P.Register()
@@ -274,6 +276,6 @@ assert(incomplete.P.status=="rejected" and incomplete.D.waitingForSkins[1]=="Add
 incomplete.D.InstallSkin=install
 incomplete.P.Register()
 for id,wanted in ipairs(expectedA)do assert(same(prefs(incomplete.D:GetInstance(id)),wanted),"safe retry lost settings")end
-print("PASS: closed windows remain closed; missing native exports defer with diagnostic; rejected installation retains recoverable waits")
+print("PASS: closed windows remain closed; missing native profile windows defer with diagnostic; rejected installation retains recoverable waits")
 for _,k in ipairs(keys)do _G[k]=original[k]end
 

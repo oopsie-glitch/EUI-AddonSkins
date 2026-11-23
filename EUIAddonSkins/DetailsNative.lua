@@ -204,11 +204,10 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
                 text.font.size = 11
             end
         end
-        -- Details loads profiles before IsLoaded becomes true. WaitForSkin
-        -- temporarily changes the skin identity during window construction.
-        -- Late InstallSkin would switch it back and reset native customization.
-        -- Preserve the live native export across that pending selection, using
-        -- Details' own export/import API. No shadow preferences or hooks.
+        -- InstanceColor/WaitForSkin temporarily replaces a saved external
+        -- skin's identity with the native fallback. Preserve the pending native
+        -- selection so InstallSkin takes ChangeSkin's refresh (not reset) path.
+        -- No appearance values, profile exports or SavedVariables are replayed.
         local waiting, pending, recovery = D.waitingForSkins, {}, {}
         if type(waiting) == "table" then
             local profile
@@ -226,21 +225,7 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
                             return
                         end
                         if saved.skin == NAME then
-                            if type(instance.ExportSkin) ~= "function" or type(instance.ApplySavedSkin) ~= "function"
-                                or not Number(saved.version) or not Number(D.preset_version)
-                                or saved.version < D.preset_version then
-                                Status("profile", "cannot safely recover the waiting native window " .. tostring(id), true)
-                                return
-                            end
-                            local current = instance:ExportSkin()
-                            if type(current) ~= "table" or not Number(current.version)
-                                or current.version < D.preset_version then
-                                Status("profile", "native window export is unavailable for " .. tostring(id), true)
-                                return
-                            end
-                            current = D.CopyTable(current)
-                            current.skin = NAME
-                            recovery[#recovery + 1] = {instance = instance, saved = current, fallback = instance.skin}
+                            recovery[#recovery + 1] = {instance = instance, previous = instance.skin, id = id}
                         end
                     end
                     pending[id] = name
@@ -248,20 +233,25 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
             end
         end
         ownDefinition = definition
-        -- Consume only our waiting entries. Native InstallSkin would otherwise
-        -- reselect stale windows which the user already switched away from.
+        -- Retain only verified prior selections; stale own entries must not
+        -- select this skin over an unrelated current window/profile.
         for id in pairs(pending) do waiting[id] = nil end
+        for _, item in ipairs(recovery) do
+            item.instance.skin = NAME
+            waiting[item.id] = NAME
+        end
         P.installAttempts = (P.installAttempts or 0) + 1
         D:InstallSkin(NAME, definition)
         if FindSkin(NAME) ~= definition then
             ownDefinition = nil
+            for _, item in ipairs(recovery) do
+                if item.instance.skin == NAME then item.instance.skin = item.previous end
+            end
             for id, name in pairs(pending) do if waiting[id] == nil then waiting[id] = name end end
             Status("rejected", "InstallSkin did not retain the submitted definition", true)
             return
         end
-        for _, item in ipairs(recovery) do
-            if item.instance.skin == item.fallback then item.instance:ApplySavedSkin(item.saved) end
-        end
+        for id in pairs(pending) do if waiting[id] == NAME then waiting[id] = nil end end
         P.recoveredWindows = #recovery
         Status("registered", "registered in Details.skins; native GetSkin is instance-dependent")
     end

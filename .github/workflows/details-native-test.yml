@@ -20,8 +20,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y liblua5.4-0 python3-cairosvg python3-pil
-      - name: Verify tracked licensed toolbar media
-        run: python3 scripts/build_details_native_media.py
+      - name: Measure and build toolbar polish
+        run: python3 scripts/build_details_native_media.py --emit
       - name: Full regression and package verification
         run: python3 scripts/package.py
       - name: Pinned official Details source compatibility

@@ -174,14 +174,18 @@ local look={texture="approved-bar",font="approved-font",flags="",bg={0,0,0,0.75}
     titleColor={1,0.7,0.3,1},height=18,spacing=2,leftSize=11,rightSize=10}
 -- The legacy shared helper deliberately supports a separate EDM title color.
 -- Native skin defaults must use the live EUI accent rather than that preference.
-local savedEDM, savedEUI = _EDM_DB, EllesmereUI
-_EDM_DB={profile={dm={hdrTextUseAccent=false,hdrTextColor={r=1,g=.82,b=0}}}}
+local savedEDM, savedEUI, savedTextures = _EDM_DB, EllesmereUI, _EDM_BarTextures
+_EDM_DB={profile={dm={hdrTextUseAccent=false,hdrTextColor={r=1,g=.82,b=0},
+    hdrBgColor={r=.41,g=.26,b=.13},hdrBgAlpha=.36,hdrHeight=37,hdrFontSize=19,
+    bgR=.2,bgG=.3,bgB=.4,bgAlpha=.28,barHeight=29,barSpacing=6,
+    leftFontSize=17,rightFontSize=18,barTexture="optional"}}}
+_EDM_BarTextures={optional="Interface\\AddOns\\EllesmereUIDamageMeters\\Media\\bar.tga"}
 EllesmereUI={}
 assert(loadfile("EUIAddonSkins/MeterStyle.lua"))("EUIAddonSkins",ns)
 local legacyLook=ns.GetMeterStyle(skinAPI)
 assert(legacyLook.titleColor[1]==1 and legacyLook.titleColor[2]==.82 and legacyLook.titleColor[3]==0)
-look.titleColor=legacyLook.titleColor
-_EDM_DB,EllesmereUI=savedEDM,savedEUI
+look=legacyLook
+_EDM_DB,EllesmereUI,_EDM_BarTextures=savedEDM,savedEUI,savedTextures
 local original=copy(Details.skins.Minimalistic)
 P.Refresh(look)
 assert(not Details.skins["Addonskins EUI"] and released==0, "registered before Details ready")
@@ -208,6 +212,19 @@ if buildMenu then
 end
 P.Refresh(look)
 local def=assert(Details.skins["Addonskins EUI"])
+if os.getenv("DETAILS_MEDIA_REPRO") then
+    C_AddOns.IsAddOnLoaded=function() return false end
+    local first=Details.instances[1];first:ChangeSkin("Addonskins EUI");P.Apply(first)
+    assert(first.baseframe.cabecalho.modo_selecao.normal.path=="Interface\\AddOns\\EUIAddonSkins\\Media\\DetailsNative\\settings.tga",
+        "REPRO: native toolbar depends on optional EUI meter")
+    return
+end
+if os.getenv("DETAILS_DEFAULTS_REPRO") then
+    assert(def.instance_cprops.titlebar_height==22 and def.instance_cprops.titlebar_texture_color[1]==27/255
+        and def.instance_cprops.bg_alpha==.75 and def.instance_cprops.row_info.height==18,
+        "REPRO: native definition imports optional meter configuration")
+    return
+end
 assert(Details.GetSkin({skin="Addonskins EUI"})==def, "native instance getter does not resolve the registered skin")
 if buildMenu then
     local found=0
@@ -234,13 +251,25 @@ assert(Details.instances[1].skin=="Original" and Details.instances[1].row_info.h
 assert(def.instance_cprops.bg_alpha==0.75 and def.instance_cprops.titlebar_texture_color[1]==27/255)
 assert(def.instance_cprops.row_info.height==18 and def.instance_cprops.row_info.space.between==2)
 assert(def.instance_cprops.attribute_text.show_timer==true)
+assert(def.instance_cprops.titlebar_height==22 and def.instance_cprops.attribute_text.text_size==11)
+assert(media["statusbar:Addonskins EUI Bar"]=="Interface\\Buttons\\WHITE8X8")
+assert(media["font:Addonskins EUI Font"]=="approved-font")
+assert(def.instance_cprops.row_info.texture_file=="Interface\\Buttons\\WHITE8X8")
+-- Shared look retains the unrelated optional preferences; native ignores them.
+assert(look.headerHeight==37 and look.bg[4]==.28 and look.height==29)
 assert(def.instance_cprops.row_info.texts[1].font.face=="approved-font", "modern row text needs a concrete font file")
 for _=1,20 do P.Refresh(look) end
 assert(Details.skins["Addonskins EUI"]==def and #hooks==2,"duplicate registration/hooks")
 -- A real native selection (only explicit test action), then normal customization.
 local a,b=Details.instances[1],Details.instances[2]
 a:ChangeSkin("Addonskins EUI")
+local optionalQueries=0
+C_AddOns.IsAddOnLoaded=function(name)
+    if name=="EllesmereUIDamageMeters" then optionalQueries=optionalQueries+1;return false end
+    return true
+end
 P.Apply(a)
+assert(optionalQueries==0,"native cosmetics still query optional meter availability")
 equalColor(a.attribute_text.text_color,{accent[1],accent[2],accent[3],1})
 assert(a.attribute_text.text_color~=def.instance_cprops.attribute_text.text_color,"native selection aliases the definition")
 a.attribute_text.text_color={.22,.34,.81,.6}
@@ -251,7 +280,7 @@ equalColor(a.attribute_text.text_color,manualTitleColor)
 equalColor(def.instance_cprops.attribute_text.text_color,{accent[1],accent[2],accent[3],1})
 assert(ns.IsNativeDetailsInstance(a) and not ns.IsNativeDetailsInstance(b))
 assert(a.bgdisplay.color[4]==0 and a.baseframe.color[4]==0.75,"duplicated background opacity")
-assert(a.baseframe.cabecalho.modo_selecao.normal.path:find("dm_settings.png",1,true))
+assert(a.baseframe.cabecalho.modo_selecao.normal.path:find("settings.tga",1,true))
 a.row_info.height=31; a.row_info.space.between=5; a.row_info.texture="user-texture"
 a.row_info.font_face="user-font"; a.attribute_text.show_timer=false
 a.menu_icons_size=0.61; a.titlebar_height=29
@@ -272,6 +301,31 @@ a.bgdisplay.color={0,0,0,0}
 combat=true; local before=writes; P.Apply(a); P.Toolbar(a); P.Background(a)
 assert(writes==before,"mutated UI in combat")
 combat=false; P.Apply(a)
+-- Session availability, globals and native redraws must not affect cosmetics.
+local mediaRoot="Interface\\AddOns\\EUIAddonSkins\\Media\\DetailsNative\\"
+for _,state in ipairs({"enabled","disabled","missing"}) do
+    C_AddOns.IsAddOnLoaded=function(name)
+        if name=="EllesmereUIDamageMeters" then optionalQueries=optionalQueries+1;return state=="enabled" end
+        return true
+    end
+    _EDM_DB=state~="missing" and {profile={dm={hdrHeight=81,bgAlpha=.1}}} or nil
+    _EDM_BarTextures=state=="enabled" and {atrocity="optional-media"} or nil
+    for key,file in pairs({modo_selecao="settings",segmento="undo",atributo="sheet",report="report",reset="reset",fechar="close"}) do
+        local button=a.baseframe.cabecalho[key]
+        button.normal:SetTexture("native-redraw")
+        P.Toolbar(a)
+        assert(button.normal.path==mediaRoot..file..".tga","availability changed toolbar artwork: "..state)
+    end
+    P.Refresh(look)
+    assert(a.menu_icons_size==.61 and a.titlebar_height==29,"availability changed native dimensions")
+    assert(a.row_info.texture=="user-texture" and a.row_info.font_face=="user-font")
+    equalColor(a.attribute_text.text_color,manualTitleColor)
+end
+assert(optionalQueries==0,"native prototype queried optional addon")
+_EDM_DB,EllesmereUI,_EDM_BarTextures=savedEDM,savedEUI,savedTextures
+C_AddOns.IsAddOnLoaded=function() return true end
+print("PASS: enabled/disabled/missing optional meter, native redraw, stable defaults, assets, custom settings and zero availability queries")
+
 -- Native renderer replaces art on switching; restoration must not overwrite it.
 a:ChangeSkin("Original")
 local icon=a.baseframe.cabecalho.modo_selecao.normal
@@ -345,3 +399,39 @@ secureP.Apply(secretInstance)
 assert(secretArt.path=="native" and not secureP.entries[secretInstance].art[secretArt],"retained or restyled secret texture coordinates")
 secretInstance.skin="Original"; secureP.Apply(secretInstance)
 print("PASS: secret texture coordinates are not cached or restored")
+
+-- Reconstruct cold registration under all optional-addon session states.
+-- Use the actual shared helper to supply deliberately different legacy looks.
+local savedInstancesForMatrix=Details.instances
+local savedDefinitionForMatrix=Details.skins["Addonskins EUI"]
+local matrixDefinition
+local function same(a,b)
+    if type(a)~=type(b) then return false end
+    if type(a)~="table" then return a==b end
+    for k,v in pairs(a) do if not same(v,b[k]) then return false end end
+    for k in pairs(b) do if a[k]==nil then return false end end
+    return true
+end
+for _,availability in ipairs({"enabled","disabled","missing"}) do
+    Details.instances={};Details.waitingForSkins=nil;Details.skins["Addonskins EUI"]=nil
+    C_AddOns.IsAddOnLoaded=function()return availability=="enabled" end
+    _EDM_DB=availability=="enabled" and {profile={dm={
+        hdrHeight=41,hdrBgAlpha=.23,hdrBgColor={r=.2,g=.3,b=.4},
+        bgR=.3,bgG=.2,bgB=.1,bgAlpha=.26,barHeight=33,barSpacing=7,barTexture="optional"
+    }}} or nil
+    _EDM_BarTextures=availability=="enabled" and {optional="optional-meter-texture"} or nil
+    EllesmereUI={GetFontPath=function()if availability=="enabled" then return "optional-meter-font" end end}
+    local context={IsEnabled=ns.IsEnabled}
+    assert(loadfile("EUIAddonSkins/DetailsNative.lua"))("EUIAddonSkins",context)
+    local isolated=context.CreateNativeDetailsPrototype({H={Allowed=H.Allowed,Hook=function()end},S=skinAPI,module={}},function()error("registration selected a window")end)
+    local legacy=ns.GetMeterStyle(skinAPI)
+    isolated.Register(legacy)
+    local current=assert(Details.skins["Addonskins EUI"])
+    if matrixDefinition then assert(same(current,matrixDefinition),"optional meter changed fresh native definition") end
+    matrixDefinition=copy(current)
+    assert(media["statusbar:Addonskins EUI Bar"]=="Interface\\Buttons\\WHITE8X8")
+    assert(media["font:Addonskins EUI Font"]=="approved-font")
+end
+Details.instances,Details.skins["Addonskins EUI"]=savedInstancesForMatrix,savedDefinitionForMatrix
+_EDM_DB,EllesmereUI,_EDM_BarTextures=savedEDM,savedEUI,savedTextures
+print("PASS: fresh native definitions and registered media identical with optional meter enabled, disabled and absent")

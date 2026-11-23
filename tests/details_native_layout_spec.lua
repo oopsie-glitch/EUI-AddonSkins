@@ -18,6 +18,7 @@ function F:GetObjectType() return self.kind end
 function F:IsShown() return not self.hidden end
 function F:Show() self.hidden=false end
 function F:Hide() self.hidden=true end
+function F:SetScript(name,fn) self.scripts=self.scripts or {};self.scripts[name]=fn end
 function F:SetShown(v) self.hidden=not v end
 function F:SetParent(p) self.parent=p;geometryEpoch=geometryEpoch+1 end
 function F:GetParent() return self.parent end
@@ -92,7 +93,9 @@ local function flushTimers()
         local old=native;native=true;fn();native=old
     end
 end
-C_AddOns={IsAddOnLoaded=function() return true end}
+C_AddOns={IsAddOnLoaded=function(name)
+    return name~="EllesmereUIDamageMeters" or (os.getenv("DETAILS_EDM_STATE") or "enabled")=="enabled"
+end}
 local registered={}
 local media={Register=function(_,kind,name,path) registered[kind..":"..name]=path end,
     Fetch=function(_,kind,name) return registered[kind..":"..name] or name end}
@@ -151,7 +154,7 @@ function H.Hook(o,name,fn)
 end
 assert(loadfile("EUIAddonSkins/DetailsNative.lua"))("EUIAddonSkins",ns)
 local accent={.13,.62,.47}
-local P=ns.CreateNativeDetailsPrototype({H=H,S={GetAccentColor=function()return table.unpack(accent)end},module={}},function()end)
+local P=ns.CreateNativeDetailsPrototype({H=H,S={GetAccentColor=function()return table.unpack(accent)end,GetFont=function()return "approved-font","" end},module={}},function()end)
 local look={texture="approved-bar",font="approved-font",bg={0,0,0,.75},
     header={r=27/255,g=27/255,b=27/255},headerAlpha=1,headerHeight=22,headerSize=11,
     titleColor={1,.7,.3,1},height=18,spacing=2,leftSize=11,rightSize=10}
@@ -263,6 +266,37 @@ P.Refresh(look);colorEqual(definition.instance_cprops.attribute_text.text_color,
 combat=false;P.Refresh(look)
 colorEqual(definition.instance_cprops.attribute_text.text_color,{accent[1],accent[2],accent[3],1})
 print("PASS: actual native AttributeMenu / SetFontColor / DF ParseColors: live accent default, manual RGBA, deferred color, independent windows, profile reconstruction, combat and zero adapter color writes")
+
+-- Native startup owns the footer. Execute its actual show/schedule block
+-- and the native fade engine; the adapter must not hide it or cancel its fade.
+local util=read("util.lua")
+local fadeStart=assert(util:find("Details.FadeHandler = {",1,true))
+local fadeEnd=assert(util:find("--details api functions",fadeStart,true))
+assert(load("local Details,CreateFrame,upper,Lerp=...; "..util:sub(fadeStart,fadeEnd-1)))(
+    D,function()return frame()end,function(v)return type(v)=="string" and v:upper() or v end,
+    function(a,b,t)return a+(b-a)*t end)
+local startup=read("startup.lua")
+local startupBlock=assert(startup:match("(%-%-version\n.-Details.Schedules.NewTimer%(12, Details.FadeStartVersion, Details%))"))
+D.userversion,D.realversion="1.60.1 15410",172
+local pendingVersion
+D.Schedules={NewTimer=function(delay,fn,owner) assert(delay==12);pendingVersion=function()fn(owner)end end}
+a._version=frame("FontString",a.baseframe);a._version:Hide()
+local devIcon,devText=frame("Texture"),frame("FontString")
+Native(assert(load("local Details,instance,devIcon,devText=...; "..startupBlock)),D,a,devIcon,devText)
+assert(a._version:IsShown() and a._version:GetAlpha()==1)
+assert(a._version.text=="Details! 1.60.1 15410 (core 172)")
+for _,availability in ipairs({true,false}) do
+    C_AddOns.IsAddOnLoaded=function()return availability end
+    P.Refresh(look)
+    assert(a._version:IsShown() and a._version:GetAlpha()==1,"skin changed native startup footer")
+end
+Native(pendingVersion)
+Native(D.FadeHandler.OnUpdateFrame.scripts.OnUpdate,D.FadeHandler.OnUpdateFrame,2)
+assert(not a._version:IsShown() and a._version:GetAlpha()==0,"skin blocked native footer fade")
+P.Refresh(look)
+assert(not a._version:IsShown() and a._version:GetAlpha()==0,"skin revived native hidden footer")
+C_AddOns.IsAddOnLoaded=function()return true end
+print("PASS: actual Details startup footer, 12-second schedule and native two-second fade remain owned by Details")
 
 for _,scale in ipairs({.75,1,1.375})do
  for _,width in ipairs({90,180,380,600})do

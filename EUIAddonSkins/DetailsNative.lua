@@ -2,7 +2,7 @@ local ADDON, ns = ...
 local unpack = unpack or table.unpack
 local NAME = "Addonskins EUI"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
-local MEDIA = "Interface\\AddOns\\EllesmereUIDamageMeters\\Media\\"
+local MEDIA = "Interface\\AddOns\\EUIAddonSkins\\Media\\DetailsNative\\"
 local ownDefinition
 local registrationStatus = "waiting for the Details integration to activate"
 -- GetSkin is overwritten by class_instance.lua with an instance-only getter.
@@ -37,9 +37,9 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
     local D, H, S = _G.Details, C.H, C.S
     local P, entries, painting = {}, setmetatable({}, {__mode = "k"}), false
     local buttons = {
-        {"modo_selecao", "dm_settings.png"}, {"segmento", "dm_undo.png"},
-        {"atributo", "dm_sheet.png"}, {"report", "dm_report.png"},
-        {"reset", "dm_reset.png"}, {"novo", "dm_open.png"}, {"fechar", "dm_close.png"},
+        {"modo_selecao", "settings.tga"}, {"segmento", "undo.tga"},
+        {"atributo", "sheet.tga"}, {"report", "report.tga"},
+        {"reset", "reset.tga"}, {"novo", "open.tga"}, {"fechar", "close.tga"},
     }
     local textureStates = {{"GetNormalTexture",0.55},{"GetHighlightTexture",1},{"GetPushedTexture",1},{"GetDisabledTexture",0.25}}
     local function Plain(v) return not (issecretvalue and issecretvalue(v)) end
@@ -114,7 +114,7 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
             Status("defaults", "native row/space/title defaults are unavailable", true); return
         end
         -- Do not inherit Minimalistic's numerous unrelated presentation defaults.
-        -- Copy native defaults, then set only values derived from GetMeterStyle.
+        -- Use the approved fallback defaults, independent of the optional EUI meter.
         definition.instance_cprops = props
         -- Atlas anchors and native menu/title defaults form one layout contract.
         -- Copy the working skin's initial layout, not generic disabled-title defaults.
@@ -136,17 +136,21 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         if not media or type(media.Register) ~= "function" then
             Status("media", "LibSharedMedia-3.0 is not ready", true); return
         end
-        media:Register("statusbar", NAME .. " Bar", look.texture)
+        local font = type(S.GetFont) == "function" and S.GetFont()
+        if not Plain(font) or type(font) ~= "string" then
+            Status("font", "EUI font source is unavailable", true); return
+        end
+        media:Register("statusbar", NAME .. " Bar", WHITE)
         media:Register("statusbar", NAME .. " Flat", WHITE)
         media:Register("background", NAME .. " Background", WHITE)
-        media:Register("font", NAME .. " Font", look.font)
-        props.bg_r, props.bg_g, props.bg_b, props.bg_alpha = unpack(look.bg)
+        media:Register("font", NAME .. " Font", font)
+        props.bg_r, props.bg_g, props.bg_b, props.bg_alpha = 0, 0, 0, 0.75
         props.backdrop_texture = NAME .. " Background"
-        props.titlebar_shown, props.titlebar_height = true, look.headerHeight
+        props.titlebar_shown, props.titlebar_height = true, 22
         props.titlebar_texture = NAME .. " Flat"
-        props.titlebar_texture_color = {look.header.r, look.header.g, look.header.b, look.headerAlpha}
+        props.titlebar_texture_color = {27/255, 27/255, 27/255, 1}
         props.attribute_text.enabled = true
-        props.attribute_text.text_face, props.attribute_text.text_size = NAME .. " Font", look.headerSize
+        props.attribute_text.text_face, props.attribute_text.text_size = NAME .. " Font", 11
         if not TitleAccentDefault(definition) then return end
         -- Native title/timer settings and text are never maintained by this adapter.
         props.fullborder_shown, props.fullborder_size = true, 0.5
@@ -155,17 +159,17 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         props.rounded_corner_enabled = false
         props.hide_icon = true
         props.menu_icons_color, props.menu_icons_alpha = {0.55, 0.55, 0.55}, 1
-        row.height, row.space.between = look.height, look.spacing
-        row.font_face, row.font_face_file, row.font_size = NAME .. " Font", look.font, look.leftSize
-        row.texture, row.texture_file, row.texture_custom = NAME .. " Bar", look.texture, ""
+        row.height, row.space.between = 18, 2
+        row.font_face, row.font_face_file, row.font_size = NAME .. " Font", font, 11
+        row.texture, row.texture_file, row.texture_custom = NAME .. " Bar", WHITE, ""
         row.textR_show_data, row.textR_bracket, row.textR_separator = {true, true, false}, "(", "NONE"
         row.textR_enable_custom_text = false
         props.use_multi_fontstrings = false
         -- Older and modern Details layouts both retain their own row-text renderer.
         for i, text in ipairs(row.texts or {}) do
             if text.font then
-                text.font.face = look.font
-                text.font.size = i == 1 and look.leftSize or look.rightSize
+                text.font.face = font
+                text.font.size = 11
             end
         end
         ownDefinition = definition
@@ -218,8 +222,6 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         if not SafeUI() or not ns.IsNativeDetailsInstance(instance) then return end
         local entry = entries[instance]
         if not entry then return end
-        local loaded = C_AddOns and C_AddOns.IsAddOnLoaded or IsAddOnLoaded
-        if not loaded or not loaded("EllesmereUIDamageMeters") then return end
         local header = instance.baseframe and instance.baseframe.cabecalho or {}
         for _, spec in ipairs(buttons) do
             local button = Frame(header[spec[1]])

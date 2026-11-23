@@ -16,8 +16,8 @@ The definition uses no_cache=true: no new definition is persisted in Details' sk
 
 DetailsNative.lua copies Minimalistic's compatible atlas/layout metadata without mutating it. instance_cprops starts from a deep copy of the active build's instance_defaults, not Minimalistic's custom profile. Values are initialized once through native selection:
 
-- GetMeterStyle supplies the exact existing EUI source values: fallback body RGB 0/0/0 and alpha .75; header RGB 27/255 each and alpha 1; header height 22 and title font size 11; bars height 18, spacing 2, left/right sizes 11 unless current EUI meter preferences specify otherwise.
-- SharedMedia registers the existing resolved font/bar paths and WHITE8X8 flat header/body resources.
+- The approved fallback values are self-contained: body RGB 0/0/0 and alpha .75; header RGB 27/255 each and alpha 1; header height 22 and title font size 11; bars height 18, spacing 2 and left/right font sizes 11. The native definition does not import optional EUI Damage Meters preferences.
+- SharedMedia registers the public Skin API font and client WHITE8X8 bar/header/body resources. No optional meter file path is imported.
 - Native title enabled, native timer/content retained. Its initial text color comes directly from the live public Skin API GetAccentColor, independently of EUI Damage Meters' separate custom-title preference.
 - Native flat header, .5 subdued full border, no sidebars/status bar/rounded corners, hidden attribute icon.
 - Native class/status color defaults are retained; native bar texture/font/height/spacing and ordinary total/DPS formatting are initial settings, not refresh-time writes.
@@ -29,7 +29,7 @@ The renderer continuously consults skin definitions for some horizontal row padd
 
 The only new setter hooks are Details SetBackgroundColor and SetBackgroundAlpha. The native bgdisplay duplicate backdrop fill is tinted transparent; baseframe retains the native chosen color/alpha. No backdrop reconstruction, geometry reads/arithmetic, replacement fill frame or tooltip hook is added.
 
-Existing native toolbar state textures are reused for the approved dm_*.png artwork when EllesmereUIDamageMeters is loaded. No new artwork objects, button anchors, dimensions, scripts or hitboxes are created. Native hover/pushed/disabled textures retain native interaction. If those optional media are unavailable, native icons remain.
+Existing native toolbar state textures are reused for the bundled MIT-licensed Feather outline glyphs in Media/DetailsNative. No new artwork objects, button anchors, dimensions, scripts or hitboxes are created. Native hover/pushed/disabled textures retain native interaction. Neither optional-addon availability checks nor external meter assets are used.
 
 Named header atlas decorations behind the native flat title band are suppressed only for selected prototype windows. Native skin switching restores cosmetics without replacing new native values.
 
@@ -98,3 +98,27 @@ The screenshot alone cannot establish whether the installed window obtained yell
 Regression coverage uses the actual pinned official InstallSkin, ChangeSkin reset/default path, AttributeMenu, SetFontColor and DF ParseColors. It covers a conflicting EDM yellow preference, live accent default refresh, manual RGBA, the native delayed callback, independent windows, saved-profile reconstruction, combat deferral, and 1,000 unchanged refreshes without additional title writes, hooks or UI objects. The identical targeted test must fail against 01b74dc and pass after the correction. Existing geometry, toolbar and Cooltip tests remain in the full suite.
 
 In WoW Forever, verify a fresh explicit selection uses the current EUI accent; customize its title color, reload and switch profiles; check another window independently; then change the EUI accent and confirm existing saved colors stay unchanged while a new selection uses the new accent. Confirm title text, timer, font, geometry, toolbar and meter surfaces are unchanged. Installed-client persistence, taint and rendering remain live-client checks.
+
+## Optional meter independence
+
+The prior native prototype referenced EllesmereUIDamageMeters/Media/dm_*.png and skipped toolbar repaint when that optional addon was not loaded. That directly explains the native atlas icons in one screenshot and thin outline icons in the other. Registration also imported GetMeterStyle's EDM profile, font and texture registry; initial header height/color/alpha, body and bar defaults could therefore differ with optional-addon availability. The shared helper and production legacy integration are intentionally unchanged; the native adapter no longer consumes those values.
+
+The self-contained native defaults use the exact historical fallback values listed above and the public S.GetFont / S.GetAccentColor sources. Installed default media is client WHITE8X8 or this addon's toolbar files. Applied instance settings are not reset or migrated, including intentional custom colors, sizes, fonts and textures. Existing native profiles can still reference optional textures/fonts chosen previously; the skin cannot replace those arbitrary user choices without violating ownership. Use native Details options to choose an available asset when such a profile references an uninstalled provider. Selecting another native skin resets appearance preferences under Details' own rules; back up profiles first.
+
+### Media ownership
+
+EllesmereGaming/EllesmereUI at e95e531ad99ddb8ae3901c4fdc9fffd98e7f56bb has an all-rights-reserved license excluding unspecified third-party resources. No file-specific redistribution grant for its dm_*.png files was established. None are copied, converted or bundled.
+
+The owner approved using licensed outline equivalents. This package instead rasterizes unchanged Feather v4.29.2 icons (settings, rotate-ccw, file-text, radio, refresh-cw, plus and x), pinned at 1b002399e8758fb2bccea4d07312dc9e0f43dcb8, under Cole Bemis' MIT license. They preserve the outline visual language, meaning, native slot size and .55/1/.25 state tinting; exact glyph shapes are not claimed identical to EUI's PNGs. The complete upstream notice ships in Media/DetailsNative/LICENSE.txt. Original SVGs, source pin and generator are development-only. No client-side rasterization or new runtime textures/frames are added. scripts/build_details_native_media.py reproducibly creates 32x32 uncompressed white-RGB alpha TGA assets in read-only GitHub Actions.
+
+### Version footer
+
+The pictured text matches native startup.lua: Details! followed by userversion and (core realversion). The pinned boot.lua uses build 15410 / core 172, matching the screenshot, but does not prove every installed file is identical. Native startup explicitly shows the lower window's version FontString, schedules FadeStartVersion after 12 seconds, then requests a two-second fade. In Details' fade engine, "in" means hiding. This is independent of the optional meter. Screenshots taken at different startup times can legitimately differ; their exact elapsed time is unknown.
+
+The native adapter never changes _version text, alpha, visibility or its timer. Source fixtures execute the actual startup block and fade engine and verify that cosmetic refreshes neither suppress the visible footer nor revive it after the native fade. A footer persisting beyond that native lifecycle needs live investigation; no speculative hide or global fade hook is added.
+
+### Verification
+
+The enabled/disabled/missing matrix compares fresh native definitions and registered media, plus existing windows under availability/global changes. Native redraws restore bundled toolbar art without querying the optional addon. Manual RGBA, row/font/texture/geometry choices, accent-default behavior, combat recovery and multiple windows remain covered. Exact prior-head tests reproduce both the toolbar dependency and imported optional defaults, and pass after the correction. Existing official-source, layout, sizing and Cooltip tests remain.
+
+In WoW, compare the same saved native profile in sessions with EUI Damage Meters enabled, disabled and absent. Verify header/body and all toolbar states, resize controls natively, test profiles/reload, two windows, combat and title-color customization. Compare the new licensed glyphs with the approved outline treatment. Observe the native version footer shortly after login and again after its fade. Hosted fixtures cannot establish rasterized parity, installed-client persistence or live taint safety.

@@ -20,8 +20,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y liblua5.4-0 python3-cairosvg python3-pil
-      - name: Build licensed toolbar media payloads
-        run: python3 scripts/build_details_native_media.py --emit
+      - name: Verify tracked licensed toolbar media
+        run: python3 scripts/build_details_native_media.py
       - name: Full regression and package verification
         run: python3 scripts/package.py
       - name: Pinned official Details source compatibility
@@ -33,7 +33,7 @@ jobs:
           for sha in ('2efa4b10628e0e4a91c346138cf8325e81d0a43c', '4316feb434bcc9751455ae2c6435d93fc20f034f'):
               folder = root / sha
               folder.mkdir(parents=True)
-              for path in ('functions/skins.lua', 'frames/window_main.lua', 'frames/window_options2_sections.lua', 'classes/class_instance.lua', 'Details_Camelot.toc', 'Libs/DF/dropdown.lua', 'classes/include_instance.lua', 'functions/util.lua', 'Libs/DF/fw.lua'):
+              for path in ('functions/skins.lua', 'frames/window_main.lua', 'frames/window_options2_sections.lua', 'classes/class_instance.lua', 'Details_Camelot.toc', 'Libs/DF/dropdown.lua', 'classes/include_instance.lua', 'functions/util.lua', 'Libs/DF/fw.lua', 'startup.lua', 'boot.lua'):
                   with urlopen('https://raw.githubusercontent.com/Tercioo/Details-Damage-Meter/'+sha+'/'+path, timeout=30) as response:
                       (folder / Path(path).name).write_bytes(response.read())
           PY
@@ -124,6 +124,42 @@ jobs:
           subprocess.run([sys.executable,'-c',color],env=dict(env,DETAILS_ACCENT_REPRO='1'),check=True)
           print('After accent correction:',flush=True)
           subprocess.run([sys.executable,'-c',bench],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          assert target.read_bytes()==fixed
+          PY
+      - name: Reproduce optional-meter dependency against the approved prior runtime
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import subprocess,os,sys
+          target=Path('EUIAddonSkins/DetailsNative.lua')
+          fixed=target.read_bytes()
+          runner=Path('tests/run_lua.py').read_text()
+          start=runner.index('    for test in [')
+          end=runner.index(':\n',start)
+          spec=runner[:start]+"    for test in ['tests/details_native_spec.lua']"+runner[end:]
+          bench=runner[:start]+"    for test in ['tests/details_native_layout_spec.lua']"+runner[end:]
+          env=dict(os.environ,DETAILS_NATIVE_SOURCE='/tmp/details-native-source/2efa4b10628e0e4a91c346138cf8325e81d0a43c')
+          with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/5ed5fce22ec022778b83c54e9345da6706836fb2/EUIAddonSkins/DetailsNative.lua',timeout=30) as response:
+              old=response.read()
+          try:
+              target.write_bytes(old)
+              for variable,message in (
+                  ('DETAILS_MEDIA_REPRO','REPRO: native toolbar depends on optional EUI meter'),
+                  ('DETAILS_DEFAULTS_REPRO','REPRO: native definition imports optional meter configuration')):
+                  result=subprocess.run([sys.executable,'-c',spec],env=dict(env,**{variable:'1'}),capture_output=True,text=True)
+                  assert result.returncode!=0 and message in result.stderr,result.stdout+result.stderr
+                  print('Confirmed baseline failure: '+message,flush=True)
+              for loaded in ('enabled','disabled','missing'):
+                  print('Prior prototype warm '+loaded+':',flush=True)
+                  subprocess.run([sys.executable,'-c',bench],env=dict(env,DETAILS_LAYOUT_BENCH='1',DETAILS_EDM_STATE=loaded),check=True)
+          finally:
+              target.write_bytes(fixed)
+          for variable in ('DETAILS_MEDIA_REPRO','DETAILS_DEFAULTS_REPRO'):
+              subprocess.run([sys.executable,'-c',spec],env=dict(env,**{variable:'1'}),check=True)
+          for loaded in ('enabled','disabled','missing'):
+              print('Independent prototype warm '+loaded+':',flush=True)
+              subprocess.run([sys.executable,'-c',bench],env=dict(env,DETAILS_LAYOUT_BENCH='1',DETAILS_EDM_STATE=loaded),check=True)
           assert target.read_bytes()==fixed
           PY
       - name: Five-trial hosted comparison

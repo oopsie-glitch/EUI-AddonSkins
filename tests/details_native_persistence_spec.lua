@@ -284,5 +284,22 @@ incomplete.D.InstallSkin=install
 incomplete.P.Register()
 for id,wanted in ipairs(expectedA)do assert(same(prefs(incomplete.D:GetInstance(id)),wanted),"safe retry lost settings")end
 print("PASS: closed windows remain closed; missing native profile windows defer with diagnostic; rejected installation retains recoverable waits")
+local chosen=environment(reload.save())
+chosen.boot()
+-- Choosing the displayed fallback is still an explicit native selection.
+chosen.D:GetInstance(1):OptionPanelOnChangeSkin("Minimalistic")
+assert(not chosen.D.waitingForSkins[1],"explicit native fallback selection did not cancel pending recovery")
+chosen.P.Register()
+assert(chosen.D:GetInstance(1).skin=="Minimalistic","late registration undid an explicit native skin selection")
+assert(same(prefs(chosen.D:GetInstance(2)),expectedA[2]),"another pending window was lost after explicit selection")
+local edited=environment(reload.save())
+edited.boot()
+customize(edited.D:GetInstance(1),5)
+local live=prefs(edited.D:GetInstance(1));live.skin="Addonskins EUI"
+local before=copy(edited.D.profiles)
+edited.P.Register()
+assert(same(prefs(edited.D:GetInstance(1)),live),"registration restored stale saved settings over live startup edits")
+assert(same(edited.D.profiles,before),"startup recovery wrote saved profiles")
+print("PASS: explicit native fallback selection cancels pending recovery; live startup edits win without profile writes")
 for _,k in ipairs(keys)do _G[k]=original[k]end
 

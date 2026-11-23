@@ -299,7 +299,7 @@ if os.getenv("DETAILS_BODY_REPRO") then return end
 -- disable encounter timers; user enabling is retained by adapter refreshes.
 local nativeDesigner=read("designer_objects.lua")
 local applyText=assert(nativeDesigner:match("(local applyTitleText = function%(instanceObject%).-)\nend"))
-local designerApply=assert(load(applyText.."\nreturn applyTitleText"))()
+local designerApply=assert(load(applyText.."\nend\nreturn applyTitleText"))()
 assert(selected.attribute_text.show_timer==false,"fresh native default kept encounter timer")
 Native(designerApply,selected)
 assert(selected.attribute_text.show_timer==false)

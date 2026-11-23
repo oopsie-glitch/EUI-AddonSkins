@@ -196,3 +196,30 @@ Native limitations remain: explicitly selecting a different skin can reset non-e
 The fixture executes pinned upstream InstallSkin, WaitForSkin, ChangeSkin's actual reset/configuration prefix, ResetInstanceConfigKeepingValues, LoadInstanceConfig, RestauraJanela, InstanceColor, the activation prefix, ExportSkin, SaveProfile, SaveLocalInstanceConfig, ApplyProfile, LoadConfig, OptionPanelOnChangeSkin and the actual parser initializer. It loads the native ApplySavedSkin importer to assert that our fix never calls it. Engine UI/data services are isolated stubs. Plain SavedVariables are serialized into fresh Details/provider environments twice, across two windows and profiles. Assertions cover toolbar size/spacing/XY, title XY/font/size/color/timer, old and structured bar fonts, bar height/spacing/texture/background-by-class, body opacity, newer live startup edits, profile saves/switches, accent refreshes, combat, closed windows, explicit native choices, foreign waiting ownership, absent profiles and rejected-install retries. Registration cannot mutate profile tables. CI must fail against the exact prior head at the reload assertion and pass after correction.
 
 Hosted tests establish configuration flow and bounded callbacks/resources, not engine rendering, exact installed Forever files or live taint safety. In-game reload/profile acceptance remains required.
+
+## Approved initial native defaults (after persistence validation)
+
+Baseline: 8d8989968fb64761e816944fe3476703773a6847. The user approved these values manually in WoW Forever. They replace the earlier calculated initial offsets; there is no automatic centering policy or render-time geometry enforcement.
+
+| Native Designer control | Native instance_cprops field | New initial value |
+| --- | --- | --- |
+| Title Text / Horizontal Offset | attribute_text.anchor[1] | -18 |
+| Title Text / Vertical Offset | attribute_text.anchor[2] | 5 |
+| Bars / Background by Class | row_info.texture_background_class_color | false |
+| Buttons / Button Size | menu_icons_size | 0.86 |
+| Buttons / Position X | menu_anchor[1] | 11 |
+| Buttons / Position Y | menu_anchor[2] | 4 |
+| Buttons / Attach on right | menu_anchor.side | 2 (unchanged) |
+| Buttons / Button Spacing | menu_icons.space | Native-retained; not imposed |
+
+The pinned Designer binds title offsets to attribute_text.anchor[1]/[2] and applies AttributeMenu; Button Size calls ToolbarMenuButtonsSize(menu_icons_size). The top title-bar X/Y controls use menu_anchor through MenuAnchor; side 2 means right attachment. Background by Class is row_info.texture_background_class_color, passed to SetBarSettings by its native callback. The bar background texture, texture file and fixed RGBA/opacity remain exactly the existing native defaults.
+
+Button Spacing = 3 cannot safely be initialized through this native skin definition. ChangeSkin skips the complete menu_icons table through instance_skin_ignored_values, so both its reset and skin-default copy preserve the window's spacing. We intentionally do not bypass that rule, invoke a spacing setter on selection, or add a hook to impose 3. To use the complete approved configuration, set Details! → Options → Designer → Title Bar → Buttons and Menu Settings → Button Spacing to 3 manually. It then remains native-owned and persistent.
+
+These defaults apply only when explicitly choosing Addonskins EUI as a DIFFERENT native skin. Existing selected windows, same-skin refreshes, login/reload, profile changes and theme/accent refreshes retain their values. To adopt the new defaults in an existing window, adjust the corresponding native controls individually, or deliberately switch to another skin and back. Native switching can reset other appearance settings, so preserve a profile backup before reselection.
+
+The 8d89899 persistence correction and every following cosmetic/interaction function remain unchanged. There are no new hooks, event listeners, widgets or media. The previous layout arithmetic is removed rather than retained as an enforcement mechanism. Title content/font/color/timer behavior, body/header rendering, icon assets/tints, bar foreground/class colors/textures/fonts/heights, Legacy/Tiny Threat/menu controls and Cooltip safety are unchanged.
+
+Source tests now check the exact approved native values and containment at 12 scale/width combinations instead of requiring the earlier calculated center. The 432 native geometry cases remain. Native ignored-field handling proves that spacing is retained; native setters still support manually choosing 3. Two serialized reload cycles/profile switches independently modify every new field, including the false/true class-background flag. Additional tests verify different-skin reselection initializes defaults, same-skin selection preserves customization, and another window is unaffected. Historical sensitivity runs assert their own exact old defaults instead of bypassing initial-state validation.
+
+Live WoW Forever review is still required for the approved visual placement, native spacing control and actual-client persistence/taint behavior.

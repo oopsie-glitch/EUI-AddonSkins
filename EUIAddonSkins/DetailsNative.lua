@@ -161,28 +161,13 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         props.attribute_text.enabled = true
         props.attribute_text.show_timer = false -- initial native selection only
         props.attribute_text.text_face, props.attribute_text.text_size = NAME .. " Font", 11
-        -- Initial native offsets only. MenuAnchor uses a 16-unit top offset
-        -- and 1x1 menu points on 128-unit corner textures; the native title
-        -- region is text_size + 2 high. Keep initial controls inside the band.
-        -- Do not repaint/migrate saved instances or enforce later user geometry.
-        local left, right = definition.left_corner_anchor, definition.right_corner_anchor
-        local menu, title = props.menu_anchor, props.attribute_text
-        if props.toolbar_side == 1 and title.side == 1 and type(title.anchor) == "table"
-            and type(left) == "table" and type(right) == "table" and type(menu) == "table"
-            and Number(left[1]) and Number(left[2]) and Number(right[1]) and Number(right[2])
-            and Number(props.menu_icons_size) then
-            local center = props.titlebar_height / 2
-            local buttonHeight = 16 * props.menu_icons_size
-            local padding = math.max(0, (props.titlebar_height - buttonHeight) / 2)
-            title.anchor[2] = center - (title.text_size + 2) / 2 - left[2]
-            if menu.side == 2 then
-                menu[1] = 128 - right[1] - buttonHeight - padding
-                menu[2] = center + buttonHeight / 2 - 16 + 1 - right[2]
-            elseif menu.side == 1 then
-                menu[1] = padding - left[1] - 128 - 1
-                menu[2] = center - buttonHeight / 2 - left[2]
-            end
-        end
+        -- Applied only by an explicit different-skin selection. Native reload/
+        -- profile refreshes retain each instance's own configuration.
+        props.attribute_text.anchor = {-18, 5}
+        props.menu_icons_size = 0.86
+        props.menu_anchor = {11, 4, side = 2}
+        -- ChangeSkin intentionally ignores menu_icons (including .space).
+        -- Keep native spacing; users may set 3 through the native Designer.
         if not TitleAccentDefault(definition) then return end
         -- Native title/timer settings and text are never maintained by this adapter.
         props.fullborder_shown, props.fullborder_size = true, 0.5
@@ -191,6 +176,7 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         props.rounded_corner_enabled = false
         props.hide_icon = true
         props.menu_icons_color, props.menu_icons_alpha = {0.65, 0.65, 0.65}, 1
+        row.texture_background_class_color = false
         row.height, row.space.between = 18, 2
         row.font_face, row.font_face_file, row.font_size = NAME .. " Font", font, 11
         row.texture, row.texture_file, row.texture_custom = NAME .. " Bar", WHITE, ""

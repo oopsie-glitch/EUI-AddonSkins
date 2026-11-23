@@ -172,7 +172,7 @@ local base=D.skins.Minimalistic
 assert(definition.icon_anchor_main[1]==base.icon_anchor_main[1] and definition.icon_anchor_plugins[2]==base.icon_anchor_plugins[2])
 if not os.getenv("DETAILS_LAYOUT_REPRO") and not os.getenv("DETAILS_LAYOUT_BENCH") then
     assert(definition.instance_cprops.menu_anchor.side==base.instance_cprops.menu_anchor.side,"discarded coordinated native toolbar side")
-    assert(definition.instance_cprops.attribute_text.anchor[1]==base.instance_cprops.attribute_text.anchor[1])
+    assert(definition.instance_cprops.attribute_text.anchor~=base.instance_cprops.attribute_text.anchor,"native title defaults alias the base skin")
 end
 local function instance()
     local i=copy(definition.instance_cprops);setmetatable(i,{__index=D});i.skin="Addonskins EUI"
@@ -240,17 +240,23 @@ if os.getenv("DETAILS_LAYOUT_REPRO") then
     -- Existing saved prototype profiles retain the old left-side setting.
     a.menu_anchor.side=1;layout(a);noOverlap(a);return
 end
--- Initial offsets are native definition values, not a post-render repair.
--- Prove center and containment using native anchor/toolbar/title functions.
+-- User-approved native defaults replace the earlier calculated centering.
+-- Verify native fields and containment, not a new automatic centering policy.
 local function checkInitialHeader(i)
+    assert(i.attribute_text.anchor[1]==-18 and i.attribute_text.anchor[2]==5,
+        "REPRO: initial native title defaults differ from approved values")
+    assert(i.menu_icons_size==.86 and i.menu_anchor[1]==11 and i.menu_anchor[2]==4 and i.menu_anchor.side==2,
+        "REPRO: initial native toolbar defaults differ from approved values")
+    assert(i.row_info.texture_background_class_color==false,"initial Background by Class is not off")
     layout(i)
-    local center=(i.baseframe.titleBar:GetTop()+i.baseframe.titleBar:GetBottom())/2
-    local titleCenter=(i.title:GetTop()+i.title:GetBottom())/2
-    assert(math.abs(titleCenter-center)<1e-7,"REPRO: inherited initial title sits below header center")
+    local top=i.baseframe:GetTop()
+    assert(math.abs(i.title:GetBottom()-top-5)<1e-7,"native title did not use the approved Y offset")
+    assert(i.title:GetBottom()>=i.baseframe.titleBar:GetBottom()-1e-7 and i.title:GetTop()<=i.baseframe.titleBar:GetTop()+1e-7,"initial native title is outside the header")
     for _,key in ipairs({"modo_selecao","segmento","atributo","report","reset","fechar"}) do
         local button=i.baseframe.cabecalho[key]
         if button:IsShown() then
-            assert(math.abs((button:GetTop()+button:GetBottom())/2-center)<1e-7,"REPRO: inherited initial toolbar sits below header center")
+            assert(math.abs(button:GetHeight()-16*.86)<1e-7,"native button did not apply initial size multiplier")
+            assert(button:GetBottom()>=i.baseframe.titleBar:GetBottom()-1e-7 and button:GetTop()<=i.baseframe.titleBar:GetTop()+1e-7,"native initial toolbar is outside the header")
             assert(button:GetRight()<=i.baseframe:GetRight()+1e-7,"initial toolbar exceeds header right edge")
         end
     end
@@ -282,7 +288,7 @@ assert(retained.attribute_text.anchor[2]==10 and retained.menu_icons.space==5,"a
 Native(retained.MenuAnchor,retained,11,12)
 Native(retained.ToolbarMenuSetButtonsOptions,retained,3)
 assert(retained.menu_anchor[1]==11 and retained.menu_anchor[2]==12 and retained.menu_icons.space==3)
-print("PASS: native initial header centered at 12 scale/width combinations; native retained spacing, custom size/anchors and same-skin refresh preserved")
+print("PASS: approved native defaults/containment at 12 scale/width combinations; native retained spacing, custom size/anchors and same-skin refresh preserved")
 
 -- A native skin selection initializes the instance once. Re-rendering uses
 -- the instance's own RGBA, including the native one-second callback.

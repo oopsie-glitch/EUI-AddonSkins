@@ -179,6 +179,20 @@ for id=1,2 do
     -- Native defaults enter only on this explicit first selection.
     i:LoadInstanceConfig();i:ChangeSkin("Addonskins EUI")
     assert(i.attribute_text.show_timer==false and i.row_info.height==18)
+    if os.getenv("DETAILS_PRIOR_DEFAULTS") then
+        -- Historical sensitivity/benchmark runs retain their verified defaults.
+        assert(i.attribute_text.anchor[1]==1.4 and i.attribute_text.anchor[2]==4.5,"historical title baseline changed")
+        assert(i.menu_icons_size==1 and i.menu_anchor[1]==13 and i.menu_anchor[2]==4 and i.menu_anchor.side==2,"historical toolbar baseline changed")
+        assert(i.row_info.texture_background_class_color==true,"historical bar-background baseline changed")
+    else
+        assert(i.attribute_text.anchor[1]==-18 and i.attribute_text.anchor[2]==5,"new selection did not apply title defaults")
+        assert(i.menu_icons_size==.86 and i.menu_anchor[1]==11 and i.menu_anchor[2]==4 and i.menu_anchor.side==2,"new selection did not apply toolbar defaults")
+        assert(i.row_info.texture_background_class_color==false,"new selection did not disable Background by Class")
+    end
+    for _,key in ipairs({"texture_background","texture_background_file","fixed_texture_background_color"})do
+        assert(same(i.row_info[key],initial.D.instance_defaults.row_info[key]),"bar background texture/color/opacity changed: "..key)
+    end
+    assert(i.menu_icons.space==initial.D.instance_defaults.menu_icons.space,"skin selection imposed unsupported spacing")
     i.ativa=true;customize(i,id)
 end
 initial.D:SaveProfile("A")
@@ -301,5 +315,20 @@ edited.P.Register()
 assert(same(prefs(edited.D:GetInstance(1)),live),"registration restored stale saved settings over live startup edits")
 assert(same(edited.D.profiles,before),"startup recovery wrote saved profiles")
 print("PASS: explicit native fallback selection cancels pending recovery; live startup edits win without profile writes")
+local reselect=environment(reload.save())
+reselect.boot();reselect.P.Register()
+local first,other=reselect.D:GetInstance(1),prefs(reselect.D:GetInstance(2))
+first.menu_icons.space=7
+local sameSkin=prefs(first)
+first:OptionPanelOnChangeSkin("Addonskins EUI")
+assert(same(prefs(first),sameSkin),"same-skin selection reapplied recommended defaults")
+first:OptionPanelOnChangeSkin("Minimalistic")
+first:OptionPanelOnChangeSkin("Addonskins EUI")
+assert(first.attribute_text.anchor[1]==-18 and first.attribute_text.anchor[2]==5)
+assert(first.menu_icons_size==.86 and first.menu_anchor[1]==11 and first.menu_anchor[2]==4 and first.menu_anchor.side==2)
+assert(first.row_info.texture_background_class_color==false and first.attribute_text.show_timer==false)
+assert(first.menu_icons.space==7,"explicit reselection overrode native retained spacing")
+assert(same(prefs(reselect.D:GetInstance(2)),other),"explicit reselection changed another window")
+print("PASS: approved defaults apply on explicit different-skin selection/reselection only; native spacing, same-skin customization and other windows remain owned by Details")
 for _,k in ipairs(keys)do _G[k]=original[k]end
 

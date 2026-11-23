@@ -240,6 +240,8 @@ jobs:
           path = root / 'tests/details_spec.lua'
           text = path.read_text()
           baseline = text.split('-- Switch a previously legacy-styled live window')[0]
+          # The untouched PR91 runtime still uses its historical presentation label.
+          baseline = baseline.replace("entries[3].text == 'Legacy Details! Styling'", "entries[3].text == 'Style Details meters'")
           benchmark = "if os.getenv('DETAILS_NATIVE_BENCH') then" + text.split("if os.getenv('DETAILS_NATIVE_BENCH') then")[1]
           path.write_text(baseline + benchmark)
           PY

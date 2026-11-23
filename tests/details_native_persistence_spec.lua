@@ -74,7 +74,7 @@ local function environment(saved)
     D.GetApocalypseSourceType=function()return 0 end
     D.StatusBarColor=nop;D.EsconderScrollBar=nop
     N.Apocalypse={TypeDetails=1,TypeGame=2}
-    for _,name in ipairs({"SetTooltipBackdrop","SelectNumericalSystem","RefreshUpdater","RefreshAnimationFunctions","LoadFramesForBroadcastTools","HandleRogueCombatSpecIconByGameVersion","NickTagSetCache","CountDataOnLoad","SetUseAnimations","ClearSpellCache","UpdateParserGears"})do D[name]=nop end
+    for _,name in ipairs({"SetTooltipBackdrop","SelectNumericalSystem","RefreshUpdater","RefreshAnimationFunctions","LoadFramesForBroadcastTools","HandleRogueCombatSpecIconByGameVersion","SendEvent","NickTagSetCache","CountDataOnLoad","SetUseAnimations","ClearSpellCache","UpdateParserGears"})do D[name]=nop end
     D.Buffs.BuildTables=nop;D.Ambiguate=function(_,v)return v end
     local function method(file,name)
         local ending=name=="OptionPanelOnChangeSkin" and "\n            end" or "\nend"

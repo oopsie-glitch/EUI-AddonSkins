@@ -146,7 +146,7 @@ local function environment(saved)
         local original=o[name]
         o[name]=function(...)local result=table.pack(original(...));callback(...);return table.unpack(result,1,result.n)end
     end}
-    assert(load("local H,D,state,refresh,name=...;"..hook))(H,D,state,function()end,"ChangeSkin")
+    assert(load("local H,D,state,refresh,name=...;"..hook.."\nend)"))(H,D,state,function()end,"ChangeSkin")
     method(read("window_options2_sections.lua"),"OptionPanelOnChangeSkin")
     local function savedState()
         return encode({active=D:GetCurrentProfileName(),profiles=D.profiles})

@@ -20,6 +20,12 @@ local function same(a,b)
     for k in pairs(b)do if a[k]==nil then return false end end
     return true
 end
+local function mismatch(a,b,path)
+    if same(a,b)then return "" end
+    if type(a)~="table" or type(b)~="table" then return (path or "")..": actual="..tostring(a).." expected="..tostring(b) end
+    for k,v in pairs(a)do if not same(v,b[k])then return mismatch(v,b[k],(path or "").."."..tostring(k))end end
+    for k,v in pairs(b)do if a[k]==nil then return mismatch(nil,v,(path or "").."."..tostring(k))end end
+end
 local keys={"Details","DetailsFramework","_detalhes_database","_detalhes_global","InCombatLockdown","LibStub","UnitName","UnitClass","UnitFactionGroup","GetRealmName","GetBuildInfo","PLAYER_FACTION_GROUP","IsInGroup","IsInRaid","issecretvalue"}
 local original={};for _,k in ipairs(keys)do original[k]=_G[k]end
 local main,skins,include,classes,profiles,loader,parser,saver=read("window_main.lua"),read("skins.lua"),read("include_instance.lua"),read("class_instance.lua"),read("profiles.lua"),read("loaddata.lua"),read("parser.lua"),read("savedata.lua")
@@ -208,14 +214,14 @@ reload.boot()
 assert(reload.D.IsLoaded(),"actual native initializer did not complete")
 local afterFallback=prefs(reload.D:GetInstance(1))
 local pendingExpected=copy(expectedA[1]);pendingExpected.skin="Minimalistic"
-assert(same(afterFallback,pendingExpected),"native window construction unexpectedly changed saved settings before late registration")
+assert(same(afterFallback,pendingExpected),"native window construction unexpectedly changed saved settings before late registration: "..mismatch(afterFallback,pendingExpected))
 assert(reload.D.waitingForSkins[1]=="Addonskins EUI" and reload.D.waitingForSkins[2]=="Addonskins EUI")
 assert(same(prefs(reload.D.profiles.A.instances[1]),expectedA[1]),"upstream fallback already destroyed the saved profile")
 local profilesBefore=copy(reload.D.profiles)
 reload.P.Register()
 assert(same(reload.D.profiles,profilesBefore),"registration wrote a native profile")
 for id,wanted in ipairs(expectedA)do
-    assert(same(prefs(reload.D:GetInstance(id)),wanted),"REPRO: reload registration lost native customization for window "..id)
+    assert(same(prefs(reload.D:GetInstance(id)),wanted),"REPRO: reload registration lost native customization for window "..id..": "..mismatch(prefs(reload.D:GetInstance(id)),wanted))
 end
 assert(next(reload.D.waitingForSkins)==nil,"prototype waiting entries were not consumed")
 assert(reload.P.recoveredWindows==2 and reload.counts.recovery==0,"registration imported saved appearance instead of avoiding reset")

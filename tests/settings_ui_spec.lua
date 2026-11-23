@@ -7,7 +7,7 @@ for _,key in ipairs({"CreateFrame","Settings","C_AddOns","GetAddOnInfo","IsAddOn
     saved[#saved+1]={key,_G[key]}
 end
 local function Setup(modern, oldInfo, db)
-    local h={frames={},categories={},counts={frames=0,art=0,info=0,writes=0},
+    local h={frames={},fontstrings={},categories={},counts={frames=0,art=0,info=0,writes=0},
         installed={Details=true,RXPGuides=true},loaded={Details=true,RXPGuides=true},disabled={},combat=false}
     EUIAddonSkinsDB=db;SlashCmdList={}
     local function object(kind,parent)
@@ -100,7 +100,9 @@ local function Setup(modern, oldInfo, db)
         end
         function f:CreateFontString()
             h.counts.art=h.counts.art+1
-            return object("FontString",self)
+            local text=object("FontString",self)
+            h.fontstrings[#h.fontstrings+1]=text
+            return text
         end
         return f
     end
@@ -187,10 +189,15 @@ for _,oldInfo in ipairs({false,true}) do
     local function Choose(label) h:Press(Buttons(label)[1]) end
     local check=Checks()
     assert(#check==3 and not check[1].checked and check[2].checked and not check[3].checked)
-    local legacyLabel=h:Find(function(f)return f.text=="Legacy Details! Styling" end,true)
-    assert(#legacyLabel==1,'central provider label missing or duplicated')
-    assert(#h:Find(function(f)return f.text and f.text:find("Older automatic meter styling",1,true) end,true)==1,
-        'central provider did not explain separate native selection')
+    local labels,descriptions=0,0
+    for _,text in ipairs(h.fontstrings) do
+        if text:IsVisible() then
+            if text.text=="Legacy Details! Styling" then labels=labels+1 end
+            if text.text:find("Older automatic meter styling",1,true) then descriptions=descriptions+1 end
+        end
+    end
+    assert(labels==1,'central provider label missing or duplicated')
+    assert(descriptions==1,'central provider did not explain separate native selection')
     assert(calls==0 and arrowCalls==0 and not db.settingsUI and db.restedXP.opacity==0,"opening wrote preferences")
     local firstShow=h.counts.frames
     assert(#root.textures==1 and not root.textures[1].allPoints,"settings canvas covers the native background")

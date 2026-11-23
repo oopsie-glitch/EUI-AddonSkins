@@ -12,7 +12,6 @@ local function encode(v)
     elseif type(v)=="number" or type(v)=="boolean" then return tostring(v) end
     error("non-SavedVariables value: "..type(v))
 end
-local function equal(a,b) return encode(a)==encode(b) end
 -- Table order is irrelevant across reconstructed Lua states.
 local function same(a,b)
     if type(a)~=type(b)then return false end
@@ -27,7 +26,7 @@ local main,skins,include,classes,profiles,loader,parser,saver=read("window_main.
 local counts
 local function environment(saved)
     counts={resets=0,changes=0,hooks=0,save=0,recovery=0}
-    local D={skins={},tabela_instancias={},unused_instances={},instances_amount=2,loaded=false,installed_skins_cache={},
+    local D={skins={},instances={},tabela_instancias={},unused_instances={},instances_amount=2,loaded=false,installed_skins_cache={},
         preset_version=1,default_skin_to_use="Minimalistic",profile_save_pos=false,local_instances_config={},initializing=true,
         default_profile={instances={},profile_save_pos=false,capture_real={}},capture_real={},
         switch={},Buffs={},capture_real={},gump=true,always_use_profile=false,always_use_profile_exception={}}
@@ -35,7 +34,7 @@ local function environment(saved)
     local data=saved and assert(load("return "..saved))() or {active="A",profiles={A={instances={},profile_save_pos=false,capture_real={}},B={instances={},profile_save_pos=false,capture_real={}}}}
     D.profiles=data.profiles
     _detalhes_database={active_profile=data.active,tabela_instancias={},last_version="fixture"}
-    _detalhes_global={switchSaved={slots={},table={}}}
+    _detalhes_global={switchSaved={slots={},table={}},__profiles=D.profiles}
     local combat=false
     InCombatLockdown=function()return combat end
     issecretvalue=function()return false end
@@ -84,6 +83,8 @@ local function environment(saved)
     method(classes,"ApplySavedSkin")
     local realRecovery=D.ApplySavedSkin
     D.ApplySavedSkin=function(...)counts.recovery=counts.recovery+1;return realRecovery(...)end
+    method(profiles,"GetCurrentProfileName")
+    method(profiles,"GetProfile")
     method(profiles,"ApplyProfile")
     method(profiles,"SaveProfile")
     assert(load("local _detalhes=...;"..assert(skins:match("(function _detalhes:InstallSkin.-)\n\tend")).."\nend"))(D)
@@ -215,4 +216,26 @@ third.Register()
 assert(second.D:GetInstance(1).skin=="Minimalistic" and second.D.waitingForSkins[9]=="Foreign","stale wait selected prototype or changed a foreign wait")
 assert(not second.D.waitingForSkins[1],"stale prototype wait retained")
 print("PASS: stale waiting ownership cannot select prototype; foreign waiting entries are untouched")
+local closedData=assert(load("return "..saved))()
+closedData.profiles.A.instances[2].__was_opened=false
+local closed=environment(encode(closedData))
+closed.boot();closed.P.Register()
+for id,wanted in ipairs(expectedA)do assert(same(prefs(closed.D:GetInstance(id)),wanted),"closed-window startup lost settings")end
+assert(closed.counts.recovery==1 and not closed.D:GetInstance(2):IsEnabled(),"closed window was unnecessarily recovered or opened")
+local incomplete=environment(saved)
+incomplete.boot()
+incomplete.D.profiles.A.instances[1].version=nil
+incomplete.P.Register()
+assert(incomplete.P.status=="profile" and not incomplete.D.skins["Addonskins EUI"],"missing saved version silently accepted")
+assert(incomplete.D.waitingForSkins[1]=="Addonskins EUI","failed recovery consumed its wait")
+incomplete.D.profiles.A.instances[1].version=1
+local install=incomplete.D.InstallSkin
+incomplete.D.InstallSkin=function()return false end
+incomplete.P.Register()
+assert(incomplete.P.status=="rejected" and incomplete.D.waitingForSkins[1]=="Addonskins EUI","rejected install lost pending ownership")
+incomplete.D.InstallSkin=install
+incomplete.P.Register()
+for id,wanted in ipairs(expectedA)do assert(same(prefs(incomplete.D:GetInstance(id)),wanted),"safe retry lost settings")end
+print("PASS: closed windows remain closed; missing native exports defer with diagnostic; rejected installation retains recoverable waits")
 for _,k in ipairs(keys)do _G[k]=original[k]end
+

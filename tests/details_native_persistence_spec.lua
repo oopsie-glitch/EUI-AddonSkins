@@ -23,9 +23,8 @@ end
 local keys={"Details","DetailsFramework","_detalhes_database","_detalhes_global","InCombatLockdown","LibStub","UnitName","UnitClass","UnitFactionGroup","GetRealmName","GetBuildInfo","PLAYER_FACTION_GROUP","IsInGroup","IsInRaid","issecretvalue"}
 local original={};for _,k in ipairs(keys)do original[k]=_G[k]end
 local main,skins,include,classes,profiles,loader,parser,saver=read("window_main.lua"),read("skins.lua"),read("include_instance.lua"),read("class_instance.lua"),read("profiles.lua"),read("loaddata.lua"),read("parser.lua"),read("savedata.lua")
-local counts
 local function environment(saved)
-    counts={resets=0,changes=0,hooks=0,save=0,recovery=0}
+    local counts={resets=0,changes=0,hooks=0,save=0,recovery=0}
     local D={skins={},instances={},tabela_instancias={},unused_instances={},instances_amount=2,loaded=false,installed_skins_cache={},
         preset_version=1,default_skin_to_use="Minimalistic",profile_save_pos=false,local_instances_config={},initializing=true,
         default_profile={instances={},profile_save_pos=false,capture_real={}},capture_real={},
@@ -60,6 +59,7 @@ local function environment(saved)
     D.Destroy=function(_,t)for k in pairs(t)do t[k]=nil end end
     D.table={deploy=function(dst,src)for k,v in pairs(src)do if dst[k]==nil then dst[k]=copy(v)end end end}
     D.StatusBar={Reset=nop,UpdateChilds=nop,ApplyOptions=nop,SetPlugin=nop}
+    D.AtivarInstancia=function(self)self.iniciada=true;self.ativa=true;self:ChangeSkin()end
     for _,name in ipairs({"SetTooltipBackdrop","SelectNumericalSystem","RefreshUpdater","RefreshAnimationFunctions","LoadFramesForBroadcastTools","HandleRogueCombatSpecIconByGameVersion","NickTagSetCache","CountDataOnLoad","SetUseAnimations","ClearSpellCache","UpdateParserGears"})do D[name]=nop end
     D.Buffs.BuildTables=nop;D.Ambiguate=function(_,v)return v end
     local function method(file,name)
@@ -97,7 +97,7 @@ local function environment(saved)
         i.GetId=function()return id end;i.IsStarted=function(self)return self.iniciada end
         i.IsEnabled=function(self)return self.ativa end
         i.ShutDown=function(self)self.ativa=false end
-        i.AtivarInstancia=function(self)self.iniciada=true;self.ativa=true;self:ChangeSkin()end
+        i.AtivarInstancia=D.AtivarInstancia
         i.GetPosition=function(self)return self.posicao end
         i.GetDisplay=function()return 1,1 end;i.GetMode=function()return 2 end;i.GetSegment=function()return 0 end
         return i
@@ -179,7 +179,9 @@ local afterFallback=prefs(reload.D:GetInstance(1))
 assert(not same(afterFallback,expectedA[1]),"fixture did not execute the unavailable-provider default reset")
 assert(reload.D.waitingForSkins[1]=="Addonskins EUI" and reload.D.waitingForSkins[2]=="Addonskins EUI")
 assert(same(prefs(reload.D.profiles.A.instances[1]),expectedA[1]),"upstream fallback already destroyed the saved profile")
+local profilesBefore=copy(reload.D.profiles)
 reload.P.Register()
+assert(same(reload.D.profiles,profilesBefore),"registration wrote a native profile")
 for id,wanted in ipairs(expectedA)do
     assert(same(prefs(reload.D:GetInstance(id)),wanted),"REPRO: reload registration lost native customization for window "..id)
 end
@@ -197,6 +199,9 @@ reload.accent[1]=.9;reload.P.Refresh()
 for id,wanted in ipairs(expectedA)do assert(same(prefs(reload.D:GetInstance(id)),wanted),"accent/refresh rewrote native preferences")end
 -- Save again, reconstruct plain SavedVariables, and initialize a completely new
 -- addon/Details environment. This is not an in-memory same-skin refresh.
+for id=1,2 do customize(reload.D:GetInstance(id),id+6);expectedA[id]=prefs(reload.D:GetInstance(id)) end
+reload.P.Refresh()
+for id,wanted in ipairs(expectedA)do assert(same(prefs(reload.D:GetInstance(id)),wanted),"later customization was reapplied")end
 reload.D:SaveProfile()
 local second=environment(reload.save())
 second.boot();second.combat(true);second.P.Register()
@@ -216,13 +221,13 @@ third.Register()
 assert(second.D:GetInstance(1).skin=="Minimalistic" and second.D.waitingForSkins[9]=="Foreign","stale wait selected prototype or changed a foreign wait")
 assert(not second.D.waitingForSkins[1],"stale prototype wait retained")
 print("PASS: stale waiting ownership cannot select prototype; foreign waiting entries are untouched")
-local closedData=assert(load("return "..saved))()
+local closedData=assert(load("return "..reload.save()))()
 closedData.profiles.A.instances[2].__was_opened=false
 local closed=environment(encode(closedData))
 closed.boot();closed.P.Register()
 for id,wanted in ipairs(expectedA)do assert(same(prefs(closed.D:GetInstance(id)),wanted),"closed-window startup lost settings")end
 assert(closed.counts.recovery==1 and not closed.D:GetInstance(2):IsEnabled(),"closed window was unnecessarily recovered or opened")
-local incomplete=environment(saved)
+local incomplete=environment(reload.save())
 incomplete.boot()
 incomplete.D.profiles.A.instances[1].version=nil
 incomplete.P.Register()

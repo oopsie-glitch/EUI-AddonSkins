@@ -84,6 +84,14 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         end
         return true
     end
+    -- Reuse the adapter's existing ChangeSkin observer. An explicit choice of
+    -- another skin cancels only our pending native fallback recovery.
+    function P.Selection(instance, name)
+        if not Plain(name) or type(name) ~= "string" or name == NAME then return end
+        local id = instance and type(instance.GetId) == "function" and instance:GetId()
+        local waiting = D.waitingForSkins
+        if Number(id) and type(waiting) == "table" and waiting[id] == NAME then waiting[id] = nil end
+    end
     function P.Register(look)
         if not SafeUI() then Status("deferred", "waiting for enabled, out-of-combat refresh"); return end
         if ownDefinition and FindSkin(NAME) == ownDefinition then
@@ -197,30 +205,43 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
             end
         end
         -- Details loads profiles before IsLoaded becomes true. WaitForSkin
-        -- temporarily changes the skin identity, causing ChangeSkin to reset
-        -- appearance to the fallback before this provider can register.
-        -- Recover only that pending selection, from Details' own saved profile,
-        -- through its native preset importer. No shadow preferences or hooks.
+        -- temporarily changes the skin identity during window construction.
+        -- Late InstallSkin would switch it back and reset native customization.
+        -- Preserve the live native export across that pending selection, using
+        -- Details' own export/import API. No shadow preferences or hooks.
         local waiting, pending, recovery = D.waitingForSkins, {}, {}
         if type(waiting) == "table" then
             local profile
             for id, name in pairs(waiting) do
                 if name == NAME then
                     local instance = D:GetInstance(id)
-                    if instance and instance.skin == NAME then
+                    if instance and (instance.skin == NAME or instance.skin == D.default_skin_to_use) then
                         if not profile and type(D.GetProfile) == "function"
                             and type(D.GetCurrentProfileName) == "function" then
                             profile = D:GetProfile(D:GetCurrentProfileName())
                         end
                         local saved = profile and profile.instances and profile.instances[id]
-                        if type(saved) ~= "table" or saved.skin ~= NAME
-                            or type(instance.ApplySavedSkin) ~= "function"
-                            or not Number(saved.version) or not Number(D.preset_version)
-                            or saved.version < D.preset_version then
-                            Status("profile", "cannot safely recover the waiting native saved window " .. tostring(id), true)
+                        if type(saved) ~= "table" then
+                            Status("profile", "cannot identify the waiting native saved window " .. tostring(id), true)
                             return
                         end
-                        recovery[#recovery + 1] = {instance = instance, saved = D.CopyTable(saved)}
+                        if saved.skin == NAME then
+                            if type(instance.ExportSkin) ~= "function" or type(instance.ApplySavedSkin) ~= "function"
+                                or not Number(saved.version) or not Number(D.preset_version)
+                                or saved.version < D.preset_version then
+                                Status("profile", "cannot safely recover the waiting native window " .. tostring(id), true)
+                                return
+                            end
+                            local current = instance:ExportSkin()
+                            if type(current) ~= "table" or not Number(current.version)
+                                or current.version < D.preset_version then
+                                Status("profile", "native window export is unavailable for " .. tostring(id), true)
+                                return
+                            end
+                            current = D.CopyTable(current)
+                            current.skin = NAME
+                            recovery[#recovery + 1] = {instance = instance, saved = current, fallback = instance.skin}
+                        end
                     end
                     pending[id] = name
                 end
@@ -239,7 +260,7 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
             return
         end
         for _, item in ipairs(recovery) do
-            if item.instance.skin == NAME then item.instance:ApplySavedSkin(item.saved) end
+            if item.instance.skin == item.fallback then item.instance:ApplySavedSkin(item.saved) end
         end
         P.recoveredWindows = #recovery
         Status("registered", "registered in Details.skins; native GetSkin is instance-dependent")

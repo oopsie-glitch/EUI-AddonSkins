@@ -943,7 +943,8 @@ local function Setup(C, refresh)
         end)
     end
     for _, name in ipairs({"ChangeSkin", "ApplyProfile", "CreateInstance"}) do
-        H.Hook(D, name, function(instance)
+        H.Hook(D, name, function(instance, selected)
+            if name == "ChangeSkin" and state.native and state.native.Selection then state.native.Selection(instance, selected) end
             if state.applying then return end
             if name == "ChangeSkin" and state.native then state.native.Apply(instance) end
             refresh()

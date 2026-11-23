@@ -23,6 +23,7 @@ end
 local keys={"Details","DetailsFramework","_detalhes_database","_detalhes_global","InCombatLockdown","LibStub","UnitName","UnitClass","UnitFactionGroup","GetRealmName","GetBuildInfo","PLAYER_FACTION_GROUP","IsInGroup","IsInRaid","issecretvalue"}
 local original={};for _,k in ipairs(keys)do original[k]=_G[k]end
 local main,skins,include,classes,profiles,loader,parser,saver=read("window_main.lua"),read("skins.lua"),read("include_instance.lua"),read("class_instance.lua"),read("profiles.lua"),read("loaddata.lua"),read("parser.lua"),read("savedata.lua")
+local adapter=assert(io.open("EUIAddonSkins/Skins/Details.lua"));local adapterSource=adapter:read("*a");adapter:close()
 local function environment(saved)
     local counts={resets=0,changes=0,hooks=0,save=0,recovery=0}
     local D={skins={},instances={},tabela_instancias={},unused_instances={},instances_amount=2,loaded=false,installed_skins_cache={},
@@ -41,13 +42,20 @@ local function environment(saved)
     GetRealmName=function()return "FixtureRealm"end;GetBuildInfo=function()return "fixture","",0,16001 end
     UnitFactionGroup=function()return "Alliance"end;PLAYER_FACTION_GROUP={[0]="Horde",[1]="Alliance"}
     IsInGroup=function()return false end;IsInRaid=function()return false end
-    local framework={IsAddonApocalypseWow=function()return false end,table={copy=function(_,v)return copy(v)end}}
+    local framework={IsAddonApocalypseWow=function()return false end,Mixin=function()end,table={copy=function(_,v)return copy(v)end}}
+    framework.ParseColors=function(_,v)return table.unpack(v)end
     DetailsFramework=framework
     local media={Fetch=function(_,_,name)return name or "native" end,Register=function()end}
     LibStub=setmetatable({GetLibrary=function()return media end},{__call=function()return media end})
     local nop=function()end
+    local function art()return {SetAlpha=nop,SetVertexColor=nop}end
+    framework.CriaJanelaPrincipal=function()
+        local f={EnableMouseWheel=nop,GetHeight=function()return 200 end,GetWidth=function()return 300 end,cabecalho={},UPFrame=art(),barra_esquerda=art(),barra_direita=art(),barra_fundo=art()}
+        for _,k in ipairs({"ball_r","ball","atributo_icon","emenda","top_bg"})do f.cabecalho[k]=art()end
+        return f,{}, {},{}
+    end
     local N={RowTexts={Prepare=nop,GetDefaultTexts=function()return {{font={}}}end},
-        WindowSnap={ReleaseAll=nop,ImportLayout=nop,Initialize=nop,MoveGroupWith=nop},
+        WindowSnap={ReleaseAll=nop,ImportLayout=nop,Initialize=nop,MoveGroupWith=nop,RegisterInstance=nop},
         SaveVariables={},LoadSavedVariables={},AutoRunCode={StartAutoRun=nop},BParser={}}
     D.CopyTable=copy;D.IsLoaded=function()return D.isLoaded end
     D.GetAllInstances=function()return D.tabela_instancias end
@@ -58,14 +66,21 @@ local function environment(saved)
     D.Msg=function(_,m)error(m)end
     D.Destroy=function(_,t)for k in pairs(t)do t[k]=nil end end
     D.table={deploy=function(dst,src)for k,v in pairs(src)do if dst[k]==nil then dst[k]=copy(v)end end end}
-    D.StatusBar={Reset=nop,UpdateChilds=nop,ApplyOptions=nop,SetPlugin=nop}
-    D.AtivarInstancia=function(self)self.iniciada=true;self.ativa=true;self:ChangeSkin()end
+    D.StatusBar={Reset=nop,UpdateChilds=nop,ApplyOptions=nop,SetPlugin=nop,
+        CreateStatusBarChildForInstance=function(_,instance,name)return {real_name=name,options={}}end,
+        SetLeftPlugin=function(_,i,p)i.StatusBar.left=p end,SetCenterPlugin=function(_,i,p)i.StatusBar.center=p end,SetRightPlugin=function(_,i,p)i.StatusBar.right=p end}
+    D.ToolBar={ReorganizeIcons=nop};D.GetLowerInstanceNumber=function()return 1 end
+    D.ResetTempSegment=nop;D.IsDetached=function()return false end
+    D.GetApocalypseSourceType=function()return 0 end
+    D.StatusBarColor=nop;D.EsconderScrollBar=nop
+    N.Apocalypse={TypeDetails=1,TypeGame=2}
     for _,name in ipairs({"SetTooltipBackdrop","SelectNumericalSystem","RefreshUpdater","RefreshAnimationFunctions","LoadFramesForBroadcastTools","HandleRogueCombatSpecIconByGameVersion","NickTagSetCache","CountDataOnLoad","SetUseAnimations","ClearSpellCache","UpdateParserGears"})do D[name]=nop end
     D.Buffs.BuildTables=nop;D.Ambiguate=function(_,v)return v end
     local function method(file,name)
-        local body=assert(file:match("(function Details:"..name.."%s*%b().-)\nend"),name)
+        local ending=name=="OptionPanelOnChangeSkin" and "\n            end" or "\nend"
+        local body=assert(file:match("(function Details:"..name.."%s*%b().-)"..ending),name)
         local exportHelper=name=="ExportSkin" and assert(classes:match("(local createStatusbarOptions = function.-)\nend")).."\nend\n" or ""
-        assert(load("local Details,Details222,DetailsFramework=...;local safe_load=function(fn,...)fn(...);return true end;"..exportHelper..body.."\nend"))(D,N,framework)
+        assert(load("local Details,Details222,DetailsFramework=...;local gump,detailsFramework=DetailsFramework,DetailsFramework;local instanceMixins={};local _math_floor=math.floor;local modo_grupo,modo_alone,modo_raid=2,1,3;local safe_load=function(fn,...)fn(...);return true end;"..exportHelper..body.."\nend"))(D,N,framework)
     end
     assert(load("local _detalhes,SharedMedia,Details222=...;"..assert(include:match("(_detalhes.instance_defaults = .*)"))))(D,media,N)
     assert(load("local _detalhes=...;"..assert(include:match("(_detalhes.instance_skin_ignored_values = %b{})"))))(D)
@@ -79,6 +94,11 @@ local function environment(saved)
     local realChange=D.ChangeSkin
     D.ChangeSkin=function(...)counts.changes=counts.changes+1;return realChange(...)end
     method(main,"WaitForSkin")
+    method(main,"InstanceColor")
+    method(classes,"GetId")
+    method(classes,"RestauraJanela")
+    local activate=assert(classes:match("(function Details:AtivarInstancia.-self:ChangeSkin%(%))"))
+    assert(load("local Details,DetailsFramework,detailsFramework,Details222=...;local instanceMixins={};"..activate.."\nend"))(D,framework,framework,N)
     method(classes,"ExportSkin")
     method(classes,"ApplySavedSkin")
     local realRecovery=D.ApplySavedSkin
@@ -92,7 +112,7 @@ local function environment(saved)
     local last=assert(skins:find('_detalhes:InstallSkin ("Minimalistic v2",',first+1,true))
     assert(load("local _detalhes,Loc=...;"..skins:sub(first,last-1)))(D,setmetatable({},{__index=function(_,k)return k end}))
     local function instance(id)
-        local i=setmetatable({meu_id=id,bgframe={},baseframe={},skin="Minimalistic",StatusBar={options={},left={real_name="NONE",options={}},center={real_name="NONE",options={}},right={real_name="NONE",options={}}},snap={},posicao={normal={w=300,h=200}}},{__index=D})
+        local i=setmetatable({meu_id=id,bgframe={},baseframe={},skin="Minimalistic",StatusBar={options={},left={real_name="NONE",options={}},center={real_name="NONE",options={}},right={real_name="NONE",options={}}},snap={},mostrando="normal",posicao={normal={w=300,h=200}}},{__index=D})
         for _,name in ipairs({"LockInstance","LoadLocalInstanceConfig","RestoreMainWindowPosition","ReajustaGump"})do i[name]=nop end
         i.GetId=function()return id end;i.IsStarted=function(self)return self.iniciada end
         i.IsEnabled=function(self)return self.ativa end
@@ -118,6 +138,16 @@ local function environment(saved)
     assert(loadfile("EUIAddonSkins/DetailsNative.lua"))("EUIAddonSkins",context)
     local accent={.2,.6,.4}
     local P=context.CreateNativeDetailsPrototype({H={Allowed=function()return false end,Hook=function()counts.hooks=counts.hooks+1 end},S={GetAccentColor=function()return table.unpack(accent)end,GetFont=function()return "fixture-font"end},module={}},nop)
+    -- Execute the integration's existing ChangeSkin observer, including its
+    -- requested-skin argument. No extra runtime hook is introduced.
+    local state={native=P,applying=false}
+    local hook=assert(adapterSource:match('(H.Hook%(D, name, function%(instance.-)\n        end%)'))
+    local H={Hook=function(o,name,callback)
+        local original=o[name]
+        o[name]=function(...)local result=table.pack(original(...));callback(...);return table.unpack(result,1,result.n)end
+    end}
+    assert(load("local H,D,state,refresh,name=...;"..hook))(H,D,state,function()end,"ChangeSkin")
+    method(read("window_options2_sections.lua"),"OptionPanelOnChangeSkin")
     local function savedState()
         return encode({active=D:GetCurrentProfileName(),profiles=D.profiles})
     end
@@ -129,6 +159,7 @@ local function customize(i,n)
     i.attribute_text.show_timer=n%2==1;i.attribute_text.text_color={.1*n,.2,.8,1}
     i.row_info.height=24+n;i.row_info.space.between=5+n;i.row_info.texture="UserTexture"..n
     i.row_info.font_face="UserBarFont"..n;i.row_info.font_size=12+n
+    for _,text in ipairs(i.row_info.texts or {})do if text.font then text.font.face="UserBarFont"..n;text.font.size=12+n end end
     i.row_info.texture_background_class_color=n%2==1;i.bg_alpha=.2+n/10;i.bg_r=.12;i.bg_g=.13;i.bg_b=.14
 end
 local fields={"menu_icons_size","menu_icons","menu_anchor","attribute_text","row_info","bg_alpha","bg_r","bg_g","bg_b","skin"}
@@ -176,7 +207,8 @@ local reload=environment(saved)
 reload.boot()
 assert(reload.D.IsLoaded(),"actual native initializer did not complete")
 local afterFallback=prefs(reload.D:GetInstance(1))
-assert(not same(afterFallback,expectedA[1]),"fixture did not execute the unavailable-provider default reset")
+local pendingExpected=copy(expectedA[1]);pendingExpected.skin="Minimalistic"
+assert(same(afterFallback,pendingExpected),"native window construction unexpectedly changed saved settings before late registration")
 assert(reload.D.waitingForSkins[1]=="Addonskins EUI" and reload.D.waitingForSkins[2]=="Addonskins EUI")
 assert(same(prefs(reload.D.profiles.A.instances[1]),expectedA[1]),"upstream fallback already destroyed the saved profile")
 local profilesBefore=copy(reload.D.profiles)
@@ -208,17 +240,18 @@ second.boot();second.combat(true);second.P.Register()
 assert(not second.D.skins["Addonskins EUI"],"registered/recovered during combat")
 second.combat(false);second.P.Register()
 for id,wanted in ipairs(expectedA)do assert(same(prefs(second.D:GetInstance(id)),wanted),"second reload lost customization")end
-assert(same(second.D.profiles.B,initial.D.profiles.B),"inactive profile was changed")
+for id,wanted in ipairs(expectedB)do assert(same(prefs(second.D.profiles.B.instances[id]),wanted),"inactive profile preferences changed")end
 print("PASS: actual native ExportSkin/SaveProfile -> serialized reload -> parser initializer/LoadConfig/ApplyProfile/WaitForSkin -> registration preserves two windows, profiles, timer/fonts/bars/background/title/toolbar")
 -- Stale ownership must not select the prototype over a different current skin.
 second.D.waitingForSkins={[1]="Addonskins EUI",[9]="Foreign"}
-second.D:GetInstance(1):ChangeSkin("Minimalistic")
+second.D.skins.Foreign=copy(second.D.skins.Minimalistic)
+second.D:GetInstance(1):OptionPanelOnChangeSkin("Foreign")
 local thirdNS={IsEnabled=function()return true end}
 assert(loadfile("EUIAddonSkins/DetailsNative.lua"))("EUIAddonSkins",thirdNS)
 second.D.skins["Addonskins EUI"]=nil
 local third=thirdNS.CreateNativeDetailsPrototype({H={Allowed=function()return false end,Hook=function()end},S={GetAccentColor=function()return .2,.6,.4 end,GetFont=function()return "fixture-font"end},module={}},function()end)
 third.Register()
-assert(second.D:GetInstance(1).skin=="Minimalistic" and second.D.waitingForSkins[9]=="Foreign","stale wait selected prototype or changed a foreign wait")
+assert(second.D:GetInstance(1).skin=="Foreign" and second.D.waitingForSkins[9]=="Foreign","stale wait selected prototype or changed a foreign wait")
 assert(not second.D.waitingForSkins[1],"stale prototype wait retained")
 print("PASS: stale waiting ownership cannot select prototype; foreign waiting entries are untouched")
 local closedData=assert(load("return "..reload.save()))()

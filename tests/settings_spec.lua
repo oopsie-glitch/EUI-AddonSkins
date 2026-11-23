@@ -36,6 +36,10 @@ local function environment(modern,db)
     ns.CreateDetailsSettingsPanel();SlashCmdList.EUIDETAILS()
     assert(categories==1 and opened==(modern and 123 or panel),'shared panel registered twice or broke existing shortcut')
     assert(panel.menus and panel.meter and panel.tiny and panel.rxpArrow,'existing controls or arrow toggle missing')
+    assert(panel.meter.texts[1].text=='Legacy Details! Styling','legacy settings label not renamed')
+    local explained=false
+    for _,text in ipairs(panel.texts) do if text.text:find('Older automatic styling',1,true) then explained=true end end
+    assert(explained,'legacy settings did not distinguish native skin selection')
     return ns,panel
 end
 for _,modern in ipairs({true,false})do
@@ -62,5 +66,29 @@ for _,modern in ipairs({true,false})do
     otherPanel.rxpArrow:SetChecked(true);otherPanel.rxpArrow.hooks.OnClick(otherPanel.rxpArrow)
     assert(db.rxp.arrow==true,'preference could not be set while RestedXP was absent')
 end
+-- Fresh getters do not bind/write defaults; explicit existing API initialization
+-- retains exactly the historical Off / Off / On behavior.
+for _,modern in ipairs({true,false}) do
+    local ns,panel=environment(modern,nil)
+    assert(not ns.ReadDetailsSetting('meter') and not ns.ReadDetailsSetting('tiny') and ns.ReadDetailsSetting('menus'))
+    assert(EUIAddonSkinsDB==nil,'label/default read initialized SavedVariables')
+    local cfg=ns.DetailsSettings()
+    assert(cfg.meter==false and cfg.tiny==false and cfg.menus==true)
+    for _,saved in ipairs({
+        {meter=true,tiny=false,menus=false},
+        {meter=false,tiny=true,menus=true},
+        {meter=true,menus=true},
+    }) do
+        local oldTiny=saved.tiny
+        local context=environment(modern,{details=saved})
+        assert(context.ReadDetailsSetting('meter')==saved.meter and context.ReadDetailsSetting('menus')==saved.menus)
+        assert(context.ReadDetailsSetting('tiny')==(oldTiny~=nil and oldTiny or oldTiny==nil and saved.meter))
+        assert(saved.tiny==oldTiny,'reading older saves migrated a preference')
+        local persisted=context.DetailsSettings()
+        assert(persisted.meter==saved.meter and persisted.menus==saved.menus)
+        if oldTiny~=nil then assert(persisted.tiny==oldTiny) end
+    end
+end
+print('PASS: Legacy Details! Styling label, shared meter key, fresh Off/Off/On defaults, explicit saves and historical Tiny Threat inheritance')
 Settings,InterfaceOptions_AddCategory,InterfaceOptionsFrame_OpenToCategory=oldSettings,oldLegacy,oldOpen
 print('PASS: shared addon options, modern/legacy category, persistent arrow toggle, missing targets, preserved Details settings and shortcut')

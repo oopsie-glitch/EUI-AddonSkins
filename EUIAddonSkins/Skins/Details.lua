@@ -865,7 +865,7 @@ local function Setup(C, refresh)
         state.quickAdded = true
         tip:AddLine("EUI AddonSkins")
         tip:AddMenu(1, function() end)
-        for _, option in ipairs({{"meter", "Style Details meters"}, {"tiny", "Style Tiny Threat"}, {"menus", "Skin menus and options (reload)"}}) do
+        for _, option in ipairs({{"meter", "Legacy Details! Styling"}, {"tiny", "Style Tiny Threat"}, {"menus", "Skin menus and options (reload)"}}) do
             local key, label = option[1], option[2]
             tip:AddLine(label, ns.DetailsSettings()[key] and "On" or "Off", 2)
             tip:AddMenu(2, function()

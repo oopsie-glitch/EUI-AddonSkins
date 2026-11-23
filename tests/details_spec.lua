@@ -957,6 +957,7 @@ local gear = meter.baseframe.cabecalho.modo_selecao.widget
 assert(Details:SetMenuOwner(gear, meter) == 'owner-native')
 assert(#GameCooltip.entries == 6 and GameCooltip.entries[1].text == 'Native entry')
 assert(GameCooltip.entries[2].text == 'EUI AddonSkins' and GameCooltip.entries[3].level == 2)
+assert(GameCooltip.entries[3].text == 'Legacy Details! Styling','quick-menu legacy label not renamed')
 Details:SetMenuOwner(gear, meter); assert(#GameCooltip.entries == 6, 'submenu duplicated during reuse')
 GameCooltip.entries[6].action(); assert(openedCategory == 123)
 GameCooltip.entries[4].action(); flush()

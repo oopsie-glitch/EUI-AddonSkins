@@ -66,7 +66,7 @@ Toggle individual skins in **Blizzard Skins+ > Window Skins > Third-Party Addons
 
 Open **Options > AddOns > EUI AddonSkins** for a searchable list of active configurable addons. The panel shows only the controls each integration supports. **Legacy options** remains available for the original shared page.
 
-- Details! keeps its independent meter, Tiny Threat and menus/options switches. Use the meter settings icon or `/euidetails` for quick access.
+- Details! exposes **Legacy Details! Styling**, the older automatic meter styling method, separately from Tiny Threat and menus/options. Fresh defaults are Off / Off / On; saved preferences are preserved. Use the meter settings icon or `/euidetails` for quick access. The experimental native **Addonskins EUI** skin is selected only through **Details! > Options > Skins > Skin Selection** and does not require legacy styling.
 - Spy offers Automatic, EUI Standard and EUI Forever, decorative background opacity and Reset Appearance. Use its right-click **EUI AddonSkins** menu or `/euispy` for quick access. The Forever look requires the supported Forever client and EUI appearance API.
 - RestedXP offers style, opacity and its separate navigation-arrow toggle. Appearance Reset preserves the arrow preference.
 - AllTheThings, RareScanner and KiwiFarm expose their existing appearance controls. KiwiFarm can also restore its native statistics font. Nova Instance Tracker windows retain their 80% background opacity.

@@ -187,6 +187,10 @@ for _,oldInfo in ipairs({false,true}) do
     local function Choose(label) h:Press(Buttons(label)[1]) end
     local check=Checks()
     assert(#check==3 and not check[1].checked and check[2].checked and not check[3].checked)
+    local legacyLabel=h:Find(function(f)return f.text=="Legacy Details! Styling" end,true)
+    assert(#legacyLabel==1,'central provider label missing or duplicated')
+    assert(#h:Find(function(f)return f.text and f.text:find("Older automatic meter styling",1,true) end,true)==1,
+        'central provider did not explain separate native selection')
     assert(calls==0 and arrowCalls==0 and not db.settingsUI and db.restedXP.opacity==0,"opening wrote preferences")
     local firstShow=h.counts.frames
     assert(#root.textures==1 and not root.textures[1].allPoints,"settings canvas covers the native background")

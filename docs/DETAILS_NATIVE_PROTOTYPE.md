@@ -152,3 +152,27 @@ The definition initializes attribute_text.show_timer=false for a new native sele
 Existing Addonskins EUI windows retain their saved flag. To disable it without resetting any other setting, use Details! → Options → Designer → Title Text → Show Encounter Timer. Users can turn it on again; ordinary refreshes, same-skin updates, theme changes, profile restoration and reload do not force it off. Native skin switching itself can reset appearance preferences, so back up profiles before intentionally selecting a different skin.
 
 Tests cover the actual native Designer setter and encounter-start scheduling, false initial defaults, later true preferences and saved-profile reconstruction. Existing source/layout/color/availability/sizing/Cooltip regressions and exact-package verification remain enabled. Hosted fixtures do not prove live WoW taint safety or pixel-perfect rendering.
+
+## Initial native header alignment and legacy-setting wording
+
+Reference: 234312c087803a83a8aa2e51cd474ae45ca5d447. The native definition inherited Minimalistic's title anchor (1.4,2) and right toolbar anchor (20,0), but uses a 22-unit flat band and an 11-unit native title font. Native RefreshAttributeTextSize uses text_size+2 for its title region. Native MenuAnchor/GetMenuAnchorPoint use 128-unit corner textures, a 16-unit top offset and 1x1 menu points.
+
+For the normal initial native size (16 units), the inherited title center was 8.5 and toolbar center 7 units above the body, against a header center of 11. The rightmost 16-unit button could also extend 4 units outside the window. Glyph alpha bounds were already centered; no artwork or texture changes are needed.
+
+The native definition now computes initial title/menu offsets from its own header/text/button dimensions and verified native corner coordinates. On the pinned source, title Y becomes 4.5; right-toolbar anchor becomes (13,4), giving centers of 11 and a 3-unit right margin. These are derived UI-unit coordinates, not an extra render-time pixel translation. Header height, font, button size and click targets are unchanged. There are no new hooks or instance/profile migrations. A same-skin refresh, reload or new definition registration does not overwrite existing native positions. Existing custom windows retain their values; new native selection follows Details' own skin-reset rules.
+
+### Native customization and limits
+
+All subsequent native layout changes win. Larger/smaller toolbar buttons, different title fonts/sizes or side changes may require native Position Y adjustment: continuously recentering them would override deliberate user positions. The existing horizontal title-fit helper is unchanged and does not enforce the new default Y.
+
+Details deliberately lists menu_icons among instance_skin_ignored_values, so a native skin cannot safely replace retained menu_icons.space via its definition. Negative retained spacing (native default -2) explains crowded glyphs, independently of the band offsets. This change does not bypass that native protection, shrink artwork or force a new gap. Adjust Details! → Options → Designer → Title Bar → Buttons and Menu Settings → Button Spacing if desired; Position X/Y and Button Size remain there as well. Continuous centering or automatic spacing replacement is outside this non-invasive change. Native skin switching may reset non-exempt native appearance values, as before; back up profiles before switching.
+
+### Legacy settings clarity
+
+The quick submenu, central Details! provider and Legacy options page now say **Legacy Details! Styling**. Descriptions identify it as the older automatic method and direct users to Details! → Options → Skins → Skin Selection → Addonskins EUI for the native prototype. No new setting or alias exists: the saved meter key, getters, setters, callbacks, synchronization and restore semantics are unchanged.
+
+Fresh installation defaults are legacy meter Off, Tiny Threat Off and menus/options On. Explicit saved false/true values take precedence. Historical saves with no tiny field still inherit meter as before; this presentation change does not migrate them. Native Addonskins EUI selection is independent of the legacy meter switch.
+
+The regression fixtures now load the actual native ignored-values table and ResetInstanceConfigKeepingValues function, replacing the prior simplified reset stub. They verify retained spacing, same-skin custom anchors/sizes, initial source-native header centering at 12 scale/width combinations, three settings labels/descriptions, fresh defaults without binding writes, saved preferences, legacy/native isolation and existing 432 native geometry configurations. Reverting the initial-default correction must fail the centering assertion.
+
+Actual glyph optical centering, engine pixel rounding, installed Forever profile persistence and live taint safety still need in-game review. The built-in native layout does not promise automatic centering after every user geometry change; no invasive enforcement is added to claim otherwise.

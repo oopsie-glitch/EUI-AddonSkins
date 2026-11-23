@@ -43,6 +43,7 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
     }
     local textureStates = {{"GetNormalTexture",0.65},{"GetHighlightTexture",1},{"GetPushedTexture",1},{"GetDisabledTexture",0.25}}
     local function Plain(v) return not (issecretvalue and issecretvalue(v)) end
+    local function Number(v) return Plain(v) and type(v) == "number" end
     local function SafeUI()
         return not (InCombatLockdown and InCombatLockdown()) and ns.IsEnabled(C.module)
     end
@@ -152,6 +153,28 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         props.attribute_text.enabled = true
         props.attribute_text.show_timer = false -- initial native selection only
         props.attribute_text.text_face, props.attribute_text.text_size = NAME .. " Font", 11
+        -- Initial native offsets only. MenuAnchor uses a 16-unit top offset
+        -- and 1x1 menu points on 128-unit corner textures; the native title
+        -- region is text_size + 2 high. Keep initial controls inside the band.
+        -- Do not repaint/migrate saved instances or enforce later user geometry.
+        local left, right = definition.left_corner_anchor, definition.right_corner_anchor
+        local menu, title = props.menu_anchor, props.attribute_text
+        if props.toolbar_side == 1 and title.side == 1 and type(title.anchor) == "table"
+            and type(left) == "table" and type(right) == "table" and type(menu) == "table"
+            and Number(left[1]) and Number(left[2]) and Number(right[1]) and Number(right[2])
+            and Number(props.menu_icons_size) then
+            local center = props.titlebar_height / 2
+            local buttonHeight = 16 * props.menu_icons_size
+            local padding = math.max(0, (props.titlebar_height - buttonHeight) / 2)
+            title.anchor[2] = center - (title.text_size + 2) / 2 - left[2]
+            if menu.side == 2 then
+                menu[1] = 128 - right[1] - buttonHeight - padding
+                menu[2] = center + buttonHeight / 2 - 16 + 1 - right[2]
+            elseif menu.side == 1 then
+                menu[1] = padding - left[1] - 128 - 1
+                menu[2] = center - buttonHeight / 2 - left[2]
+            end
+        end
         if not TitleAccentDefault(definition) then return end
         -- Native title/timer settings and text are never maintained by this adapter.
         props.fullborder_shown, props.fullborder_size = true, 0.5
@@ -271,7 +294,6 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
     -- Native RefreshAttributeTextSize subtracts a button count, but never moves
     -- the left-anchored title past a left-side toolbar. Fit the existing title
     -- to actual occupied bounds; never move or resize a button.
-    local function Number(v) return Plain(v) and type(v) == "number" end
     local function Points(f)
         local result = {}
         for i = 1, f:GetNumPoints() do

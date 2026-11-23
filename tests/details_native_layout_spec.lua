@@ -124,12 +124,18 @@ local rowtexts={Prepare=function()end,GetDefaultTexts=function()return {{font={}
 -- Read the real native default table without running unrelated initializers.
 local defaults=assert(read("include_instance.lua"):match("(_detalhes.instance_defaults = .*)"))
 assert(load("local _detalhes,SharedMedia,Details222=...; "..defaults))(D,media,{RowTexts=rowtexts})
+local include=read("include_instance.lua")
+assert(load("local _detalhes=...; "..assert(include:match("(_detalhes.instance_skin_ignored_values = %b{})"))))(D)
+local reset=assert(include:match("(function _detalhes:ResetInstanceConfigKeepingValues.-)\nend"))
+assert(load("local _detalhes,Details,Details222=...; "..reset.."\nend"))(D,D,{RowTexts=rowtexts})
+local changePrefix=assert(main:match("(function Details:ChangeSkin.-)\n\tlocal skin_file"))
+assert(load("local Details,Details222=...; "..changePrefix.."\nend"))(D,{RowTexts=rowtexts})
 local function method(name,file)
     local body=assert((file or main):match("(function Details:"..name.."%s*%b().-)\nend"),name)
     local constants="local COORDS_LEFT_BALL_NO_ICON,COORDS_LEFT_CONNECTOR_NO_ICON,COORDS_LEFT_BALL,COORDS_LEFT_CONNECTOR,COORDS_RIGHT_BALL,COORDS_TOP_BACKGROUND,COORDS_BOTTOM_SIDE_BAR={0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1},{0,1,0,1}\n"
     assert(load("local Details,gump,SharedMedia,Details222,detailsFramework,tbuttons=...; local unpack=unpack or table.unpack; "..constants..body.."\nend"))(D,framework,media,{RowTexts=rowtexts,WindowSnap={RefreshGeometry=function()end}},framework,{})
 end
-for _,name in ipairs({"GetMenuAnchorPoint","ToolbarMenuButtonsSize","ToolbarMenuSetButtons","ToolbarMenuButtons","MenuAnchor","LeftMenuAnchorSide","RefreshAttributeTextSize","AttributeMenu","RefreshTitleBar","SetBackdropTexture"}) do method(name) end
+for _,name in ipairs({"GetMenuAnchorPoint","ToolbarMenuButtonsSize","ToolbarMenuSetButtons","ToolbarMenuSetButtonsOptions","ToolbarMenuButtons","MenuAnchor","LeftMenuAnchorSide","RefreshAttributeTextSize","AttributeMenu","RefreshTitleBar","SetBackdropTexture"}) do method(name) end
 method("SetBackgroundColor",read("class_instance.lua"));method("SetBackgroundAlpha",read("class_instance.lua"))
 -- Safe stubs for non-layout native services.
 D.RefreshTitleBarText=function()end
@@ -172,6 +178,7 @@ local function instance()
     local i=copy(definition.instance_cprops);setmetatable(i,{__index=D});i.skin="Addonskins EUI"
     i.baseframe=frame();i.baseframe.width=380;i.baseframe.height=180
     local f=i.baseframe;f.x=100;f.y=200;f.cabecalho={}
+    i.bgframe=frame(nil,f)
     local h=f.cabecalho
     for _,key in ipairs({"ball","ball_r","ball_point","emenda","top_bg"})do h[key]=frame("Texture",f) end
     f.UPFrame=frame(nil,f);f.UPFrameConnect=frame(nil,f);f.UPFrameLeftPart=frame(nil,f)
@@ -233,6 +240,50 @@ if os.getenv("DETAILS_LAYOUT_REPRO") then
     -- Existing saved prototype profiles retain the old left-side setting.
     a.menu_anchor.side=1;layout(a);noOverlap(a);return
 end
+-- Initial offsets are native definition values, not a post-render repair.
+-- Prove center and containment using native anchor/toolbar/title functions.
+local function checkInitialHeader(i)
+    layout(i)
+    local center=(i.baseframe.titleBar:GetTop()+i.baseframe.titleBar:GetBottom())/2
+    local titleCenter=(i.title:GetTop()+i.title:GetBottom())/2
+    assert(math.abs(titleCenter-center)<1e-7,"REPRO: inherited initial title sits below header center")
+    for _,key in ipairs({"modo_selecao","segmento","atributo","report","reset","fechar"}) do
+        local button=i.baseframe.cabecalho[key]
+        if button:IsShown() then
+            assert(math.abs((button:GetTop()+button:GetBottom())/2-center)<1e-7,"REPRO: inherited initial toolbar sits below header center")
+            assert(button:GetRight()<=i.baseframe:GetRight()+1e-7,"initial toolbar exceeds header right edge")
+        end
+    end
+end
+if os.getenv("DETAILS_HEADER_REPRO") then
+    checkInitialHeader(instance());return
+end
+if not os.getenv("DETAILS_BODY_REPRO") then
+for _,scale in ipairs({.75,1,1.375}) do
+    for _,width in ipairs({90,180,380,600}) do
+        local initial=instance()
+        initial.baseframe.scale=scale;initial.baseframe.width=width
+        checkInitialHeader(initial)
+    end
+end
+end
+-- Native selection must preserve its own ignored fields, including spacing.
+local retained=instance();retained.skin="Minimalistic";retained.menu_icons.space=4
+Native(retained.ChangeSkin,retained,"Addonskins EUI")
+assert(retained.menu_icons.space==4,"skin registration bypassed native retained spacing")
+retained.menu_icons_size=1.3
+retained.menu_anchor={7,9,side=1};retained.attribute_text.anchor={3,10}
+retained.menu_icons.space=5
+Native(retained.ChangeSkin,retained,"Addonskins EUI") -- same-skin refresh
+layout(retained);P.Apply(retained)
+assert(retained.menu_icons_size==1.3 and retained.menu_anchor[1]==7 and retained.menu_anchor[2]==9)
+assert(retained.attribute_text.anchor[2]==10 and retained.menu_icons.space==5,"adapter enforced header defaults over native customization")
+-- Position and spacing use the existing native setters with no adapter hook.
+Native(retained.MenuAnchor,retained,11,12)
+Native(retained.ToolbarMenuSetButtonsOptions,retained,3)
+assert(retained.menu_anchor[1]==11 and retained.menu_anchor[2]==12 and retained.menu_icons.space==3)
+print("PASS: native initial header centered at 12 scale/width combinations; native retained spacing, custom size/anchors and same-skin refresh preserved")
+
 -- A native skin selection initializes the instance once. Re-rendering uses
 -- the instance's own RGBA, including the native one-second callback.
 local function colorEqual(a,b)

@@ -67,7 +67,7 @@ Details.InstallSkin = install
 local function change(self,name)
     if name ~= self.skin then
         local props = copy(Details.skins[name].instance_cprops)
-        for k,v in pairs(props or {}) do self[k] = v end
+        for k,v in pairs(props or {}) do if k~="menu_icons" then self[k] = v end end
     end
     self.skin = name
 end
@@ -100,10 +100,11 @@ if source then
     local prefix = assert(main:match("(function Details:ChangeSkin.-)\n\tlocal skin_file"))
     local rowTexts = {Prepare=function() end}
     Details.StatusBar = {Reset=function() end, ApplyOptions=function() end, SetPlugin=function() end}
-    Details.ResetInstanceConfigKeepingValues = function(self)
-        for k,v in pairs(Details.instance_defaults) do self[k]=copy(v) end
-    end
-    Details.instance_skin_ignored_values = {}
+    local include=read("include_instance.lua")
+    local ignored=assert(include:match("(_detalhes.instance_skin_ignored_values = %b{})"))
+    assert(load("local _detalhes=...; "..ignored))(Details)
+    local reset=assert(include:match("(function _detalhes:ResetInstanceConfigKeepingValues.-)\nend"))
+    assert(load("local _detalhes,Details,Details222=...; "..reset.."\nend"))(Details,Details,{RowTexts=rowTexts})
     assert(load("local Details, Details222=...; "..prefix.."\nreturn self.skin\nend"))(Details,{RowTexts=rowTexts})
     local menu = read("window_options2_sections.lua")
     assert(menu:find("pairs(Details.skins)",1,true), "native selector no longer reads the skin registry")

@@ -191,6 +191,35 @@ jobs:
           subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
           assert target.read_bytes()==fixed
           PY
+      - name: Reproduce inherited header offsets and compare the approved reference
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import subprocess,os,sys
+          target=Path('EUIAddonSkins/DetailsNative.lua')
+          fixed=target.read_bytes()
+          runner=Path('tests/run_lua.py').read_text()
+          first=runner.index('    for test in [')
+          last=runner.index(':\n',first)
+          runner=runner[:first]+"    for test in ['tests/details_native_layout_spec.lua']"+runner[last:]
+          env=dict(os.environ,DETAILS_NATIVE_SOURCE='/tmp/details-native-source/2efa4b10628e0e4a91c346138cf8325e81d0a43c')
+          with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/234312c087803a83a8aa2e51cd474ae45ca5d447/EUIAddonSkins/DetailsNative.lua',timeout=30) as response:
+              old=response.read()
+          try:
+              target.write_bytes(old)
+              result=subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_HEADER_REPRO='1'),capture_output=True,text=True)
+              assert result.returncode!=0 and 'REPRO: inherited initial title sits below header center' in result.stderr,result.stdout+result.stderr
+              print('Confirmed: inherited native title/header defaults fail centering before correction',flush=True)
+              print('Reference 234312c:',flush=True)
+              subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          finally:
+              target.write_bytes(fixed)
+          subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_HEADER_REPRO='1'),check=True)
+          print('Native initial alignment correction:',flush=True)
+          subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          assert target.read_bytes()==fixed
+          PY
       - name: Five-trial hosted comparison
         run: |
           for mode in unskinned legacy native; do

@@ -68,8 +68,10 @@ function F:GetVertexColor() return table.unpack(self.color) end
 function F:SetAlpha(v) self.alpha=v end
 function F:GetAlpha() return self.alpha end
 function F:SetText(v) self.text=v end
+function F:GetText() return self.text end
 function F:SetBackdrop(v) assert(native,"adapter rebuilt a native backdrop");self.backdrop=v end
 function F:SetBackdropColor(...) self.bg={...} end
+function F:GetBackdrop() return self.backdrop end
 function F:GetBackdropColor() return table.unpack(self.bg or {0,0,0,.75}) end
 function F:CreateTexture() return frame("Texture",self) end
 function F:SetNormalTexture(v) self.normal:SetTexture(v) end
@@ -266,6 +268,77 @@ P.Refresh(look);colorEqual(definition.instance_cprops.attribute_text.text_color,
 combat=false;P.Refresh(look)
 colorEqual(definition.instance_cprops.attribute_text.text_color,{accent[1],accent[2],accent[3],1})
 print("PASS: actual native AttributeMenu / SetFontColor / DF ParseColors: live accent default, manual RGBA, deferred color, independent windows, profile reconstruction, combat and zero adapter color writes")
+
+-- Test the native removal path that the former duplicate-fill assumption
+-- missed. Do not rebuild a backdrop or increase the saved opacity to hide it.
+local body=instance();Native(body.SetBackdropTexture,body);P.Apply(body)
+assert(body.baseframe.bg[4]==.75 and body.bgdisplay.bg[4]==0)
+local clearBase=assert(main:match("(baseFrame:SetBackdropColor%(0, 0, 0, 0%).-baseFrame:SetBackdrop%(nil%))"))
+body.baseframe.SetBackdropBorderColor=function()end
+Native(assert(load("local baseFrame=...; "..clearBase)),body.baseframe)
+P.Background(body)
+assert(body.bgdisplay.bg[4]==.75,"REPRO: prototype removed sole native body fill")
+assert(body.bg_alpha==.75 and body.baseframe:GetBackdrop()==nil)
+Native(body.SetBackgroundAlpha,body,.38);P.Background(body)
+assert(body.bgdisplay.bg[4]==.38 and body.bg_alpha==.38)
+Native(body.SetBackgroundAlpha,body,0);P.Background(body)
+assert(body.bgdisplay.bg[4]==0,"zero native opacity lost during fallback")
+Native(body.SetBackdropTexture,body);Native(body.SetBackgroundAlpha,body,.75);P.Background(body)
+assert(body.baseframe.bg[4]==.75 and body.bgdisplay.bg[4]==0)
+-- Effective opacity includes inherited frame alpha; skin must not cancel
+-- native interaction/combat fading or silently change bg_alpha.
+for _,parentAlpha in ipairs({1,.7,.35}) do
+    body.baseframe:SetAlpha(parentAlpha)
+    local effective=body.baseframe.bg[4]*body.baseframe:GetAlpha()
+    assert(math.abs(effective-.75*parentAlpha)<1e-10 and body.bg_alpha==.75)
+end
+print("PASS: actual native base-backdrop removal, surviving fill, single .75 body, zero/custom opacity and inherited-alpha ownership")
+if os.getenv("DETAILS_BODY_REPRO") then return end
+
+-- The Designer checkbox uses the native positional setter. New defaults
+-- disable encounter timers; user enabling is retained by adapter refreshes.
+local nativeDesigner=read("designer_objects.lua")
+local applyText=assert(nativeDesigner:match("(local applyTitleText = function%(instanceObject%).-)\nend"))
+local designerApply=assert(load(applyText.."\nreturn applyTitleText"))()
+assert(selected.attribute_text.show_timer==false,"fresh native default kept encounter timer")
+Native(designerApply,selected)
+assert(selected.attribute_text.show_timer==false)
+selected.attribute_text.show_timer=true
+Native(designerApply,selected)
+for _=1,20 do P.Refresh(look);P.Apply(selected) end
+assert(selected.attribute_text.show_timer==true,"skin forced enabled timer off")
+local savedTimer=copy(selected.attribute_text)
+local reloaded=instance();reloaded.attribute_text=copy(savedTimer)
+Native(designerApply,reloaded);P.Apply(reloaded)
+assert(reloaded.attribute_text.show_timer==true,"profile reconstruction lost enabled timer")
+-- Execute native encounter start scheduling, not a mocked successful switch.
+method("CheckForTextTimeCounter")
+method("SetTitleBarText");method("GetTitleBarText")
+D.instance_title_text_timer={}
+local tickStart=assert(main:find("local formatTime = function(t)",1,true))
+local tickEnd=assert(main:find("function Details:RefreshTitleBarText()",tickStart,true))
+assert(load("local Details,detailsFramework,Details222=...; local floor=math.floor; local IsEncounterInProgress=function()return true end; "..main:sub(tickStart,tickEnd-1)))(D,framework,{})
+D.GetZoneType=function()return "party" end
+local combatTime={GetCombatTime=function()return 91 end}
+D.GetCurrentCombat=function()return combatTime end
+function selected:GetShowingCombat()return combatTime end
+selected.title.text="Damage Done";selected.title.originalText="Damage Done"
+local scheduled,nativeTick=0,nil
+D.GetLowerInstanceNumber=function()return 1 end
+D.GetInstance=function()return selected end
+function selected:GetId()return 1 end
+function selected:IsEnabled()return true end
+D.Schedules={Cancel=function()end,NewTicker=function(_,fn,owner,inst)
+    scheduled=scheduled+1;assert(type(fn)=="function" and owner==D and inst==selected)
+    nativeTick=function()Native(fn,owner,inst)end;return {}
+end}
+selected.attribute_text.show_timer=false
+Native(D.CheckForTextTimeCounter,D,true);assert(scheduled==0 and selected.title.text=="Damage Done")
+selected.attribute_text.show_timer=true
+Native(D.CheckForTextTimeCounter,D,true);assert(scheduled==1)
+nativeTick();assert(selected.title.text=="[01:31] Damage Done","native opt-in timer renderer was altered")
+assert(selected.attribute_text.show_timer==true and definition.instance_cprops.attribute_text.show_timer==false)
+print("PASS: native Designer timer setter, off selection default, user opt-in, native encounter scheduling and saved-profile reconstruction")
 
 -- Native startup owns the footer. Execute its actual show/schedule block
 -- and the native fade engine; the adapter must not hide it or cancel its fade.

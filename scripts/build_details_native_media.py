@@ -58,6 +58,8 @@ if __name__ == "__main__":
             print("DETAILS_MEDIA_BLOB " + json.dumps({"path": path.relative_to(ROOT).as_posix(), "base64": base64.b64encode(data).decode()}))
         else:
             assert path.read_bytes() == data, str(path) + ": rebuild differs from tracked artwork"
+            bounds=Image.open(path).getchannel("A").point(lambda a: 255 if a>=16 else 0).getbbox()
+            assert bounds[0]+bounds[2]==32 and bounds[1]+bounds[3]==32, str(path)+": uncentered glyph bounds"
     if not args.emit:
         assert (TARGET / "LICENSE.txt").read_bytes() == (SOURCE / "LICENSE").read_bytes()
         print("Verified seven tracked Feather rasterizations and exact MIT notice")

@@ -24,8 +24,9 @@ local function art()
 end
 local function frame()
     allocations = allocations + 1
-    local f = {color = {0,0,0,0.75}}
+    local f = {color = {0,0,0,0.75}, backdrop = {bgFile="native-bg"}}
     function f:GetObjectType() return "Frame" end
+    function f:GetBackdrop() return self.backdrop end
     function f:GetBackdropColor() return table.unpack(self.color) end
     function f:SetBackdropColor(...) self.color = {...}; writes = writes + 1 end
     function f:SetBackdrop() error("prototype must never rebuild a backdrop") end
@@ -135,10 +136,12 @@ end
 local function instance(id)
     local f = frame()
     f.cabecalho = {ball=art(),ball_r=art(),emenda=art(),top_bg=art()}
-    for _,key in ipairs({"modo_selecao","segmento","atributo","report","reset","fechar"}) do
-        local b=frame(); b.normal=art(); b.highlight=art()
+    for _,key in ipairs({"modo_selecao","segmento","atributo","report","reset","fechar","novo"}) do
+        local b=frame(); b.normal=art(); b.highlight=art(); b.pushed=art(); b.disabled=art()
         function b:GetNormalTexture() return self.normal end
         function b:GetHighlightTexture() return self.highlight end
+        function b:GetPushedTexture() return self.pushed end
+        function b:GetDisabledTexture() return self.disabled end
         f.cabecalho[key]=b
     end
     return setmetatable({meu_id=id,skin="Original",baseframe=f,bgframe={},bgdisplay=frame(),
@@ -250,7 +253,7 @@ assert(Details.skins.Minimalistic.instance_cprops.row_info.height==original.inst
 assert(Details.instances[1].skin=="Original" and Details.instances[1].row_info.height==profileBefore.height and released==0,"installation selected a skin or changed a profile")
 assert(def.instance_cprops.bg_alpha==0.75 and def.instance_cprops.titlebar_texture_color[1]==27/255)
 assert(def.instance_cprops.row_info.height==18 and def.instance_cprops.row_info.space.between==2)
-assert(def.instance_cprops.attribute_text.show_timer==true)
+assert(def.instance_cprops.attribute_text.show_timer==false,"new selection enabled encounter timer")
 assert(def.instance_cprops.titlebar_height==22 and def.instance_cprops.attribute_text.text_size==11)
 assert(media["statusbar:Addonskins EUI Bar"]=="Interface\\Buttons\\WHITE8X8")
 assert(media["font:Addonskins EUI Font"]=="approved-font")
@@ -281,8 +284,15 @@ equalColor(def.instance_cprops.attribute_text.text_color,{accent[1],accent[2],ac
 assert(ns.IsNativeDetailsInstance(a) and not ns.IsNativeDetailsInstance(b))
 assert(a.bgdisplay.color[4]==0 and a.baseframe.color[4]==0.75,"duplicated background opacity")
 assert(a.baseframe.cabecalho.modo_selecao.normal.path:find("settings.tga",1,true))
+for key,file in pairs({modo_selecao="settings",segmento="undo",atributo="sheet",report="report",reset="reset",fechar="close",novo="open"}) do
+    local button=a.baseframe.cabecalho[key]
+    for state,tint in pairs({normal=.65,highlight=1,pushed=1,disabled=.25}) do
+        local texture=button[state]
+        assert(texture.path:find(file..".tga",1,true) and texture.color[1]==tint and texture.color[4]==1)
+    end
+end
 a.row_info.height=31; a.row_info.space.between=5; a.row_info.texture="user-texture"
-a.row_info.font_face="user-font"; a.attribute_text.show_timer=false
+a.row_info.font_face="user-font"; a.attribute_text.show_timer=true
 a.menu_icons_size=0.61; a.titlebar_height=29
 local count=allocations
 local stableWrites=writes
@@ -291,10 +301,28 @@ assert(allocations==count and writes==stableWrites,"warm repaint allocates artwo
 a:ChangeSkin("Addonskins EUI"); P.Apply(a)
 assert(a.row_info.height==31 and a.row_info.texture=="user-texture" and a.row_info.font_face=="user-font")
 equalColor(a.attribute_text.text_color,manualTitleColor)
-assert(not a.attribute_text.show_timer and a.menu_icons_size==0.61 and a.titlebar_height==29,"refresh overwrote native customization")
+assert(a.attribute_text.show_timer and a.menu_icons_size==0.61 and a.titlebar_height==29,"refresh overwrote native customization")
 assert(b.skin=="Original" and b.row_info.height==14,"affected another instance")
 a:SetBackgroundAlpha(0); assert(a.bgdisplay.color[4]==0 and a.baseframe.color[4]==0)
 a:SetBackgroundAlpha(1); assert(a.bgdisplay.color[4]==0 and a.baseframe.color[4]==1)
+-- Prove body selection does not hide the only surviving native backdrop.
+a.baseframe.backdrop=nil
+P.Background(a)
+assert(a.bgdisplay.color[4]==1,"REPRO: prototype suppressed the only native body fill")
+a:SetBackgroundAlpha(.43)
+assert(a.bgdisplay.color[4]==.43 and a.bg_alpha==.43,"native opacity was overwritten")
+a:SetBackgroundAlpha(0)
+assert(a.bgdisplay.color[4]==0,"explicit zero body opacity was lost")
+a.baseframe.backdrop={bgFile="native-bg"}
+a:SetBackgroundAlpha(.75)
+assert(a.bgdisplay.color[4]==0 and a.baseframe.color[4]==.75,"duplicate fill survived")
+a.baseframe.backdrop=nil
+a.bg_alpha=.29
+P.Background(a)
+assert(a.bgdisplay.color[4]==.29,"restored stale suppression alpha over native preference")
+a.baseframe.backdrop={bgFile="native-bg"}
+a:SetBackgroundAlpha(.75)
+
 -- Secret input never reaches arithmetic/comparison in the adapter.
 a.bgdisplay.color={0,0,0,{secret=true}}; P.Background(a)
 a.bgdisplay.color={0,0,0,0}
@@ -330,7 +358,9 @@ print("PASS: enabled/disabled/missing optional meter, native redraw, stable defa
 a:ChangeSkin("Original")
 local icon=a.baseframe.cabecalho.modo_selecao.normal
 icon:SetTexture("new-native-skin")
+a.bg_alpha=0;a.bgdisplay.color={0,0,0,0}
 P.Apply(a)
+assert(a.bgdisplay.color[4]==0,"release restored stale body alpha over new native profile")
 assert(icon.path=="new-native-skin" and not P.entries[a],"stale artwork on switch away")
 -- Missing-provider fallback is native-owned; a previous explicit selection may
 -- be restored synchronously by InstallSkin. Registration itself never chooses.

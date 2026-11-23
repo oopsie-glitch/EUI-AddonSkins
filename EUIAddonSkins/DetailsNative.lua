@@ -41,7 +41,7 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         {"atributo", "sheet.tga"}, {"report", "report.tga"},
         {"reset", "reset.tga"}, {"novo", "open.tga"}, {"fechar", "close.tga"},
     }
-    local textureStates = {{"GetNormalTexture",0.55},{"GetHighlightTexture",1},{"GetPushedTexture",1},{"GetDisabledTexture",0.25}}
+    local textureStates = {{"GetNormalTexture",0.65},{"GetHighlightTexture",1},{"GetPushedTexture",1},{"GetDisabledTexture",0.25}}
     local function Plain(v) return not (issecretvalue and issecretvalue(v)) end
     local function SafeUI()
         return not (InCombatLockdown and InCombatLockdown()) and ns.IsEnabled(C.module)
@@ -150,6 +150,7 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         props.titlebar_texture = NAME .. " Flat"
         props.titlebar_texture_color = {27/255, 27/255, 27/255, 1}
         props.attribute_text.enabled = true
+        props.attribute_text.show_timer = false -- initial native selection only
         props.attribute_text.text_face, props.attribute_text.text_size = NAME .. " Font", 11
         if not TitleAccentDefault(definition) then return end
         -- Native title/timer settings and text are never maintained by this adapter.
@@ -158,7 +159,7 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         props.show_sidebars, props.show_statusbar = false, false
         props.rounded_corner_enabled = false
         props.hide_icon = true
-        props.menu_icons_color, props.menu_icons_alpha = {0.55, 0.55, 0.55}, 1
+        props.menu_icons_color, props.menu_icons_alpha = {0.65, 0.65, 0.65}, 1
         row.height, row.space.between = 18, 2
         row.font_face, row.font_face_file, row.font_size = NAME .. " Font", font, 11
         row.texture, row.texture_file, row.texture_custom = NAME .. " Bar", WHITE, ""
@@ -229,24 +230,42 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
                 for _, state in ipairs(textureStates) do
                     if button[state[1]] then SaveArt(entry, button[state[1]](button), MEDIA .. spec[2], state[2]) end
                 end
-                SaveArt(entry, button.texture, MEDIA .. spec[2], 0.55)
+                SaveArt(entry, button.texture, MEDIA .. spec[2], 0.65)
             end
         end
     end
     function P.Background(instance)
         if painting or not SafeUI() or not ns.IsNativeDetailsInstance(instance) then return end
-        local entry = entries[instance]
-        local f = instance.bgdisplay
+        local entry, base, f = entries[instance], instance.baseframe, instance.bgdisplay
         if not entry or not H.Allowed(f) or not f.GetBackdropColor or not f.SetBackdropColor then return end
         local c = Color(f)
         if not c then return end
-        if c[4] ~= 0 then
+        local alpha = instance.bg_alpha
+        if not Plain(alpha) or type(alpha) ~= "number" then return end
+        -- A rounded/native redraw may remove the base backdrop. Suppress only
+        -- a verified equivalent fill, never the sole surviving body surface.
+        local duplicate = false
+        if H.Allowed(base) and base.GetBackdrop and f.GetBackdrop then
+            local a, b = base:GetBackdrop(), f:GetBackdrop()
+            if Plain(a) and Plain(b) and type(a) == "table" and type(b) == "table" then
+                local ap, bp = a.bgFile, b.bgFile
+                local bc = base.GetBackdropColor and Color(base)
+                if Plain(ap) and Plain(bp) and ap and ap == bp and bc then
+                    local desired = c[4] ~= 0 and c[4] or alpha
+                    duplicate = bc[1] == c[1] and bc[2] == c[2] and bc[3] == c[3] and bc[4] == desired
+                end
+            end
+        end
+        if duplicate and c[4] ~= 0 then
             entry.background = {frame = f, color = c}
             painting = true
-            -- Native baseframe already paints the same fill. Tint only this
-            -- duplicate, never rebuild a backdrop or calculate tooltip geometry.
             f:SetBackdropColor(c[1],c[2],c[3],0)
             painting = false
+        elseif not duplicate and entry.background then
+            -- Current native opacity wins over the former suppression snapshot,
+            -- including an explicit zero. Never write an instance/profile value.
+            entry.background = nil
+            if c[4] == 0 and alpha ~= 0 then f:SetBackdropColor(c[1],c[2],c[3],alpha) end
         end
     end
     -- Native RefreshAttributeTextSize subtracts a button count, but never moves
@@ -363,7 +382,10 @@ function ns.CreateNativeDetailsPrototype(C, releaseLegacy)
         if bg then
             local c = Color(bg.frame)
             if c and c[4] == 0 and c[1] == bg.color[1] and c[2] == bg.color[2] and c[3] == bg.color[3] then
-                bg.frame:SetBackdropColor(unpack(bg.color))
+                local alpha = instance.bg_alpha
+                if Plain(alpha) and type(alpha) == "number" and alpha ~= 0 then
+                    bg.frame:SetBackdropColor(c[1],c[2],c[3],alpha)
+                end
             end
         end
         entries[instance] = nil

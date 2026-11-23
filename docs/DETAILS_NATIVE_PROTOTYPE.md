@@ -18,7 +18,7 @@ DetailsNative.lua copies Minimalistic's compatible atlas/layout metadata without
 
 - The approved fallback values are self-contained: body RGB 0/0/0 and alpha .75; header RGB 27/255 each and alpha 1; header height 22 and title font size 11; bars height 18, spacing 2 and left/right font sizes 11. The native definition does not import optional EUI Damage Meters preferences.
 - SharedMedia registers the public Skin API font and client WHITE8X8 bar/header/body resources. No optional meter file path is imported.
-- Native title enabled, native timer/content retained. Its initial text color comes directly from the live public Skin API GetAccentColor, independently of EUI Damage Meters' separate custom-title preference.
+- Native title enabled, encounter timer initially disabled; native timer/content retained. Its initial text color comes directly from the live public Skin API GetAccentColor, independently of EUI Damage Meters' separate custom-title preference.
 - Native flat header, .5 subdued full border, no sidebars/status bar/rounded corners, hidden attribute icon.
 - Native class/status color defaults are retained; native bar texture/font/height/spacing and ordinary total/DPS formatting are initial settings, not refresh-time writes.
 - Menu size, position, visibility, scale, window position and other native ignored fields follow Details' own skin-switching rules.
@@ -109,7 +109,7 @@ The self-contained native defaults use the exact historical fallback values list
 
 EllesmereGaming/EllesmereUI at e95e531ad99ddb8ae3901c4fdc9fffd98e7f56bb has an all-rights-reserved license excluding unspecified third-party resources. No file-specific redistribution grant for its dm_*.png files was established. None are copied, converted or bundled.
 
-The owner approved using licensed outline equivalents. This package instead rasterizes unchanged Feather v4.29.2 icons (settings, rotate-ccw, file-text, radio, refresh-cw, plus and x), pinned at 1b002399e8758fb2bccea4d07312dc9e0f43dcb8, under Cole Bemis' MIT license. They preserve the outline visual language, meaning, native slot size and .55/1/.25 state tinting; exact glyph shapes are not claimed identical to EUI's PNGs. The complete upstream notice ships in Media/DetailsNative/LICENSE.txt. Original SVGs, source pin and generator are development-only. No client-side rasterization or new runtime textures/frames are added. scripts/build_details_native_media.py reproducibly creates 32x32 uncompressed white-RGB alpha TGA assets in read-only GitHub Actions.
+The owner approved using licensed outline equivalents. This package instead rasterizes unchanged Feather v4.29.2 icons (settings, rotate-ccw, file-text, radio, refresh-cw, plus and x), pinned at 1b002399e8758fb2bccea4d07312dc9e0f43dcb8, under Cole Bemis' MIT license. They preserve the outline visual language, meaning, native slot size and .65/1/.25 state tinting; exact glyph shapes are not claimed identical to EUI's PNGs. The complete upstream notice ships in Media/DetailsNative/LICENSE.txt. Original SVGs, source pin and generator are development-only. No client-side rasterization or new runtime textures/frames are added. scripts/build_details_native_media.py reproducibly creates 32x32 uncompressed white-RGB alpha TGA assets in read-only GitHub Actions.
 
 ### Version footer
 
@@ -122,3 +122,33 @@ The native adapter never changes _version text, alpha, visibility or its timer. 
 The enabled/disabled/missing matrix compares fresh native definitions and registered media, plus existing windows under availability/global changes. Native redraws restore bundled toolbar art without querying the optional addon. Manual RGBA, row/font/texture/geometry choices, accent-default behavior, combat recovery and multiple windows remain covered. Exact prior-head tests reproduce both the toolbar dependency and imported optional defaults, and pass after the correction. Existing official-source, layout, sizing and Cooltip tests remain.
 
 In WoW, compare the same saved native profile in sessions with EUI Damage Meters enabled, disabled and absent. Verify header/body and all toolbar states, resize controls natively, test profiles/reload, two windows, combat and title-color customization. Compare the new licensed glyphs with the approved outline treatment. Observe the native version footer shortly after login and again after its fade. Hosted fixtures cannot establish rasterized parity, installed-client persistence or live taint safety.
+
+## Toolbar polish, native body fallback and encounter-timer default
+
+The follow-up baseline is 93074946e3ce9ee52baf35d5dc9c8b53219ebd92. The current change remains inside the experimental adapter, licensed toolbar assets and directly related tests/build documentation. No native toolbar dimensions/anchors, header height, bar settings, title content, legacy skin or Cooltip code changes.
+
+### Toolbar evidence and changes
+
+Pixel measurements of the tracked 32x32 TGA alpha bounds (threshold 16) showed every original glyph already vertically centered at y=16. The undo glyph was horizontally centered at x=15; the others at x=16. Therefore transparent vertical padding was not the cause of the whole toolbar sitting low within the header. Native MenuAnchor/GetMenuAnchorPoint anchor the buttons to native corner/menu points independently of the flat title band's height. The DF button constructor uses native button texture states and zero pushed-text offset; the prototype had no button/texture positioning writes.
+
+The rebuild retains the original licensed Feather source SVGs and MIT notice, changes rendering stroke width from 2 to 2.5, gives round caps room with a -1/-1/26/26 view box, centers measured glyph bounds at 128px before downsampling, and keeps the same 32px file format/canvas. All final measured glyph centers are (16,16). Alpha coverage increases roughly 4–9%, depending on the glyph. Normal tint changes from .55 to .65; hover/pushed remain 1 and disabled .25. No native button or texture-region geometry, scaling, alpha/visibility state or callback is replaced.
+
+This improves readability and consistent in-button artwork. It intentionally does not move the native toolbar upward relative to the header: doing that would violate native geometry ownership. A native toolbar placed low by its saved anchors can remain low relative to the band. Actual optical alignment, engine Texture region bounds and rasterized appearance still need WoW review; alpha-bound tests cannot prove header-relative pixel alignment.
+
+### Body evidence and correction
+
+Historical 3553aca8e386c77be2c1af20a719117c14199df2 renders one matte color-texture body from GetMeterStyle: fallback black at .75 alpha, with native baseframe/bgdisplay backdrops removed. The prototype default is also black at .75 and uses client WHITE8X8. Two .75 fills would composite to .9375 before parent fading, so duplicating layers is not a valid restoration.
+
+The prior adapter unconditionally suppressed bgdisplay while assuming the baseframe had an equivalent painted backdrop. Native ChangeSkin can clear the base backdrop in its rounded-corner path, and other native redraw/profile states can leave it missing. Suppressing the remaining fill then removes the body, regardless of the configured .75 value. The source fixture reproduces native baseframe backdrop removal and fails against the prior adapter.
+
+P.Background now checks both native backdrop definitions, file identity and guarded RGBA before suppressing a duplicate. If the base fill is absent/different, it keeps or restores the native bgdisplay surface using the current native bg_alpha, including explicit zero. Release also uses current native opacity rather than a stale suppression snapshot. No new fill, alpha compensation, backdrop rebuild, profile write, hook or geometry calculation is added.
+
+The .75 initial default remains unchanged. Native parent/interaction/combat alpha still multiplies it (e.g. .75 * .7 = .525); the adapter must not cancel that user setting. Wallpaper, user colors and textures remain native-owned. The screenshot cannot establish the installed frame alpha, saved background opacity, wallpaper or rounded state, so the demonstrated source defect is not claimed to explain every captured pixel. A normal window already painting a single .75 fill should remain unchanged, and visual parity is still pending.
+
+### Native timer default and customization
+
+The definition initializes attribute_text.show_timer=false for a new native selection. No timer formatting, ticker, title text or FontString is replaced. Native CheckForTextTimeCounter uses that flag to decide whether to start encounter-time updates, and the Designer's applyTitleText passes it to AttributeMenu. The pinned source implements the same setting as the Forever build metadata reviewed earlier, but exact installed files cannot be inspected.
+
+Existing Addonskins EUI windows retain their saved flag. To disable it without resetting any other setting, use Details! → Options → Designer → Title Text → Show Encounter Timer. Users can turn it on again; ordinary refreshes, same-skin updates, theme changes, profile restoration and reload do not force it off. Native skin switching itself can reset appearance preferences, so back up profiles before intentionally selecting a different skin.
+
+Tests cover the actual native Designer setter and encounter-start scheduling, false initial defaults, later true preferences and saved-profile reconstruction. Existing source/layout/color/availability/sizing/Cooltip regressions and exact-package verification remain enabled. Hosted fixtures do not prove live WoW taint safety or pixel-perfect rendering.

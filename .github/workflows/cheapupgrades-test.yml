@@ -4,6 +4,7 @@ on:
     branches: [skin/cheapupgrades-compatibility]
 permissions:
   contents: read
+  actions: read
 jobs:
   verify:
     runs-on: ubuntu-24.04
@@ -30,10 +31,23 @@ jobs:
         run: python3 tests/run_lua.py
       - name: Baseline sensitivity and seven-trial performance comparison
         run: python3 scripts/verify_cheapupgrades.py
+      - name: Stage one-folder installable archive
+        run: |
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          with ZipFile('EUIAddonSkins.zip') as z:
+              z.extractall('/tmp/cheap-install')
+          PY
       - name: Upload installable package
+        id: package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: CheapUpgrades-test-${{ github.sha }}
-          path: EUIAddonSkins.zip
+          path: /tmp/cheap-install
           if-no-files-found: error
           retention-days: 14
+      - name: Verify exact uploaded ZIP contents
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.package.outputs.artifact-id }}
+        run: python3 scripts/verify_cheapupgrades_artifact.py

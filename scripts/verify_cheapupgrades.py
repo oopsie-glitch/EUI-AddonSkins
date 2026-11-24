@@ -35,9 +35,11 @@ print("Corrected native-source configurations: 3/3 PASS")
 fixture=Path("tests/cheapupgrades_spec.lua").read_text()
 setup=fixture.split("assert(loadfile('EUIAddonSkins/Skins/CheapUpgrades.lua'))")[0]
 # The fixture counts native and skin UI objects together. Instrument only tests.
-setup=setup.replace("local timers, modules", "local frameCount,textureCount,fontCount=0,0,0\nlocal timers, modules")
+setup=setup.replace("local timers, modules", "local frameCount,textureCount,fontCount,scriptCount,eventCount=0,0,0,0,0\nlocal timers, modules")
 setup=setup.replace("local function texture(layer, w, h)", "local function texture(layer, w, h)\n    textureCount=textureCount+1")
 setup=setup.replace("local function fontString(text, r, g, b)", "local function fontString(text, r, g, b)\n    fontCount=fontCount+1")
+setup=setup.replace("function f:HookScript(key, fn)", "function f:HookScript(key, fn) scriptCount=scriptCount+1;")
+setup=setup.replace("function f:RegisterEvent(e)", "function f:RegisterEvent(e) eventCount=eventCount+1;")
 setup=setup.replace("local function frame(kind, parent, name)", "local function frame(kind, parent, name)\n    frameCount=frameCount+1")
 body=r"""
 local start=os.clock()
@@ -49,7 +51,7 @@ start=os.clock();CU:ShowUI();CU:AttachAHButton();CU.Options:Open();CU.Options:As
 local cold=(os.clock()-start)*1000
 collectgarbage('collect')
 local memory=collectgarbage('count')
-local f,t,fs,h=frameCount,textureCount,fontCount,hookCount
+local f,t,fs,h,sh,ev=frameCount,textureCount,fontCount,hookCount,scriptCount,eventCount
 local reads,geo,colors,fonts=hierarchyReads,geometryWrites,colorWrites,writes
 start=os.clock()
 for i=1,1000 do visible(CheapUpgradesFrame,false);CU:ShowUI()end
@@ -66,8 +68,8 @@ local closedReads=hierarchyReads-reads-warmReads
 collectgarbage('collect')
 local retained=collectgarbage('count')-memory
 local growth=frameCount-f+textureCount-t+fontCount-fs
-assert(growth==0 and hookCount==h and warmReads==0 and warmGeo==0 and warmColors==0 and warmFonts==0)
-return string.format('{"activation_ms":%.6f,"first_open_ms":%.6f,"1000_reopens_ms":%.6f,"1000_updates_ms":%.6f,"1000_closed_updates_ms":%.6f,"retained_kib":%.6f,"frames":%d,"textures":%d,"fontstrings":%d,"hooks":%d,"object_growth":%d,"warm_reads":%d,"warm_geometry_writes":%d,"warm_color_writes":%d,"warm_font_writes":%d,"closed_reads":%d}',activation,cold,warm,updates,closed,retained,frameCount,textureCount,fontCount,hookCount,growth,warmReads,warmGeo,warmColors,warmFonts,closedReads)
+assert(growth==0 and hookCount==h and scriptCount==sh and eventCount==ev and warmReads==0 and warmGeo==0 and warmColors==0 and warmFonts==0)
+return string.format('{"activation_ms":%.6f,"first_open_ms":%.6f,"1000_reopens_ms":%.6f,"1000_updates_ms":%.6f,"1000_closed_updates_ms":%.6f,"retained_kib":%.6f,"frames":%d,"textures":%d,"fontstrings":%d,"function_hooks":%d,"script_hooks":%d,"events":%d,"appearance_callbacks":%d,"object_growth":%d,"warm_reads":%d,"warm_geometry_writes":%d,"warm_color_writes":%d,"warm_font_writes":%d,"closed_reads":%d}',activation,cold,warm,updates,closed,retained,frameCount,textureCount,fontCount,hookCount,scriptCount,eventCount,#looks,growth,warmReads,warmGeo,warmColors,warmFonts,closedReads)
 """
 for enabled in (False,True):
  trials=[]

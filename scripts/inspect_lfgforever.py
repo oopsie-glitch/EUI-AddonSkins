@@ -43,6 +43,19 @@ def inspect():
         exports=sorted(set(re.findall(r'_G\.([A-Za-z_]\w*)',s)+re.findall(r'_G\s*\[\s*["\']([A-Za-z_]\w*)["\']\s*\]',s)))
         methods=sorted(set(re.findall(r'\b([\w.]+)\s*[:.]\s*(Create\w+|Build\w+|Update\w+|Refresh\w+|Show\w+|Open\w+|Set\w+)\s*\(',s)))
         print('LFG_STRUCTURE '+json.dumps({'path':path,'functions':functions,'frames':frames,'signals':signals,'global_symbols':exports,'calls':[a+'.'+b for a,b in methods]}))
+    # Emit only symbols/ownership metadata, never source lines or user-facing text.
+    for path in z.namelist():
+        if not path.endswith('.lua'):continue
+        s=z.read(path).decode('utf-8-sig')
+        aliases=re.findall(r'(?:local\s+)?([A-Za-z_]\w*)\s*=\s*([A-Za-z_]\w*)\s*(?:or\s*\{\s*\})?(?:\s*\n|\s*$)',s)
+        constants={k:v for k,v in re.findall(r'\b([A-Z][A-Z_0-9]*)\s*=\s*["\']([A-Za-z_][A-Za-z_0-9.-]*)["\']',s)}
+        assignments=[]
+        for m in re.finditer(r'\b([\w.]+)\s*=\s*([\w.]+)(?:\s*\(|\s*(?:\n|,|;|$))',s):
+            lhs,rhs=m.groups()
+            if '.' in lhs or rhs.startswith(('Create','LFGF.Create')):assignments.append({'slot':lhs,'symbol':rhs,'line':s.count('\n',0,m.start())+1})
+        returns=[m.group(1).strip() for m in re.finditer(r'\breturn\s+([\w.]+(?:\s*,\s*[\w.]+)*)(?=\s*(?:\n|end|$))',s)]
+        menu_apis=sorted(set(re.findall(r'\b(Menu\w*|Scroll\w*|Settings|LFGForever\w*)[.:]([A-Za-z_]\w*)',s)))
+        print('LFG_OWNERSHIP '+json.dumps({'path':path,'aliases':aliases,'constants':constants,'assignments':assignments,'returns':returns,'ui_api_symbols':menu_apis}))
     for path in z.namelist():
         if path.endswith('.xml'):
             root=ET.fromstring(z.read(path))

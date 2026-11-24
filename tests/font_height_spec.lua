@@ -6,7 +6,7 @@ local enabled,combat=true,false
 local writes,shadows,reads,frames,hooks=0,0,0,0,0
 local secret=setmetatable({secret=true},{__lt=function()error("secret comparison")end,__le=function()error("secret comparison")end})
 issecretvalue=function(v)return type(v)=="table" and v.secret==true end
-local function valid(v)return not issecretvalue(v) and type(v)=="number" and v>0 and v<math.huge end
+local function valid(v)return not (issecretvalue and issecretvalue(v)) and type(v)=="number" and v>0 and v<math.huge end
 local function text(size)
     local f={height=size,path="native.ttf",flags="OUTLINE",color={.2,.4,.6,.8},object={size=size}}
     function f:GetObjectType()return "FontString"end

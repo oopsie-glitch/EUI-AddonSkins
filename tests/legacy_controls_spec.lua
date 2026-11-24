@@ -1390,16 +1390,16 @@ ForeverDungeonJournal_NS.questRefreshWorker:SetScript('OnUpdate', function() que
 ForeverDungeonJournalFrame = frame('Frame')
 local journal = ForeverDungeonJournalFrame
 journal.homePanel = frame('Frame', nil, journal)
-journal.homeTitle = journal.homePanel:CreateFontString()
+journal.homeTitle = journal.homePanel:CreateFontString(nil, nil, 'native-font')
 local cover = frame('Button', nil, journal.homePanel)
 cover.dungeonName = 'Dalaran'; cover.art = cover:CreateTexture(); cover.art.path = 'dungeon-art'
-cover.title = cover:CreateFontString(); cover.counts = cover:CreateFontString(); cover.counts.textColor = {1, 0.9, 0.5}
+cover.title = cover:CreateFontString(nil, nil, 'native-font'); cover.counts = cover:CreateFontString(nil, nil, 'native-font'); cover.counts.textColor = {1, 0.9, 0.5}
 cover:SetBackdrop({bgFile = 'native', edgeFile = 'bevel'}); cover.action = function() return 'open-dungeon' end
 journal.bugReportButton = frame('Button', nil, journal)
 local bug = journal.bugReportButton:CreateTexture(); bug.path = 'bug-icon'
-local bugLabel = journal.bugReportButton:CreateFontString()
+local bugLabel = journal.bugReportButton:CreateFontString(nil, nil, 'native-font')
 journal.languageSelectorButton = frame('Button', nil, journal)
-journal.languageSelectorText = journal.languageSelectorButton:CreateFontString()
+journal.languageSelectorText = journal.languageSelectorButton:CreateFontString(nil, nil, 'native-font')
 local caret = journal.languageSelectorButton:CreateTexture(); caret.path = 'native-caret'
 local journalLooks, previousLooks, journalEvents = {}, S.OnLooksChanged, #events
 S.OnLooksChanged = function(fn) journalLooks[#journalLooks + 1] = fn end
@@ -1431,13 +1431,13 @@ end
 do
     local filter = frame('Frame', 'ForeverDungeonJournalLootFilter', journal)
     journal.lootFilterWindow = filter
-    filter.title, filter.statsHeader, filter.statsHint = filter:CreateFontString(), filter:CreateFontString(), filter:CreateFontString()
+    filter.title, filter.statsHeader, filter.statsHint = filter:CreateFontString(nil, nil, 'native-font'), filter:CreateFontString(nil, nil, 'native-font'), filter:CreateFontString(nil, nil, 'native-font')
     filter.title:SetTextColor(1, 0.82, 0.27); filter.statsHeader:SetTextColor(1, 0.82, 0.27)
     filter.minBox = frame('EditBox', nil, filter); filter.minBox.value = '12'
     filter.minBox.commit = function() return 'input-native' end
     for _, key in ipairs({'show', 'ok', 'clear'}) do
         local button = frame('Button', nil, filter); filter[key] = button
-        button.label = button:CreateFontString(); button.label:SetTextColor(1, 0.82, 0.27)
+        button.label = button:CreateFontString(nil, nil, 'native-font'); button.label:SetTextColor(1, 0.82, 0.27)
         button.normal = button:CreateTexture(); button.normal.path = 'red-native-button'
         button.action = function() return key .. '-native' end
     end
@@ -1446,11 +1446,11 @@ do
     dropdown.icon = dropdown:CreateTexture(); dropdown.icon.path = 'armor-icon'
     dropdown.arrow = dropdown:CreateTexture(); dropdown.arrow.path = 'gold-arrow'
     dropdown.normal = dropdown:CreateTexture(); dropdown.normal.path = 'red-native-dropdown'
-    dropdown.label = dropdown:CreateFontString(); dropdown.label:SetTextColor(1, 0.82, 0.27)
+    dropdown.label = dropdown:CreateFontString(nil, nil, 'native-font'); dropdown.label:SetTextColor(1, 0.82, 0.27)
     dropdown.action = function() return 'dropdown-native' end
     local legacyDropdown = frame('Frame', nil, filter)
     legacyDropdown.Button = frame('Button', nil, legacyDropdown)
-    legacyDropdown.Text = legacyDropdown:CreateFontString()
+    legacyDropdown.Text = legacyDropdown:CreateFontString(nil, nil, 'native-font')
     legacyDropdown.icon = legacyDropdown:CreateTexture(); legacyDropdown.icon:SetAlpha(0.7)
     legacyDropdown.Button.action = function() return 'legacy-dropdown-native' end
     local favourites = frame('Frame', 'ForeverDungeonJournalFavourites')
@@ -1608,7 +1608,7 @@ do
         end
     end
     local questRow = frame('Button', nil, journal.questLeftPanel)
-    questRow.questIndex = 1; questRow.name, questRow.meta = questRow:CreateFontString(), questRow:CreateFontString()
+    questRow.questIndex = 1; questRow.name, questRow.meta = questRow:CreateFontString(nil, nil, 'native-font'), questRow:CreateFontString(nil, nil, 'native-font')
     questRow.hooks.OnClick = PrivateQuestDetail
     modules.ForeverDungeonJournal.refresh(); flush()
     local savedText = journal.questDetailText.text

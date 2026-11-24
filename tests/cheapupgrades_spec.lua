@@ -276,7 +276,7 @@ assert(CU.tabs.CheapUpgrades_upgrades.tab and CU.tabs.CheapUpgrades_alts.tab)
 local liveState=CU.ahTabs
 CheapUpgradesAHTab_upgrades=frame('Button')
 CU.ahTabs={lib={DoesIDExist=function()return false end,GetButton=function()error('uninitialized native tab library')end}}
-m.refresh();assert(CheapUpgradesAHTab_upgrades.tab)
+CU:ShowUI();assert(CheapUpgradesAHTab_upgrades.tab)
 CU.ahTabs=liveState
 assert(CU.controls[1].button and CU.controls[2].input and CU.controls[4].dropdown)
 assert(CheapUpgradesFrame.CloseButton.closedArt)

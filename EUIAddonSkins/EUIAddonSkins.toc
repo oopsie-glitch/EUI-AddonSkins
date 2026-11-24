@@ -42,6 +42,7 @@ Skins\Guildy.lua
 Skins\HandyNotes.lua
 Skins\HekiLight.lua
 Skins\HomeBound.lua
+Skins\HuntersFieldGuide.lua
 Skins\ItemRack.lua
 Skins\ItemTree.lua
 Skins\KiwiFarm.lua

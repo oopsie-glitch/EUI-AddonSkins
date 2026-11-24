@@ -173,6 +173,7 @@ local function Run(look)
     local hidden = region("Frame", root)
     hidden.shown = false
     local hiddenLabel = text(hidden, {0.42, 0.3, 0.16}, "DAMAGE")
+    local hiddenAccent = text(hidden, {0.45, 0.12, 0.02}, "Accent heading")
     local menu = region("Frame", root)
     menu.backdrop = {bgFile = "Interface\\Tooltips\\UI-Tooltip-Background"}
     text(menu, {1, 0.82, 0}, "Sort beasts by")
@@ -358,6 +359,24 @@ local function Run(look)
     local before = calls
     recovery.scripts.OnEvent(recovery)
     assert(calls > before)
+
+    -- Theme mappings stay bounded and hidden accent labels follow the latest look.
+    if look == "forever" then
+        root.shown = false; hidden.shown = false
+        collectgarbage("collect");local heap = collectgarbage("count")
+        for i = 1, 1000 do
+            accent = i % 2 == 0 and {0.7, 0.25, 0.4} or {0.15, 0.6, 0.8}
+            looks[1]()
+        end
+        collectgarbage("collect")
+        assert(collectgarbage("count") - heap < 64, "theme history retained unbounded color mappings")
+        root.shown = true; hidden.shown = true;guide:RefreshUI()
+        assert(Near(accent, hiddenAccent:GetTextColor()), "hidden accent label used a stale theme mapping")
+        -- Explicit native semantic recoloring must not be replaced by cached accent state.
+        hiddenAccent:SetTextColor(0.8, 0.1, 0.8)
+        guide:RefreshUI()
+        assert(Near({0.8, 0.1, 0.8}, hiddenAccent:GetTextColor()), "native semantic color overwritten by accent cache")
+    end
 
     -- A disabled skin does no further work.
     enabled = false

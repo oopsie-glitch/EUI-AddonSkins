@@ -117,7 +117,13 @@ local function art(f,field)assert(not combat);if not f[field]then f[field]=f:Cre
 function S.Shell(f,opts)assert(opts.noAccent);art(f,"shell")end
 function S.Panel(f)art(f,"panel")end
 function S.FadeNineSlice(f)f.faded=true end
-function S.Button(f)art(f,"button")end
+function S.Button(f,keep)
+    art(f,"button")
+    if not f.registeredKeep then
+        f.registeredKeep={}
+        for _,key in ipairs(keep or {})do if f[key]then f.registeredKeep[f[key]]=true end end
+    end
+end
 function S.Checkbox(f)art(f,"checkArt");if f.Icon then f.Icon:SetAlpha(0)end end
 function S.Dropdown(f)art(f,"dropdown")end
 function S.EditBox(f)art(f,"editArt")end
@@ -195,6 +201,26 @@ assert(p.check.Checked.width==10 and p.check.width==30 and p.check.checked)
 assert(r.width==1600 and r.height==900 and r.ResizeButton.button==nil and r.DragBar.button==nil)
 assert(r.Content.TitleText.color[1]==accent[1]and p.check.Icon.alpha==1)
 assert(p.star.button==nil and p.star.Unearned.alpha==1)
+-- Real public engine's Restrip must preserve the existing owned accent.
+local sideArt=r.side.euiLFGSideAccent or r.side.regions[#r.side.regions]
+local function fadeRegions(f,keep)
+    for _,texture in ipairs(f.regions)do if not keep[texture]then texture:SetAlpha(0)end end
+end
+local registry={[r.side]=r.side.registeredKeep or {}}
+local function restrip()
+    local keep=registry[r.side];keep[r.side.button]=true;fadeRegions(r.side,keep)
+end
+local engineSource=os.getenv("LFG_EUI_ENGINE_SOURCE")
+if engineSource then
+    local file=assert(io.open(engineSource));local code=file:read("*a");file:close()
+    code=code:gsub("\r","")
+    local first=assert(code:find("local function Restrip(winKey)",1,true))
+    local last=assert(code:find("\nend",first,true))
+    restrip=assert(load("local _windowRestrips,_restrip,FFD,PROTECT_KEYS,FadeRegions=...;"..code:sub(first,last+3).."\nreturn Restrip"))(
+        {},registry,{[r.side]={bg=r.side.button}},{"bg"},fadeRegions)
+end
+restrip()
+assert(sideArt.alpha==1,"custom side accent was stripped by supported EUI refresh")
 p.star.scripts.OnClick(p.star);assert(p.star.rating==3)
 p.dropdown.scripts.OnMouseDown(p.dropdown);assert(p.dropdown.opened)
 p.check.scripts.OnClick(p.check);assert(not p.check.checked)
@@ -228,16 +254,25 @@ r:Show()
 assert(hidden.Text.path=="eui","deferred hidden row missed first show")
 local ancestry=stats.parents
 for _=1,100 do boxes[1]:Initialize(boxes[1].rows[1])end
-assert(stats.parents-ancestry<=500,"descendant ancestry was rechecked at every node")
+assert(stats.parents-ancestry<=800,"descendant ancestry was rechecked at every node")
 local foreignRow=frame("Button",frame());foreignRow.Text=label(foreignRow)
 boxes[1]:Initialize(foreignRow);assert(foreignRow.Text.path=="native","foreign callback bypassed ownership boundary")
-local sideBar=r.side.regions[#r.side.regions]
+-- A stale GetChildren snapshot must not authorize a reparented child.
+local reparented=button(frame());reparented.Text.path="native"
+local ownedRow=boxes[1].rows[1]
+ownedRow.children[#ownedRow.children+1]=reparented
+boxes[1]:Initialize(ownedRow)
+assert(reparented.Text.path=="native","reparented snapshot child escaped direct-edge ownership check")
+ownedRow.children[#ownedRow.children]=nil
+local sideBar=r.side.euiLFGSideAccent or r.side.regions[#r.side.regions]
 local sideColor=sideBar.color;r.side:SetChecked(true)
 assert(sideBar.color==sideColor,"unchanged side state rewrote accent color")
 local markPoint=p.check.Checked.point
 local platePoint=p.check.checkArt.point
 for _,fn in ipairs(looks)do fn()end
 assert(p.check.Checked.point==markPoint and p.check.checkArt.point==platePoint,"theme reanchored unchanged checkbox artwork")
+local replacementMark=texture();p.check.Checked=replacementMark;module.refresh()
+assert(replacementMark.width==10 and replacementMark.point[1]=="CENTER","replacement native checkmark missed cached geometry")
 local fcount,tcount,hcount,wcount,ccount=stats.frames,stats.textures,stats.hooks,stats.fonts,stats.colors
 collectgarbage("collect");collectgarbage("stop");local warmHeap=collectgarbage("count")
 local warmStart=os.clock()

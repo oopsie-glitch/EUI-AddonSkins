@@ -54,7 +54,7 @@ local function DefineSkin()
         local function Button(f)
             local icon = H.Texture(f.Icon or f.icon)
             local alpha = icon and icon:GetAlpha()
-            soft.Button(f, {"Icon", "icon", "IconMask", "Check", "SelectedTexture", "HighlightTexture"})
+            soft.Button(f, {"Icon", "icon", "IconMask", "Check", "SelectedTexture", "HighlightTexture", "euiLFGSideAccent"})
             if icon then icon:SetAlpha(alpha) end
             if S.StateButtonLabel then S.StateButtonLabel(f) end
         end
@@ -86,7 +86,8 @@ local function DefineSkin()
                     if getter == "GetCheckedTexture" then
                         mark:SetVertexColor(1, 1, 1, 1); mark:SetColorTexture(S.GetAccentColor())
                     end
-                    if resized then
+                    if resized or art[getter] ~= mark then
+                        art[getter] = mark
                         mark:ClearAllPoints(); mark:SetPoint("CENTER", f, "CENTER"); mark:SetSize(size - 4, size - 4)
                     end
                 end
@@ -116,9 +117,10 @@ local function DefineSkin()
                 for _, texture in ipairs(H.Regions(f)) do
                     if H.Texture(texture) and texture ~= f.Icon and texture ~= f.IconMask then chrome[#chrome + 1] = texture end
                 end
-                Button(f) -- ApplyButton supports frames; Tab requires Button:SetText.
                 local bar = f:CreateTexture(nil, "OVERLAY", nil, 6)
                 bar:SetPoint("BOTTOMLEFT"); bar:SetPoint("BOTTOMRIGHT"); bar:SetHeight(1)
+                f.euiLFGSideAccent = bar -- Public Button keep list protects it from EUI Restrip.
+                Button(f) -- ApplyButton supports frames; Tab requires Button:SetText.
                 local selected = f.GetChecked and f:GetChecked()
                 if selected == nil and f.Icon and f.Icon.GetAtlas then
                     selected = f.Icon:GetAtlas() == "friends-icon-tab-quickJoin"
@@ -146,10 +148,13 @@ local function DefineSkin()
             end
             if box.ForEachFrame then box:ForEachFrame(Row) end
         end
-        Walk = function(f, dynamic, depth)
+        Walk = function(f, dynamic, depth, parent)
             depth = depth or 0
-            if depth > 18 or not H.Allowed(f) or depth == 0 and not Owned(f) then return end
-            -- GetChildren stays inside the already-verified owned subtree.
+            if depth > 18 or not H.Allowed(f) then return end
+            if parent then
+                if f:GetParent() ~= parent then return end -- Snapshot child was reparented.
+            elseif not Owned(f) then return end
+            -- One ancestry check per entry; verify only each direct child edge.
             local kind = f:GetObjectType()
             if kind == "GameTooltip" or kind == "ModelScene" or kind == "PlayerModel" then return end
             -- Stars own their earned/unearned art, hover preview and rating input.
@@ -198,12 +203,12 @@ local function DefineSkin()
                     if r:GetObjectType() == "FontString" then Font(r) end
                 end
                 -- Theme callbacks repaint only known native objects, not API art.
-                for _, child in ipairs(children) do Walk(child, dynamic, depth + 1) end
+                for _, child in ipairs(children) do Walk(child, dynamic, depth + 1, f) end
             elseif dynamic then
                 for _, r in ipairs(H.Regions(f)) do
                     if r:GetObjectType() == "FontString" then Font(r) end
                 end
-                for _, child in ipairs(children) do Walk(child, true, depth + 1) end
+                for _, child in ipairs(children) do Walk(child, true, depth + 1, f) end
             end
             if virtual then List(f) end
         end
@@ -259,9 +264,11 @@ local function DefineSkin()
             if not Ready() then return end
             local current = _G.LFGForeverFrame
             if H.Allowed(current) and current.Content then
-                if root ~= current then root = current end
-                events:UnregisterEvent("LFG_LIST_ACTIVE_ENTRY_UPDATE")
-                H.Script(root, "OnShow", Apply)
+                if root ~= current then
+                    root = current
+                    events:UnregisterEvent("LFG_LIST_ACTIVE_ENTRY_UPDATE")
+                    H.Script(root, "OnShow", Apply)
+                end
                 Apply()
             end
         end

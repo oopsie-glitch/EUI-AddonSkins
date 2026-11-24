@@ -29,6 +29,7 @@ EllesmereUI skins for World of Warcraft addons.
 - Home Bound
 - Hunter's Field Guide (WoW Forever)
 - ItemRack
+- ItemTree (WoW Forever)
 - KiwiFarm
 - LiteMount
 - Myslot

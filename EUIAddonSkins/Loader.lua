@@ -27,6 +27,7 @@ ns.skinCatalog = {
     {id = "HomeBound", label = "Home Bound", targets = {"HomeBound"}},
     {id = "HuntersFieldGuide", label = "Hunter's Field Guide", targets = {"HuntersFieldGuide"}},
     {id = "ItemRack", label = "ItemRack", targets = {"ItemRack", "ItemRackOptions"}},
+    {id = "ItemTree", label = "ItemTree", targets = {"ItemTree"}},
     {id = "KiwiFarm", label = "KiwiFarm", targets = {"KiwiFarm"}},
     {id = "LiteMount", label = "LiteMount", targets = {"LiteMount"}},
     {id = "Myslot", label = "Myslot", targets = {"Myslot"}},

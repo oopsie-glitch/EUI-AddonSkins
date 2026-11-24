@@ -38,3 +38,15 @@ for file,names in {
   fields=[{"field":x.group(1),"type":"call"if"("in x.group(2)else"table"if"{"in x.group(2)else"value","valueRefs":sorted(set(re.findall(r"\b(?:CU|UI|Options|frame|panel|up|alt|self|ahHost|ownRoot|holder|tab)\.[\w.]+",x.group(2))))}for x in re.finditer(r"\b((?:CU|UI|Options|frame|panel|up|alt|self|ahHost|ownRoot|holder|tab)\.[\w.]+)\s*=\s*([^\n]+)",body)]
   calls=[{"callee":x.group(1),"args":x.group(2)[:220]}for x in re.finditer(r"([\w.:]+)\s*\(([^()\n]*)\)",body)if any(k in x.group(1)for k in ("Tab","Point","Size","Width","Height","CreateFrame","Hook","SetScript","Register"))]
   print("CU_FUNCTION_CONTRACT",json.dumps({"file":file,"name":name,"fields":fields,"calls":calls}))
+
+for file,names in {"UI.lua":["CU.TabOffset","UpdateAlternatives","CU:RefreshUI","CreateCell","CreateAltCell","CU:AttachAHButton","CU:CreateUI"],"Options.lua":["Options:CreatePanel","Options:BuildPage","Options:Open","Options:ShowPage","Options:AskSpec"]}.items():
+ text=z.read("CheapUpgrades/"+file).decode("utf-8-sig")
+ for name in names:
+  m=re.search(r"^(?:local\s+)?function\s+"+re.escape(name)+r"\s*\(([^)]*)\)",text,re.M)
+  if not m:continue
+  end=re.search(r"^(?:local\s+)?function\s+",text[m.end():],re.M)
+  body=text[m.end():m.end()+end.start()]if end else text[m.end():]
+  assignments=[{"target":x.group(1),"refs":re.findall(r"[\w.]+",x.group(2))[:28],"strings":re.findall(r'["\']([^"\']*)["\']',x.group(2))}for x in re.finditer(r"((?:\b\w+\.)+\w+)\s*=\s*([^\n]+)",body)]
+  returned=re.findall(r"^\s*return\s+([^\n]+)",body,re.M)
+  calls=[{"callee":x.group(1),"args":x.group(2)[:160]}for x in re.finditer(r"([\w.:]+)\s*\(([^()\n]*)\)",body)if "Create"in x.group(1)or"Refresh"in x.group(1)or"Hook"in x.group(1)or"Update"in x.group(1)]
+  print("CU_DETAILS",json.dumps({"file":file,"function":name,"assignments":assignments,"returns":returned,"createsAndUpdates":calls,"loops":re.findall(r"^\s*for\s+([^\n]+)\s+do",body,re.M)}))

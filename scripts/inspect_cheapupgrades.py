@@ -50,3 +50,12 @@ for file,names in {"UI.lua":["CU.TabOffset","UpdateAlternatives","CU:RefreshUI",
   returned=re.findall(r"^\s*return\s+([^\n]+)",body,re.M)
   calls=[{"callee":x.group(1),"args":x.group(2)[:160]}for x in re.finditer(r"([\w.:]+)\s*\(([^()\n]*)\)",body)if "Create"in x.group(1)or"Refresh"in x.group(1)or"Hook"in x.group(1)or"Update"in x.group(1)]
   print("CU_DETAILS",json.dumps({"file":file,"function":name,"assignments":assignments,"returns":returned,"createsAndUpdates":calls,"loops":re.findall(r"^\s*for\s+([^\n]+)\s+do",body,re.M)}))
+
+for file in ("UI.lua","Options.lua"):
+ t=z.read("CheapUpgrades/"+file).decode("utf-8-sig")
+ print("CU_NAMED_CONTRACTS",json.dumps({"file":file,
+ "tabPrefix":re.findall(r'TAB_PREFIX\s*=\s*["\']([^"\']+)',t),
+ "tabDefinitions":re.findall(r'\{\s*key\s*=\s*["\']([^"\']+)["\']\s*,\s*name\s*=',t),
+ "namespaceFields":sorted(set(re.findall(r'\b(?:CU|Options)\.(\w+)\s*=',t))),
+ "ahStateFields":sorted(set(re.findall(r'\bahTabs\.(\w+)',t))),
+ "uiKitMembers":re.findall(r'CU.UIKit\s*=\s*(\{[^}]+\})',t)[:1]}))

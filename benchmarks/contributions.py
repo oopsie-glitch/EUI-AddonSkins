@@ -129,11 +129,13 @@ def run():
  for addon in BASE:
   path=Path("/tmp/"+addon+"-reviewed.lua")
   with urlopen("https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/"+BASE[addon]+"/EUIAddonSkins/Skins/"+addon+".lua",timeout=30)as r:path.write_bytes(r.read())
+  previous=Path("/tmp/hfg-previous97.lua")
+  with urlopen("https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/2be3e53333114c75a76222fba8f259c11e13222e/EUIAddonSkins/Skins/HuntersFieldGuide.lua",timeout=30)as r:previous.write_bytes(r.read())
   for look in (("forever","classic") if addon=="HuntersFieldGuide"else("forever",)):
-   for mode in ("native","reviewed","candidate"):
+   for mode in ("native","reviewed","previous97","candidate"):
     results=[]
     for trial in range(5):
-     buf=source(addon,mode,path if mode=="reviewed"else ROOT/"EUIAddonSkins/Skins"/(addon+".lua"),look)
+     buf=source(addon,mode,path if mode=="reviewed"else previous if mode=="previous97"else ROOT/"EUIAddonSkins/Skins"/(addon+".lua"),look)
      state=lua.luaL_newstate();lua.luaL_openlibs(state)
      try:
       rc=lua.luaL_loadbufferx(state,buf,len(buf),b"contribution-audit",None)

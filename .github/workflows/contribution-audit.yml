@@ -22,3 +22,19 @@ jobs:
         run: python3 scripts/check_hfg_accent_ownership.py
       - name: Five-trial baseline and prior-prototype performance review
         run: python3 benchmarks/contributions.py
+      - name: Checkout exact current main for combined compatibility
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 82eb4fd5dc22a4bc973b9c47739d40a912f57c26
+          path: combined-main
+          persist-credentials: false
+      - name: Validate current-main compatibility without changing unrelated integrations
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess,sys
+          for name in ('EUIAddonSkins/Skins/HuntersFieldGuide.lua','tests/huntersfieldguide_spec.lua'):
+              Path('combined-main',name).write_bytes(Path(name).read_bytes())
+          subprocess.run([sys.executable,'scripts/package.py'],cwd='combined-main',check=True)
+          print('Combined current-main validation: only HFG runtime/test overlaid; ItemTree and shared infrastructure unchanged.')
+          PY

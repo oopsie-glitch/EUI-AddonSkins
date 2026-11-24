@@ -132,7 +132,7 @@ ns.RefreshPopupMenusNow=function()
     if popup and popup.owner~=popup:GetOwnerRegion()then popup.eui=false end
 end
 local manager={}
-function manager:GetOpenMenu()return self.current end
+function manager:GetOpenMenu()self.reads=(self.reads or 0)+1;return self.current end
 function manager:OpenMenu(owner)
     local popup=frame("Frame");popup.openOwner=owner
     function popup:GetOwnerRegion()return self.openOwner end
@@ -206,6 +206,9 @@ assert(callbacks==3)
 local fcount,tcount,hcount,wcount,ccount=stats.frames,stats.textures,stats.hooks,stats.fonts,stats.colors
 for _=1,100 do r:Hide();r:Show()end
 assert(stats.frames==fcount and stats.textures==tcount and stats.hooks==hcount and stats.fonts==wcount and stats.colors==ccount,"warm reopen allocated or repainted")
+r:Hide();local menuReads=manager.reads or 0;manager:OpenMenu(frame())
+assert((manager.reads or 0)==menuReads,"closed window inspected foreign popup")
+r:Show()
 manager:OpenMenu(p.dropdown);assert(manager.current.eui)
 local foreign=frame();manager:OpenMenu(foreign);assert(not manager.current.eui)
 manager:OpenContextMenu(p.SettingsGear);assert(manager.current.eui)

@@ -163,13 +163,10 @@ local function DefineSkin()
         end
 
         local function MenuOpened(manager)
-            if not Ready() or not manager.GetOpenMenu then return end
+            if not root or not root:IsShown() or not manager.GetOpenMenu then return end
             local menu = manager:GetOpenMenu()
             local owner = menu and menu.GetOwnerRegion and menu:GetOwnerRegion()
-            if not Owned(owner) then
-                if ns.RefreshPopupMenusNow then ns.RefreshPopupMenusNow() end
-                return
-            end
+            if not Owned(owner) or not Ready() then return end
             -- Reuse the collection's reversible compositor/owner handling.
             -- Shared menus, FontObjects and descriptions remain library-owned.
             if ns.BindPopupList then ns.BindPopupList(S, module, owner, menu) end
@@ -233,6 +230,8 @@ local function DefineSkin()
             generation = generation + 1
             BindLaunchers()
             Discover()
+            local manager = Menu and Menu.GetManager and Menu.GetManager()
+            if manager then MenuOpened(manager) end
         end
         if S.OnLooksChanged then S.OnLooksChanged(module.refresh) end
         events:SetScript("OnEvent", function(_, event)

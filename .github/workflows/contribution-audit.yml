@@ -1,4 +1,4 @@
-name: Contribution performance audit
+name: Hunter guide ownership and retention review
 on:
   push:
     branches: [fix/huntersfieldguide-theme-lifecycle]
@@ -16,30 +16,9 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y liblua5.4-0
-      - name: Locate reviewed upstream source without printing source
-        run: python3 scripts/probe_hfg_source.py
-      - name: Full regressions and installation package
+      - name: Complete existing regressions and package validation
         run: python3 scripts/package.py
-      - name: Five-trial source-shaped contribution audit
+      - name: Verify actual source ownership contracts and known failing cases
+        run: python3 scripts/check_hfg_accent_ownership.py
+      - name: Five-trial baseline and prior-prototype performance review
         run: python3 benchmarks/contributions.py
-      - name: Prove the theme-retention regression fails against the reviewed head
-        run: |
-          python3 - <<'PY'
-          import subprocess,sys
-          from pathlib import Path
-          from urllib.request import urlopen
-          path=Path('EUIAddonSkins/Skins/HuntersFieldGuide.lua')
-          fixed=path.read_bytes()
-          runner=Path('tests/run_lua.py').read_text()
-          first=runner.index('    for test in [')
-          last=runner.index(':\n',first)
-          runner=runner[:first]+"    for test in ['tests/huntersfieldguide_spec.lua']"+runner[last:]
-          try:
-              with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/bb24ae8f463990d6b4ffc5c4aa866d0660c7ac8c/EUIAddonSkins/Skins/HuntersFieldGuide.lua',timeout=30) as response:
-                  path.write_bytes(response.read())
-              result=subprocess.run([sys.executable,'-c',runner],capture_output=True,text=True)
-              assert result.returncode and 'theme history retained unbounded color mappings' in result.stderr,result.stdout+result.stderr
-              print('Confirmed reviewed code fails the new bounded theme-history regression.')
-          finally:path.write_bytes(fixed)
-          subprocess.run([sys.executable,'-c',runner],check=True)
-          PY

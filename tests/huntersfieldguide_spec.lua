@@ -364,7 +364,7 @@ local function Run(look)
     if look == "forever" then
         root.shown = false; hidden.shown = false
         collectgarbage("collect");local heap = collectgarbage("count")
-        for i = 1, 1000 do
+        for i = 1, 2000 do
             accent = i % 2 == 0 and {0.7, 0.25, 0.4} or {0.15, 0.6, 0.8}
             looks[1]()
         end

@@ -196,7 +196,7 @@ for _,box in ipairs(boxes)do
     row.scripts.OnClick=function(self)self.selected=true end
     box.rows={row};box:Initialize(row)
     assert(row.Text.path=="eui"and row.Text.color[2]==.7,"new row not styled before visibility")
-    row.scripts.OnClick(row);assert(row.selected and row.Icon.alpha==1)
+    row.scripts.OnClick(row);assert(row.selected and row.Icon.alpha==1 and not row.button,"data row was treated as an ordinary action button")
     local nested=button(row);box:Initialize(row);assert(nested.button,"late row child not styled")
     local replacement=button(row);row.children[#row.children-1]=replacement;box:Initialize(row)
     assert(replacement.button,"same-count replacement missed")
@@ -238,7 +238,7 @@ assert(stats.fonts==current)
 enabled=true;module.refresh()
 assert(#errors==0,table.concat(errors,"\n"))
 for _,e in ipairs(events)do assert(not e.callbacks.LFG_LIST_ACTIVE_ENTRY_UPDATE,"idle listing listener was retained")end
-print(("LFG_RESOURCES native_and_skin_frames=%d textures=%d hooks=%d view_callbacks=%d; 100 warm reopens: zero allocations/writes; no polling"):format(stats.frames,stats.textures,stats.hooks,callbacks))
+print(("LFG_RESOURCES native_and_skin_frames=%d textures=%d hooks=%d view_callbacks=%d; 100 warm reopens: zero UI allocations/font/color writes; no polling"):format(stats.frames,stats.textures,stats.hooks,callbacks))
 print("PASS: LFG Forever optional lazy activation, three tabs, native actions/returns, semantic stars/icons/colors, virtual rows/replacements, warm reuse, menu ownership, theme, disabled/combat recovery")
 for _,k in ipairs(keys)do _G[k]=saved[k]end
 end

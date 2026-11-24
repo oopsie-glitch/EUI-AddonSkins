@@ -137,7 +137,7 @@ local function DefineSkin()
                     soft.EditBox(f, {padInput = false}); Font(f)
                 elseif kind == "Slider" then
                     H.LegacySlider(f)
-                elseif kind == "Button" then
+                elseif kind == "Button" and not (dynamic and depth == 0) then
                     local label = f.GetFontString and f:GetFontString()
                     -- Rows, links, stars and class/status art are not ordinary buttons.
                     if label then Button(f)
@@ -185,30 +185,30 @@ local function DefineSkin()
             end
         end
         local function Paint()
-                content = root.Content
-                if not H.Allowed(content) then return end
-                filter = content.FilterPanel
-                Walk(root)
-                Font(content.TitleContainer and content.TitleContainer.TitleText or content.TitleText, true)
-                if filter and not navigation[filter] then
-                    navigation[filter] = true
-                    H.Hook(filter, "SetTab", function()
-                        if not Ready() then return end
-                        for _, key in ipairs({"WhisperLog", "PlayerRatings"}) do
-                            local panel = filter[key]
-                            if panel and panel:IsShown() then Walk(panel, true) end
-                        end
-                    end)
+            content = root.Content
+            if not H.Allowed(content) then return end
+            filter = content.FilterPanel
+            Walk(root)
+            Font(content.TitleContainer and content.TitleContainer.TitleText or content.TitleText, true)
+            if filter and not navigation[filter] then
+                navigation[filter] = true
+                H.Hook(filter, "SetTab", function()
+                    if not Ready() then return end
                     for _, key in ipairs({"WhisperLog", "PlayerRatings"}) do
                         local panel = filter[key]
-                        if panel then
-                            H.Script(panel, "OnShow", function() if Ready() then Walk(panel, true) end end)
-                        end
+                        if panel and panel:IsShown() then Walk(panel, true) end
+                    end
+                end)
+                for _, key in ipairs({"WhisperLog", "PlayerRatings"}) do
+                    local panel = filter[key]
+                    if panel then
+                        H.Script(panel, "OnShow", function() if Ready() then Walk(panel, true) end end)
                     end
                 end
-                if softGeneration ~= generation then
-                    soft.RefreshSoftBorders(); softGeneration = generation
-                end
+            end
+            if softGeneration ~= generation then
+                soft.RefreshSoftBorders(); softGeneration = generation
+            end
         end
         Apply = function()
             if applying or not Ready() or not H.Allowed(root) then return end

@@ -14,6 +14,7 @@ EllesmereUI skins for World of Warcraft addons.
 - Auctionator
 - BtWQuests
 - BugSack
+- Cheap Upgrades (WoW Forever)
 - CraftSim
 - Deadly Boss Mods
 - Decor Vendor

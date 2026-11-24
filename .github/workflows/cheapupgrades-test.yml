@@ -12,11 +12,26 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Inspect authoritative addon source without raw source output
+      - name: Verify authoritative source and native tab library
         run: python3 scripts/inspect_cheapupgrades.py
       - name: Install Lua runtime
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y liblua5.4-0
-      - name: Full regressions and packaging
+      - name: Full regressions, native source tests and packaging
+        env:
+          CHEAP_AHTAB_SOURCE: /tmp/cheap-ahtab.lua
+          CHEAP_TAB_ORDER: before
         run: python3 scripts/package.py
+      - name: Alternate addon loading order
+        env:
+          CHEAP_AHTAB_SOURCE: /tmp/cheap-ahtab.lua
+          CHEAP_TAB_ORDER: after
+        run: python3 tests/run_lua.py
+      - name: Upload installable package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: CheapUpgrades-test-${{ github.sha }}
+          path: EUIAddonSkins.zip
+          if-no-files-found: error
+          retention-days: 14

@@ -29,6 +29,7 @@ Skins\Attune.lua
 Skins\Auctionator.lua
 Skins\BtWQuests.lua
 Skins\BugSack.lua
+Skins\CheapUpgrades.lua
 Skins\CraftSim.lua
 Skins\DBM.lua
 Skins\DecorVendor.lua

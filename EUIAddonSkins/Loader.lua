@@ -12,6 +12,7 @@ ns.skinCatalog = {
     {id = "Auctionator", label = "Auctionator", targets = {"Auctionator"}},
     {id = "BtWQuests", label = "BtWQuests", targets = {"BtWQuests"}},
     {id = "BugSack", label = "BugSack", targets = {"BugSack"}},
+    {id = "CheapUpgrades", label = "Cheap Upgrades", targets = {"CheapUpgrades"}},
     {id = "CraftSim", label = "CraftSim", targets = {"CraftSim"}},
     {id = "DBM", label = "Deadly Boss Mods", targets = {"DBM-Core", "DBM-GUI"}},
     {id = "DecorVendor", label = "Decor Vendor", targets = {"DecorVendor"}},

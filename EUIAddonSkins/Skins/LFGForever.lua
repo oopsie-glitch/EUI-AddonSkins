@@ -6,7 +6,7 @@ local function DefineSkin()
     end, function(S, module)
         local soft = ns.CreateSoftSkin(S, module)
         local H = ns.CreateSkinHelper(S, module)
-        local painted, lists, checks, navigation = {}, {}, {}, {}
+        local painted, lists, checks, navigation, sideTabs = {}, {}, {}, {}, {}
         local generation, pending, applying, softGeneration = 1, false, false, 0
         local root, content, filter
         local Apply, Discover
@@ -88,6 +88,37 @@ local function DefineSkin()
             if icon then icon:SetAlpha(alpha) end
         end
 
+        local function PaintSide(f, selected)
+            local entry = sideTabs[f]
+            if not entry then return end
+            if selected ~= nil then entry.selected = selected end
+            if not Ready() then return end
+            for _, texture in ipairs(entry.chrome) do Fade(texture) end
+            local r, g, b
+            if ns.AccentBarColor then r, g, b = ns.AccentBarColor(S) else r, g, b = S.GetAccentColor() end
+            entry.bar:SetColorTexture(r, g, b, 1)
+            entry.bar:SetShown(entry.selected and (not ns.AccentBarShown or ns.AccentBarShown()))
+        end
+        local function Side(f)
+            local entry = sideTabs[f]
+            if not entry then
+                local chrome = {}
+                for _, texture in ipairs(H.Regions(f)) do
+                    if H.Texture(texture) and texture ~= f.Icon and texture ~= f.IconMask then chrome[#chrome + 1] = texture end
+                end
+                Button(f) -- ApplyButton supports frames; Tab requires Button:SetText.
+                local bar = f:CreateTexture(nil, "OVERLAY", nil, 6)
+                bar:SetPoint("BOTTOMLEFT"); bar:SetPoint("BOTTOMRIGHT"); bar:SetHeight(1)
+                local selected = f.GetChecked and f:GetChecked()
+                if selected == nil and f.Icon and f.Icon.GetAtlas then
+                    selected = f.Icon:GetAtlas() == "friends-icon-tab-quickJoin"
+                end
+                entry = {bar = bar, chrome = chrome, selected = selected}; sideTabs[f] = entry
+                H.Hook(f, "SetChecked", function(_, value) PaintSide(f, value) end)
+            end
+            PaintSide(f)
+        end
+
         local Walk
         local function Row(f)
             if Ready() and Owned(f) then Walk(f, true) end
@@ -128,6 +159,8 @@ local function DefineSkin()
                 elseif filter and f:GetParent() == filter.TabSystem then
                     if S.Tab then S.Tab(f) end
                     Fade(f.LFGFGlow)
+                elseif f:GetParent() == root and f.Icon and type(f.SetChecked) == "function" then
+                    Side(f)
                 elseif kind == "DropdownButton" then
                     soft.Dropdown(f) -- Retains the native whole-field click handler.
                     Fade(f.Arrow) -- My Filters' additional stock caret.

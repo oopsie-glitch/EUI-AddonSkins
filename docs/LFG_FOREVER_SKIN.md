@@ -21,6 +21,8 @@ Public EUI Shell, Panel, Button, Tab, Dropdown, Checkbox, EditBox, ScrollBar, Cl
 
 Main content gets one shell, list/filter insets receive panel styling, portrait chrome is hidden, tabs use the EUI selection treatment, and ordinary controls receive flat artwork. Checkbox artwork is compact while native click rectangles stay unchanged. Class/role icons and earned/unearned rating artwork remain native and interactive. Native DropdownButton input is retained for full-field clicks.
 
+The native vertical side controls are LargeSideTabButtonTemplate Frames, not Buttons. The supported Button surface works on those frames; the Tab helper requires SetText and is not used there. A single cached accent indicator follows each owned control's native SetChecked state, honors the shared accent-bar settings and never changes click geometry.
+
 The private addon namespace is not extracted with debug APIs. Discovery observes only named addon launchers: keybinding wrapper, slash command, minimap/search buttons, addon-compartment function and the owned Blizzard-side tab. One listing event covers the native auto-open path until the root is discovered, then unregisters. Once bound, warm OnShow uses the cached root; completed view OnInitializedFrame callbacks style only current rows and newly constructed descendants. No native data/communication/rating/profile callback is replaced.
 
 The existing reversible BindPopupList helper handles demonstrably owned root menus. The same public manager post-hook pattern as Myslot observes OpenMenu/OpenContextMenu; foreign owners are rejected before styling. No generic CreateFrame hook, prototype override, UIParent traversal or second menu framework is introduced.

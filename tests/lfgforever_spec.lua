@@ -21,6 +21,8 @@ local function texture()
     function t:ClearAllPoints()end
     function t:SetPoint(...)self.point={...}end
     function t:SetSize(w,h)self.width,self.height=w,h end
+    function t:SetHeight(h)self.height=h end
+    function t:SetShown(value)self.shown=value end
     function t:SetAllPoints()end
     return t
 end
@@ -154,6 +156,10 @@ local function build()
     c.TitleText=label(c);c.PortraitContainer=texture();c.ReportBug=button(c)
     c.FilterPanel=frame("Frame",c);c.ListPanel=frame("Frame",c)
     local p=c.FilterPanel
+    root.side=frame("Frame",root);root.side.Icon=texture();root.side.chrome=root.side:CreateTexture()
+    function root.side:SetChecked(value)self.checked=value;self.chrome:SetAlpha(1)end
+    function root.side:GetChecked()return self.checked end
+    root.side:SetChecked(true)
     p.TabSystem=frame("Frame",p)
     for _=1,3 do button(p.TabSystem)end
     p.SettingsGear=button(p);p.dropdown=frame("DropdownButton",p)
@@ -182,6 +188,9 @@ local a,b,c=LFGForever_ToggleWindow();assert(a=="native"and b==nil and c==7)
 local r=LFGForeverFrame;local p=r.Content.FilterPanel
 assert(r.Content.shell and p.panel and r.Content.ListPanel.panel and r.CloseButton.closeArt)
 assert(p.dropdown.dropdown and p.check.checkArt and p.check.Icon.alpha==1)
+assert(r.side.button and r.side.Icon.alpha==1 and r.side.chrome.alpha==0,"frame-based side tab not skinned")
+r.side:SetChecked(false);assert(r.side.chrome.alpha==0 and r.side.Icon.alpha==1)
+r.side:SetChecked(true);assert(r.side.chrome.alpha==0)
 assert(p.check.Checked.width==10 and p.check.width==30 and p.check.checked)
 assert(r.width==1600 and r.height==900 and r.ResizeButton.button==nil and r.DragBar.button==nil)
 assert(r.Content.TitleText.color[1]==accent[1]and p.check.Icon.alpha==1)

@@ -46,8 +46,11 @@ jobs:
           path: /tmp/cheap-install
           if-no-files-found: error
           retention-days: 14
+      - name: Download exact uploaded archive
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: ${{ steps.package.outputs.artifact-id }}
+          path: /tmp/cheap-verify
+          merge-multiple: true
       - name: Verify exact uploaded ZIP contents
-        env:
-          GH_READ_TOKEN: ${{ github.token }}
-          ARTIFACT_ID: ${{ steps.package.outputs.artifact-id }}
         run: python3 scripts/verify_cheapupgrades_artifact.py

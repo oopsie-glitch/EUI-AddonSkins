@@ -20,3 +20,5 @@ jobs:
         run: python3 scripts/package.py
       - name: Five-trial source-shaped contribution audit
         run: python3 benchmarks/contributions.py
+      - name: Independently verify late native accent labels
+        run: python3 benchmarks/check_hfg_late_accent.py

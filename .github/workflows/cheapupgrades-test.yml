@@ -1,0 +1,22 @@
+name: Cheap Upgrades source and test package
+on:
+  push:
+    branches: [skin/cheapupgrades-compatibility]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Inspect authoritative addon source without raw source output
+        run: python3 scripts/inspect_cheapupgrades.py
+      - name: Install Lua runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Full regressions and packaging
+        run: python3 scripts/package.py

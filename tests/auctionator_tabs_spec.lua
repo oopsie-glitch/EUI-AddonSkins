@@ -191,7 +191,7 @@ assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
 local source=os.getenv('CHEAP_AHTAB_SOURCE')
 if source then
     ns.RegisterSkinDefinition=function(_,fn)fn()end
-    assert(loadfile('EUIAddonSkins/Skins/Auctionator.lua'))('EUIAddonSkins',ns)
+    assert(loadfile(os.getenv('CHEAP_AUCTIONATOR_SOURCE') or 'EUIAddonSkins/Skins/Auctionator.lua'))('EUIAddonSkins',ns)
     -- Run the pinned library, including native CreateTab and selection callbacks.
     local lib={}
     LibStub=setmetatable({NewLibrary=function()return lib end},{__call=function()return lib end})

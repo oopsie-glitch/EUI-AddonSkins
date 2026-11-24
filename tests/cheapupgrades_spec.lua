@@ -190,7 +190,11 @@ assert(loadfile('EUIAddonSkins/Widgets.lua'))('EUIAddonSkins', ns)
 
 -- Cheap Upgrades' builders own stable pools; skin only completed owned trees.
 ns.RegisterSkinDefinition = function(_, fn) fn() end
-local writes = 0
+local writes, selectionWrites = 0, 0
+local popupCalls=0
+ns.BindPopupList=function(_,_,owner,list)assert(list:GetOwnerRegion()==owner);popupCalls=popupCalls+1 end
+local nativeSelection = S.SetTabSelection
+S.SetTabSelection = function(...) selectionWrites=selectionWrites+1;return nativeSelection(...) end
 local previousFont = S.Font
 S.Font = function(...) writes = writes + 1; return previousFont(...) end
 S.CloseButton = function(f) f.closedArt = true end
@@ -225,6 +229,7 @@ function CU:CreateUI()
     local edit=frame('EditBox',root)
     local check=frame('CheckButton',root)
     local dd=frame('DropdownButton',root)
+    function dd:OnMenuOpened(menu)self.menu=menu end
     for _,f in ipairs({button,edit,check,dd}) do text(f) end
     for i=1,24 do
         local c=frame('Button',root)
@@ -275,6 +280,11 @@ for _,c in ipairs(cells)do
     assert(c.border.vertex[3]==1,'rarity colour overwritten')
 end
 for _,fs in ipairs(labels)do assert(fs.face==fontFace and fs.height==12 and fs.color[4]==0.8)end
+local dropdown=CU.controls[4]
+local popup={GetOwnerRegion=function()return dropdown end}
+dropdown:OnMenuOpened(popup);assert(popupCalls==1 and dropdown.menu==popup)
+dropdown:OnMenuOpened({GetOwnerRegion=function()return {}end});assert(popupCalls==1)
+local selection = selectionWrites
 local count, hooks, color, geometry, font, reads = created,hookCount,colorWrites,geometryWrites,writes,hierarchyReads
 collectgarbage('collect');local memory=collectgarbage('count')
 local started=os.clock()
@@ -287,6 +297,7 @@ collectgarbage('collect')
 assert(created==count and hookCount==hooks,'warm objects/hooks grew')
 assert(writes==font and colorWrites==color and geometryWrites==geometry,'warm repaint')
 assert(hierarchyReads==reads,'warm tree scanning')
+assert(selectionWrites==selection,'redundant tab selection writes')
 assert(collectgarbage('count')-memory<4,'warm retained state grew')
 -- Theme update while hidden paints on the next show, not on a scan/scoring update.
 visible(CheapUpgradesFrame,false);fontFace='next-font';m.refresh()

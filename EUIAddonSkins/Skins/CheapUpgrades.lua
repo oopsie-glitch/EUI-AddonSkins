@@ -9,7 +9,7 @@ local function DefineSkin()
         local CU = _G.CheapUpgrades
         local H = ns.CreateSkinHelper(S, module)
         local soft = ns.CreateSoftSkin(S, module)
-        local roots, painted, menus = {}, {}, {}
+        local roots, painted, menus, tabStates = {}, {}, {}, {}
         local generation, pending = 1, false
         local PaintRoot, Discover
         local recovery = CreateFrame("Frame")
@@ -32,11 +32,20 @@ local function DefineSkin()
                 fs:SetTextColor(r, g, b, a)
             end
         end
-        local function OpenMenu(dropdown)
-            local manager = Menu and Menu.GetManager and Menu.GetManager()
-            local menu = manager and manager.GetOpenMenu and manager:GetOpenMenu()
+        local function OpenMenu(dropdown, menu)
             if Ready() and menu and menu.GetOwnerRegion and menu:GetOwnerRegion() == dropdown and ns.BindPopupList then
                 ns.BindPopupList(S, module, dropdown, menu)
+            end
+        end
+        local function Tab(f, selected)
+            if not H.Allowed(f) then return end
+            local state = tabStates[f]
+            if not state then
+                H.Tab(f, selected)
+                tabStates[f] = {selected = selected}
+            elseif state.selected ~= selected then
+                state.selected = selected
+                if S.SetTabSelection then S.SetTabSelection(f, selected) end
             end
         end
         local function Walk(f, force, depth)
@@ -49,6 +58,8 @@ local function DefineSkin()
             if first then
                 painted[f] = generation
                 -- Native item cells own rarity, selection, upgrade badges and data.
+                -- The source's InsetFrameTemplate panes are owned decorative chrome.
+                if kind == "Frame" and f.NineSlice and H.Texture(f.Bg) and S.Inset then S.Inset(f) end
                 local parent = f.GetParent and f:GetParent()
                 local normal = f.GetNormalTexture and H.Texture(f:GetNormalTexture())
                 local closeArt = normal and normal.GetTexture and normal:GetTexture()
@@ -62,8 +73,8 @@ local function DefineSkin()
                     soft.Dropdown(f)
                     if not menus[f] then
                         menus[f] = true
-                        H.Script(f, "OnClick", OpenMenu)
-                        H.Script(f, "OnMouseDown", OpenMenu)
+                        -- Instance-level completed-menu callback, never a manager/prototype hook.
+                        H.Hook(f, "OnMenuOpened", OpenMenu)
                     end
                 elseif kind == "EditBox" then
                     soft.EditBox(f, {padInput = false})
@@ -73,7 +84,7 @@ local function DefineSkin()
                 elseif kind == "Slider" then
                     H.LegacySlider(f)
                 elseif kind == "Button" and f ~= _G.CheapUpgradesMinimapButton then
-                    if f.pageKey then H.Tab(f)
+                    if f.pageKey then Tab(f)
                     else soft.Button(f, {"Icon", "icon", "badge", "price", "sel", "border"}) end
                 end
                 if H.Allowed(f.CloseButton) and S.CloseButton then S.CloseButton(f.CloseButton) end
@@ -126,14 +137,14 @@ local function DefineSkin()
                 for _, key in ipairs({"upgrades", "alts"}) do
                     local tab = lib and lib.GetButton and lib:GetButton("CheapUpgrades_" .. key)
                         or _G["CheapUpgradesAHTab_" .. key]
-                    if H.Allowed(tab) then H.Tab(tab) end
+                    Tab(tab)
                 end
             end
             local options = CU.Options
             if type(options) == "table" then
                 for _, tab in ipairs(options.tabs or {}) do
                     local page = options.pages and PageFrame(options.pages[tab.pageKey])
-                    if H.Allowed(tab) then H.Tab(tab, page and page:IsShown() or false) end
+                    Tab(tab, page and page:IsShown() or false)
                 end
             end
         end

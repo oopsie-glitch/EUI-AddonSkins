@@ -171,7 +171,8 @@ local function DefineSkin()
                     if f.PortraitContainer and f.PortraitContainer.SetAlpha then f.PortraitContainer:SetAlpha(0) end
                     Fade(f.portrait); Fade(f.TitleBg)
                 elseif f == content.ListPanel or f == filter then
-                    soft.Panel(f)
+                    -- Let the theme-aware shell show through both body insets.
+                    soft.Panel(f, {noBg = true})
                     if f.SetBackdrop then f:SetBackdrop(nil) end
                 elseif f == root.CloseButton then
                     S.CloseButton(f)

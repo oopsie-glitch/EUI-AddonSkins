@@ -19,7 +19,7 @@ Authoritative source: https://github.com/user-attachments/files/35335139/LFGFore
 
 Public EUI Shell, Panel, Button, Tab, Dropdown, Checkbox, EditBox, ScrollBar, CloseButton and Font primitives provide the theme. CreateSoftSkin supplies the established subdued borders; CreateSkinHelper supplies safe, idempotent script/method hooks. Fonts retain native valid point sizes and semantic colors. No EUI/Blizzard global font objects or addon SavedVariables change.
 
-Main content gets one shell, list/filter insets receive panel styling, portrait chrome is hidden, tabs use the EUI selection treatment, and ordinary controls receive flat artwork. Checkbox artwork is compact while native click rectangles stay unchanged. Class/role icons and earned/unearned rating artwork remain native and interactive. Native DropdownButton input is retained for full-field clicks.
+Main content gets one shell, list/filter insets use the public Panel noBg option, portrait chrome is hidden, tabs use the EUI selection treatment, and ordinary controls receive flat artwork. Checkbox artwork is compact while native click rectangles stay unchanged. Class/role icons and earned/unearned rating artwork remain native and interactive. Native DropdownButton input is retained for full-field clicks.
 
 The native vertical side controls are LargeSideTabButtonTemplate Frames, not Buttons. The supported Button surface works on those frames; the Tab helper requires SetText and is not used there. A single cached accent indicator follows each owned control's native SetChecked state, honors the shared accent-bar settings and never changes click geometry.
 
@@ -53,3 +53,11 @@ The install ZIP contains only the EUIAddonSkins runtime collection. The target a
 5. Receive/select/remove whispers; change ratings, hover stars, clear ratings and verify class/status colors and history.
 6. Open gear Settings, tooltips, context menus and report/save/confirmation dialogs; native borrowed dialogs are intentional.
 7. Change EUI theme/accent, disable the skin and reload, test combat entry/recovery and check Lua errors/taint logging.
+
+## Body background refinement
+
+The two former solid inset fills obscured the existing theme-aware shell. Both owned body panels now use public `Panel({noBg=true})` through CreateSoftSkin; their native backdrops remain cleared. Filters, Whispers and Player ratings share that shell without page-specific fills. Borders, controls, rows, geometry and semantic colors are unchanged.
+
+This reuses the same public Shell primitive as the pinned EUI Forever Group Finder (`d84a1e1`). Its EUI style uses the existing cover-fitted backdrop with a 0.62 black overlay; its Modern style follows the user's configured flat color/opacity. No private engine access, new gradient artwork, custom palette, additional textures, resize callbacks or animation is introduced. The adapter does not override the user's EUI/Modern choice.
+
+Tests exercise the pinned public engine Panel implementation to verify no fill allocation, all three page selections, theme refresh and warm reuse. The previous d91722e runtime must fail the new shell-visibility assertion. Hosted counters can verify two fewer panel textures in this fixture, but not pixel contrast, actual WoW GPU cost or the exact screenshot match. Check the refined body against results, whispers and rating text in-game at the user's current theme and UI scale.

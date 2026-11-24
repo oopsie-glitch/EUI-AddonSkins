@@ -51,11 +51,18 @@ jobs:
               result=subprocess.run([sys.executable,'-c',runner],env=env,capture_output=True,text=True)
               assert result.returncode and 'custom side accent was stripped by supported EUI refresh' in result.stderr,result.stdout+result.stderr
               print('Confirmed approved starting runtime fails the new actual-engine stability assertion.')
+              with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/d91722e0190fa0f365be3553e075affee5d8ff50/EUIAddonSkins/Skins/LFGForever.lua',timeout=30) as response:
+                  path.write_bytes(response.read())
+              result=subprocess.run([sys.executable,'-c',runner],env=env,capture_output=True,text=True)
+              assert result.returncode and 'body inset obscures the EUI shell' in result.stderr,result.stdout+result.stderr
+              print('Confirmed previous body fills fail the shell-visibility regression.')
           finally:path.write_bytes(fixed)
           subprocess.run([sys.executable,'-c',runner],env=env,check=True)
           assert path.read_bytes()==fixed
           PY
-      - name: Five-trial native-control and PR baseline audit
+      - name: Five-trial native-control and body-background baseline audit
+        env:
+          LFG_AUDIT_BASE: d91722e0190fa0f365be3553e075affee5d8ff50
         run: python3 benchmarks/run_lfgforever.py
       - name: Prepare installable artifact
         run: |

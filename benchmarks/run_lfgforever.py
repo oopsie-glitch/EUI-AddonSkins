@@ -2,7 +2,7 @@
 import ctypes,json,os,re,statistics
 from pathlib import Path
 from urllib.request import urlopen
-BASE='ec84dc8c75bd9fa7a794557d9d51241a079c8fbd'
+BASE=os.getenv('LFG_AUDIT_BASE','ec84dc8c75bd9fa7a794557d9d51241a079c8fbd')
 def run():
     root=Path(__file__).resolve().parents[1]
     url='https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/'+BASE+'/EUIAddonSkins/Skins/LFGForever.lua'

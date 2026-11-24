@@ -115,7 +115,10 @@ function S.Font(t,r,g,b)local _,size=t:GetFont();t:SetFont("eui",size,"");if r t
 function S.OnLooksChanged(fn)looks[#looks+1]=fn end
 local function art(f,field)assert(not combat);if not f[field]then f[field]=f:CreateTexture()end end
 function S.Shell(f,opts)assert(opts.noAccent);art(f,"shell")end
-function S.Panel(f)art(f,"panel")end
+function S.Panel(f,opts)
+    f.panelStyled=true;f.panelOptions=opts
+    if not (opts and opts.noBg)then art(f,"panel")end
+end
 function S.FadeNineSlice(f)f.faded=true end
 function S.Button(f,keep)
     art(f,"button")
@@ -192,7 +195,7 @@ assert(installed.available());installed.install(S,module)
 assert(not _G.LFGForeverFrame,"skin forced lazy target construction")
 local a,b,c=LFGForever_ToggleWindow();assert(a=="native"and b==nil and c==7)
 local r=LFGForeverFrame;local p=r.Content.FilterPanel
-assert(r.Content.shell and p.panel and r.Content.ListPanel.panel and r.CloseButton.closeArt)
+assert(r.Content.shell and p.panelStyled and r.Content.ListPanel.panelStyled and r.CloseButton.closeArt)
 assert(p.dropdown.dropdown and p.check.checkArt and p.check.Icon.alpha==1)
 assert(r.side.button and r.side.Icon.alpha==1 and r.side.chrome.alpha==0,"frame-based side tab not skinned")
 r.side:SetChecked(false);assert(r.side.chrome.alpha==0 and r.side.Icon.alpha==1)
@@ -221,9 +224,35 @@ if engineSource then
 end
 restrip()
 assert(sideArt.alpha==1,"custom side accent was stripped by supported EUI refresh")
+-- Both content insets share the existing shell; no opaque page-specific fill.
+local function bodyBackground()
+    for _,panel in ipairs({p,r.Content.ListPanel})do
+        assert(panel.panelOptions.noBg and panel.panel==nil,"body inset obscures the EUI shell")
+        assert(panel.panelOptions.noBorder and panel.backdrop==nil)
+    end
+    assert(r.Content.shell and not p.WhisperLog.panel and not p.PlayerRatings.panel)
+end
+bodyBackground()
+if engineSource then
+    local file=assert(io.open(engineSource));local code=file:read("*a");file:close()
+    code=code:gsub("\r","")
+    local first=assert(code:find("function WSkin.Panel(frame, opts)",1,true))
+    local last=assert(code:find("\nend",first,true))
+    local state={}
+    local engine=assert(load("local WSkin,GetFFD,FadeRegions,Register,Theme,AddBorder=...;"..code:sub(first,last+3).."\nreturn WSkin"))(
+        {},function(f)state[f]=state[f]or{};return state[f]end,
+        function()end,function()end,{},function()error("unexpected panel border")end)
+    for _,panel in ipairs({p,r.Content.ListPanel})do
+        local count=stats.textures
+        engine.Panel(panel,panel.panelOptions)
+        assert(stats.textures==count and not state[panel].bg,"public noBg panel created an opaque fill")
+    end
+end
+
 p.star.scripts.OnClick(p.star);assert(p.star.rating==3)
 p.dropdown.scripts.OnMouseDown(p.dropdown);assert(p.dropdown.opened)
 p.check.scripts.OnClick(p.check);assert(not p.check.checked)
+for _,tab in ipairs({"Filters","Whispers","PlayerRatings"})do p:SetTab(tab);bodyBackground()end
 p:SetTab("Whispers");assert(p.selected=="Whispers")
 local boxes={r.Content.ListPanel.ScrollBox,p.WhisperLog.ScrollBox,p.PlayerRatings.ScrollBox}
 for _,box in ipairs(boxes)do
@@ -305,6 +334,7 @@ combat=false
 for _,e in ipairs(events)do if e.callbacks.PLAYER_REGEN_ENABLED and e.scripts.OnEvent then e.scripts.OnEvent(e,"PLAYER_REGEN_ENABLED")end end
 assert(pendingRow.Text.path=="eui","combat recovery missed active row")
 accent={.2,.6,.9};for _,fn in ipairs(looks)do fn()end
+bodyBackground()
 assert(r.Content.TitleText.color[3]==.9 and p.check.Checked.color[3]==.9)
 enabled=false;local current=stats.fonts;LFGForever_ToggleWindow();for _,fn in ipairs(looks)do fn()end
 assert(stats.fonts==current)

@@ -53,6 +53,8 @@ local function DefineSkin()
         local seen = setmetatable({}, {__mode = "k"})
         local underlines = {}
         local remap = {}
+        local accentMap
+        local accentText = setmetatable({}, {__mode = "k"})
         local done = {}
         local backing, topBar
         local pending, looksPending
@@ -141,7 +143,9 @@ local function DefineSkin()
                 local light = kind == "accent" and accent or LIGHT[kind]
                 if type(st) == "table" and type(st.color) == "table" and light then
                     if not st.euiOriginal then st.euiOriginal = st.color end
-                    remap[#remap + 1] = {st.euiOriginal, light}
+                    local pair = {st.euiOriginal, light}
+                    remap[#remap + 1] = pair
+                    if kind == "accent" then accentMap = pair end
                     st.color = {light[1], light[2], light[3]}
                     st.shadow = nil
                 end
@@ -162,11 +166,19 @@ local function DefineSkin()
         local function LightText(fs)
             local r, g, b = fs:GetTextColor()
             if r then
-                for _, pair in ipairs(remap) do
-                    if Near(pair[1], r, g, b) then
-                        local c = pair[2]
-                        fs:SetTextColor(c[1], c[2], c[3])
-                        break
+                local prior = accentText[fs]
+                if prior and accentMap and Near(prior, r, g, b) then
+                    local c = accentMap[2]
+                    if not Near(c, r, g, b) then fs:SetTextColor(c[1], c[2], c[3]) end
+                    accentText[fs] = c
+                else
+                    for _, pair in ipairs(remap) do
+                        if Near(pair[1], r, g, b) then
+                            local c = pair[2]
+                            fs:SetTextColor(c[1], c[2], c[3])
+                            if pair == accentMap then accentText[fs] = c else accentText[fs] = nil end
+                            break
+                        end
                     end
                 end
             end
@@ -368,9 +380,8 @@ local function DefineSkin()
             if book then
                 local styles = guide.Skins.forever.styles
                 if S.GetAccentColor and styles and styles.accent then
-                    local old = styles.accent.color
                     local accent = {S.GetAccentColor()}
-                    remap[#remap + 1] = {old, accent}
+                    if accentMap then accentMap[2] = accent end
                     styles.accent.color = accent
                 end
                 PaintOwned()

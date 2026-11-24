@@ -230,7 +230,7 @@ assert(loadfile('EUIAddonSkins/Skins/Attune.lua'))('EUIAddonSkins', ns)
 Attune_MainFrame = frame('Frame', 'Attune_MainFrame'); Attune_GraphRoot = frame('Frame', 'Attune_GraphRoot', Attune_MainFrame)
 local card = frame('Button', 'Attune_Node_42', Attune_GraphRoot)
 card:SetBackdrop({edgeFile = 'native', bgFile = 'fill'}); card:SetBackdropColor(0.8, 0.6, 0, 0.3)
-local text = card:CreateFontString(); text:SetTextColor(1, 0.8, 0)
+local text = card:CreateFontString(nil, nil, 'native-font'); text:SetTextColor(1, 0.8, 0)
 local icon = frame('Button', 'Attune_Icon_42', card); icon.normal = texture(); icon.normal.path = 'quest-icon'
 local graphLine = Attune_GraphRoot:CreateTexture(); graphLine.color = {0.8, 0.6, 0, 1}
 modules.Attune.install(S, modules.Attune)
@@ -242,7 +242,7 @@ assert(Attune_MainFrame.shellOptions.noBorder, 'Attune soft window border missin
 assert(card.backdrop.edgeSize == 1 and card.color[1] == 0.8 and text.font == 'eui' and text.textColor[1] == 1)
 assert(not card.button and icon.normal.path == 'quest-icon' and icon.normal.crop and graphLine.color[1] == 0.8)
 local tree = frame('Button', nil, Attune_MainFrame)
-tree.treeline, tree.selected, tree.text, tree.icon = {}, true, tree:CreateFontString(), tree:CreateTexture()
+tree.treeline, tree.selected, tree.text, tree.icon = {}, true, tree:CreateFontString(nil, nil, 'native-font'), tree:CreateTexture()
 tree.icon.path = 'dungeon-status-art'; tree.toggle = frame('Button', nil, tree)
 tree.toggle.normal = texture(); tree.toggle.normal.path = 130821
 modules.Attune.refresh(); flush()

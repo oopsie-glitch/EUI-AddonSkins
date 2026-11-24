@@ -9,6 +9,8 @@ jobs:
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    outputs:
+      artifact_id: ${{ steps.package.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -46,10 +48,25 @@ jobs:
           path: /tmp/cheap-install
           if-no-files-found: error
           retention-days: 14
+  verify_archive:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install Lua runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Rebuild exact commit as comparison baseline
+        run: python3 scripts/package.py
       - name: Download exact uploaded archive
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          artifact-ids: ${{ steps.package.outputs.artifact-id }}
+          artifact-ids: ${{ needs.verify.outputs.artifact_id }}
+          github-token: ${{ github.token }}
           path: /tmp/cheap-verify
           merge-multiple: true
       - name: Verify exact uploaded ZIP contents

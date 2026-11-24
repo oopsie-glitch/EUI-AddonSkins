@@ -4,6 +4,7 @@ on:
     branches: [skin/lfgforever-standard]
 permissions:
   contents: read
+  actions: read
 jobs:
   verify:
     runs-on: ubuntu-24.04
@@ -12,8 +13,6 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Inspect verified archive structure without source output
-        run: python3 scripts/inspect_lfgforever.py
       - name: Validate pinned native UI contracts
         run: python3 scripts/check_lfgforever_source.py
       - name: Install Lua runtime
@@ -22,3 +21,52 @@ jobs:
           sudo apt-get install -y liblua5.4-0
       - name: Complete regressions and package validation
         run: python3 scripts/package.py
+      - name: Prepare installable artifact
+        run: |
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          with ZipFile('EUIAddonSkins.zip') as z:
+              assert z.testzip() is None
+              assert all(n.startswith('EUIAddonSkins/') for n in z.namelist())
+              assert 'EUIAddonSkins/DetailsNative.lua' not in z.namelist()
+              assert not any('/DetailsNative/' in n for n in z.namelist())
+              z.extractall('/tmp/lfgforever-install')
+              print('Runtime files:',len(z.namelist()))
+          PY
+      - name: Store temporary install ZIP
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-LFGForever-${{ github.sha }}-test
+          path: /tmp/lfgforever-install/
+          retention-days: 30
+          if-no-files-found: error
+          overwrite: true
+      - name: Verify exact uploaded bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          from hashlib import sha256
+          import os,subprocess,time
+          url='repos/{}/actions/artifacts/{}/zip'.format(os.environ['GH_REPO'],os.environ['ARTIFACT_ID'])
+          for attempt in range(5):
+              result=subprocess.run(['gh','api',url],capture_output=True)
+              if result.returncode==0:
+                  Path('/tmp/lfgforever-download.zip').write_bytes(result.stdout)
+                  break
+              error=result.stderr.decode(errors='replace')
+              if attempt==4 or not any(c in error for c in ('HTTP 404','HTTP 500','HTTP 502','HTTP 503','HTTP 504')):
+                  raise RuntimeError(error)
+              time.sleep(min(2**attempt,8))
+          with ZipFile('/tmp/lfgforever-download.zip') as actual,ZipFile('EUIAddonSkins.zip') as expected:
+              assert actual.testzip() is None
+              assert sorted(actual.namelist())==sorted(expected.namelist())
+              for name in actual.namelist():assert actual.read(name)==expected.read(name)==Path(name).read_bytes(),name
+              print('Verified exact checkout:',len(actual.namelist()),'runtime files')
+          print('Artifact SHA256:',sha256(Path('/tmp/lfgforever-download.zip').read_bytes()).hexdigest())
+          PY

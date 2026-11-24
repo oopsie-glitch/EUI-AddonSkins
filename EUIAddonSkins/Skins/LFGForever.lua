@@ -80,7 +80,9 @@ local function DefineSkin()
             for _, getter in ipairs({"GetCheckedTexture", "GetDisabledCheckedTexture"}) do
                 local mark = f[getter] and H.Texture(f[getter](f))
                 if mark then
-                    if getter == "GetCheckedTexture" then mark:SetColorTexture(S.GetAccentColor()) end
+                    if getter == "GetCheckedTexture" then
+                        mark:SetVertexColor(1, 1, 1, 1); mark:SetColorTexture(S.GetAccentColor())
+                    end
                     mark:ClearAllPoints(); mark:SetPoint("CENTER", f, "CENTER"); mark:SetSize(size - 4, size - 4)
                 end
             end

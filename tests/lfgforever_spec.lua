@@ -242,7 +242,10 @@ assert(callbacks==3)
 local pageReads=stats.reads
 p.WhisperLog.scripts.OnShow(p.WhisperLog)
 p.PlayerRatings.scripts.OnShow(p.PlayerRatings)
-assert(stats.reads==pageReads,"warm page show rescanned initialized rows")
+assert(stats.reads-pageReads<=14,"warm page show rescanned initialized rows")
+local lateStatic=button(p.WhisperLog)
+p.WhisperLog.scripts.OnShow(p.WhisperLog)
+assert(lateStatic.button and lateStatic.Text.path=="eui","late static page control missed first show")
 r:Hide()
 local hiddenReads,hiddenFonts=stats.reads,stats.fonts
 module.refresh()

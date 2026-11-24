@@ -148,7 +148,7 @@ local function DefineSkin()
             end
             if box.ForEachFrame then box:ForEachFrame(Row) end
         end
-        Walk = function(f, dynamic, depth, parent)
+        Walk = function(f, dynamic, depth, parent, discovery)
             depth = depth or 0
             if depth > 18 or not H.Allowed(f) then return end
             if parent then
@@ -203,14 +203,14 @@ local function DefineSkin()
                     if r:GetObjectType() == "FontString" then Font(r) end
                 end
                 -- Theme callbacks repaint only known native objects, not API art.
-                for _, child in ipairs(children) do Walk(child, dynamic, depth + 1, f) end
+                for _, child in ipairs(children) do Walk(child, dynamic, depth + 1, f, discovery) end
             elseif dynamic then
                 for _, r in ipairs(H.Regions(f)) do
                     if r:GetObjectType() == "FontString" then Font(r) end
                 end
-                for _, child in ipairs(children) do Walk(child, true, depth + 1, f) end
+                for _, child in ipairs(children) do Walk(child, true, depth + 1, f, discovery) end
             end
-            if virtual then List(f) end
+            if virtual and (not discovery or first or not lists[f:GetView()]) then List(f) end
         end
 
         local function MenuOpened(manager)
@@ -247,7 +247,11 @@ local function DefineSkin()
                 for _, key in ipairs({"WhisperLog", "PlayerRatings"}) do
                     local panel = filter[key]
                     if panel then
-                        H.Script(panel, "OnShow", function() if Ready() then Walk(panel) end end)
+                        H.Script(panel, "OnShow", function()
+                            -- Discover late static widgets, but let the native view
+                            -- callbacks own warm rows instead of walking them twice.
+                            if Ready() then Walk(panel, true, nil, nil, true) end
+                        end)
                     end
                 end
             end

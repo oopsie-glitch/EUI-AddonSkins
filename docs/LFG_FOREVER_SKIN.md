@@ -1,6 +1,6 @@
 # LFG Forever Standard skin — isolated test integration
 
-This branch is not selected for v1.6.8. Visual, interaction and taint acceptance in WoW Forever is pending.
+This branch is not selected for v1.6.8. The visual design at ec84dc8 has passed review. The performance-audit candidate preserves it; optimized lifecycle and live taint smoke checks remain pending. See [the audit](LFG_FOREVER_PERFORMANCE.md).
 
 ## Source and ownership
 

@@ -121,6 +121,12 @@ local function visual()
     local c=p.check.Checked.color or {}
     local v={r.width,r.height,p.check.width,p.check.height,p.check.Checked.width or 0,t.path,t.size,t.color[1],t.color[2],t.color[3],r.side.Icon.alpha,p.star.Unearned.alpha}
     for _,x in ipairs(c)do v[#v+1]=x end
+    local bar=r.side.euiLFGSideAccent or r.side.regions[#r.side.regions]
+    if bar then
+        v[#v+1]=bar.alpha;v[#v+1]=bar.height;v[#v+1]=tostring(bar.shown)
+        v[#v+1]=bar.point and bar.point[1]or""
+        for _,x in ipairs(bar.color or {})do v[#v+1]=x end
+    end
     return table.concat(v,"|")
 end
 report[#report+1]="VISUAL\t"..visual()

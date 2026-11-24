@@ -6,6 +6,7 @@ Run commands from the repository root. Python runners use Python 3 and the insta
 
 | Workload | Command | What it measures |
 | --- | --- | --- |
+| LFG Forever adapter | `python3 benchmarks/run_lfgforever.py` | Five fresh-state trials against an unskinned source-shaped UI control and approved PR head, with native child visibility propagation, row/tab/theme/closed/combat workloads, allocations, retention and counters. See [audit and limits](../docs/LFG_FOREVER_PERFORMANCE.md). |
 | OneForAll adapter | `python3 benchmarks/run_oneforall.py --baseline 7676fdb --source /path/to/OneForAll` / omit `--baseline` for candidate / add `--native` for native-only control | Five-trial host timing, allocation/retention, getter/write counts and warm call profiles; [audit and limits](../docs/ONEFORALL_PERFORMANCE.md) |
 | OneForAll native index | `python3 benchmarks/run_oneforall.py --index-only --source /path/to/OneForAll` | Separate actual-source data parsing/index workload; item APIs are deterministic mocks, target data is not redistributed |
 | Atlas adapter | `python3 benchmarks/run_atlas.py --baseline 3b1a636` / `python3 benchmarks/run_atlas.py` | Five-trial host timing, Lua/C calls and allocation churn for cold setup, reopen, nested map/legend callbacks and closed addon loads; see [audit](../docs/ATLAS_PERFORMANCE.md) |

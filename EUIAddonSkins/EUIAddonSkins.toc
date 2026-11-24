@@ -44,6 +44,7 @@ Skins\HekiLight.lua
 Skins\HomeBound.lua
 Skins\ItemRack.lua
 Skins\KiwiFarm.lua
+Skins\LFGForever.lua
 Skins\LiteMount.lua
 Skins\Myslot.lua
 Skins\NovaInstanceTracker.lua

@@ -29,6 +29,7 @@ EllesmereUI skins for World of Warcraft addons.
 - Home Bound
 - ItemRack
 - KiwiFarm
+- LFG Forever (WoW Forever; experimental, awaiting in-game review)
 - LiteMount
 - Myslot
 - Nova Instance Tracker

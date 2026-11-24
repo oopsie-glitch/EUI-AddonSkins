@@ -27,6 +27,7 @@ ns.skinCatalog = {
     {id = "HomeBound", label = "Home Bound", targets = {"HomeBound"}},
     {id = "ItemRack", label = "ItemRack", targets = {"ItemRack", "ItemRackOptions"}},
     {id = "KiwiFarm", label = "KiwiFarm", targets = {"KiwiFarm"}},
+    {id = "LFGForever", label = "LFG Forever", targets = {"LFGForever"}},
     {id = "LiteMount", label = "LiteMount", targets = {"LiteMount"}},
     {id = "Myslot", label = "Myslot", targets = {"Myslot"}},
     {id = "NovaInstanceTracker", label = "Nova Instance Tracker", targets = {"NovaInstanceTracker"}},

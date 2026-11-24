@@ -14,3 +14,11 @@ jobs:
           persist-credentials: false
       - name: Inspect verified archive structure without source output
         run: python3 scripts/inspect_lfgforever.py
+      - name: Validate pinned native UI contracts
+        run: python3 scripts/check_lfgforever_source.py
+      - name: Install Lua runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Complete regressions and package validation
+        run: python3 scripts/package.py

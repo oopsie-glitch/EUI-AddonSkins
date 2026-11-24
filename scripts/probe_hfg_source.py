@@ -1,11 +1,28 @@
-"""Public source discovery metadata only; no addon source is logged."""
+"""Inspect public upstream UI symbols; never print addon source."""
 from urllib.request import Request,urlopen
-from urllib.error import HTTPError
-import json,re
+from zipfile import ZipFile
+from io import BytesIO
+from hashlib import sha256
+import re,json
+from pathlib import Path
 def get(u):
- with urlopen(Request(u,headers={"User-Agent":"Mozilla/5.0"}),timeout=30)as r:return r.read().decode()
-for url in ("https://www.curseforge.com/wow/addons/hunters-field-guide","https://www.curseforge.com/wow/addons/hunters-field-guide/files/all"):
- try:
-  s=get(url)
-  print("HFG_PAGE_METADATA",json.dumps({"url":url,"bytes":len(s),"title":re.findall(r"<title>(.*?)</title>",s)[:1],"projectIds":re.findall(r'(?:projectId|projectID|Project ID|data-project-id)[^0-9]{0,30}([0-9]{4,10})',s)[:8],"filenames":re.findall(r'[A-Za-z0-9_. -]*[Hh]unters?[A-Za-z0-9_. -]*\.zip',s)[:8],"fileIds":re.findall(r'/wow/addons/hunters-field-guide/files/([0-9]+)',s)[:12]}))
- except Exception as e:print("HFG_PAGE_UNAVAILABLE",url,type(e).__name__,str(e)[:120])
+ with urlopen(Request(u,headers={"User-Agent":"Mozilla/5.0"}),timeout=30)as r:return r.read()
+data=get("https://edge.forgecdn.net/files/9780/878/HuntersFieldGuide-1.3.0.zip")
+print("HFG_SOURCE_ARCHIVE",json.dumps({"version":"1.3.0","fileId":9780878,"sha256":sha256(data).hexdigest()}))
+z=ZipFile(BytesIO(data));Path("/tmp/hfg-upstream.zip").write_bytes(data)
+print("HFG_SOURCE_FILES",json.dumps([n for n in z.namelist()if n.endswith(".lua")]))
+for n in z.namelist():
+ if not n.endswith(".lua"):continue
+ t=z.read(n).decode("utf-8-sig")
+ if not any(v in t for v in ("CreateFontString","SetTextColor","Skins =","styles =")):continue
+ symbols=[]
+ for i,line in enumerate(t.splitlines(),1):
+  if "function"in line:
+   match=re.search(r"function\s+([\w.:]+)\s*\(([^)]*)\)|([\w.]+)\s*=\s*function\s*\(([^)]*)\)",line)
+   if match:symbols.append({"line":i,"function":match.group(1)or match.group(3),"args":match.group(2)or match.group(4)})
+ colors=[]
+ lines=t.splitlines()
+ for i,line in enumerate(lines):
+  if "SetTextColor"in line or "CreateFontString"in line or ("styles["in line and "="in line):
+   colors.append({"line":i+1,"receiver":re.findall(r"([\w.]+):(?:SetTextColor|CreateFontString)",line),"styleKeys":re.findall(r"(?:styles|style)\[([^\]]+)\]",line),"assignedFields":re.findall(r"([\w.]+)\s*=",line),"calls":re.findall(r"[:.]([\w]+)\(",line)})
+ print("HFG_SOURCE_SYMBOLS",json.dumps({"file":n,"functions":symbols,"colorSites":colors}))

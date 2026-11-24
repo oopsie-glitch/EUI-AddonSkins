@@ -12,20 +12,5 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Inspect exact supplied addon archive without executing it
-        run: |
-          python3 - <<'PY'
-          from urllib.request import urlopen
-          from zipfile import ZipFile
-          from io import BytesIO
-          from hashlib import sha256
-          import json
-          url='https://github.com/user-attachments/files/35335139/LFGForever.zip'
-          with urlopen(url,timeout=60) as r:data=r.read(20*1024*1024+1)
-          assert len(data)<=20*1024*1024
-          print('SOURCE_SHA256 '+sha256(data).hexdigest(),flush=True)
-          with ZipFile(BytesIO(data)) as z:
-              assert z.testzip() is None
-              assert sum(i.file_size for i in z.infolist())<100*1024*1024
-              print('SOURCE_MANIFEST '+json.dumps([(i.filename,i.file_size) for i in z.infolist()]))
-          PY
+      - name: Inspect verified archive structure without source output
+        run: python3 scripts/inspect_lfgforever.py

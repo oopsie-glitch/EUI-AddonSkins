@@ -28,9 +28,5 @@ for n in z.namelist():
  print("HFG_SOURCE_SYMBOLS",json.dumps({"file":n,"functions":symbols,"colorSites":colors}))
 
 t=z.read("HuntersFieldGuide/UI.lua").decode("utf-8-sig")
-lines=t.splitlines()
-for name,start,stop in (("Text",42,50),("Style",63,72)):
- body="\n".join(lines[start:stop])
- print("HFG_COLOR_DATAFLOW",json.dumps({"function":name,"assignments":[{"target":m.group(1),"valueIdentifiers":re.findall(r"[A-Za-z_][A-Za-z_0-9.]*",m.group(2)),"literals":re.findall(r'["\']([^"\']+)["\']',m.group(2))}for m in re.finditer(r"([\w.]+)\s*=\s*([^\n]+)",body)],"methodCalls":[{"receiver":m.group(1),"method":m.group(2),"arguments":m.group(3)}for m in re.finditer(r"(\w+):(\w+)\(([^)]*)\)",body)]}))
-print("HFG_STYLE_EXPORTS",json.dumps(re.findall(r'(\b\w+\.\w+)\s*=\s*(Style|Text)\b',t)))
-print("HFG_FONTSTRING_TAGS",json.dumps(sorted(set(re.findall(r"\bfs\.(\w+)\s*=",t)))))
+print("HFG_STYLE_TABLES",json.dumps([{"line":i+1,"style":m.group(1),"fontExpression":m.group(2),"colorExpression":m.group(3)}for i,l in enumerate(t.splitlines())if(m:=re.search(r'(\w+)\s*=\s*\{\s*font\s*=\s*(.*?),\s*color\s*=\s*([^}]+)',l))]))
+print("HFG_LOCAL_STYLE_CALL_ROLES",json.dumps(sorted(set(re.findall(r'Style\([^;\n]*?,\s*["\'](\w+)["\']\s*\)',t)))))

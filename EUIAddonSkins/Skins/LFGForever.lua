@@ -6,7 +6,7 @@ local function DefineSkin()
     end, function(S, module)
         local soft = ns.CreateSoftSkin(S, module)
         local H = ns.CreateSkinHelper(S, module)
-        local painted, fonts, lists, checks = {}, {}, {}, {}
+        local painted, lists, checks, navigation = {}, {}, {}, {}
         local generation, pending, applying, softGeneration = 1, false, false, 0
         local root, content, filter
         local Apply, Discover
@@ -47,7 +47,6 @@ local function DefineSkin()
                 if not (issecretvalue and (issecretvalue(cr) or issecretvalue(cg) or issecretvalue(cb)))
                     and (r ~= cr or g ~= cg or b ~= cb) then text:SetTextColor(r, g, b) end
             end
-            fonts[text] = true
         end
         local function Fade(texture)
             if H.Texture(texture) and texture:GetAlpha() ~= 0 then texture:SetAlpha(0) end
@@ -185,16 +184,14 @@ local function DefineSkin()
                 H.Hook(manager, "OpenContextMenu", MenuOpened)
             end
         end
-        Apply = function()
-            if applying or not Ready() or not H.Allowed(root) then return end
-            applying = true
-            H.Safe(function()
+        local function Paint()
                 content = root.Content
                 if not H.Allowed(content) then return end
                 filter = content.FilterPanel
                 Walk(root)
                 Font(content.TitleContainer and content.TitleContainer.TitleText or content.TitleText, true)
-                if filter then
+                if filter and not navigation[filter] then
+                    navigation[filter] = true
                     H.Hook(filter, "SetTab", function()
                         if not Ready() then return end
                         for _, key in ipairs({"WhisperLog", "PlayerRatings"}) do
@@ -212,8 +209,10 @@ local function DefineSkin()
                 if softGeneration ~= generation then
                     soft.RefreshSoftBorders(); softGeneration = generation
                 end
-            end)
-            applying = false
+        end
+        Apply = function()
+            if applying or not Ready() or not H.Allowed(root) then return end
+            applying = true; H.Safe(Paint); applying = false
         end
         Discover = function()
             if not Ready() then return end

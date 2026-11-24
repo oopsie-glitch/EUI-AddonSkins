@@ -204,7 +204,12 @@ end
 local callbacks=0;for _,box in ipairs(boxes)do for _ in pairs(box:GetView().callbacks)do callbacks=callbacks+1 end end
 assert(callbacks==3)
 local fcount,tcount,hcount,wcount,ccount=stats.frames,stats.textures,stats.hooks,stats.fonts,stats.colors
+collectgarbage("collect");collectgarbage("stop");local warmHeap=collectgarbage("count")
+local warmStart=os.clock()
 for _=1,100 do r:Hide();r:Show()end
+local warmMS=(os.clock()-warmStart)*1000
+local warmAllocated=collectgarbage("count")-warmHeap;collectgarbage("restart")
+print(("LFG_WARM reopens=100 elapsed_ms=%.3f allocation_KiB=%.3f"):format(warmMS,warmAllocated))
 assert(stats.frames==fcount and stats.textures==tcount and stats.hooks==hcount and stats.fonts==wcount and stats.colors==ccount,"warm reopen allocated or repainted")
 r:Hide();local menuReads=manager.reads or 0;manager:OpenMenu(frame())
 assert((manager.reads or 0)==menuReads,"closed window inspected foreign popup")

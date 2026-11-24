@@ -132,7 +132,7 @@ def run():
   previous=Path("/tmp/hfg-previous97.lua")
   with urlopen("https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/2be3e53333114c75a76222fba8f259c11e13222e/EUIAddonSkins/Skins/HuntersFieldGuide.lua",timeout=30)as r:previous.write_bytes(r.read())
   for look in (("forever","classic") if addon=="HuntersFieldGuide"else("forever",)):
-   for mode in ("native","reviewed","previous97","candidate"):
+   for mode in ("native","reviewed","previous97","current97"):
     results=[]
     for trial in range(5):
      buf=source(addon,mode,path if mode=="reviewed"else previous if mode=="previous97"else ROOT/"EUIAddonSkins/Skins"/(addon+".lua"),look)

@@ -32,3 +32,21 @@ A complete correction requires a verified source-owned role marker or a supporte
 The existing test now stresses 2,000 alternating theme changes. Hosted five-trial benchmarks retain the original/previous/current distinction; current runtime equals the previous optimization. There is no corrected column to report. Tests cannot establish actual client rendering, taint safety or FPS.
 
 Keep #97 draft. Do not merge or issue this build as a fixed test ZIP. Revisit the boundary with the reviewed source or an explicitly agreed scoped integration point.
+
+## Authoritative reviewed-version lookup and measurements
+
+The paginated official history URLs returned HTTP 403 from Actions. The accessible official frontend API and CFWidget numeric-project metadata did not identify a 1.1.1 file. This is a retrieval limitation, not evidence that the old archive no longer exists. There is no verified 1.1.1 TOC/source to substitute. The separate 1.3.0 archive's TOCs are checked explicitly and are not treated as a silent replacement.
+
+Reference run: https://github.com/oopsie-glitch/EUI-AddonSkins/actions/runs/45439449480 (five fresh Lua 5.4 states per treatment on Ubuntu 24.04; all timings are fixture CPU, not WoW).
+
+| Forever workload | Original main runtime | Previous #97 | Current #97 (runtime unchanged) |
+| --- | ---: | ---: | ---: |
+| 1,000 ordinary reopens | 23.718 ms | 22.959 ms | 22.490 ms |
+| 1,000 closed-window theme changes | 6.730 ms | 6.685 ms | 6.653 ms |
+| Retained after those changes | 203.688 KiB | 0.438 KiB | 0.438 KiB |
+| Another 1,000 changes: additional retained | 203.938 KiB | 0.438 KiB | 0.438 KiB |
+| 1,000 redraws after 2,000 changes | 539.651 ms | 22.959 ms | 22.614 ms |
+
+No additional UI object, hook or event counts are introduced. Existing prototype inventory remains five frame creations, 17 textures including native fixture textures, 17 hooks and one listener in the Forever scenario; Classic has its separate native-art path. Warm loops allocate no UI objects/hooks. These are modeled counts, not real WoW backend resources. Explicit theme events still repaint owned artwork and fonts; no idle polling was added.
+
+Current PR packaging/regressions and an isolated overlay onto exact main 82eb4fd pass, including ItemTree and all 47 catalog entries. The diagnostic's ownership matrix deliberately records the unresolved failure. A green workflow does not turn that failure into a runtime pass. No install ZIP is offered as a corrected build.

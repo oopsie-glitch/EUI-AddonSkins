@@ -11,7 +11,11 @@ def get(url):
  with urlopen(Request(url,headers={"User-Agent":"EUIAddonSkins-SourceAudit/1.0"}),timeout=30)as r:return r.read()
 data=get("https://edge.forgecdn.net/files/9780/878/HuntersFieldGuide-1.3.0.zip")
 assert sha256(data).hexdigest()=="caa507c63478c10140478e231694e9d79883213010dfdd5007dc59244cceb941"
-z=ZipFile(BytesIO(data));ui=z.read("HuntersFieldGuide/UI.lua").decode("utf-8-sig")
+z=ZipFile(BytesIO(data))
+toc_versions={name:re.findall(r"## Version:\s*([^\r\n]+)",z.read(name).decode("utf-8-sig"))for name in z.namelist()if name.endswith(".toc")}
+assert toc_versions and all(values==["1.3.0"]for values in toc_versions.values()),"Unexpected current-source TOC version"
+print("HFG_CURRENT_SOURCE_TOC",json.dumps(toc_versions))
+ui=z.read("HuntersFieldGuide/UI.lua").decode("utf-8-sig")
 # Verify actual source contracts without printing or redistributing the source.
 style=ui[ui.index("local function Style(fs, kind)"):ui.index("local function SubText")]
 assert "skin.styles[kind]"in style and "fs:SetFontObject(st.font)"in style and "fs:SetTextColor(st.color[1], st.color[2], st.color[3])"in style

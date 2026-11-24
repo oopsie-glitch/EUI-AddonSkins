@@ -244,7 +244,7 @@ end
 function CU:AttachAHButton()
     self:CreateUI()
     CheapUpgradesAHFrame=CheapUpgradesAHFrame or frame()
-    self.ahTabs={lib={GetButton=function(_,id) return self.tabs[id] end}}
+    self.ahTabs={lib={DoesIDExist=function(_,id)return self.tabs and self.tabs[id]~=nil end,GetButton=function(_,id) return self.tabs[id] end}}
     self.tabs=self.tabs or {CheapUpgrades_upgrades=frame('Button'),CheapUpgrades_alts=frame('Button')}
 end
 function CU:ShowUI() self:CreateUI();visible(CheapUpgradesFrame,true) end
@@ -272,6 +272,12 @@ assert(CheapUpgradesFrame==nil,'skin eagerly initialized the target')
 CU:ShowUI();CU:AttachAHButton();CU.Options:Open();CU.Options:AskSpec()
 assert(CheapUpgradesFrame.shell and CheapUpgradesAHFrame.panel)
 assert(CU.Options.window.shell and CU.Options.specAsk.shell)
+assert(CU.tabs.CheapUpgrades_upgrades.tab and CU.tabs.CheapUpgrades_alts.tab)
+local liveState=CU.ahTabs
+CheapUpgradesAHTab_upgrades=frame('Button')
+CU.ahTabs={lib={DoesIDExist=function()return false end,GetButton=function()error('uninitialized native tab library')end}}
+m.refresh();assert(CheapUpgradesAHTab_upgrades.tab)
+CU.ahTabs=liveState
 assert(CU.controls[1].button and CU.controls[2].input and CU.controls[4].dropdown)
 assert(CheapUpgradesFrame.CloseButton.closedArt)
 for _,c in ipairs(cells)do

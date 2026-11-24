@@ -135,7 +135,9 @@ local function DefineSkin()
                 local lib = type(state.lib) == "table" and state.lib
                 if not lib and LibStub then lib = LibStub("LibAHTab-1-0", true) end
                 for _, key in ipairs({"upgrades", "alts"}) do
-                    local tab = lib and lib.GetButton and lib:GetButton("CheapUpgrades_" .. key)
+                    local id = "CheapUpgrades_" .. key
+                    -- A newly loaded library may not have constructed its row yet.
+                    local tab = lib and lib.DoesIDExist and lib:DoesIDExist(id) and lib:GetButton(id)
                         or _G["CheapUpgradesAHTab_" .. key]
                     Tab(tab)
                 end

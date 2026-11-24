@@ -53,9 +53,11 @@ def inspect():
         for m in re.finditer(r'\b([\w.]+)\s*=\s*([\w.]+)(?:\s*\(|\s*(?:\n|,|;|$))',s):
             lhs,rhs=m.groups()
             if '.' in lhs or rhs.startswith(('Create','LFGF.Create')):assignments.append({'slot':lhs,'symbol':rhs,'line':s.count('\n',0,m.start())+1})
+        bindings=[{'slot':m.group(1),'callee':m.group(2),'line':s.count('\n',0,m.start())+1} for m in re.finditer(r'\b([\w.]+)\s*=\s*([\w.]+)\s*\(',s)]
+        varargs=re.findall(r'local\s+([\w, ]+)\s*=\s*\.\.\.',s)
         returns=[m.group(1).strip() for m in re.finditer(r'\breturn\s+([\w.]+(?:\s*,\s*[\w.]+)*)(?=\s*(?:\n|end|$))',s)]
         menu_apis=sorted(set(re.findall(r'\b(Menu\w*|Scroll\w*|Settings|LFGForever\w*)[.:]([A-Za-z_]\w*)',s)))
-        print('LFG_OWNERSHIP '+json.dumps({'path':path,'aliases':aliases,'constants':constants,'assignments':assignments,'returns':returns,'ui_api_symbols':menu_apis}))
+        print('LFG_OWNERSHIP '+json.dumps({'path':path,'aliases':aliases,'bindings':bindings,'varargs':varargs,'constants':constants,'assignments':assignments,'returns':returns,'ui_api_symbols':menu_apis}))
     for path in z.namelist():
         if path.endswith('.xml'):
             root=ET.fromstring(z.read(path))

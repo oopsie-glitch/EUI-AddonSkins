@@ -80,6 +80,7 @@ end
 local function fontString(text, r, g, b)
     local fs = {text = text, color = {r or 1, g or 1, b or 1}}
     function fs:GetObjectType() return 'FontString' end
+    function fs:GetFont() return 'native-font', 12, '' end
     function fs:GetText() return self.text end
     function fs:GetTextColor() return table.unpack(self.color) end
     function fs:SetTextColor(...) self.color = {...} end

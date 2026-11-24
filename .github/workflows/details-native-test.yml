@@ -285,17 +285,32 @@ jobs:
           path: /tmp/details-native-install/
           retention-days: 30
           if-no-files-found: error
+          overwrite: true
       - name: Verify uploaded bytes against the exact checkout
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
         run: |
-          gh api "repos/$GH_REPO/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/verified-native.zip
           python3 - <<'PY'
           from pathlib import Path
           from zipfile import ZipFile
           from hashlib import sha256
+          import os, subprocess, time
+          endpoint = "repos/{}/actions/artifacts/{}/zip".format(os.environ["GH_REPO"], os.environ["ARTIFACT_ID"])
+          # A just-finalized artifact can briefly return 404. Retry only
+          # transient availability/server failures; preserve every byte check.
+          for attempt in range(5):
+              result = subprocess.run(["gh", "api", endpoint], capture_output=True)
+              if result.returncode == 0:
+                  Path('/tmp/verified-native.zip').write_bytes(result.stdout)
+                  break
+              error = result.stderr.decode(errors="replace")
+              transient = any(code in error for code in ("HTTP 404", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504"))
+              if not transient or attempt == 4:
+                  raise RuntimeError("Artifact download failed: " + error)
+              print("Artifact not yet available; bounded retry", attempt + 1, flush=True)
+              time.sleep(min(2 ** attempt, 8))
           with ZipFile('/tmp/verified-native.zip') as actual, ZipFile('EUIAddonSkins.zip') as expected:
               assert actual.testzip() is None
               assert sorted(actual.namelist()) == sorted(expected.namelist())

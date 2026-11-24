@@ -21,6 +21,8 @@ jobs:
           sudo apt-get install -y liblua5.4-0
       - name: Complete regressions and package validation
         run: python3 scripts/package.py
+      - name: Five-trial native-control and PR baseline audit
+        run: python3 benchmarks/run_lfgforever.py
       - name: Prepare installable artifact
         run: |
           python3 - <<'PY'

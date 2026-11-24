@@ -25,6 +25,7 @@ ns.skinCatalog = {
     {id = "HandyNotes", label = "HandyNotes", targets = {"HandyNotes"}},
     {id = "HekiLight", label = "HekiLight", targets = {"HekiLight"}},
     {id = "HomeBound", label = "Home Bound", targets = {"HomeBound"}},
+    {id = "HuntersFieldGuide", label = "Hunter's Field Guide", targets = {"HuntersFieldGuide"}},
     {id = "ItemRack", label = "ItemRack", targets = {"ItemRack", "ItemRackOptions"}},
     {id = "KiwiFarm", label = "KiwiFarm", targets = {"KiwiFarm"}},
     {id = "LiteMount", label = "LiteMount", targets = {"LiteMount"}},

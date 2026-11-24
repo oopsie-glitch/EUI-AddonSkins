@@ -27,6 +27,7 @@ EllesmereUI skins for World of Warcraft addons.
 - HandyNotes
 - HekiLight
 - Home Bound
+- Hunter's Field Guide (WoW Forever)
 - ItemRack
 - KiwiFarm
 - LiteMount

@@ -26,3 +26,11 @@ for n in z.namelist():
   if "SetTextColor"in line or "CreateFontString"in line or ("styles["in line and "="in line):
    colors.append({"line":i+1,"receiver":re.findall(r"([\w.]+):(?:SetTextColor|CreateFontString)",line),"styleKeys":re.findall(r"(?:styles|style)\[([^\]]+)\]",line),"assignedFields":re.findall(r"([\w.]+)\s*=",line),"calls":re.findall(r"[:.]([\w]+)\(",line)})
  print("HFG_SOURCE_SYMBOLS",json.dumps({"file":n,"functions":symbols,"colorSites":colors}))
+
+t=z.read("HuntersFieldGuide/UI.lua").decode("utf-8-sig")
+lines=t.splitlines()
+for name,start,stop in (("Text",42,50),("Style",63,72)):
+ body="\n".join(lines[start:stop])
+ print("HFG_COLOR_DATAFLOW",json.dumps({"function":name,"assignments":[{"target":m.group(1),"valueIdentifiers":re.findall(r"[A-Za-z_][A-Za-z_0-9.]*",m.group(2)),"literals":re.findall(r'["\']([^"\']+)["\']',m.group(2))}for m in re.finditer(r"([\w.]+)\s*=\s*([^\n]+)",body)],"methodCalls":[{"receiver":m.group(1),"method":m.group(2),"arguments":m.group(3)}for m in re.finditer(r"(\w+):(\w+)\(([^)]*)\)",body)]}))
+print("HFG_STYLE_EXPORTS",json.dumps(re.findall(r'(\b\w+\.\w+)\s*=\s*(Style|Text)\b',t)))
+print("HFG_FONTSTRING_TAGS",json.dumps(sorted(set(re.findall(r"\bfs\.(\w+)\s*=",t)))))

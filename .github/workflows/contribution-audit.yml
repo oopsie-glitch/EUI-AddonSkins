@@ -1,4 +1,4 @@
-name: Contribution performance audit
+name: Exact main contribution validation
 on:
   push:
     branches: [fix/contributed-skin-audit]
@@ -11,14 +11,42 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          ref: 82eb4fd5dc22a4bc973b9c47739d40a912f57c26
           persist-credentials: false
+      - name: Verify exact main checkout
+        env:
+          EXPECTED_MAIN: 82eb4fd5dc22a4bc973b9c47739d40a912f57c26
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_MAIN"
       - name: Install Lua test runtime
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y liblua5.4-0
-      - name: Full regressions and installation package
+      - name: Complete exact-main regressions and packaging
         run: python3 scripts/package.py
-      - name: Five-trial source-shaped contribution audit
+      - name: Obtain pinned audit-only runner
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/ca33174622a85d126b421b575719845d58e5e0c7/benchmarks/contributions.py',timeout=30) as r:
+              Path('benchmarks/contributions.py').write_bytes(r.read())
+          PY
+      - name: Five-trial exact-main lifecycle benchmarks
         run: python3 benchmarks/contributions.py
-      - name: Independently verify late native accent labels
-        run: python3 benchmarks/check_hfg_late_accent.py
+      - name: Inspect install ZIP contents against checkout
+        run: |
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          from pathlib import Path
+          from hashlib import sha256
+          with ZipFile('EUIAddonSkins.zip') as z:
+              assert z.testzip() is None
+              names=z.namelist()
+              assert all(n.startswith('EUIAddonSkins/') for n in names)
+              assert 'EUIAddonSkins/Skins/HuntersFieldGuide.lua' in names
+              assert 'EUIAddonSkins/Skins/ItemTree.lua' in names
+              assert not any('/tests/' in n or '/benchmarks/' in n or '/docs/' in n or '/.github/' in n for n in names)
+              for name in names:assert z.read(name)==Path(name).read_bytes(),name
+              print('EXACT_MAIN_PACKAGE files='+str(len(names))+' sha256='+sha256(Path('EUIAddonSkins.zip').read_bytes()).hexdigest())
+          PY

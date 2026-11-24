@@ -37,9 +37,10 @@ local report={}
 local function take()
     local t={};for _,k in ipairs(counters)do t[k]=stats[k]or 0 end;return t
 end
-local function emit(name,n,ms,alloc,ret,before)
+local function emit(name,n,ms,alloc,ret,before,after)
+    local metrics=after or stats
     local v={name,tostring(n),string.format("%.6f",ms),string.format("%.6f",alloc),string.format("%.6f",ret)}
-    for _,k in ipairs(counters)do v[#v+1]=k.."="..tostring((stats[k]or 0)-(before[k]or 0))end
+    for _,k in ipairs(counters)do v[#v+1]=k.."="..tostring((metrics[k]or 0)-(before[k]or 0))end
     report[#report+1]=table.concat(v,"\t")
 end
 local function measure(name,n,fn)
@@ -52,7 +53,7 @@ local function measure(name,n,fn)
     collectgarbage("restart");collectgarbage("collect")
     emit(name,n,elapsed,allocated,collectgarbage("count")-heap,before)
 end
-emit("definition_registration",1,registrationMS or 0,registrationKiB or 0,0,registrationStats or take())
+emit("definition_registration",1,registrationMS or 0,registrationKiB or 0,registrationRetained or 0,registrationStats or {},registrationAfter or {})
 measure("skin_activation",1,function()if mode~="native"then installed.install(S,module)end end)
 measure("first_open",1,function()LFGForever_ToggleWindow()end)
 local r=LFGForeverFrame;local p=r.Content.FilterPanel

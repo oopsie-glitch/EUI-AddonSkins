@@ -45,7 +45,7 @@ def run():
         'local popup=self.pool or frame("Frame");self.pool=popup;popup.openOwner=owner')
     begin=prefix.index('assert(loadfile("EUIAddonSkins/Skins/LFGForever.lua"))')
     end=prefix.index('local function build()',begin)
-    registration='''local registrationMS,registrationKiB,registrationStats=0,0,{}
+    registration='''local registrationMS,registrationKiB,registrationRetained,registrationStats,registrationAfter=0,0,0,{},{}
 if os.getenv("LFG_AUDIT_MODE")~="native"then
     for k,v in pairs(stats)do registrationStats[k]=v end
     collectgarbage("collect");local heap=collectgarbage("count");collectgarbage("stop")
@@ -53,7 +53,9 @@ if os.getenv("LFG_AUDIT_MODE")~="native"then
     assert(loadfile(ADAPTER_PATH))("EUIAddonSkins",ns)
     assert(definition and not installed);definition();assert(not installed.available())
     registrationMS=(os.clock()-started)*1000;registrationKiB=collectgarbage("count")-heap
-    collectgarbage("restart")
+    collectgarbage("restart");collectgarbage("collect")
+    registrationRetained=collectgarbage("count")-heap
+    for k,v in pairs(stats)do registrationAfter[k]=v end
 end
 '''
     prefix=prefix[:begin]+registration+prefix[end:]

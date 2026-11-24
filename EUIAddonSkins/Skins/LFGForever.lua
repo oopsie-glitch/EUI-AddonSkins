@@ -73,16 +73,22 @@ local function DefineSkin()
                     if not before[child] and H.Allowed(child) and child:GetObjectType() == "Frame" then art[#art + 1] = child end
                 end
             end
-            -- Only the newly added cosmetic box changes size, never the button.
+            -- Only reanchor artwork when its native control geometry changes.
             local size = math.min(14, f:GetWidth(), f:GetHeight())
-            for _, r in ipairs(art) do r:ClearAllPoints(); r:SetPoint("CENTER", f, "CENTER"); r:SetSize(size, size) end
+            local resized = art.size ~= size
+            art.size = size
+            if resized then
+                for _, r in ipairs(art) do r:ClearAllPoints(); r:SetPoint("CENTER", f, "CENTER"); r:SetSize(size, size) end
+            end
             for _, getter in ipairs({"GetCheckedTexture", "GetDisabledCheckedTexture"}) do
                 local mark = f[getter] and H.Texture(f[getter](f))
                 if mark then
                     if getter == "GetCheckedTexture" then
                         mark:SetVertexColor(1, 1, 1, 1); mark:SetColorTexture(S.GetAccentColor())
                     end
-                    mark:ClearAllPoints(); mark:SetPoint("CENTER", f, "CENTER"); mark:SetSize(size - 4, size - 4)
+                    if resized then
+                        mark:ClearAllPoints(); mark:SetPoint("CENTER", f, "CENTER"); mark:SetSize(size - 4, size - 4)
+                    end
                 end
             end
             if icon then icon:SetAlpha(alpha) end
@@ -96,8 +102,12 @@ local function DefineSkin()
             for _, texture in ipairs(entry.chrome) do Fade(texture) end
             local r, g, b
             if ns.AccentBarColor then r, g, b = ns.AccentBarColor(S) else r, g, b = S.GetAccentColor() end
-            entry.bar:SetColorTexture(r, g, b, 1)
-            entry.bar:SetShown(entry.selected and (not ns.AccentBarShown or ns.AccentBarShown()))
+            if r ~= entry.r or g ~= entry.g or b ~= entry.b then
+                entry.r, entry.g, entry.b = r, g, b
+                entry.bar:SetColorTexture(r, g, b, 1)
+            end
+            local shown = not not (entry.selected and (not ns.AccentBarShown or ns.AccentBarShown()))
+            if entry.shown ~= shown then entry.bar:SetShown(shown); entry.shown = shown end
         end
         local function Side(f)
             local entry = sideTabs[f]
@@ -121,7 +131,10 @@ local function DefineSkin()
 
         local Walk
         local function Row(f)
-            if Ready() and Owned(f) then Walk(f, true) end
+            if not Ready() then return end
+            -- Reuse the existing deferred-refresh flag; retain no hidden rows.
+            if root and not root:IsShown() then pending = true; return end
+            Walk(f, true)
         end
         local function List(box)
             if not H.Allowed(box) or not box.GetView then return end
@@ -135,7 +148,8 @@ local function DefineSkin()
         end
         Walk = function(f, dynamic, depth)
             depth = depth or 0
-            if depth > 18 or not H.Allowed(f) or not Owned(f) then return end
+            if depth > 18 or not H.Allowed(f) or depth == 0 and not Owned(f) then return end
+            -- GetChildren stays inside the already-verified owned subtree.
             local kind = f:GetObjectType()
             if kind == "GameTooltip" or kind == "ModelScene" or kind == "PlayerModel" then return end
             -- Stars own their earned/unearned art, hover preview and rating input.
@@ -225,17 +239,10 @@ local function DefineSkin()
             Font(content.TitleContainer and content.TitleContainer.TitleText or content.TitleText, true)
             if filter and not navigation[filter] then
                 navigation[filter] = true
-                H.Hook(filter, "SetTab", function()
-                    if not Ready() then return end
-                    for _, key in ipairs({"WhisperLog", "PlayerRatings"}) do
-                        local panel = filter[key]
-                        if panel and panel:IsShown() then Walk(panel, true) end
-                    end
-                end)
                 for _, key in ipairs({"WhisperLog", "PlayerRatings"}) do
                     local panel = filter[key]
                     if panel then
-                        H.Script(panel, "OnShow", function() if Ready() then Walk(panel, true) end end)
+                        H.Script(panel, "OnShow", function() if Ready() then Walk(panel) end end)
                     end
                 end
             end
@@ -244,7 +251,8 @@ local function DefineSkin()
             end
         end
         Apply = function()
-            if applying or not Ready() or not H.Allowed(root) then return end
+            if applying or not Ready() or not H.Allowed(root) or not root:IsShown() then return end
+            if pending then pending = false; generation = generation + 1 end
             applying = true; H.Safe(Paint); applying = false
         end
         Discover = function()

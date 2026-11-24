@@ -44,7 +44,7 @@ local function frame(kind,parent)
     function f:GetObjectType()return self.kind end
     function f:IsProtected()return self.protected end
     function f:IsForbidden()return false end
-    function f:GetParent()return self.parent end
+    function f:GetParent()stats.parents=(stats.parents or 0)+1;return self.parent end
     function f:GetChildren()stats.reads=stats.reads+1;return table.unpack(self.children)end
     function f:GetRegions()stats.reads=stats.reads+1;return table.unpack(self.regions)end
     function f:GetFrameLevel()return 1 end
@@ -212,6 +212,32 @@ for _,box in ipairs(boxes)do
 end
 local callbacks=0;for _,box in ipairs(boxes)do for _ in pairs(box:GetView().callbacks)do callbacks=callbacks+1 end end
 assert(callbacks==3)
+-- Audit regressions: inactive pages must not become traversal triggers.
+local pageReads=stats.reads
+p.WhisperLog.scripts.OnShow(p.WhisperLog)
+p.PlayerRatings.scripts.OnShow(p.PlayerRatings)
+assert(stats.reads==pageReads,"warm page show rescanned initialized rows")
+r:Hide()
+local hiddenReads,hiddenFonts=stats.reads,stats.fonts
+module.refresh()
+assert(stats.reads==hiddenReads and stats.fonts==hiddenFonts,"hidden theme refresh traversed window")
+local hidden=frame("Button",boxes[1]);hidden.Text=label(hidden);boxes[1].rows[#boxes[1].rows+1]=hidden
+boxes[1]:Initialize(hidden)
+assert(hidden.Text.path=="native" and stats.reads==hiddenReads,"hidden view notification performed cosmetic traversal")
+r:Show()
+assert(hidden.Text.path=="eui","deferred hidden row missed first show")
+local ancestry=stats.parents
+for _=1,100 do boxes[1]:Initialize(boxes[1].rows[1])end
+assert(stats.parents-ancestry<=500,"descendant ancestry was rechecked at every node")
+local foreignRow=frame("Button",frame());foreignRow.Text=label(foreignRow)
+boxes[1]:Initialize(foreignRow);assert(foreignRow.Text.path=="native","foreign callback bypassed ownership boundary")
+local sideBar=r.side.regions[#r.side.regions]
+local sideColor=sideBar.color;r.side:SetChecked(true)
+assert(sideBar.color==sideColor,"unchanged side state rewrote accent color")
+local markPoint=p.check.Checked.point
+local platePoint=p.check.checkArt.point
+for _,fn in ipairs(looks)do fn()end
+assert(p.check.Checked.point==markPoint and p.check.checkArt.point==platePoint,"theme reanchored unchanged checkbox artwork")
 local fcount,tcount,hcount,wcount,ccount=stats.frames,stats.textures,stats.hooks,stats.fonts,stats.colors
 collectgarbage("collect");collectgarbage("stop");local warmHeap=collectgarbage("count")
 local warmStart=os.clock()

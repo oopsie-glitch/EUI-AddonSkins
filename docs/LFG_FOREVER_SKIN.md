@@ -6,7 +6,7 @@ Included in v1.6.8 following maintainer visual and functional approval. The perf
 
 Verified source: https://github.com/Book-of-Medivh/LFGForever/releases/download/v2026.11.24.04.49/LFGForever-2.6.0-forever.zip
 
-This archive is byte-identical by SHA256 to the original supplied GitHub attachment, which subsequently became unavailable.
+This archive is byte-identical by SHA256 to the original supplied GitHub attachment, which subsequently became unavailable. The maintainer supplied a renewed attachment for final verification: https://github.com/user-attachments/files/35402459/LFGForever.zip.
 
 - LFG Forever 2.6.0, Interface 16001.
 - Archive SHA256: 68529acce2de99476226522242daacd9d277ffecd5b1a8b2d9c12c99febe6a6e.

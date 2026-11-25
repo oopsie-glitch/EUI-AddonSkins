@@ -1,6 +1,9 @@
 """Run selected approved read-only source/regression steps on the combined tree."""
 from pathlib import Path
 import os,subprocess,sys
+from urllib.request import Request,urlopen
+from io import BytesIO
+from hashlib import sha256
 def step(path,name):
  lines=Path(path).read_text().splitlines()
  marker="      - name: "+name
@@ -16,8 +19,31 @@ def step(path,name):
  assert out,name
  print("APPROVED_SOURCE_STEP",name,flush=True)
  subprocess.run(["bash","-e","-c","\n".join(out)],check=True)
-subprocess.run([sys.executable,"scripts/check_lfgforever_source.py"],check=True)
-subprocess.run([sys.executable,"scripts/inspect_cheapupgrades.py"],check=True)
+errors=[]
+def required(name,fn):
+ try:fn()
+ except Exception as error:
+  errors.append((name,str(error)))
+  print("REQUIRED_CHECK_BLOCKED",name,type(error).__name__,str(error),flush=True)
+def lfg_source():
+ import inspect_lfgforever,check_lfgforever_source
+ attempts=[inspect_lfgforever.URL,inspect_lfgforever.URL+"?download=1",inspect_lfgforever.URL+"?raw=true"]
+ failures=[]
+ for url in attempts:
+  try:
+   with urlopen(Request(url,headers={"User-Agent":"Mozilla/5.0","Accept":"application/octet-stream"}),timeout=45)as response:data=response.read(20*1024*1024+1)
+   assert sha256(data).hexdigest()==inspect_lfgforever.SHA,"Different source archive"
+   print("LFG_EXACT_ARCHIVE_ACCESS",url,"SHA256 verified",flush=True)
+   original=inspect_lfgforever.urlopen
+   try:
+    inspect_lfgforever.urlopen=lambda *args,**kwargs:BytesIO(data)
+    check_lfgforever_source.check()
+   finally:inspect_lfgforever.urlopen=original
+   return
+  except Exception as error:failures.append(url+": "+str(error))
+ raise RuntimeError("; ".join(failures))
+required("LFG Forever authoritative source",lfg_source)
+required("Cheap Upgrades authoritative source",lambda:subprocess.run([sys.executable,"scripts/inspect_cheapupgrades.py"],check=True))
 step(".github/workflows/font-height-test.yml","Fetch pinned public EUI font implementation")
 engine=Path("/tmp/eui-font-source/EllesmereUIBlizzardSkin_WindowEngine.lua")
 Path("/tmp/lfg-eui-engine.lua").write_bytes(engine.read_bytes())
@@ -28,7 +54,8 @@ for name in ("Reproduce reload reset against the exact prior head","Verify regre
 step(".github/workflows/font-height-test.yml","Prove published runtime fails and compare valid-font workloads")
 os.environ["LFG_AUDIT_BASE"]="d91722e0190fa0f365be3553e075affee5d8ff50"
 subprocess.run([sys.executable,"benchmarks/run_lfgforever.py"],check=True)
-subprocess.run([sys.executable,"scripts/verify_cheapupgrades.py"],check=True)
+required("Cheap Upgrades source isolation benchmark",lambda:subprocess.run([sys.executable,"scripts/verify_cheapupgrades.py"],check=True))
 subprocess.run([sys.executable,"scripts/package.py"],check=True)
 subprocess.run([sys.executable,"scripts/check_release_1_6_8.py"],check=True)
+assert not errors,"Required checks remain blocked: "+repr(errors)
 print("Combined source, persistence, secret-value, ownership, performance and exact package checks: PASS")

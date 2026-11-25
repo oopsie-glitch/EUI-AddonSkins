@@ -106,5 +106,10 @@
     "EUIAddonSkins/Media/DetailsNative/undo.tga": "4600b0b4f808eff5eafdbd32e29098959e986184",
     "EUIAddonSkins/Skins/LFGForever.lua": "98a151b3ccbfefd446b97067da9915d222aef1f8",
     "EUIAddonSkins/Skins/CheapUpgrades.lua": "cafdce126d9fcbb04fe2952c2c23e73dde8d4f44"
+  },
+  "lfg_source": {
+    "version": "2.6.0",
+    "url": "https://github.com/Book-of-Medivh/LFGForever/releases/download/v2026.11.24.04.49/LFGForever-2.6.0-forever.zip",
+    "sha256": "68529acce2de99476226522242daacd9d277ffecd5b1a8b2d9c12c99febe6a6e"
   }
 }

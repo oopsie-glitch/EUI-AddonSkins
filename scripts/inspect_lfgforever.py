@@ -5,7 +5,7 @@ from io import BytesIO
 from hashlib import sha256
 from pathlib import PurePosixPath
 import json,re,xml.etree.ElementTree as ET
-URL='https://github.com/user-attachments/files/35335139/LFGForever.zip'
+URL='https://github.com/Book-of-Medivh/LFGForever/releases/download/v2026.11.24.04.49/LFGForever-2.6.0-forever.zip'
 SHA='68529acce2de99476226522242daacd9d277ffecd5b1a8b2d9c12c99febe6a6e'
 def archive():
     with urlopen(URL,timeout=60) as r:data=r.read(20*1024*1024+1)

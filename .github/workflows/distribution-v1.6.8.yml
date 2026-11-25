@@ -1,0 +1,34 @@
+name: Verify v1.6.8 public distribution
+on:
+  push:
+    branches: [ops/distribution-v1.6.8]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 0e388c8fc9fd635d5ec50d2a78d83a843005b7fd
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: ops
+          persist-credentials: false
+      - name: Verify published GitHub asset as distribution baseline
+        run: |
+          python3 - <<'PY'
+          from urllib.request import urlopen
+          from pathlib import Path
+          from zipfile import ZipFile
+          data=urlopen('https://github.com/oopsie-glitch/EUI-AddonSkins/releases/download/v1.6.8/EUIAddonSkins-1.6.8.zip',timeout=90).read()
+          Path('EUIAddonSkins-1.6.8.zip').write_bytes(data)
+          with ZipFile('EUIAddonSkins-1.6.8.zip') as z:
+              assert z.testzip() is None
+              for name in z.namelist():assert z.read(name)==Path(name).read_bytes(),name
+              print('Public GitHub installation archive verified:',len(z.namelist()),'runtime files')
+          PY
+      - name: Inspect public CurseForge processing and package availability
+        run: python3 ops/scripts/check_distribution_1_6_8.py

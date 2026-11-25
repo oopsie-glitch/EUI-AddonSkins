@@ -24,6 +24,8 @@ jobs:
         run: python3 scripts/inspect_hfg_text_roles.py
       - name: Verify actual source ownership contracts and known failing cases
         run: python3 scripts/check_hfg_accent_ownership.py
+      - name: Test source-owned structures and role-font alternative boundaries
+        run: python3 scripts/check_hfg_source_roles.py
       - name: Five-trial baseline and prior-prototype performance review
         run: python3 benchmarks/contributions.py
       - name: Checkout exact current main for combined compatibility

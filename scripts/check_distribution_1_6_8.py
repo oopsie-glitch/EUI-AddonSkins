@@ -6,11 +6,11 @@ from io import BytesIO
 from zipfile import ZipFile
 from pathlib import Path
 import json,re
-slugs=("eui-addonskins","eui-addon-skins","eui-addon-skins-ellesmereui","ellesmereui-addonskins")
+slugs=("1737903",)
 def get(url):
  with urlopen(Request(url,headers={"User-Agent":"Mozilla/5.0","Accept":"application/json"}),timeout=25)as r:return r.read()
 def probe(slug):
- url="https://api.cfwidget.com/wow/addons/"+slug
+ url="https://api.cfwidget.com/"+slug if slug.isdigit() else "https://api.cfwidget.com/wow/addons/"+slug
  try:
   data=json.loads(get(url))
   return slug,data,None

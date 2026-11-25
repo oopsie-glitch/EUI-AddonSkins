@@ -1,0 +1,65 @@
+name: Publish authorized v1.6.8
+on:
+  push:
+    branches: [ops/publish-v1.6.8]
+permissions:
+  contents: read
+concurrency:
+  group: publish-authorized-v1.6.8
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.package.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 0e388c8fc9fd635d5ec50d2a78d83a843005b7fd
+          persist-credentials: false
+      - name: Install Lua runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Verify exact merged installation package
+        run: |
+          python3 scripts/package.py
+          python3 scripts/check_release_1_6_8.py
+      - name: Transfer verified release ZIP
+        id: package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authorized-v1.6.8-0e388c8fc9fd635d5ec50d2a78d83a843005b7fd
+          path: EUIAddonSkins-1.6.8.zip
+          if-no-files-found: error
+          retention-days: 14
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: 0e388c8fc9fd635d5ec50d2a78d83a843005b7fd
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: ops
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          path: .
+          merge-multiple: true
+      - name: Publish only the verified authorized release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_MAIN: 0e388c8fc9fd635d5ec50d2a78d83a843005b7fd
+          EXPECTED_CANDIDATE: 9aafe2c4344c5259ac2cbab51ec6df5af8cb8ff7
+          EXPECTED_TREE: 874de429fd2076df707fabd4ec2acb72aade1af4
+        run: python3 ops/scripts/publish_authorized_1_6_8.py

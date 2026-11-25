@@ -24,7 +24,7 @@ end, function(S, module)
         local api = _G.AuctionHouseFrame and raw or soft
         if api.SquareIcon then return api.SquareIcon(icon, owner, quality) end
     end
-    local rows, squares, squaring, zones, money, centered, glyphs, labels, darkTabs, chained = {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
+    local rows, squares, squaring, zones, money, centered, glyphs, labels, darkTabs = {}, {}, {}, {}, {}, {}, {}, {}, {}
     local coppers, cleared, rowWidths, aligned, widgets, refreshes, stripAt = {}, {}, {}, {}, {}, {}, {}
     local scanned, refreshHosts, radioLabels = {}, {}, {}
     local zoneHost, zoneAlpha
@@ -695,7 +695,6 @@ end, function(S, module)
         local host, container = _G.AuctionHouseFrame, _G.AuctionatorAHTabsContainer
         if not (Modern() and container and type(container.Tabs) == "table") then return end
         H.Hook(host, "SetDisplayMode", refresh)
-        local previous = host.Tabs and host.Tabs[#host.Tabs]
         local active = false
         for _, tab in ipairs(container.Tabs) do
             if H.Allowed(tab) then
@@ -703,14 +702,9 @@ end, function(S, module)
                 local visible = view and view.IsShown and view:IsShown() or false
                 active = active or visible
                 H.Tab(tab, visible)
-                if not chained[tab] and previous then
-                    chained[tab] = true
-                    -- One physical pixel apart and 2px shorter, as EUI's own tab rows.
-                    if tab.SetHitRectInsets then tab:SetHitRectInsets(0, 0, 0, 0) end
-                    local height = tab:GetHeight(); if height and height > 2 then tab:SetHeight(height - 2) end
-                    tab:ClearAllPoints(); tab:SetPoint("LEFT", previous, "RIGHT", Pixel(tab), 0)
-                end
-                previous = tab
+                -- LibAHTab owns the complete ordered row, including other addons.
+                -- Preserve its anchors, dimensions and hit rectangle; styling
+                -- Auctionator's subset must not bypass tabs inserted before it.
                 H.Script(tab, "OnClick", refresh)
                 if view then H.Script(view, "OnShow", refresh); H.Script(view, "OnHide", refresh) end
             end

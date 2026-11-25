@@ -22,6 +22,7 @@ end
 local function texture(kind)
     local t = {kind = kind or 'Texture', alpha = 1, path = 'Interface/Icons/test'}
     function t:GetObjectType() return self.kind end
+    function t:GetFont() return 'native-font', 12, '' end
     function t:GetAlpha() return self.alpha end
     function t:SetAlpha(a) self.alpha = a end
     function t:GetTexture() return self.path end

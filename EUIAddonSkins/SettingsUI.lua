@@ -551,7 +551,7 @@ local function Toggle(key, label, description, get, set)
 end
 ns.RegisterSettingsProvider("Details", {label="Details!", options={
     Toggle("menus", "Skin menus and options", "Styles Details! dialogs and dropdowns. Reload after changing.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
-    Toggle("meter", "Match EUI meter appearance", "Matches fonts, bars and spacing. Turning it off restores the captured appearance.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
+    Toggle("meter", "Legacy Details! Styling", "Older automatic meter styling. Select the native Addonskins EUI skin separately in Details! > Options > Skins > Skin Selection.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
     Toggle("tiny", "Style Tiny Threat", "Styles Tiny Threat independently of other Details! meters.", ns.ReadDetailsSetting, ns.SetDetailsSetting),
 }})
 ns.RegisterSettingsProvider("RXPGuides", {label="RestedXP", options={

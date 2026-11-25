@@ -80,6 +80,7 @@ end
 local function fontString(text, r, g, b)
     local fs = {text = text, color = {r or 1, g or 1, b or 1}}
     function fs:GetObjectType() return 'FontString' end
+    function fs:GetFont() return 'native-font', 12, '' end
     function fs:GetText() return self.text end
     function fs:GetTextColor() return table.unpack(self.color) end
     function fs:SetTextColor(...) self.color = {...} end
@@ -220,6 +221,14 @@ for _, view in ipairs({shopping, selling}) do
     table.insert(AuctionatorAHTabsContainer.Tabs, tab)
 end
 local shoppingTab, sellingTab = table.unpack(AuctionatorAHTabsContainer.Tabs)
+-- Native anchors can include third-party tabs not owned by Auctionator.
+local upgradesTab, altsTab = frame('Button', host), frame('Button', host)
+upgradesTab:SetPoint('TOPLEFT', host.Tabs[3], 'TOPRIGHT', 3, 0)
+altsTab:SetPoint('TOPLEFT', upgradesTab, 'TOPRIGHT', 3, 0)
+shoppingTab:SetPoint('TOPLEFT', altsTab, 'TOPRIGHT', 3, 0)
+sellingTab:SetPoint('TOPLEFT', shoppingTab, 'TOPRIGHT', 3, 0)
+shoppingTab:SetHitRectInsets(2, 2, 0, 0)
+sellingTab:SetHitRectInsets(2, 2, 0, 0)
 selling.BagInset = frame('Frame', selling); selling.HistoricalPriceInset = frame('Frame', selling)
 local spinner = selling.HistoricalPriceInset:CreateTexture(nil, 'OVERLAY')
 local sale = frame('Frame', selling); selling.SaleItemFrame = sale
@@ -384,9 +393,9 @@ assert(existingProfession.Total.text:find('|Tcoin:0|t', 1, true) and existingPro
 assert(existingProfession.points == originalProfessionPoints and not existingProfession.shell)
 assert(not professionHost.shell and not nativeRecipe.button, 'walked or shelled the native profession host')
 -- Tabs: styled, chained a physical pixel after Blizzard's last tab, Blizzard row left alone.
-assert(shoppingTab.tab and sellingTab.tab and shoppingTab.h == 22)
-assert(shoppingTab.points[1][2] == host.Tabs[3] and shoppingTab.points[1][4] == 0.5)
-assert(sellingTab.points[1][2] == shoppingTab and shoppingTab.hit[1] == 0)
+assert(shoppingTab.tab and sellingTab.tab and shoppingTab.h == 24)
+assert(shoppingTab.points[1][2] == altsTab and shoppingTab.points[1][4] == 3)
+assert(sellingTab.points[1][2] == shoppingTab and shoppingTab.hit[1] == 2)
 assert(shoppingTab.selected == false and host.Tabs[1].selected == nil and zone.alpha == 1)
 -- Opening an Auctionator tab: it reads active, Blizzard's row and EUI's seams step aside.
 selling.shown = true; host:SetDisplayMode({}); flush()
@@ -485,7 +494,7 @@ for _ = 1, 10 do modules.Auctionator.refresh(); flush() end
 assert(created == before, 'warm refresh created UI objects')
 assert(hookCount == hooksBefore, 'warm refresh duplicated secure hooks')
 assert(quantity.insetWrites == 1 and moneyInput.GoldBox.insetWrites == 1, 'warm refresh changed numeric layout repeatedly')
-assert(gold.h == 19 and moneyInput.CopperBox.w == 96 and shoppingTab.h == 22 and shopping.ExportButton.w == 106)
+assert(gold.h == 19 and moneyInput.CopperBox.w == 96 and shoppingTab.h == 24 and shopping.ExportButton.w == 106)
 assert(prices.points[1][4] == 10 and shopping.SearchOptions.points[1][5] == -6, 'warm refresh shifted again')
 -- A theme restrip must not remove loading art from the foreground.
 selling.shown = true; spinner:SetAlpha(0)

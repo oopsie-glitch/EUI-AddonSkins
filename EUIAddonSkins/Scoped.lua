@@ -8,6 +8,7 @@ function ns.RegisterScopedSkin(id, label, config)
         if config.preserveTextColors or config.font then
             local font, original = S.Font, S
             S = setmetatable({Font = function(text, r, g, b)
+                if text and text.GetFont and not ns.IsValidFontHeight(select(2, text:GetFont())) then return end
                 if config.font then return config.font(original, text, r, g, b) end
                 if r == nil and text.GetTextColor then
                     local cr, cg, cb, ca = text:GetTextColor()
@@ -96,8 +97,10 @@ function ns.RegisterScopedSkin(id, label, config)
             if kind == "EditBox" and f.IsMultiLine and f:IsMultiLine() then
                 if f.SetFont and S.GetFont then
                     local _, size = f:GetFont()
-                    local font, flags = S.GetFont()
-                    f:SetFont(font, size or 12, flags or "")
+                    if ns.IsValidFontHeight(size) then
+                        local font, flags = S.GetFont()
+                        f:SetFont(font, size, flags or "")
+                    end
                 end
                 H.Script(f, "OnShow", refresh)
                 return true

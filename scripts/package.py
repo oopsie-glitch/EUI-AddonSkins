@@ -52,6 +52,20 @@ for name in ('RestedXPRouteFlag', 'RestedXPQuestAccept', 'RestedXPQuestTurnIn', 
     assert data[17] & 0x0f == 8
     assert len(data) >= 18+32*32*4 and {0,255} <= set(data[21:18+32*32*4:4])
     files.append(icon)
+# Self-contained native Details toolbar media, with its own upstream MIT notice.
+details_media=addon/'Media/DetailsNative'
+for name in ('settings','undo','sheet','report','reset','open','close'):
+    icon=details_media/(name+'.tga')
+    data=icon.read_bytes()
+    assert data[2]==2 and data[12:18]==bytes((32,0,32,0,32,0x28))
+    assert len(data)==18+32*32*4
+    assert {0,255} <= set(data[21::4]), name
+    assert all(channel==255 for offset in (18,19,20) for channel in data[offset::4])
+    files.append(icon)
+notice=details_media/'LICENSE.txt'
+assert notice.read_bytes()==(root/'source/details-native-toolbar/LICENSE').read_bytes()
+assert b'Copyright (c) 2013-2023 Cole Bemis' in notice.read_bytes()
+files.append(notice)
 for flavor in ['Camelot','Mainline']:
     alias=addon/f'EUIAddonSkins_{flavor}.toc'
     assert alias.read_bytes()==toc.read_bytes(),f'Stale client manifest: {alias}'

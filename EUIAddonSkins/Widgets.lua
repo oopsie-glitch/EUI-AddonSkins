@@ -1,5 +1,12 @@
 local ADDON, ns = ...
 
+-- Native/inherited font heights can be unavailable while controls initialize.
+-- Inspect secrets before any numeric operation; leave invalid native state alone.
+function ns.IsValidFontHeight(size)
+    return not (issecretvalue and issecretvalue(size)) and type(size) == "number"
+        and size > 0 and size < math.huge
+end
+
 -- Own only the concrete font tuple of explicitly supplied FontStrings.
 -- A native font write while the override is active becomes the new restore point.
 function ns.CreateFontOverride()
@@ -8,9 +15,11 @@ function ns.CreateFontOverride()
         if not text or not text.GetFont or not text.SetFont then return end
         local state = states[text]
         if state and state.writing then return end
+        if issecretvalue and (issecretvalue(face) or issecretvalue(flags)) then return end
         if not state and not face then return end
         local path, size, currentFlags = text:GetFont()
-        if not path or not size then return end
+        if not ns.IsValidFontHeight(size)
+            or issecretvalue and (issecretvalue(path) or issecretvalue(currentFlags)) or not path then return end
         currentFlags = currentFlags or ""
         if not state then
             state = {}
@@ -26,6 +35,7 @@ function ns.CreateFontOverride()
         else
             face, size, flags = state.nativePath, state.nativeSize, state.nativeFlags
         end
+        if not ns.IsValidFontHeight(size) then return end
         if path ~= face or currentSize ~= size or currentFlags ~= flags then
             state.writing = true
             local applied = text:SetFont(face, size, flags)
@@ -116,7 +126,9 @@ function ns.CreateSkinHelper(S, module)
         end)
     end
     function H.Font(text, r, g, b)
-        if H.Allowed(text) and text:GetObjectType() == "FontString" then S.Font(text, r, g, b) end
+        if not H.Allowed(text) or text:GetObjectType() ~= "FontString" or not text.GetFont then return end
+        local _, size = text:GetFont()
+        if ns.IsValidFontHeight(size) then S.Font(text, r, g, b) end
     end
     function H.Texture(value)
         local kind = type(value)
@@ -216,7 +228,7 @@ function ns.CreateSkinHelper(S, module)
                     S.SquareIcon(icon, square and f or nil)
                 end
                 for _, region in ipairs(H.Regions(f)) do
-                    if region:GetObjectType() == "FontString" then S.Font(region) end
+                    if region:GetObjectType() == "FontString" then H.Font(region) end
                 end
                 if kind == "Button" or kind == "CheckButton" then
                     H.Script(f, "OnClick", refresh)

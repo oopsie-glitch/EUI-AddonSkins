@@ -1,0 +1,322 @@
+name: Native Details prototype verification
+on:
+  push:
+    branches: [skin/details-native-prototype]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: details-native-prototype
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install Lua runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0 python3-cairosvg python3-pil
+      - name: Verify tracked licensed toolbar media
+        run: python3 scripts/build_details_native_media.py
+      - name: Full regression and package verification
+        run: python3 scripts/package.py
+      - name: Pinned official Details source compatibility
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          root = Path('/tmp/details-native-source')
+          for sha in ('2efa4b10628e0e4a91c346138cf8325e81d0a43c', '4316feb434bcc9751455ae2c6435d93fc20f034f'):
+              folder = root / sha
+              folder.mkdir(parents=True)
+              for path in ('functions/skins.lua', 'frames/window_main.lua', 'frames/window_options2_sections.lua', 'classes/class_instance.lua', 'Details_Camelot.toc', 'Libs/DF/dropdown.lua', 'classes/include_instance.lua', 'functions/util.lua', 'Libs/DF/fw.lua', 'startup.lua', 'boot.lua', 'frames/window_designer/designer_objects.lua', 'Libs/DF/button.lua', 'functions/profiles.lua', 'functions/loaddata.lua', 'functions/savedata.lua', 'core/parser.lua'):
+                  with urlopen('https://raw.githubusercontent.com/Tercioo/Details-Damage-Meter/'+sha+'/'+path, timeout=30) as response:
+                      (folder / Path(path).name).write_bytes(response.read())
+          PY
+          for source in /tmp/details-native-source/*; do
+            DETAILS_NATIVE_SOURCE="$source" python3 tests/run_lua.py
+          done
+      - name: Reproduce reload reset against the exact prior head
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import subprocess, os, sys
+          target=Path('EUIAddonSkins/DetailsNative.lua')
+          fixed=target.read_bytes()
+          runner=Path('tests/run_lua.py').read_text()
+          start=runner.index('    for test in [')
+          end=runner.index(':\n',start)
+          runner=runner[:start]+"    for test in ['tests/details_native_persistence_spec.lua']"+runner[end:]
+          env=dict(os.environ,DETAILS_NATIVE_SOURCE='/tmp/details-native-source/2efa4b10628e0e4a91c346138cf8325e81d0a43c')
+          with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/309997d084cb4ce038174e2cea9b3510f77bab2b/EUIAddonSkins/DetailsNative.lua',timeout=30) as response:
+              previous=response.read()
+          try:
+              target.write_bytes(previous)
+              result=subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_PRIOR_DEFAULTS='1'),capture_output=True,text=True)
+              assert result.returncode!=0 and 'REPRO: reload registration lost native customization' in result.stderr,result.stdout+result.stderr
+              print('Confirmed exact prior head loses persisted customization through native startup/profile fallback',flush=True)
+              subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_PERSIST_BENCH='1',DETAILS_PRIOR_DEFAULTS='1'),check=True)
+          finally:
+              target.write_bytes(fixed)
+          subprocess.run([sys.executable,'-c',runner],env=env,check=True)
+          subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_PERSIST_BENCH='1'),check=True)
+          assert target.read_bytes()==fixed
+          PY
+      - name: Verify regression sensitivity against the reported runtime
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import subprocess, os, sys
+          target = Path('EUIAddonSkins/DetailsNative.lua')
+          fixed = target.read_bytes()
+          runner = Path('tests/run_lua.py').read_text()
+          first = runner.index('    for test in [')
+          last = runner.index(':\n', first)
+          runner = runner[:first] + "    for test in ['tests/details_native_spec.lua']" + runner[last:]
+          env = dict(os.environ, DETAILS_NATIVE_SOURCE='/tmp/details-native-source/2efa4b10628e0e4a91c346138cf8325e81d0a43c', DETAILS_REGISTRATION_REPRO='1')
+          with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/2e41e00153bc12960a8534fc04f971cf40d647f4/EUIAddonSkins/DetailsNative.lua', timeout=30) as response:
+              reported = response.read()
+          try:
+              target.write_bytes(reported)
+              result = subprocess.run([sys.executable, '-c', runner], env=env, capture_output=True, text=True)
+              assert result.returncode != 0 and 'REPRO: late instance GetSkin prevents prototype registration' in result.stderr, result.stdout + result.stderr
+              print('Confirmed: reported runtime fails after the actual native getter override, before registration')
+          finally:
+              target.write_bytes(fixed)
+          subprocess.run([sys.executable, '-c', runner], env=env, check=True)
+          assert target.read_bytes() == fixed
+          print('Confirmed: corrected runtime registers under the identical native source/load order')
+          PY
+      - name: Reproduce old title overlap and compare identical layout workloads
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import subprocess, os, sys
+          target=Path('EUIAddonSkins/DetailsNative.lua')
+          fixed=target.read_bytes()
+          runner=Path('tests/run_lua.py').read_text()
+          start=runner.index('    for test in [')
+          end=runner.index(':\n',start)
+          runner=runner[:start]+"    for test in ['tests/details_native_layout_spec.lua']"+runner[end:]
+          env=dict(os.environ,DETAILS_NATIVE_SOURCE='/tmp/details-native-source/2efa4b10628e0e4a91c346138cf8325e81d0a43c')
+          with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/9fb9708a5a27132aea39b62524060f9515c2b630/EUIAddonSkins/DetailsNative.lua',timeout=30) as response:
+              old=response.read()
+          try:
+              target.write_bytes(old)
+              result=subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_REPRO='1'),capture_output=True,text=True)
+              assert result.returncode!=0 and 'REPRO: title and native toolbar overlap' in result.stderr,result.stdout+result.stderr
+              print('Confirmed: old registered skin overlaps title and toolbar under native placement')
+              print('Before layout correction:',flush=True)
+              subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          finally:
+              target.write_bytes(fixed)
+          subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_REPRO='1'),check=True)
+          print('After layout correction:',flush=True)
+          subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          assert target.read_bytes()==fixed
+          PY
+      - name: Reproduce title default failure and measure exact prior baseline
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import subprocess, os, sys
+          target=Path('EUIAddonSkins/DetailsNative.lua')
+          fixed=target.read_bytes()
+          runner=Path('tests/run_lua.py').read_text()
+          start=runner.index('    for test in [')
+          end=runner.index(':\n',start)
+          color=runner[:start]+"    for test in ['tests/details_native_spec.lua']"+runner[end:]
+          bench=runner[:start]+"    for test in ['tests/details_native_layout_spec.lua']"+runner[end:]
+          source='/tmp/details-native-source/2efa4b10628e0e4a91c346138cf8325e81d0a43c'
+          env=dict(os.environ,DETAILS_NATIVE_SOURCE=source)
+          with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/01b74dc6c32e78032510c9fc6e47b05bf511f33c/EUIAddonSkins/DetailsNative.lua',timeout=30) as response:
+              old=response.read()
+          try:
+              target.write_bytes(old)
+              result=subprocess.run([sys.executable,'-c',color],env=dict(env,DETAILS_ACCENT_REPRO='1'),capture_output=True,text=True)
+              assert result.returncode!=0 and 'REPRO: native title default did not use the live EUI accent' in result.stderr,result.stdout+result.stderr
+              print('Confirmed: approved prior runtime imports the separate EDM yellow title preference',flush=True)
+              print('Before accent correction (01b74dc):',flush=True)
+              subprocess.run([sys.executable,'-c',bench],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          finally:
+              target.write_bytes(fixed)
+          subprocess.run([sys.executable,'-c',color],env=dict(env,DETAILS_ACCENT_REPRO='1'),check=True)
+          print('After accent correction:',flush=True)
+          subprocess.run([sys.executable,'-c',bench],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          assert target.read_bytes()==fixed
+          PY
+      - name: Reproduce optional-meter dependency against the approved prior runtime
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import subprocess,os,sys
+          target=Path('EUIAddonSkins/DetailsNative.lua')
+          fixed=target.read_bytes()
+          runner=Path('tests/run_lua.py').read_text()
+          start=runner.index('    for test in [')
+          end=runner.index(':\n',start)
+          spec=runner[:start]+"    for test in ['tests/details_native_spec.lua']"+runner[end:]
+          bench=runner[:start]+"    for test in ['tests/details_native_layout_spec.lua']"+runner[end:]
+          env=dict(os.environ,DETAILS_NATIVE_SOURCE='/tmp/details-native-source/2efa4b10628e0e4a91c346138cf8325e81d0a43c')
+          with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/5ed5fce22ec022778b83c54e9345da6706836fb2/EUIAddonSkins/DetailsNative.lua',timeout=30) as response:
+              old=response.read()
+          try:
+              target.write_bytes(old)
+              for variable,message in (
+                  ('DETAILS_MEDIA_REPRO','REPRO: native toolbar depends on optional EUI meter'),
+                  ('DETAILS_DEFAULTS_REPRO','REPRO: native definition imports optional meter configuration')):
+                  result=subprocess.run([sys.executable,'-c',spec],env=dict(env,**{variable:'1'}),capture_output=True,text=True)
+                  assert result.returncode!=0 and message in result.stderr,result.stdout+result.stderr
+                  print('Confirmed baseline failure: '+message,flush=True)
+              for loaded in ('enabled','disabled','missing'):
+                  print('Prior prototype warm '+loaded+':',flush=True)
+                  subprocess.run([sys.executable,'-c',bench],env=dict(env,DETAILS_LAYOUT_BENCH='1',DETAILS_EDM_STATE=loaded),check=True)
+          finally:
+              target.write_bytes(fixed)
+          for variable in ('DETAILS_MEDIA_REPRO','DETAILS_DEFAULTS_REPRO'):
+              subprocess.run([sys.executable,'-c',spec],env=dict(env,**{variable:'1'}),check=True)
+          for loaded in ('enabled','disabled','missing'):
+              print('Independent prototype warm '+loaded+':',flush=True)
+              subprocess.run([sys.executable,'-c',bench],env=dict(env,DETAILS_LAYOUT_BENCH='1',DETAILS_EDM_STATE=loaded),check=True)
+          assert target.read_bytes()==fixed
+          PY
+      - name: Reproduce sole-body suppression and compare the current approved baseline
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import subprocess,os,sys
+          target=Path('EUIAddonSkins/DetailsNative.lua')
+          fixed=target.read_bytes()
+          runner=Path('tests/run_lua.py').read_text()
+          first=runner.index('    for test in [')
+          last=runner.index(':\n',first)
+          runner=runner[:first]+"    for test in ['tests/details_native_layout_spec.lua']"+runner[last:]
+          env=dict(os.environ,DETAILS_NATIVE_SOURCE='/tmp/details-native-source/2efa4b10628e0e4a91c346138cf8325e81d0a43c')
+          with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/93074946e3ce9ee52baf35d5dc9c8b53219ebd92/EUIAddonSkins/DetailsNative.lua',timeout=30) as response:
+              old=response.read()
+          try:
+              target.write_bytes(old)
+              result=subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_BODY_REPRO='1'),capture_output=True,text=True)
+              assert result.returncode!=0 and 'REPRO: prototype removed sole native body fill' in result.stderr,result.stdout+result.stderr
+              print('Confirmed: prior runtime suppresses the surviving body after native backdrop removal',flush=True)
+              print('Before toolbar/body/timer correction (9307494):',flush=True)
+              subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          finally:
+              target.write_bytes(fixed)
+          subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_BODY_REPRO='1'),check=True)
+          print('After toolbar/body/timer correction:',flush=True)
+          subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          assert target.read_bytes()==fixed
+          PY
+      - name: Reproduce previous native defaults and compare the verified baseline
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import subprocess,os,sys
+          target=Path('EUIAddonSkins/DetailsNative.lua')
+          fixed=target.read_bytes()
+          runner=Path('tests/run_lua.py').read_text()
+          first=runner.index('    for test in [')
+          last=runner.index(':\n',first)
+          runner=runner[:first]+"    for test in ['tests/details_native_layout_spec.lua']"+runner[last:]
+          env=dict(os.environ,DETAILS_NATIVE_SOURCE='/tmp/details-native-source/2efa4b10628e0e4a91c346138cf8325e81d0a43c')
+          with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/8d8989968fb64761e816944fe3476703773a6847/EUIAddonSkins/DetailsNative.lua',timeout=30) as response:
+              old=response.read()
+          try:
+              target.write_bytes(old)
+              result=subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_HEADER_REPRO='1'),capture_output=True,text=True)
+              assert result.returncode!=0 and 'REPRO: initial native title defaults differ from approved values' in result.stderr,result.stdout+result.stderr
+              print('Confirmed: previous native selection defaults differ from the newly approved values',flush=True)
+              print('Reference 8d89899:',flush=True)
+              subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          finally:
+              target.write_bytes(fixed)
+          subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_HEADER_REPRO='1'),check=True)
+          print('Approved native selection defaults:',flush=True)
+          subprocess.run([sys.executable,'-c',runner],env=dict(env,DETAILS_LAYOUT_BENCH='1'),check=True)
+          assert target.read_bytes()==fixed
+          PY
+      - name: Five-trial hosted comparison
+        run: |
+          for mode in unskinned legacy native; do
+            DETAILS_NATIVE_BENCH="$mode" python3 tests/run_lua.py > "/tmp/$mode.log"
+            grep -E 'BENCH (unskinned|legacy|native)|INVENTORY' "/tmp/$mode.log"
+          done
+      - name: Approved PR91 baseline comparison
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          from shutil import copytree
+          root = Path('/tmp/approved-details-baseline')
+          copytree('.', root, ignore=lambda directory, names: ['.git'] if '.git' in names else [])
+          for path in ('EUIAddonSkins/Skins/Details.lua', 'EUIAddonSkins/DetailsLayout.lua'):
+              with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/017efd5f483d7bba14fef62e32224ccd42e042ae/'+path, timeout=30) as response:
+                  (root / path).write_bytes(response.read())
+          path = root / 'tests/details_spec.lua'
+          text = path.read_text()
+          baseline = text.split('-- Switch a previously legacy-styled live window')[0]
+          # The untouched PR91 runtime still uses its historical presentation label.
+          baseline = baseline.replace("entries[3].text == 'Legacy Details! Styling'", "entries[3].text == 'Style Details meters'")
+          benchmark = "if os.getenv('DETAILS_NATIVE_BENCH') then" + text.split("if os.getenv('DETAILS_NATIVE_BENCH') then")[1]
+          path.write_text(baseline + benchmark)
+          PY
+          cd /tmp/approved-details-baseline
+          DETAILS_NATIVE_BENCH=legacy python3 tests/run_lua.py > /tmp/approved-baseline.log
+          grep -E 'BENCH legacy|INVENTORY legacy' /tmp/approved-baseline.log
+      - name: Prepare installation artifact
+        run: python3 -m zipfile -e EUIAddonSkins.zip /tmp/details-native-install
+      - name: Store temporary installation artifact
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-DetailsNative-${{ github.sha }}-test
+          path: /tmp/details-native-install/
+          retention-days: 30
+          if-no-files-found: error
+          overwrite: true
+      - name: Verify uploaded bytes against the exact checkout
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          from hashlib import sha256
+          import os, subprocess, time
+          endpoint = "repos/{}/actions/artifacts/{}/zip".format(os.environ["GH_REPO"], os.environ["ARTIFACT_ID"])
+          # A just-finalized artifact can briefly return 404. Retry only
+          # transient availability/server failures; preserve every byte check.
+          for attempt in range(5):
+              result = subprocess.run(["gh", "api", endpoint], capture_output=True)
+              if result.returncode == 0:
+                  Path('/tmp/verified-native.zip').write_bytes(result.stdout)
+                  break
+              error = result.stderr.decode(errors="replace")
+              transient = any(code in error for code in ("HTTP 404", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504"))
+              if not transient or attempt == 4:
+                  raise RuntimeError("Artifact download failed: " + error)
+              print("Artifact not yet available; bounded retry", attempt + 1, flush=True)
+              time.sleep(min(2 ** attempt, 8))
+          with ZipFile('/tmp/verified-native.zip') as actual, ZipFile('EUIAddonSkins.zip') as expected:
+              assert actual.testzip() is None
+              assert sorted(actual.namelist()) == sorted(expected.namelist())
+              for name in expected.namelist():
+                  assert actual.read(name) == expected.read(name) == Path(name).read_bytes(), name
+              assert {name.split('/')[0] for name in actual.namelist()} == {'EUIAddonSkins'}
+              print('Verified exact-commit artifact:', len(actual.namelist()), 'runtime files')
+          print('Artifact SHA256:', sha256(Path('/tmp/verified-native.zip').read_bytes()).hexdigest())
+          PY

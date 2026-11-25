@@ -230,7 +230,7 @@ assert(loadfile('EUIAddonSkins/Skins/Attune.lua'))('EUIAddonSkins', ns)
 Attune_MainFrame = frame('Frame', 'Attune_MainFrame'); Attune_GraphRoot = frame('Frame', 'Attune_GraphRoot', Attune_MainFrame)
 local card = frame('Button', 'Attune_Node_42', Attune_GraphRoot)
 card:SetBackdrop({edgeFile = 'native', bgFile = 'fill'}); card:SetBackdropColor(0.8, 0.6, 0, 0.3)
-local text = card:CreateFontString(); text:SetTextColor(1, 0.8, 0)
+local text = card:CreateFontString(nil, nil, 'native-font'); text:SetTextColor(1, 0.8, 0)
 local icon = frame('Button', 'Attune_Icon_42', card); icon.normal = texture(); icon.normal.path = 'quest-icon'
 local graphLine = Attune_GraphRoot:CreateTexture(); graphLine.color = {0.8, 0.6, 0, 1}
 modules.Attune.install(S, modules.Attune)
@@ -242,7 +242,7 @@ assert(Attune_MainFrame.shellOptions.noBorder, 'Attune soft window border missin
 assert(card.backdrop.edgeSize == 1 and card.color[1] == 0.8 and text.font == 'eui' and text.textColor[1] == 1)
 assert(not card.button and icon.normal.path == 'quest-icon' and icon.normal.crop and graphLine.color[1] == 0.8)
 local tree = frame('Button', nil, Attune_MainFrame)
-tree.treeline, tree.selected, tree.text, tree.icon = {}, true, tree:CreateFontString(), tree:CreateTexture()
+tree.treeline, tree.selected, tree.text, tree.icon = {}, true, tree:CreateFontString(nil, nil, 'native-font'), tree:CreateTexture()
 tree.icon.path = 'dungeon-status-art'; tree.toggle = frame('Button', nil, tree)
 tree.toggle.normal = texture(); tree.toggle.normal.path = 130821
 modules.Attune.refresh(); flush()
@@ -1390,16 +1390,16 @@ ForeverDungeonJournal_NS.questRefreshWorker:SetScript('OnUpdate', function() que
 ForeverDungeonJournalFrame = frame('Frame')
 local journal = ForeverDungeonJournalFrame
 journal.homePanel = frame('Frame', nil, journal)
-journal.homeTitle = journal.homePanel:CreateFontString()
+journal.homeTitle = journal.homePanel:CreateFontString(nil, nil, 'native-font')
 local cover = frame('Button', nil, journal.homePanel)
 cover.dungeonName = 'Dalaran'; cover.art = cover:CreateTexture(); cover.art.path = 'dungeon-art'
-cover.title = cover:CreateFontString(); cover.counts = cover:CreateFontString(); cover.counts.textColor = {1, 0.9, 0.5}
+cover.title = cover:CreateFontString(nil, nil, 'native-font'); cover.counts = cover:CreateFontString(nil, nil, 'native-font'); cover.counts.textColor = {1, 0.9, 0.5}
 cover:SetBackdrop({bgFile = 'native', edgeFile = 'bevel'}); cover.action = function() return 'open-dungeon' end
 journal.bugReportButton = frame('Button', nil, journal)
 local bug = journal.bugReportButton:CreateTexture(); bug.path = 'bug-icon'
-local bugLabel = journal.bugReportButton:CreateFontString()
+local bugLabel = journal.bugReportButton:CreateFontString(nil, nil, 'native-font')
 journal.languageSelectorButton = frame('Button', nil, journal)
-journal.languageSelectorText = journal.languageSelectorButton:CreateFontString()
+journal.languageSelectorText = journal.languageSelectorButton:CreateFontString(nil, nil, 'native-font')
 local caret = journal.languageSelectorButton:CreateTexture(); caret.path = 'native-caret'
 local journalLooks, previousLooks, journalEvents = {}, S.OnLooksChanged, #events
 S.OnLooksChanged = function(fn) journalLooks[#journalLooks + 1] = fn end
@@ -1431,13 +1431,13 @@ end
 do
     local filter = frame('Frame', 'ForeverDungeonJournalLootFilter', journal)
     journal.lootFilterWindow = filter
-    filter.title, filter.statsHeader, filter.statsHint = filter:CreateFontString(), filter:CreateFontString(), filter:CreateFontString()
+    filter.title, filter.statsHeader, filter.statsHint = filter:CreateFontString(nil, nil, 'native-font'), filter:CreateFontString(nil, nil, 'native-font'), filter:CreateFontString(nil, nil, 'native-font')
     filter.title:SetTextColor(1, 0.82, 0.27); filter.statsHeader:SetTextColor(1, 0.82, 0.27)
     filter.minBox = frame('EditBox', nil, filter); filter.minBox.value = '12'
     filter.minBox.commit = function() return 'input-native' end
     for _, key in ipairs({'show', 'ok', 'clear'}) do
         local button = frame('Button', nil, filter); filter[key] = button
-        button.label = button:CreateFontString(); button.label:SetTextColor(1, 0.82, 0.27)
+        button.label = button:CreateFontString(nil, nil, 'native-font'); button.label:SetTextColor(1, 0.82, 0.27)
         button.normal = button:CreateTexture(); button.normal.path = 'red-native-button'
         button.action = function() return key .. '-native' end
     end
@@ -1446,11 +1446,11 @@ do
     dropdown.icon = dropdown:CreateTexture(); dropdown.icon.path = 'armor-icon'
     dropdown.arrow = dropdown:CreateTexture(); dropdown.arrow.path = 'gold-arrow'
     dropdown.normal = dropdown:CreateTexture(); dropdown.normal.path = 'red-native-dropdown'
-    dropdown.label = dropdown:CreateFontString(); dropdown.label:SetTextColor(1, 0.82, 0.27)
+    dropdown.label = dropdown:CreateFontString(nil, nil, 'native-font'); dropdown.label:SetTextColor(1, 0.82, 0.27)
     dropdown.action = function() return 'dropdown-native' end
     local legacyDropdown = frame('Frame', nil, filter)
     legacyDropdown.Button = frame('Button', nil, legacyDropdown)
-    legacyDropdown.Text = legacyDropdown:CreateFontString()
+    legacyDropdown.Text = legacyDropdown:CreateFontString(nil, nil, 'native-font')
     legacyDropdown.icon = legacyDropdown:CreateTexture(); legacyDropdown.icon:SetAlpha(0.7)
     legacyDropdown.Button.action = function() return 'legacy-dropdown-native' end
     local favourites = frame('Frame', 'ForeverDungeonJournalFavourites')
@@ -1608,7 +1608,7 @@ do
         end
     end
     local questRow = frame('Button', nil, journal.questLeftPanel)
-    questRow.questIndex = 1; questRow.name, questRow.meta = questRow:CreateFontString(), questRow:CreateFontString()
+    questRow.questIndex = 1; questRow.name, questRow.meta = questRow:CreateFontString(nil, nil, 'native-font'), questRow:CreateFontString(nil, nil, 'native-font')
     questRow.hooks.OnClick = PrivateQuestDetail
     modules.ForeverDungeonJournal.refresh(); flush()
     local savedText = journal.questDetailText.text

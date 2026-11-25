@@ -1,0 +1,73 @@
+name: Cheap Upgrades source and test package
+on:
+  push:
+    branches: [skin/cheapupgrades-compatibility]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      artifact_id: ${{ steps.package.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify authoritative source and native tab library
+        run: python3 scripts/inspect_cheapupgrades.py
+      - name: Install Lua runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Full regressions, native source tests and packaging
+        env:
+          CHEAP_AHTAB_SOURCE: /tmp/cheap-ahtab.lua
+          CHEAP_TAB_ORDER: before
+        run: python3 scripts/package.py
+      - name: Alternate addon loading order
+        env:
+          CHEAP_AHTAB_SOURCE: /tmp/cheap-ahtab.lua
+          CHEAP_TAB_ORDER: after
+        run: python3 tests/run_lua.py
+      - name: Baseline sensitivity and seven-trial performance comparison
+        run: python3 scripts/verify_cheapupgrades.py
+      - name: Stage one-folder installable archive
+        run: |
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          with ZipFile('EUIAddonSkins.zip') as z:
+              z.extractall('/tmp/cheap-install')
+          PY
+      - name: Upload installable package
+        id: package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: CheapUpgrades-test-${{ github.sha }}
+          path: /tmp/cheap-install
+          if-no-files-found: error
+          retention-days: 14
+  verify_archive:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install Lua runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Rebuild exact commit as comparison baseline
+        run: python3 scripts/package.py
+      - name: Download exact uploaded archive
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: ${{ needs.verify.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          path: /tmp/cheap-verify
+          merge-multiple: true
+      - name: Verify exact uploaded ZIP contents
+        run: python3 scripts/verify_cheapupgrades_artifact.py

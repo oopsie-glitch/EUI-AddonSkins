@@ -5,7 +5,7 @@
 ## Author: Smarre
 ## X-License: MIT
 ## X-Wago-ID: aN0a2M6j
-## Version: 1.6.7
+## Version: 1.6.8
 ## Dependencies: EllesmereUI, EllesmereUIBlizzardSkin
 ## SavedVariables: EUIAddonSkinsDB
 
@@ -13,6 +13,7 @@ Core.lua
 MeterStyle.lua
 DetailsSettings.lua
 DetailsLayout.lua
+DetailsNative.lua
 Accent.lua
 Widgets.lua
 Scoped.lua
@@ -29,6 +30,7 @@ Skins\Attune.lua
 Skins\Auctionator.lua
 Skins\BtWQuests.lua
 Skins\BugSack.lua
+Skins\CheapUpgrades.lua
 Skins\CraftSim.lua
 Skins\DBM.lua
 Skins\DecorVendor.lua
@@ -46,6 +48,7 @@ Skins\HuntersFieldGuide.lua
 Skins\ItemRack.lua
 Skins\ItemTree.lua
 Skins\KiwiFarm.lua
+Skins\LFGForever.lua
 Skins\LiteMount.lua
 Skins\Myslot.lua
 Skins\NovaInstanceTracker.lua

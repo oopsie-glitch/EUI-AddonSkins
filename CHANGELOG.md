@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.6.8 — New skins and native Details! customization
+
+- Added Hunter's Field Guide styling for the Forever journal and Classic controls.
+- Added ItemTree styling, including profession panels, boss loot and information panels.
+- Added LFG Forever styling for Filters, Whispers and Player ratings.
+- Added Cheap Upgrades styling for Upgrades, Alts, controls and options.
+
+- Added the optional **Addonskins EUI** skin to **Details! → Options → Skins → Skin Selection**. Native customization and profile settings persist after reload. Toolbar artwork is self-contained and retains native sizing.
+- Clarified **Legacy Details! Styling**. New installations default to legacy meter styling Off, Tiny Threat Off and menus/options On; existing saved preferences are preserved.
+- Fixed Auctionator tabs overlapping third-party Auction House tabs, including Cheap Upgrades. Native tab order and click targets are preserved even with Cheap Upgrades styling disabled.
+- Guarded shared font refreshes against zero, invalid and secret font heights without assigning arbitrary replacement sizes.
+
+**Special thanks to [goldenpipes](https://github.com/goldenpipes) for contributing the original Hunter's Field Guide and ItemTree skins.**
+
+Known limitation: Hunter's Field Guide retains its existing theme-refresh implementation. Repeated theme changes can accumulate accent-color history; the experimental optimization is not included.
+
 ## 1.6.7 — Addon Manargl and Guildy
 
 - **Addon Manargl:** Added an EUI Standard skin with a compact rectangular scale grip and scoped styling for Filter, Profiles and character menus.

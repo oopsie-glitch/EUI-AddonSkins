@@ -1,0 +1,116 @@
+name: Font height stability verification
+on:
+  push:
+    branches: [fix/font-height-validation]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: font-height-verification
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install Lua runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y liblua5.4-0
+      - name: Full release-baseline regression and package validation
+        run: python3 scripts/package.py
+      - name: Fetch pinned public EUI font implementation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          sha='d84a1e19d0b63a9a944dd8023e436290a1b7a173'
+          root=Path('/tmp/eui-font-source')
+          root.mkdir()
+          for path in ('EllesmereUI_Fonts.lua','EllesmereUIBlizzardSkin/EllesmereUIBlizzardSkin_WindowEngine.lua','EllesmereUIBlizzardSkin/EllesmereUIBlizzardSkin_SkinAPI.lua'):
+              with urlopen('https://raw.githubusercontent.com/EllesmereGaming/EllesmereUI/'+sha+'/'+path,timeout=30) as response:
+                  (root/Path(path).name).write_bytes(response.read())
+          print('Pinned EUI source:',sha)
+          PY
+          EUI_FONT_SOURCE=/tmp/eui-font-source python3 tests/run_lua.py
+      - name: Prove published runtime fails and compare valid-font workloads
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import os,sys,subprocess
+          paths=['EUIAddonSkins/Widgets.lua','EUIAddonSkins/Scoped.lua']
+          fixed={path:Path(path).read_bytes() for path in paths}
+          runner=Path('tests/run_lua.py').read_text()
+          start=runner.index('    for test in [')
+          end=runner.index(':\n',start)
+          runner=runner[:start]+"    for test in ['tests/font_height_spec.lua']"+runner[end:]
+          env=dict(os.environ,EUI_FONT_SOURCE='/tmp/eui-font-source')
+          try:
+              for path in paths:
+                  with urlopen('https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/3553aca8e386c77be2c1af20a719117c14199df2/'+path,timeout=30) as response:
+                      Path(path).write_bytes(response.read())
+              result=subprocess.run([sys.executable,'-c',runner],env=dict(env,FONT_HEIGHT_REPRO='1'),capture_output=True,text=True)
+              assert result.returncode!=0 and 'REPRO: shared RefreshControlsNow forwarded zero font height' in result.stderr,result.stdout+result.stderr
+              print('Confirmed published v1.6.7 forwards zero height through RefreshControlsNow and public EUI Font',flush=True)
+              print('Published baseline valid-font workload:',flush=True)
+              subprocess.run([sys.executable,'-c',runner],env=dict(env,FONT_HEIGHT_BENCH='1'),check=True)
+          finally:
+              for path,data in fixed.items():Path(path).write_bytes(data)
+          subprocess.run([sys.executable,'-c',runner],env=env,check=True)
+          print('Corrected valid-font workload:',flush=True)
+          subprocess.run([sys.executable,'-c',runner],env=dict(env,FONT_HEIGHT_BENCH='1'),check=True)
+          assert all(Path(path).read_bytes()==data for path,data in fixed.items())
+          PY
+      - name: Prepare installable artifact
+        run: |
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          with ZipFile('EUIAddonSkins.zip') as z:
+              assert z.testzip() is None
+              assert all(n.startswith('EUIAddonSkins/') for n in z.namelist())
+              assert 'EUIAddonSkins/DetailsNative.lua' not in z.namelist()
+              assert not any('/DetailsNative/' in n for n in z.namelist())
+              z.extractall('/tmp/font-height-install')
+              print('Runtime files:',len(z.namelist()))
+          PY
+      - name: Store temporary install ZIP
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: EUIAddonSkins-FontHeight-${{ github.sha }}-test
+          path: /tmp/font-height-install/
+          retention-days: 30
+          if-no-files-found: error
+          overwrite: true
+      - name: Verify exact uploaded bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          from hashlib import sha256
+          import os,subprocess,time
+          url='repos/{}/actions/artifacts/{}/zip'.format(os.environ['GH_REPO'],os.environ['ARTIFACT_ID'])
+          for attempt in range(5):
+              result=subprocess.run(['gh','api',url],capture_output=True)
+              if result.returncode==0:
+                  Path('/tmp/font-height-download.zip').write_bytes(result.stdout)
+                  break
+              error=result.stderr.decode(errors='replace')
+              if attempt==4 or not any(c in error for c in ('HTTP 404','HTTP 500','HTTP 502','HTTP 503','HTTP 504')):
+                  raise RuntimeError(error)
+              time.sleep(min(2**attempt,8))
+          with ZipFile('/tmp/font-height-download.zip') as actual,ZipFile('EUIAddonSkins.zip') as expected:
+              assert actual.testzip() is None
+              assert sorted(actual.namelist())==sorted(expected.namelist())
+              for name in actual.namelist():assert actual.read(name)==expected.read(name)==Path(name).read_bytes(),name
+              print('Verified exact checkout:',len(actual.namelist()),'runtime files')
+          print('Artifact SHA256:',sha256(Path('/tmp/font-height-download.zip').read_bytes()).hexdigest())
+          PY

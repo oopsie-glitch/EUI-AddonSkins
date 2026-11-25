@@ -45,15 +45,17 @@ for path in z.namelist():
 
 # Trace public producers and arguments of the private pooled-text writers.
 ui=z.read("HuntersFieldGuide/UI.lua").decode("utf-8-sig")
-top=list(re.finditer(r"^(?:local\\s+)?function\\s+([\\w.:]+)\\s*\\(([^)]*)\\)",ui,re.M))
+top=list(re.finditer(r"^(?:local\s+)?function\s+([\w.:]+)\s*\(([^)]*)\)",ui,re.M))
 for i,m in enumerate(top):
  stop=top[i+1].start()if i+1<len(top)else len(ui)
  body=ui[m.end():stop]
- if re.search(r"\\bWrite(?:Lines|Side)\\(",body) or m.group(1).startswith("PD:"):
-  calls=sorted(set(re.findall(r"\\b((?:PD:|self:)[A-Za-z_][\\w]*|WriteLines|WriteSide|[A-Z][A-Za-z_]*(?:Lines|Text|Detail))\\s*\\(",body)))
-  if calls:print("HFG_TEXT_FLOW",json.dumps({"function":m.group(1),"line":ui.count("\\n",0,m.start())+1,"calls":calls,"pooledWrites":[re.findall(r"[\\w.:]+",x)[:30]for x in re.findall(r"\\bWrite(?:Lines|Side)\\(([^\\n]*)",body)]}))
+ if re.search(r"\bWrite(?:Lines|Side)\(",body) or m.group(1).startswith("PD:"):
+  calls=sorted(set(re.findall(r"\b((?:PD:|self:)[A-Za-z_][\w]*|WriteLines|WriteSide|[A-Z][A-Za-z_]*(?:Lines|Text|Detail))\s*\(",body)))
+  if calls:print("HFG_TEXT_FLOW",json.dumps({"function":m.group(1),"line":ui.count("\n",0,m.start())+1,"calls":calls,"pooledWrites":[re.findall(r"[\w.:]+",x)[:30]for x in re.findall(r"\bWrite(?:Lines|Side)\(([^\n]*)",body)]}))
 for path in z.namelist():
  if not path.endswith(".lua"):continue
  text=z.read(path).decode("utf-8-sig")
- exports=re.findall(r"^(?:function\\s+(PD:[\\w]+)|\\s*(PD\\.[\\w]+)\\s*=)",text,re.M)
+ exports=re.findall(r"^(?:function\s+(PD:[\w]+)|\s*(PD\.[\w]+)\s*=)",text,re.M)
  if exports:print("HFG_NAMESPACE_EXPORTS",json.dumps({"file":path,"exports":[a or b for a,b in exports]}))
+
+assert any(m.group(1)=="WriteLines" for m in top),"Pooled-writer flow parser did not find native WriteLines"

@@ -660,6 +660,7 @@ do
         local button = CreateFrame('Button')
         local icon, border = button:CreateTexture(), button:CreateTexture()
         icon.path = 987
+        border:Hide() -- neutral icon edges are visible only without a native dispel border
         local region = target == 'border' and border or icon
         region.IsShown = function() return opaque end
         DBM.Auras.AuraTrackingState = {player = {buttonRegions = {[button] = {icon = icon, dispelBorder = border}}}}

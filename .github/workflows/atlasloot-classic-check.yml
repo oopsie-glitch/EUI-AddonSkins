@@ -15,11 +15,31 @@ jobs:
       - name: Inspect published upstream source identity
         run: |
           python3 - <<'PY'
-          import json, urllib.request
-          with urllib.request.urlopen('https://api.cfwidget.com/1270310', timeout=60) as r:
-              data=json.load(r)
-          print('UPSTREAM_METADATA',json.dumps({k:data.get(k) for k in ('id','title','url','urls','download')}))
-          print('RECENT_FILES',json.dumps(data.get('files',[])[:8]))
+          import json, re, urllib.request, urllib.error
+          urls = [
+              'https://www.curseforge.com/wow/addons/atlasloot-continued',
+              'https://api.cfwidget.com/wow/addons/atlasloot-continued',
+          ]
+          found=False
+          for url in urls:
+              try:
+                  with urllib.request.urlopen(url, timeout=60) as r:
+                      body=r.read().decode()
+                  try:
+                      data=json.loads(body)
+                  except json.JSONDecodeError:
+                      print('SOURCE_PAGE',json.dumps({'url':url,'title':re.findall(r'<title>(.*?)</title>',body),
+                          'github_links':sorted(set(re.findall(r'https://github.com/[^"<\\s]+',body)))[:20],
+                          'file_links':sorted(set(re.findall(r'[^"<\\s]*atlasloot-continued/files/[^"<\\s]+',body)))[:10],
+                          'ids':re.findall(r'.{0,60}(?:projectId|projectID|sourceUrl|sourceURL).{0,160}',body)[:10]}))
+                  else:
+                      print('UPSTREAM_METADATA',json.dumps({k:data.get(k) for k in ('id','title','url','urls','download')}))
+                      print('RECENT_FILES',json.dumps(data.get('files',[])[:8]))
+                  found=True
+              except urllib.error.HTTPError as e:
+                  print('SOURCE_BLOCKED',url,'HTTP',e.code)
+          if not found:
+              raise SystemExit('Matching Continued source could not be verified; no runtime fix is authorized by source evidence')
           PY
       - name: Install hosted Lua
         run: sudo apt-get update -qq && sudo apt-get install -y liblua5.4-0

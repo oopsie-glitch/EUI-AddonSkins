@@ -10,7 +10,7 @@ def fetch(path):
 lua = ctypes.CDLL("liblua5.4.so.0")
 lua.luaL_newstate.restype = ctypes.c_void_p
 lua.luaL_openlibs.argtypes = [ctypes.c_void_p]
-lua.luaL_loadstring.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+lua.luaL_loadbufferx.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p, ctypes.c_char_p]
 lua.lua_pcallk.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_longlong, ctypes.c_void_p]
 lua.lua_tolstring.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
 lua.lua_tolstring.restype = ctypes.c_char_p
@@ -20,7 +20,8 @@ def run(source, result=False):
     state = lua.luaL_newstate()
     lua.luaL_openlibs(state)
     try:
-        code = lua.luaL_loadstring(state, source.encode())
+        encoded = source.encode()
+        code = lua.luaL_loadbufferx(state, encoded, len(encoded), b"@tests/dbm_hud_spec.lua", None)
         if not code: code = lua.lua_pcallk(state, 0, 0, 0, 0, None)
         if code: raise RuntimeError(lua.lua_tolstring(state, -1, None).decode())
         if result:

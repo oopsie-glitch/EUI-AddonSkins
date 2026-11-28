@@ -67,7 +67,7 @@ return function(ctx)
     ctx.combat(false);owner.refresh();flush()
     assert(c.topBG.color[1]==.02)
     -- Existing hooks and queued paint are inert after a runtime navigation switch.
-    gui.Nav={active=true}
+    gui.Nav={active=true,RefreshContent=function()native()end}
     gui.RefreshContentBackGround();owner.refresh();flush()
     assert(c.topBG.color[1]==0 and c.topBG.color[3]==.4)
     AtlasLoot=old

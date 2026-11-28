@@ -28,19 +28,33 @@ The Wago job skips prerelease tags and validates exact `vMAJOR.MINOR.PATCH` synt
 1. Prepare the intended stable code, version and concise changelog on `release/<version>` from current `main`. Review overlapping shared-file changes and the complete diff. After the combined checks pass, promote the validated build to `main`; do not include unselected experiments.
 2. Run `python3 scripts/package.py` and require a successful **Validate addon** CI run on the final integration. This validates Lua syntax, runs the regression suites, checks TOC paths/version consistency and builds an install-ready local ZIP without uploading.
 3. Confirm the CurseForge webhook remains enabled in tag-only mode and the Wago secret is configured. Do not tag while preparation or authorization is incomplete.
-4. Create an annotated tag on the validated commit and push it. For example, after preparing version `1.2.0`:
+4. Record the exact validated commit SHA after the merge and confirm **Validate addon** passed for that commit on `main`. Check whether the version tag, draft, or published release already exists before opening a new release form.
 
-   ```sh
-   git tag -a v1.2.0 -m "EUI AddonSkins 1.2.0"
-   git push origin v1.2.0
-   ```
+### Publish in the authenticated Work browser
 
-5. The CurseForge webhook queues its package. GitHub's **Publish stable release to Wago** workflow checks metadata, credentials and tests, then runs BigWigs Packager with the existing `.pkgmeta`, Wago project ID and all other upload targets disabled.
-6. Verify the Actions result and each platform's packaging logs, release type, game versions and publication/approval status. Upload completion is not proof of public availability. The two services run independently; they need not finish at the same time.
-7. Inspect the downloaded packages: exactly one `EUIAddonSkins/` folder, its TOC, every referenced runtime file, all supported skins/assets and the exact MIT LICENSE. Exclude tests, scripts, benchmarks, docs, `.github`, reference sources and nested installation folders.
-8. Publish the corresponding GitHub Release from the existing tag with concise release notes and a validated install ZIP. Automatic GitHub source archives include development files and are not installation packages.
+Use the GitHub integration for pull requests and checks, and the authenticated Work browser for the release form. No local Git or PowerShell is required. An annotated tag points to a separate tag object with a tagger and message. A lightweight tag points directly to the commit. GitHub's release form creates a lightweight tag, as used for v1.6.3 and v1.6.4. An annotated tag is acceptable when supported by authenticated tooling, and a lightweight tag is supported for the browser workflow.
 
-Published tags are immutable. Do not recreate a tag or rerun a successful Wago upload blindly: inspect the existing platform version before retrying. A failed Wago run can be rerun through Actions after fixing credentials, without pushing the tag again or retriggering CurseForge. Code or package fixes need a new version. For an existing tag whose Wago upload failed before publication, see [Wago recovery](WAGO_RECOVERY.md); never retry an upload that already succeeded.
+1. Open the repository's **Releases → Draft a new release**. If the tag already exists and resolves to the validated SHA, select it. Otherwise choose **Select tag**, enter the exact version (for example `v1.6.4`), click **Create new tag**, then click **Create** in the second dialog. Confirm the version appears on the form. The tag is created when the release is published.
+2. For a new tag, verify that **Target** resolves to the validated SHA. Use `main` only if its current tip is that SHA. If the browser cannot select a ref at the exact commit, stop before publishing.
+3. Enter the title and release notes, including any limits on in-game verification. Attach the validated install ZIP through **Attach binaries** using the browser-accessible copy. Select the appropriate release channel. Recheck the target immediately before clicking **Publish release**.
+4. Verify the published release page and the tag's resolved commit SHA through GitHub. Confirm the release is public, the version and channel are correct, and the intended ZIP is listed and downloadable under **Assets**. Compare its digest with the validated ZIP when available. GitHub's automatic source archives are separate from the install package. If the browser times out, inspect the actual release and tag state before retrying.
+
+### Verify distribution separately
+
+| Service | Evidence to check |
+| --- | --- |
+| GitHub Actions | **Validate addon** passed on the released commit. Check the stable Wago workflow run for the version tag separately. |
+| CurseForge | Check the tag push webhook delivery and Auto-Packager status where accessible. Confirm the exact version appears on the public project files page with the expected channel and game versions. A successful webhook delivery alone proves only that the event was received. |
+| Wago | Check **Publish stable release to Wago** for the exact tag and inspect its upload result. Confirm the version appears on the public project listing. A green workflow alone does not establish public availability. |
+
+Inspect downloaded packages using the layout below when accessible. Report each service independently with links and verified status. If a dashboard, packaging log, public listing or download is inaccessible, say exactly what remains unverified. Record any remaining action and the blocker. An attempted browser action is never proof of success.
+
+### Recover a partial release
+
+- **Tag exists, release missing or draft:** verify the tag resolves to the validated SHA, then complete the existing draft or publish a release using the existing tag.
+- **Release published, ZIP missing:** edit the existing release and attach the validated ZIP. Verify the asset after saving.
+- **Tag points to a different commit:** stop and report the mismatch. Published tags are immutable. Do not move or recreate them. Code or package fixes require a new version.
+- **Distribution pending or failed:** check the platform and existing run before retrying. For Wago, see [Wago recovery](WAGO_RECOVERY.md) and rerun only a confirmed failed upload after fixing its cause. For CurseForge, check delivery and packaging history before using its supported recovery options. Never push a tag again or retry a successful upload to recover the other platform.
 
 ## Packaging
 

@@ -105,7 +105,7 @@ try:
     common=common.replace("assert(selectFrame.panelOptions.noBorder and selectFrame.panelOptions.inset and favourites.GUI.frame.shellOptions.noBorder)",
         "assert(favourites.GUI.frame.shellOptions.noBorder)")
     common=common.replace("local logo = atlasRoot:CreateTexture();",
-        "atlasRoot.contentFrame=frame('Frame',nil,atlasRoot)\\nfor _,key in ipairs({'topBG','downBG','itemBG'}) do atlasRoot.contentFrame[key]=atlasRoot.contentFrame:CreateTexture() end\\nlocal logo = atlasRoot:CreateTexture();")
+        "atlasRoot.contentFrame=frame('Frame',nil,atlasRoot)\nfor _,key in ipairs({'topBG','downBG','itemBG'}) do atlasRoot.contentFrame[key]=atlasRoot.contentFrame:CreateTexture() end\nlocal logo = atlasRoot:CreateTexture();")
     bench=common+"""
 do
     atlasGUI:Toggle();flush();collectgarbage('collect')

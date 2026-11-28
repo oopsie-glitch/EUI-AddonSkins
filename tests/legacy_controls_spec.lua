@@ -1,6 +1,8 @@
 -- Native-control fixtures: actions, geometry, status colours, redraws and reuse.
 local enabled, combat, accent, timers, events = true, false, 0.4, {}, {}
-local ns = {IsEnabled = function() return enabled end, AttachAccent = function(_, f) f.accent = true end,
+local ns = {IsEnabled = function(module)
+    return enabled and (not module or not module.skin or not module.skin.IsEnabled or module.skin.IsEnabled())
+end, AttachAccent = function(_, f) f.accent = true end,
     AccentBarColor = function(S) return S.GetAccentColor() end}
 C_Timer = {After = function(_, fn) timers[#timers + 1] = fn end}
 InCombatLockdown = function() return combat end
@@ -2081,6 +2083,12 @@ enabled = false; local untouched = frame('CheckButton', nil, atlasRoot)
 atlasGUI:Toggle(); flush(); assert(not untouched.checkbox)
 enabled = true
 print('PASS: AtlasLoot windows, synchronous pooled menus, selectors, colours/overlays/maps/models, dynamic controls and idempotence')
+assert(loadfile('tests/atlasloot_mode_cases.lua'))()({
+    frame=frame,S=S,flush=flush,install=modules.AtlasLootContinued.install,
+    combat=function(v)combat=v end,
+    event=function(name)for _,f in ipairs(events)do if f.events and f.events[name] and f.hooks.OnEvent then f.hooks.OnEvent(f,name)end end end,
+})
+
 do
 -- GTFO: skin only its settings canvases; sound/gameplay methods stay untouched.
 GTFO = nil

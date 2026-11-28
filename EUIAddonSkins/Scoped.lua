@@ -4,6 +4,15 @@ local ADDON, ns = ...
 -- or global frame-creation/AceGUI replacement is used.
 function ns.RegisterScopedSkin(id, label, config)
     ns.RegisterModule(id, label, config.available, function(S, module)
+        -- Opt-in runtime ownership, independent of a target's pending saved choice.
+        -- A helper-local module keeps hooks/queues gated without changing the
+        -- registered module, its toggle, or any other integration.
+        local owner = module
+        if config.active then
+            local function Enabled() return ns.IsEnabled(owner) and config.active() end
+            module = setmetatable({skin = {IsEnabled = Enabled}}, {__index = owner})
+            S = setmetatable({IsEnabled = Enabled}, {__index = S})
+        end
         if config.softBorders then S = ns.CreateSoftSkin(S, module, config.borderlessButtons) end
         if config.preserveTextColors or config.font then
             local font, original = S.Font, S
@@ -217,6 +226,10 @@ function ns.RegisterScopedSkin(id, label, config)
             if ns.IsEnabled(module) and (event ~= "PLAYER_REGEN_ENABLED" or waiting) then refresh() end
         end)
         module.refresh = refresh
+        owner.refresh = refresh
+        -- Constructor/fallback observers must be bound even before an owned
+        -- render mode becomes active; their callbacks still use the same gate.
+        if config.setup then config.setup(C, refresh) end
         if S.OnLooksChanged then S.OnLooksChanged(refresh) end
         refresh()
     end)

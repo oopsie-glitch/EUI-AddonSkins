@@ -2,6 +2,12 @@ local ADDON, ns = ...
 local function DefineSkin()
 
 local function GUI() return _G.AtlasLoot and _G.AtlasLoot.GUI end
+local function Classic()
+    local gui = GUI()
+    -- 13014 builds the Classic controls first, then applies either navigation
+    -- look. GetStyle/GetLook are saved choices, not the UI currently displayed.
+    return type(gui) == "table" and gui.frame ~= nil and not (gui.Nav and gui.Nav.active)
+end
 local function Favourites()
     local atlas = _G.AtlasLoot
     local addons = atlas and atlas.Addons
@@ -120,6 +126,12 @@ end
 
 ns.RegisterScopedSkin("AtlasLootContinued", "AtlasLootClassic Continued", {
     softBorders = true,
+    active = Classic,
+    setup = function(C, refresh)
+        local gui = GUI()
+        C.H.Hook(gui, "Create", refresh)
+        C.H.Hook(gui and gui.Nav, "Revert", refresh)
+    end,
     available = function() return type(GUI()) == "table" end,
     preserveTextColors = true,
     roots = function(C)
@@ -129,7 +141,12 @@ ns.RegisterScopedSkin("AtlasLootContinued", "AtlasLootClassic Continued", {
         end
         Add(GUI() and GUI().frame, "controls")
         local favourites = Favourites()
-        Add(favourites and favourites.GUI and favourites.GUI.frame)
+        local favGUI = favourites and favourites.GUI
+        -- A late-created Favourites window can use the pending navigation
+        -- choice even while the main window still displays Classic.
+        if not (favGUI and favGUI.NavStyle and favGUI.NavStyle.applied) then
+            Add(favGUI and favGUI.frame)
+        end
         if LibStub then
             local dialog = LibStub("AceConfigDialog-3.0", true)
             local widget = dialog and dialog.OpenFrames and dialog.OpenFrames.AtlasLoot

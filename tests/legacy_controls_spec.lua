@@ -1,5 +1,6 @@
 -- Native-control fixtures: actions, geometry, status colours, redraws and reuse.
 local enabled, combat, accent, timers, events = true, false, 0.4, {}, {}
+local hooksCreated = 0
 local ns = {IsEnabled = function(module)
     return enabled and (not module or not module.skin or not module.skin.IsEnabled or module.skin.IsEnabled())
 end, AttachAccent = function(_, f) f.accent = true end,
@@ -8,6 +9,7 @@ C_Timer = {After = function(_, fn) timers[#timers + 1] = fn end}
 InCombatLockdown = function() return combat end
 geterrorhandler = function() return function(e) error(e) end end
 hooksecurefunc = function(object, name, callback)
+    hooksCreated = hooksCreated + 1
     local original = object[name]
     object[name] = function(...)
         local values = table.pack(original(...)); callback(...); return table.unpack(values, 1, values.n)
@@ -2085,6 +2087,8 @@ enabled = true
 print('PASS: AtlasLoot windows, synchronous pooled menus, selectors, colours/overlays/maps/models, dynamic controls and idempotence')
 assert(loadfile('tests/atlasloot_mode_cases.lua'))()({
     frame=frame,S=S,flush=flush,install=modules.AtlasLootContinued.install,
+    hooks=function()return hooksCreated end,events=function()return #events end,
+    pending=function()return #timers end,scans=function(root)return auditScans[root] or 0 end,
     combat=function(v)combat=v end,
     event=function(name)for _,f in ipairs(events)do if f.events and f.events[name] and f.hooks.OnEvent then f.hooks.OnEvent(f,name)end end end,
 })

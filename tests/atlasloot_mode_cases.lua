@@ -43,9 +43,10 @@ return function(ctx)
         local looks={}
         ctx.S.OnLooksChanged = function(fn) looks[#looks+1]=fn end
         local m={}
+        local nativeFonts,nativeToggle,nativeItem=gui.RefreshFonts,gui.Toggle,gui.ItemFrame.Refresh
         ctx.install(ctx.S,m)
         ctx.flush()
-        return {gui=gui,nav=nav,db=db,root=root,label=label,fav=favGUI,module=m,looks=looks}
+        return {gui=gui,nav=nav,db=db,root=root,label=label,fav=favGUI,module=m,looks=looks,nativeFonts=nativeFonts,nativeToggle=nativeToggle,nativeItem=nativeItem}
     end
     local function untouched(st)
         assert(not st.root.accent and st.root.backdrop.edgeSize == 16 and st.label.font == 'GameFontNormal',
@@ -59,11 +60,16 @@ return function(ctx)
             st.nav.SetLook('legacy') -- pending/cancelled reload: navigation is still displayed
             assert(st.db.style=='legacy' and st.nav.active)
             if st.nav.TestCancelReload then st.nav.TestCancelReload() end
+            assert(st.gui.RefreshFonts==st.nativeFonts and st.gui.Toggle==st.nativeToggle and st.gui.ItemFrame.Refresh==st.nativeItem,
+                'navigation mode bound unnecessary refresh hooks')
+            local hookCount,eventCount,scans=ctx.hooks(),ctx.events(),ctx.scans(st.root)
             local originalColor, hooks = st.root.color, st.gui.Create
             for _, fn in ipairs(st.looks) do fn() end
             for _=1,1000 do st.gui.Toggle();st.gui.RefreshFonts();st.gui.ItemFrame:Refresh();st.module.refresh() end
             ctx.flush();untouched(st)
             assert(st.root.color==originalColor and st.gui.Create==hooks)
+            assert(ctx.hooks()==hookCount and ctx.events()==eventCount and ctx.scans(st.root)==scans and ctx.pending()==0,
+                'navigation workload grew hooks/events or queued/scanned GUI work')
             assert(#st.fav.frame.regions==0, 'navigation favourites was discovered')
         else
             assert(st.root.accent and st.root.backdrop.edgeSize==1 and st.label.font=='eui')
@@ -76,9 +82,11 @@ return function(ctx)
             local n=ctx.frame('CheckButton',nil,st.fav.frame)
             st.module.refresh();ctx.flush();assert(not n.checkbox,'navigation favourites was styled')
             st.fav.Toggle();ctx.flush();assert(not n.checkbox,'navigation favourites callback queued styling')
+            local hookCount,eventCount=ctx.hooks(),ctx.events()
             local objects=#st.root.regions
             for _=1,100 do st.module.refresh();ctx.flush() end
-            assert(#st.root.regions==objects,'Classic warm refresh grew artwork')
+            assert(#st.root.regions==objects and ctx.hooks()==hookCount and ctx.events()==eventCount,
+                'Classic warm refresh grew artwork/hooks/events')
             -- Existing hooks and queued jobs must re-check the displayed state.
             st.module.refresh()
             st.nav.active=true

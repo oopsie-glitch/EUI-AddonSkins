@@ -1,95 +1,137 @@
-# AtlasLoot Classic-only styling investigation
+# AtlasLootContinued: Classic-only EUI styling
 
-Status: blocked pending the source of the installed three-mode AtlasLoot build.
-No runtime correction has been implemented or claimed.
+## Source and scope
 
-## Supported addon identity and scope
+Target: AtlasLootClassic Continued (All Forever Loot), version **13014**.
+[Supplied archive](https://github.com/user-attachments/files/35548736/AtlasLootContinued-Forever_13014.zip):
+`AtlasLootContinued-Forever_13014.zip`.
 
-The supported target is **AtlasLootClassic Continued (All Forever Loot)** from
-[atlasloot-continued](https://www.curseforge.com/wow/addons/atlasloot-continued).
-Both the released Loader.lua catalog and scripts/skin_catalog.json register
-only the folder **AtlasLootContinued**. AtlasLootClassic / AtlasLoot Forever is
-not a released target. PR #69 remains unmerged and is neither imported nor
-modified by this investigation. Its source is not treated as proof about the
-supported Continued build.
+SHA-256: `f3a7ffc65480a92c7b18961409087d9b2f83b1bf9d942fcd230b3cc28d479a1d`.
 
-It remains unverified whether Classic, Forever and Atlas Nav are UI modes of
-the current supported Continued distribution, or come from another variant.
-No common selector/registry across those variants is assumed.
+GitHub Actions verifies this checksum, ZIP integrity and the core Camelot TOC's
+13014 version before testing. Target source and assets are downloaded only into
+the hosted test process; none is bundled with EUI AddonSkins.
 
-## Baseline and confirmed adapter behavior
-
-Published v1.6.8 and current main both point to
+Baseline: published v1.6.8 / main
 `0e388c8fc9fd635d5ec50d2a78d83a843005b7fd`.
+Only the existing AtlasLootContinued target is supported. AtlasLootClassic /
+the separate AtlasLoot Forever variant is not added. PR #69 remains excluded
+and unchanged.
 
-`Skins/AtlasLootContinued.lua` accepts any AtlasLoot.GUI table. It does not
-inspect the target's selected native UI skin. Its roots include the main GUI,
-Favourites and the AtlasLoot AceConfig window. It hooks GUI Create, Toggle,
-RefreshStyle, RefreshFonts, ForceUpdate and RefreshButtons plus item, sound,
-Favourites and owned options lifecycles.
+## Confirmed cause and actual mode lifecycle
 
-The main-root visitor replaces backdrop details and font/control discovery
-also runs for the owned subtrees. This is consistent with the reported
-Forever background interference and Atlas Nav font conflict; the precise
-native interleaving cannot be established without the matching implementation.
+The released adapter styles any AtlasLoot.GUI table. Continued 13014 builds
+the Classic controls for every look, then adds navigation presentation over
+those same controls. Unconditional font/backdrop scans therefore interfere
+with Forever Bronze and Atlas Nav.
 
-## Why availability-only gating is insufficient
+Relevant archive paths:
+- GUI/GUI.lua:1314-1666 constructs the Classic controls, then applies Nav.
+- GUI/Nav.lua: Swap marks Nav.active true; Revert:2311-2402 sets it false and
+  restores Classic. Native GUI refreshes also use GUI.Nav.active to select
+  their rendering path.
+- GUI/Nav.lua:2407-2458 GetStyle/GetLook read the saved choice. SetStyle/SetLook
+  save immediately and prompt for reload; they do not change the drawn UI.
+- The reload dialogs at Nav.lua:2531-2580 call ReloadUI on acceptance. Cancel
+  only dismisses the prompt, retaining the pending preference and current UI.
+- Favourites_Nav.lua exposes GUI.NavStyle.applied for the separate Favourites
+  window. Its first construction can follow a pending choice independently.
+- Options/Nav settings have their own frame. Only an actual AceConfig Classic
+  frame is a candidate owned root; navigation settings are not scanned.
 
-Core checks a module's available callback before its one-time install.
-Scoped's later refreshes do not re-check that callback. Hooks created through
-Widgets check the addon skin's enabled toggle, not AtlasLoot's native UI mode.
-Some dropdown callbacks style menus synchronously before queueing refreshes.
-Therefore changing only available() would not protect a session that changes
-from Classic to another mode.
+The correction uses a constructed GUI.frame and the runtime GUI.Nav.active
+flag, never GetStyle/GetLook or saved GUI.style. A constructed non-navigation
+window is Classic, including native fallback after Nav fails. Older
+Classic-only builds without Nav retain their original treatment.
 
-The public EllesmereUI skin API reviewed at
-`EllesmereGaming/EllesmereUI@d84a1e19d0b63a9a944dd8023e436290a1b7a173`
-documents disabling installed skins as reload-bound, and does not export a
-general restoration/unregister operation. Shell and primitive artwork may
-also receive engine-owned look updates. A namespace/mode guard alone is not
-proof that previous font/backdrop changes or those callbacks have been retired.
+## Implementation and ownership
 
-The native mode-switch lifecycle must be inspected before deciding whether
-AtlasLoot recreates separate windows, resets existing cosmetics, or requires
-reload. Do not invent skin fields, guess numeric mode IDs, replace shared
-factories, or introduce broad restoration snapshots without ownership evidence.
+AtlasLoot's Classic visitor and its approved colors, opacity, borders, fonts,
+artwork and geometry are unchanged.
 
-## Source investigation and exact limitation
+Scoped.lua gains opt-in active and setup callbacks:
+- active provides a helper-local module/facade gate, leaving the registered
+  module, its saved toggle and every other integration unchanged.
+- The gate is checked both when queueing and when executing deferred jobs,
+  hooks, scripts, scans and accent callbacks.
+- setup binds only completed GUI.Create and Nav.Revert observers while the
+  render mode is not yet eligible. Other GUI/font/item hooks install only
+  once actual Classic UI is available.
+- The registered module retains its normal refresh callback.
+- Navigation-styled Favourites roots and callbacks are also excluded.
 
-The public Continued source located at
-[danielandersson/AtlasLootClassic-Continued](https://github.com/danielandersson/AtlasLootClassic-Continued/tree/f8f716082e009b6842aaad2299480ff9e6082daf)
-exports GUI.RefreshStyle but contains no Classic/Forever/Atlas Nav selection
-system in its GUI or a skin-registry module. It is not a verified substitute
-for the user's installed build.
+All 49 skin adapters were inspected; none already uses these option names.
+Other Scoped callers follow the existing path without a predicate/proxy.
+Full regression coverage includes existing shared helper/menu users.
 
-Public GitHub repository/code searches also located separate AtlasLoot forks
-and ForeverLoot, but none was verified as the reported three-mode version.
-The old experimental AtlasLoot Forever PR #69 uses a different supplied
-archive and is not imported or modified.
+There is no polling, recurring timer, OnUpdate hook, global factory replacement,
+settings migration or native render/action call. One existing constructor hook
+is reused and one scoped fallback observer is added. Nav-mode refresh methods
+remain unhooked. EUI theme events and explicit refresh requests are inert
+while navigation is displayed.
 
-Read-only GitHub Actions requests to the exact clarified CurseForge page
-`https://www.curseforge.com/wow/addons/atlasloot-continued` and its cfwidget
-metadata route both returned HTTP 403. An initial secondary catalog's numeric
-project reference also returned 403 and was not accepted as verified identity.
-No matching current archive or selection API was obtained. No protection
-bypass, credentials or local filesystem operation was attempted.
+A real Classic-to-navigation selection takes effect only on reload, which
+destroys the previous Lua/UI objects. Consequently no cross-mode restoration
+ledger or rewriting of native artwork is needed. Cancelling a reload while
+Classic remains displayed deliberately retains Classic EUI styling. A pending
+Classic preference while navigation remains displayed cannot activate EUI.
+The supported in-session transition is navigation failure back to Classic;
+the completed native Revert is observed before applying EUI.
 
-A GitHub-hosted ZIP or repository link for the installed version is required.
-The chat has requested that source. It will be inspected in cloud tooling;
-upstream code/assets will not be redistributed in the player package.
+## Automated evidence
 
-## Work remaining once source is available
+The released adapter fails the new regression at
+“AtlasLoot navigation mode was styled”; the candidate passes.
 
-1. Verify TOC/build identity and the native selected-mode getter/registry.
-2. Trace initial selection, profile/reload restoration and every transition.
-3. Gate all classic styling, menu callbacks, font/backdrop enforcement and
-   engine-owned theme handling at the correct ownership boundary.
-4. Retire or restore only our Classic cosmetics before another native mode
-   takes ownership; reapply the unchanged Classic rendering on return.
-5. Reproduce the released regression and cover Classic -> Forever -> Atlas Nav
-   -> Classic, login/reload in each mode, menus/options, themes and combat.
-6. Run complete regressions, source-backed lifecycle checks, packaging and
-   resource benchmarks; then provide an actual fix ZIP for in-game review.
+Coverage includes fresh sessions for all three looks, pending/cancelled
+selections, reload-session reconstruction, nil-containing native return
+values, delayed main construction, native fallback, separate navigation
+Favourites, stale queues and installed hooks, theme callbacks, combat recovery,
+and 1,000 navigation refresh cycles without GUI scans, new queues or growing
+hooks/events. Existing Classic appearance/action assertions remain intact.
 
-No new support for Forever or Atlas Nav is proposed. Their native UI must be
-untouched. Keep the investigation draft and do not merge/tag/publish it.
+The cloud source runner compiles the exact 13014 GetStyle, SetStyle, GetLook,
+SetLook, Revert and reload-dialog definitions into an isolated fixture.
+Construction/layout and other WoW services are mocked; this is not a full
+client boot or a pixel/taint proof.
+
+The complete registered 59-suite Lua regression/package validation checks all
+runtime files, catalogs, TOCs, unchanged version, license and installation
+layout. The transferred test artifact is independently compared byte-for-byte
+against its exact checkout (82 runtime files; no upstream/development files).
+
+## Hosted performance
+
+Five fresh-state trials per version, Ubuntu 24.04 Actions runner, system Lua
+5.4, identical source-shaped Classic window, one warmup, GC before/after the
+measured batch. Medians from the first validated corrective build:
+
+| 1,000 warm Classic reopen/refresh cycles | v1.6.8 | Candidate |
+| --- | ---: | ---: |
+| Host elapsed time | 39.308 ms | 41.886 ms |
+| Main-root scans | 1,000 | 1,000 |
+| Tracked item-label font writes | 1,000 | 1,000 |
+| Added root regions | 0 | 0 |
+| Positive retained heap growth after GC | 0 KiB | 0 KiB |
+
+The ownership check has a small hosted cost; it does not optimize or redesign
+the existing Classic refresh. Negative raw GC deltas are collection noise,
+not claimed savings. Navigation workloads add no cosmetic queue/scans after
+initial observer installation. No live WoW FPS, frametime, long-session memory
+or native hook-overhead claim follows from these fixtures.
+
+## In-game acceptance
+
+1. Start in Classic: verify the previously approved main/favourites/options,
+   dropdowns, item colors, fonts, backgrounds and accent.
+2. Choose Forever Bronze, cancel reload: the displayed Classic UI stays styled.
+   Accept reload later: Bronze remains fully native.
+3. While Bronze is displayed, choose Classic and cancel: navigation stays native.
+4. Reload into Atlas Nav; navigate, open menus/favourites/settings and change
+   EUI theme/accent. Check for native background and steady fonts.
+5. Reload back into Classic and verify EUI reapplies without duplicate art.
+6. Check combat/recovery, ordinary open/close and existing SavedVariables.
+   If native navigation fallback occurs, its Classic result should receive EUI.
+
+Live visual, native rendering and taint acceptance remain pending. Keep PR #104
+draft; do not merge, tag, version-bump or publish.

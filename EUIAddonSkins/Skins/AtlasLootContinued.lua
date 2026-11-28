@@ -164,8 +164,14 @@ ns.RegisterScopedSkin("AtlasLootContinued", "AtlasLootClassic Continued", {
         local atlas = _G.AtlasLoot
         local favourites = Favourites()
         local favGUI = favourites and favourites.GUI
-        for _, name in ipairs({"Create", "Toggle", "UpdateStyle", "UpdateDropDown", "ItemListUpdate", "SelectSlot"}) do
-            H.Hook(favGUI, name, refresh)
+        local function ClassicFavourites()
+            return favGUI and not (favGUI.NavStyle and favGUI.NavStyle.applied)
+        end
+        H.Hook(favGUI, "Create", function() if ClassicFavourites() then refresh() end end)
+        if favGUI and favGUI.frame and ClassicFavourites() then
+            for _, name in ipairs({"Toggle", "UpdateStyle", "UpdateDropDown", "ItemListUpdate", "SelectSlot"}) do
+                H.Hook(favGUI, name, function() if ClassicFavourites() then refresh() end end)
+            end
         end
         H.Hook(atlas and atlas.Options, "Show", refresh)
         H.Hook(atlas and atlas.Options, "ShowAddon", refresh)

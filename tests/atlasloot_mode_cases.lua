@@ -23,6 +23,7 @@ return function(ctx)
         root:SetBackdrop({bgFile='native', edgeFile='native-border', edgeSize=16})
         root:SetBackdropColor(.2,.3,.4,.8)
         root.CloseButton = ctx.frame('Button', nil, root)
+        root.gameVersionButton = ctx.frame('Button',nil,root)
         root.titleFrame = ctx.frame('Frame', nil, root)
         root.titleFrame.infoButton = ctx.frame('Button', nil, root.titleFrame)
         root.moduleSelect, root.subCatSelect, root.difficulty, root.boss, root.extra =
@@ -74,6 +75,7 @@ return function(ctx)
             st.fav.NavStyle.applied=true
             local n=ctx.frame('CheckButton',nil,st.fav.frame)
             st.module.refresh();ctx.flush();assert(not n.checkbox,'navigation favourites was styled')
+            st.fav.Toggle();ctx.flush();assert(not n.checkbox,'navigation favourites callback queued styling')
             local objects=#st.root.regions
             for _=1,100 do st.module.refresh();ctx.flush() end
             assert(#st.root.regions==objects,'Classic warm refresh grew artwork')

@@ -31,9 +31,27 @@ def run(source, result=False):
 parser = argparse.ArgumentParser()
 parser.add_argument("--baseline", action="store_true")
 parser.add_argument("--benchmark", action="store_true")
+parser.add_argument("--sources", action="store_true")
 args = parser.parse_args()
 candidate, baseline = TARGET.read_text(), fetch(str(TARGET))
 try:
+    if args.sources:
+        import hashlib
+        references = [
+            ("DeadlyBossMods/DeadlyBossMods", "fc433f76eba067f6704aa81340f40aeb61a6c58b", "DBM-Core/modules/AuraTracking.lua"),
+            ("Gethe/wow-ui-source", "ab5cb850a3f65e742959e379c4689353a2f4549f", "Interface/AddOns/Blizzard_APIDocumentationGenerated/SimpleScriptRegionAPIDocumentation.lua"),
+        ]
+        sources = []
+        for repo, pin, path in references:
+            with urllib.request.urlopen("https://raw.githubusercontent.com/" + repo + "/" + pin + "/" + path, timeout=60) as response:
+                data = response.read()
+            sources.append(data.decode())
+            print("SOURCE", repo, pin, path, "sha256=" + hashlib.sha256(data).hexdigest())
+        assert "button:AddDispelTypeTexture(regions.dispelBorder" in sources[0]
+        assert 'state.buttonRegions = state.buttonRegions or setmetatable({}, {__mode = "k"})' in sources[0]
+        shown = sources[1].split('Name = "IsShown"', 1)[1].split('Name = "IsVisible"', 1)[0]
+        assert "SecretReturnsForAspect = { Enum.SecretAspect.Shown }" in shown
+        print("PASS: pinned native aura-border ownership and documented secret visibility return")
     if args.baseline:
         TARGET.write_text(baseline)
         try: run(Path("tests/dbm_hud_spec.lua").read_text())

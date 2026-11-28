@@ -1,27 +1,22 @@
-"""Inspect the supplied source in cloud memory; do not redistribute addon files."""
-import hashlib, io, json, re, urllib.request, zipfile
+"""Inspect verified 13014 lifecycle; do not bundle target code or assets."""
+import hashlib, io, re, urllib.request, zipfile
 URL = "https://github.com/user-attachments/files/35548736/AtlasLootContinued-Forever_13014.zip"
 with urllib.request.urlopen(URL, timeout=60) as r:
-    data = r.read()
-print("ARCHIVE_SHA256", hashlib.sha256(data).hexdigest())
+    data=r.read()
+digest=hashlib.sha256(data).hexdigest()
+assert digest=="f3a7ffc65480a92c7b18961409087d9b2f83b1bf9d942fcd230b3cc28d479a1d"
+print("ARCHIVE_SHA256",digest)
 with zipfile.ZipFile(io.BytesIO(data)) as z:
-    assert z.testzip() is None
-    names = z.namelist()
-    print("SOURCE_FILES", json.dumps([n for n in names if re.search(r'(skin|nav|gui|option|init|toc)', n, re.I) and not '/Libs/' in n]))
-    for n in names:
-        if n.endswith('.toc') and 'AtlasLootContinued/' in n.replace('\\\\','/'):
-            text=z.read(n).decode('utf-8-sig')
-            print("TOC_METADATA",n,json.dumps([l for l in text.splitlines() if l.startswith('##')]))
-    # Output only mode/lifecycle-related excerpts, not whole source files.
-    for n in names:
-        if not n.endswith('.lua') or '/Libs/' in n: continue
-        text=z.read(n).decode('utf-8-sig')
-        lines=text.splitlines()
+    for path in ["AtlasLootContinued/GUI/Nav.lua","AtlasLootContinued/GUI/GUI.lua",
+                 "AtlasLootContinued_Favourites/Favourites_GUI.lua","AtlasLootContinued_Favourites/Favourites_Nav.lua",
+                 "AtlasLootContinued_Options/Core.lua","AtlasLootContinued_Options/SettingsNav.lua"]:
+        lines=z.read(path).decode('utf-8-sig').splitlines()
         selected=set()
-        for i,l in enumerate(lines):
-            if re.search(r'legacy|[Ss]kin[Mm]ode|[Aa]ctive[Ss]kin|[Uu][Ii][Mm]ode|[Aa]tlas[Nn]av|[Nn]av[Ss]kin|[Ff]orever[Ss]kin',l):
-                if re.search(r'(GUI/|Options/|Init|Skin)',n):
-                    selected.update(range(max(0,i-2),min(len(lines),i+3)))
-        if selected:
-            print("LIFECYCLE_EXCERPTS",n)
-            for i in sorted(selected): print(str(i+1)+": "+lines[i])
+        if path.endswith('/Nav.lua'):
+            selected.update(range(0,70));selected.update(range(2270,min(2490,len(lines))))
+        else:
+            for i,line in enumerate(lines):
+                if re.search(r'Nav|nav|style|Style|Reload|reload|fallback|Fallback',line):
+                    selected.update(range(max(0,i-3),min(len(lines),i+5)))
+        print("LIFECYCLE",path)
+        for i in sorted(selected):print(str(i+1)+": "+lines[i])

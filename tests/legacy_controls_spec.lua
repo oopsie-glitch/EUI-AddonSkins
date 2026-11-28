@@ -109,7 +109,7 @@ function S.Font(t, r, g, b) local _, size = t:GetFont(); t:SetFont('eui', size o
 function S.Button(f, keys)
     local keep = {}; for _, key in ipairs(keys or {}) do keep[f[key] or false] = true end
     for _, t in ipairs(f.regions) do if t.kind == 'Texture' and not keep[t] then t:SetAlpha(0) end end
-    f.button = true
+    f.button = f.button or true
 end
 function S.SquareIcon(t, parent) if t:GetNumMaskTextures() > 0 then return end; t:SetTexCoord(0.08, 0.92, 0.08, 0.92); t.borderParent = parent end
 function S.PageButton(f, label) f.glyph = label end
@@ -2042,6 +2042,7 @@ item.icon, item.overlay, item.phaseIndicator = item:CreateTexture(), item:Create
 item.icon.path = 'loot-icon'; item.overlay:SetVertexColor(0.6, 0.2, 0.9, 1)
 item.label = item:CreateFontString(nil, 'ARTWORK', 'GameFontNormal'); item.label:SetTextColor(0.6, 0.2, 0.9, 1)
 local selectFrame = frame('ScrollFrame', 'AtlasLoot-Select-1', atlasRoot)
+selectFrame:SetBackdrop({bgFile='native-fill',edgeFile='native-border',edgeSize=16})
 local selector = {frame = selectFrame, SetSelected = function() end, Update = function() end}; selectFrame.obj = selector
 local selection = frame('CheckButton', nil, selectFrame); selection.obj, selection.info = selector, {id = 'boss'}
 selection.label, selection.coin = selection:CreateFontString(nil, 'OVERLAY', 'GameFontNormal'), selection:CreateTexture()
@@ -2066,14 +2067,14 @@ atlasRoot:SetBackdropBorderColor(1, 1, 1, 1)
 assert(atlasRoot.border[1] == 0.055, 'AtlasLoot native redraw must not restore a white outer border')
 assert(item.icon.crop and item.overlay.alpha == 1 and item.phaseIndicator.alpha == 1 and item.overlay.color[3] == 0.9)
 assert(item.label.textColor[3] == 0.9 and not item.button and not modelArt.crop)
-assert(selection.euiAtlasSelection.color[4] == 0.2 and selection.coin.alpha == 1 and not selection.checkbox)
-assert(dropdown.dropdown and dropdown.button.glyph == 'v')
-assert(selectFrame.panelOptions.noBorder and selectFrame.panelOptions.inset and favourites.GUI.frame.shellOptions.noBorder)
+assert(selection.euiAtlasSelection.color[4] == 0.12 and selection.coin.alpha == 1 and not selection.checkbox)
+assert(dropdown.button and not dropdown.dropdown and dropdown.button.glyph == 'v')
+assert(selectFrame.backdrop.edgeSize == 1 and selectFrame.color[1] == .02 and favourites.GUI.frame.shellOptions.noBorder)
 local pageButton = frame('Button', 'AtlasLoot-nextPageButton', atlasRoot)
 modules.AtlasLootContinued.refresh(); flush(); assert(pageButton.glyph == '>')
 assert(dropdown.par:Toggle() == 'popup-native')
-assert(popup.panelOptions.noBorder and popup.panelOptions.inset)
-assert(popup.panel and popupRow.button and popupRow.check.alpha == 1 and popupRow.label.textColor[2] == 0.8,
+assert(popup.backdrop.edgeSize == 1 and popup.color[1] == .02)
+assert(popupRow.button and popupRow.check.alpha == 1 and popupRow.label.textColor[2] == 0.8,
     'AtlasLoot popup must be styled synchronously, without waiting for a timer')
 flush(); selection:SetChecked(false); flush(); assert(selection.euiAtlasSelection.color[4] == 0)
 local hook, objects = atlasGUI.Toggle, #selection.regions
@@ -2085,6 +2086,11 @@ enabled = false; local untouched = frame('CheckButton', nil, atlasRoot)
 atlasGUI:Toggle(); flush(); assert(not untouched.checkbox)
 enabled = true
 print('PASS: AtlasLoot windows, synchronous pooled menus, selectors, colours/overlays/maps/models, dynamic controls and idempotence')
+assert(loadfile('tests/atlasloot_visual_cases.lua'))()({
+    frame=frame,texture=texture,S=S,flush=flush,module=modules.AtlasLootContinued,
+    combat=function(v)combat=v end,
+    hooks=function()return hooksCreated end,
+})
 assert(loadfile('tests/atlasloot_mode_cases.lua'))()({
     frame=frame,S=S,flush=flush,install=modules.AtlasLootContinued.install,
     hooks=function()return hooksCreated end,events=function()return #events end,

@@ -49,6 +49,9 @@ factory+="\n".join(parts)+"""
     end
 end
 """
+# Exercise the actual native solid/image repaint against the cosmetic adapter.
+paint=gui[gui.index("function GUI.RefreshContentBackGround()"):gui.index("function GUI.RefreshMainFrame()")]
+factory+="\nATLAS_SOURCE_SURFACE = function(GUI,db)\n"+paint+"\nend\n"
 lua=ctypes.CDLL("liblua5.4.so.0")
 lua.luaL_newstate.restype=ctypes.c_void_p
 lua.luaL_openlibs.argtypes=[ctypes.c_void_p]
@@ -72,6 +75,8 @@ def run(code,result=False):
 fixture=Path("tests/legacy_controls_spec.lua").read_text()
 run(factory+fixture)
 print("PASS: actual 13014 GetStyle/SetStyle/GetLook/SetLook/Revert and reload dialogs in adapter fixture")
+with urllib.request.urlopen("https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/95c2d6b3b2a512aef03d8242d07f1418e3eb3b27/tests/legacy_controls_spec.lua",timeout=60) as r:
+    old_fixture=r.read().decode()
 paths=["EUIAddonSkins/Scoped.lua","EUIAddonSkins/Skins/AtlasLootContinued.lua"]
 candidate={p:Path(p).read_text() for p in paths}
 baseline={}
@@ -80,26 +85,48 @@ for p in paths:
         baseline[p]=r.read().decode()
 try:
     for p in paths: Path(p).write_text(baseline[p])
-    try: run(factory+fixture)
+    try: run(factory+old_fixture)
     except RuntimeError as e:
         assert "AtlasLoot navigation mode was styled" in str(e),str(e)
         print("EXPECTED_BASELINE_FAILURE",str(e))
     else: raise AssertionError("Released adapter unexpectedly passed navigation ownership regression")
     marker="assert(loadfile('tests/atlasloot_mode_cases.lua'))()"
-    bench=fixture[:fixture.index(marker)]+"""
+    # Use the same native control tree and timed workload for both variants.
+    # These compatibility assertions accept both intentionally different visuals.
+    # Candidate visual properties are asserted separately above.
+    common=old_fixture[:old_fixture.index(marker)]
+    common=common.replace("assert(dropdown.dropdown and dropdown.button.glyph == 'v')",
+        "assert((dropdown.dropdown or dropdown.button) and dropdown.button.glyph == 'v')")
+    common=common.replace("assert(selection.euiAtlasSelection.color[4] == 0.2",
+        "assert((selection.euiAtlasSelection.color[4] == 0.2 or selection.euiAtlasSelection.color[4] == 0.12)")
+    common=common.replace("f.button = true", "f.button = f.button or true")
+    common=common.replace("assert(popup.panelOptions.noBorder and popup.panelOptions.inset)",
+        "assert(popup.panelOptions or popup.backdrop.edgeSize == 1)")
+    common=common.replace("assert(popup.panel and popupRow.button", "assert(popupRow.button")
+    common=common.replace("local selector = {frame = selectFrame,",
+        "selectFrame:SetBackdrop({bgFile='native',edgeFile='native-border',edgeSize=16})\nlocal selector = {frame = selectFrame,")
+    common=common.replace("assert(selectFrame.panelOptions.noBorder and selectFrame.panelOptions.inset and favourites.GUI.frame.shellOptions.noBorder)",
+        "assert(favourites.GUI.frame.shellOptions.noBorder)")
+    common=common.replace("local logo = atlasRoot:CreateTexture();",
+        "atlasRoot.contentFrame=frame('Frame',nil,atlasRoot)\nfor _,key in ipairs({'topBG','downBG','itemBG'}) do atlasRoot.contentFrame[key]=atlasRoot.contentFrame:CreateTexture() end\nlocal logo = atlasRoot:CreateTexture();")
+    bench=common+"""
 do
     atlasGUI:Toggle();flush();collectgarbage('collect')
+    local hooks, listeners = hooksCreated, #events
     local memory, start, fonts, scans, regions = collectgarbage('count'),os.clock(),item.label.fontWrites,auditScans[atlasRoot],#atlasRoot.regions
     for _=1,1000 do atlasGUI:Toggle();flush() end
     local elapsed=(os.clock()-start)*1000
     collectgarbage('collect')
-    ATLAS_BENCH=string.format('{"ms":%.6f,"retained_kib":%.6f,"font_writes":%d,"root_scans":%d,"added_regions":%d}',
-        elapsed,collectgarbage('count')-memory,item.label.fontWrites-fonts,auditScans[atlasRoot]-scans,#atlasRoot.regions-regions)
+    ATLAS_BENCH=string.format('{"ms":%.6f,"retained_kib":%.6f,"font_writes":%d,"root_scans":%d,"added_regions":%d,"added_hooks":%d,"added_listeners":%d}',
+        elapsed,collectgarbage('count')-memory,item.label.fontWrites-fonts,auditScans[atlasRoot]-scans,#atlasRoot.regions-regions,hooksCreated-hooks,#events-listeners)
     assert(#atlasRoot.regions==regions)
 end
 """
+    for p in paths:
+        with urllib.request.urlopen("https://raw.githubusercontent.com/oopsie-glitch/EUI-AddonSkins/95c2d6b3b2a512aef03d8242d07f1418e3eb3b27/"+p,timeout=60) as r:
+            baseline[p]=r.read().decode()
     results={}
-    for label, files in (("v1.6.8",baseline),("candidate",candidate)):
+    for label, files in (("PR104",baseline),("candidate",candidate)):
         for p in paths: Path(p).write_text(files[p])
         trials=[run("print=function()end\n"+bench,True) for _ in range(5)]
         results[label]={k:statistics.median(t[k] for t in trials) for k in trials[0]}

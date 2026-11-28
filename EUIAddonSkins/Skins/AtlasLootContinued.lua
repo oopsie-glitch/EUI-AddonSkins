@@ -14,6 +14,60 @@ local function Favourites()
     if addons and type(addons.GetAddon) == "function" then return addons:GetAddon("Favourites") end
     return atlas and atlas.Favourites
 end
+
+-- Repaint only 13014's owned cosmetic layers; maps/models/item art never pass
+-- through these helpers. Native alpha choices remain read-only.
+local function Alpha(group, fallback)
+    return group and group.bgColor and group.bgColor.a or fallback
+end
+local function Backdrop(C, f, alpha)
+    local H, S = C.H, C.S
+    if not H.Allowed(f) or not f.GetBackdrop or not f:GetBackdrop() or not S.GetPanelColor then return end
+    H.ThinBackdrop(f)
+    local backdrop = f:GetBackdrop()
+    if backdrop.bgFile ~= "Interface/Buttons/WHITE8X8" then
+        -- Keep the native bounds. Remove only the old tooltip/stone fill.
+        backdrop.bgFile = "Interface/Buttons/WHITE8X8"
+        f:SetBackdrop(backdrop)
+    end
+    local r,g,b,a = S.GetPanelColor()
+    a = alpha or a
+    local cr,cg,cb,ca = f:GetBackdropColor()
+    if cr ~= r or cg ~= g or cb ~= b or ca ~= a then f:SetBackdropColor(r,g,b,a) end
+    local br,bg,bb,ba = f:GetBackdropBorderColor()
+    if br ~= .055 or bg ~= .055 or bb ~= .055 or ba ~= 1 then
+        f:SetBackdropBorderColor(.055,.055,.055,1)
+    end
+end
+local function Solid(C, texture, alpha, dirty)
+    if not C.H.Texture(texture) or not C.S.GetPanelColor then return end
+    local r,g,b,a = C.S.GetPanelColor()
+    a = alpha or a
+    if dirty or texture.euiAtlasR ~= r or texture.euiAtlasG ~= g
+        or texture.euiAtlasB ~= b or texture.euiAtlasA ~= a then
+        texture:SetColorTexture(r,g,b,a)
+        texture.euiAtlasR,texture.euiAtlasG,texture.euiAtlasB,texture.euiAtlasA = r,g,b,a
+    end
+end
+local function Surfaces(C)
+    local gui = GUI()
+    local frame = gui and gui.frame
+    if not frame then return end
+    local db = _G.AtlasLoot.db and _G.AtlasLoot.db.GUI or {}
+    Backdrop(C, frame, Alpha(db.mainFrame))
+    Backdrop(C, frame.titleFrame, Alpha(db.mainFrame and db.mainFrame.title))
+    local content = frame.contentFrame
+    if content then
+        Solid(C, content.topBG, Alpha(db.contentTopBar), C.surfaceDirty)
+        Solid(C, content.downBG, Alpha(db.contentBottomBar), C.surfaceDirty)
+        -- Background images are optional native content, not obsolete decoration.
+        if not (db.content and db.content.showBgImage and gui.curBgInfo and gui.curBgInfo[2]) then
+            Solid(C, content.itemBG, Alpha(db.content), C.surfaceDirty)
+        end
+    end
+    C.surfaceDirty = nil
+end
+
 local Visit
 local function DropdownMenus(C, owner, refresh)
     if InCombatLockdown and InCombatLockdown() then refresh(); return end
@@ -23,7 +77,7 @@ local function DropdownMenus(C, owner, refresh)
     for _, child in ipairs(C.H.Children(owner)) do
         local name = child.GetName and child:GetName() or ""
         if name:match("^AtlasLoot%-DropDown%-CatFrame") then
-            C.Panel(child)
+            Backdrop(C, child)
             C.H.Scan(child, refresh, function(f, kind) return Visit(C, f, kind, refresh) end)
         end
     end
@@ -45,10 +99,14 @@ Visit = function(C, f, kind, refresh)
             f:SetBackdropBorderColor(0.055, 0.055, 0.055, 1)
             C.borderLock[f] = false
         end)
-        if f.SetBackdropColor and S.GetPanelColor then f:SetBackdropColor(S.GetPanelColor()) end
+        Surfaces(C)
         ns.AttachAccent(S, f)
         if H.Allowed(f.CloseButton) then S.CloseButton(f.CloseButton) end
         return true
+    end
+    if GUI() and GUI().frame and f == GUI().frame.titleFrame then
+        for _, region in ipairs(H.Regions(f)) do H.Font(region) end
+        return true -- Keep the native title opacity; do not stack a generic panel.
     end
     if kind == "Slider" then
         H.LegacySlider(f)
@@ -56,7 +114,9 @@ Visit = function(C, f, kind, refresh)
         return true
     end
     if name:match("^AtlasLoot%-DropDown%-%d+$") then
-        S.Dropdown(f)
+        -- One native arrow button: avoid a second arrow on the field itself.
+        S.Button(f, {"label", "title"})
+        if f.GetBackdrop and f:GetBackdrop() then f:SetBackdrop(nil) end
         if H.Allowed(f.button) then
             S.SoftPageButton(f.button, "v")
         end
@@ -72,7 +132,7 @@ Visit = function(C, f, kind, refresh)
         H.Font(f.label); H.Font(f.title)
         return true
     end
-    if name:match("^AtlasLoot%-DropDown%-CatFrame") then C.Panel(f) end
+    if name:match("^AtlasLoot%-DropDown%-CatFrame") then Backdrop(C, f); return true end
     if name:match("^AtlasLoot%-DropDown%-Button") then
         H.Action(f, {"icon", "check", "label"})
         if H.Texture(f.check) then f.check:SetVertexColor(S.GetAccentColor()) end
@@ -88,17 +148,21 @@ Visit = function(C, f, kind, refresh)
         H.Action(f, {"icon", "coin", "label", "euiAtlasSelection"})
         if f.GetCheckedTexture then H.Fade(f:GetCheckedTexture()) end
         local r, g, b = S.GetAccentColor()
-        f.euiAtlasSelection:SetColorTexture(r, g, b, f:GetChecked() and 0.2 or 0)
+        local a = f:GetChecked() and 0.12 or 0
+        if f.euiAtlasSelectedR ~= r or f.euiAtlasSelectedG ~= g or f.euiAtlasSelectedB ~= b or f.euiAtlasSelectedA ~= a then
+            f.euiAtlasSelection:SetColorTexture(r,g,b,a)
+            f.euiAtlasSelectedR,f.euiAtlasSelectedG,f.euiAtlasSelectedB,f.euiAtlasSelectedA = r,g,b,a
+        end
         H.Hook(f, "SetChecked", refresh)
         return true
     end
     if kind == "ScrollFrame" and f.obj and f.obj.frame == f then
-        C.Panel(f)
+        Backdrop(C, f)
         H.Hook(f.obj, "Update", refresh); H.Hook(f.obj, "SetSelected", refresh)
     end
     if kind == "Button" then
         if f.className then
-            H.ThinBackdrop(f); H.Font(f.text)
+            S.Button(f, {"text"}); H.Font(f.text)
             return true
         end
         if H.Icon(f) and f.overlay then
@@ -159,6 +223,11 @@ ns.RegisterScopedSkin("AtlasLootContinued", "AtlasLootClassic Continued", {
         for _, name in ipairs({"Create", "Toggle", "RefreshStyle", "RefreshFonts", "ForceUpdate", "RefreshButtons"}) do
             H.Hook(gui, name, refresh)
         end
+        H.Hook(gui, "RefreshContentBackGround", function()
+            C.surfaceDirty = true
+            refresh()
+        end)
+        H.Hook(gui, "RefreshMainFrame", refresh)
         H.Hook(gui and gui.ItemFrame, "Refresh", refresh)
         H.Hook(gui and gui.SoundFrame, "Show", refresh)
         local atlas = _G.AtlasLoot

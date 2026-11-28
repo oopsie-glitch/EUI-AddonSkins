@@ -1,7 +1,7 @@
 name: AtlasLoot Classic mode validation
 on:
   push:
-    branches: [skin/atlasloot-classic-only]
+    branches: [skin/atlasloot-classic-modern]
 permissions:
   contents: read
 jobs:
@@ -14,6 +14,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+      - name: Inspect owned Classic visual primitives
+        run: python3 scripts/inspect_atlasloot_visuals.py
       - name: Install hosted Lua
         run: sudo apt-get update -qq && sudo apt-get install -y liblua5.4-0
       - name: Verify exact 13014 source, lifecycle, baseline failure and performance

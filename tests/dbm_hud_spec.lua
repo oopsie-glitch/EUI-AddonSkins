@@ -645,6 +645,70 @@ local liveIcon = liveButton:CreateTexture(); liveIcon.path = 987
 DBM.Auras.AuraTrackingState = {player = {buttonRegions = {[liveButton] = {icon = liveIcon}}}}
 secret = true; DBM.Auras:OnSettingsChange(); assert(not liveIcon.crop, 'restricted live aura touched')
 secret = false; DBM.Auras:OnSettingsChange(); assert(liveIcon.crop)
+
+-- WoW secret booleans have no equivalent in stock Lua. Use an opaque token
+-- and assert that the real queued/hooked adapter never consumes its visibility
+-- for cosmetic decisions or mutates the restricted icon.
+do
+    local opaque, previousSecret = {}, issecretvalue
+    local checks = 0
+    issecretvalue = function(value)
+        if rawequal(value, opaque) then checks = checks + 1; return true end
+        return previousSecret and previousSecret(value) or false
+    end
+    for _, target in ipairs({'border', 'icon'}) do
+        local button = CreateFrame('Button')
+        local icon, border = button:CreateTexture(), button:CreateTexture()
+        icon.path = 987
+        local region = target == 'border' and border or icon
+        region.IsShown = function() return opaque end
+        DBM.Auras.AuraTrackingState = {player = {buttonRegions = {[button] = {icon = icon, dispelBorder = border}}}}
+        local objects, hookCount = created, hooks
+        -- Exercise the reported Widgets.Queue -> Safe -> HUD refresh route.
+        event('ADDON_LOADED')
+        assert(not icon.crop, 'secret ' .. target .. ' visibility reached cosmetic mutation')
+        assert(created == objects and hooks == hookCount,
+            'secret visibility allocated art/hooks')
+        local count = checks
+        -- Direct settings callback uses the same guard, without an extra queue.
+        assert(DBM.Auras:OnSettingsChange() == 'native-settings')
+        assert(checks > count and not icon.crop)
+        combat = true; count = checks
+        DBM.Auras:OnSettingsChange()
+        assert(checks == count, 'combat inspected aura visibility')
+        combat = false; event('PLAYER_REGEN_ENABLED')
+        region.IsShown = function(self) return self.shown end
+        DBM.Auras:OnSettingsChange()
+        assert(icon.crop and #button.children == 1, 'public aura did not recover')
+        local layer = button.children[1]
+        local publicObjects, publicHooks = created, hooks
+        region.IsShown = function() return opaque end
+        DBM.Auras:OnSettingsChange()
+        assert(not layer.shown, 'old cosmetic edges remained on a restricted aura')
+        assert(created == publicObjects and hooks == publicHooks)
+        region.IsShown = function(self) return self.shown end
+        DBM.Auras:OnSettingsChange()
+        assert(layer.shown, 'public visibility did not restore cached edges')
+        border:Hide(); DBM.Auras:OnSettingsChange()
+        assert(layer.shown, 'public hidden native border hid neutral icon edges')
+        icon:Hide(); DBM.Auras:OnSettingsChange()
+        assert(not layer.shown, 'public hidden icon retained visible edges')
+    end
+    -- Demo previews also inspect border visibility before Icon is called.
+    local border = preview.BorderTextures[1]
+    border.IsShown = function() return opaque end
+    local count = checks
+    DBM.Auras:OnSettingsChange()
+    assert(checks > count and not preview.children[2].shown,
+        'preview bypassed the guarded visibility boundary')
+    border.IsShown = function(self) return self.shown end
+    issecretvalue = previousSecret
+    DBM.Auras.AuraTrackingState = {player = {buttonRegions = {[liveButton] = {icon = liveIcon}}}}
+    DBM.Auras:OnSettingsChange()
+    -- Classic/Forever builds lacking the secret API retain public behaviour.
+    assert(preview.children[2].shown and liveIcon.crop)
+    print('PASS: opaque aura visibility bypasses cosmetics; queued/direct/combat recovery and preview/public fallback')
+end
 -- Blizzard Skins+ custom accent controls timer edges independently of global accent.
 EllesmereUIDB = {blizzWinAccentBar = {useCustom = true, color = {r = 0.35, g = 0.45, b = 0.55}}}
 local fillR, fillG, fillB = b.fill:GetVertexColor()

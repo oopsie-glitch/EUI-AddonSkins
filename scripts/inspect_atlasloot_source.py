@@ -104,15 +104,18 @@ try:
         "selectFrame:SetBackdrop({bgFile='native',edgeFile='native-border',edgeSize=16})\nlocal selector = {frame = selectFrame,")
     common=common.replace("assert(selectFrame.panelOptions.noBorder and selectFrame.panelOptions.inset and favourites.GUI.frame.shellOptions.noBorder)",
         "assert(favourites.GUI.frame.shellOptions.noBorder)")
+    common=common.replace("local logo = atlasRoot:CreateTexture();",
+        "atlasRoot.contentFrame=frame('Frame',nil,atlasRoot)\\nfor _,key in ipairs({'topBG','downBG','itemBG'}) do atlasRoot.contentFrame[key]=atlasRoot.contentFrame:CreateTexture() end\\nlocal logo = atlasRoot:CreateTexture();")
     bench=common+"""
 do
     atlasGUI:Toggle();flush();collectgarbage('collect')
+    local hooks, listeners = hooksCreated, #events
     local memory, start, fonts, scans, regions = collectgarbage('count'),os.clock(),item.label.fontWrites,auditScans[atlasRoot],#atlasRoot.regions
     for _=1,1000 do atlasGUI:Toggle();flush() end
     local elapsed=(os.clock()-start)*1000
     collectgarbage('collect')
-    ATLAS_BENCH=string.format('{"ms":%.6f,"retained_kib":%.6f,"font_writes":%d,"root_scans":%d,"added_regions":%d}',
-        elapsed,collectgarbage('count')-memory,item.label.fontWrites-fonts,auditScans[atlasRoot]-scans,#atlasRoot.regions-regions)
+    ATLAS_BENCH=string.format('{"ms":%.6f,"retained_kib":%.6f,"font_writes":%d,"root_scans":%d,"added_regions":%d,"added_hooks":%d,"added_listeners":%d}',
+        elapsed,collectgarbage('count')-memory,item.label.fontWrites-fonts,auditScans[atlasRoot]-scans,#atlasRoot.regions-regions,hooksCreated-hooks,#events-listeners)
     assert(#atlasRoot.regions==regions)
 end
 """

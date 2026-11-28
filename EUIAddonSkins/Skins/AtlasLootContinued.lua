@@ -104,6 +104,10 @@ Visit = function(C, f, kind, refresh)
         if H.Allowed(f.CloseButton) then S.CloseButton(f.CloseButton) end
         return true
     end
+    if GUI() and GUI().frame and f == GUI().frame.titleFrame then
+        for _, region in ipairs(H.Regions(f)) do H.Font(region) end
+        return true -- Keep the native title opacity; do not stack a generic panel.
+    end
     if kind == "Slider" then
         H.LegacySlider(f)
         H.Script(f, "OnValueChanged", refresh)
@@ -128,7 +132,7 @@ Visit = function(C, f, kind, refresh)
         H.Font(f.label); H.Font(f.title)
         return true
     end
-    if name:match("^AtlasLoot%-DropDown%-CatFrame") then Backdrop(C, f) end
+    if name:match("^AtlasLoot%-DropDown%-CatFrame") then Backdrop(C, f); return true end
     if name:match("^AtlasLoot%-DropDown%-Button") then
         H.Action(f, {"icon", "check", "label"})
         if H.Texture(f.check) then f.check:SetVertexColor(S.GetAccentColor()) end

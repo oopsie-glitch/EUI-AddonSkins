@@ -3,6 +3,20 @@
 Status: blocked pending the source of the installed three-mode AtlasLoot build.
 No runtime correction has been implemented or claimed.
 
+## Supported addon identity and scope
+
+The supported target is **AtlasLootClassic Continued (All Forever Loot)** from
+[atlasloot-continued](https://www.curseforge.com/wow/addons/atlasloot-continued).
+Both the released Loader.lua catalog and scripts/skin_catalog.json register
+only the folder **AtlasLootContinued**. AtlasLootClassic / AtlasLoot Forever is
+not a released target. PR #69 remains unmerged and is neither imported nor
+modified by this investigation. Its source is not treated as proof about the
+supported Continued build.
+
+It remains unverified whether Classic, Forever and Atlas Nav are UI modes of
+the current supported Continued distribution, or come from another variant.
+No common selector/registry across those variants is assumed.
+
 ## Baseline and confirmed adapter behavior
 
 Published v1.6.8 and current main both point to
@@ -53,10 +67,12 @@ and ForeverLoot, but none was verified as the reported three-mode version.
 The old experimental AtlasLoot Forever PR #69 uses a different supplied
 archive and is not imported or modified.
 
-A read-only GitHub Actions request to the publicly documented Continued
-project metadata endpoint (project 1270310) returned HTTP 403. It supplied no
-matching archive or selection API. No protection bypass, credentials or local
-filesystem operation was attempted.
+Read-only GitHub Actions requests to the exact clarified CurseForge page
+`https://www.curseforge.com/wow/addons/atlasloot-continued` and its cfwidget
+metadata route both returned HTTP 403. An initial secondary catalog's numeric
+project reference also returned 403 and was not accepted as verified identity.
+No matching current archive or selection API was obtained. No protection
+bypass, credentials or local filesystem operation was attempted.
 
 A GitHub-hosted ZIP or repository link for the installed version is required.
 The chat has requested that source. It will be inspected in cloud tooling;

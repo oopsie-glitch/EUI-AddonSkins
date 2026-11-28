@@ -49,6 +49,9 @@ factory+="\n".join(parts)+"""
     end
 end
 """
+# Exercise the actual native solid/image repaint against the cosmetic adapter.
+paint=gui[gui.index("function GUI.RefreshContentBackGround()"):gui.index("function GUI.RefreshMainFrame()")]
+factory+="\nATLAS_SOURCE_SURFACE = function(GUI,db)\n"+paint+"\nend\n"
 lua=ctypes.CDLL("liblua5.4.so.0")
 lua.luaL_newstate.restype=ctypes.c_void_p
 lua.luaL_openlibs.argtypes=[ctypes.c_void_p]

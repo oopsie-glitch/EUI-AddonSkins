@@ -33,6 +33,7 @@ return function(ctx)
         else c.itemBG:SetColorTexture(0,0,0,db.content.bgColor.a) end
     end
     local gui={frame=root,RefreshContentBackGround=native,RefreshMainFrame=function()end,curBgInfo={{0,0,.4},'native-lore-image'}}
+    if ATLAS_SOURCE_SURFACE then ATLAS_SOURCE_SURFACE(gui,db) end
     AtlasLoot={GUI=gui,db={GUI=db}}
     local owner={}
     m.install(S,owner);flush()
@@ -60,6 +61,7 @@ return function(ctx)
     S.GetPanelColor=oldColor
     ctx.combat(true)
     c.topBG:SetColorTexture(.7,.2,.3,.65)
+    c.topBG.curColor=nil -- force native content-color invalidation in the exact source case
     gui.RefreshContentBackGround()
     assert(c.topBG.color[1]==0,'Native callback must run in combat')
     ctx.combat(false);owner.refresh();flush()

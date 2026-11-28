@@ -196,14 +196,29 @@ local function HUD(C)
         d = {layer = layer, edge = edge}; icons[icon] = d
         return d
     end
+    -- Aura-button visibility can be secret even outside combat or while the
+    -- global aura-secret gate is false. Inspect the value before any Lua test;
+    -- nil means keep the native presentation, not assume shown or hidden.
+    local function PublicShown(region, fallback)
+        if not region or not region.IsShown then return fallback end
+        local shown = region:IsShown()
+        if issecretvalue and issecretvalue(shown) then return end
+        return shown
+    end
     local function Icon(parent, icon, border, r, g, b, neutral)
         if not Allowed(parent) or not H.Texture(icon) then return end
         -- Do not modify masked/private icons or guess the meaning of a border.
         if icon.GetNumMaskTextures and icon:GetNumMaskTextures() > 0 then return end
+        local visible = PublicShown(icon, true)
+        local borderShown = PublicShown(border, false)
+        if visible == nil or borderShown == nil then
+            local old = icons[icon]
+            if old then old.layer:Hide() end
+            return
+        end
         S.SquareIcon(icon)
         local d = Edges(parent, icon)
-        local visible = not icon.IsShown or icon:IsShown()
-        if border and border.IsShown and border:IsShown() and not r then visible = false end
+        if borderShown and not r then visible = false end
         d.layer:SetShown(visible)
         if r then
             if H.Texture(border) then
@@ -674,7 +689,7 @@ local function HUD(C)
             -- Retail removed the legacy DebuffTypeColor global. Resolve the
             -- preview's known demo type through AuraUtil, never live aura data.
             local color
-            if border and border.IsShown and border:IsShown() then
+            if PublicShown(border, false) then
                 color = AuraUtil and AuraUtil.GetAuraBorderColor and AuraUtil.GetAuraBorderColor(dispelType)
                     or DebuffTypeColor and DebuffTypeColor[dispelType]
             end
@@ -689,7 +704,7 @@ local function HUD(C)
                     AuraUtil.SetAuraDispelTypeIcon(d.symbol, dispelType)
                     d.symbol:SetSize(size, size)
                     d.symbol:ClearAllPoints(); d.symbol:SetPoint("TOPRIGHT", icon, "TOPRIGHT", -2, -2)
-                    d.symbol:SetShown(not icon.IsShown or icon:IsShown())
+                    d.symbol:SetShown(d.layer:IsShown())
                 elseif d.symbol then d.symbol:Hide() end
             end
             local duration, stack = f.DurationTexts and f.DurationTexts[i], f.StackTexts and f.StackTexts[i]
@@ -736,8 +751,9 @@ local function HUD(C)
                 if Allowed(button) then
                     -- Preserve the live dispel artwork/symbol rather than infer
                     -- a dispel type from inaccessible aura information.
-                    Icon(button, regions.icon, regions.dispelBorder)
-                    Font(regions.durationText); Font(regions.countText)
+                    if Icon(button, regions.icon, regions.dispelBorder) then
+                        Font(regions.durationText); Font(regions.countText)
+                    end
                 end
             end
         end

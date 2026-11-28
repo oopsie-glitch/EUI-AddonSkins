@@ -23,8 +23,8 @@ return function(ctx)
     root.width,root.height=920,600
     local db={
         mainFrame={bgColor={a=.77},title={bgColor={a=.88}}},
-        contentTopBar={bgColor={a=.65}},contentBottomBar={bgColor={a=.55}},
-        content={bgColor={a=.45},showBgImage=false},
+        contentTopBar={bgColor={r=0,g=0,b=.4,a=.65}},contentBottomBar={bgColor={r=0,g=0,b=.4,a=.55}},
+        content={bgColor={r=0,g=0,b=0,a=.45},showBgImage=false},
     }
     local function native()
         c.topBG:SetColorTexture(0,0,.4,db.contentTopBar.bgColor.a)

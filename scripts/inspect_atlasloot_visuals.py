@@ -3,9 +3,8 @@ with urllib.request.urlopen('https://github.com/user-attachments/files/35548736/
 assert hashlib.sha256(data).hexdigest()=='f3a7ffc65480a92c7b18961409087d9b2f83b1bf9d942fcd230b3cc28d479a1d'
 with zipfile.ZipFile(io.BytesIO(data)) as z:
     for path,spans in {
-        'AtlasLootContinued/GUI/GUI.lua':[(1314,1455),(1490,1665),(1760,1827)],
-        'AtlasLootContinued/GUI/Template_Select.lua':[(1,500)],
-        'AtlasLootContinued/GUI/Template_DropDown.lua':[(1,180)],
+        'AtlasLootContinued/GUI/GUI.lua':[(1,85),(1454,1482)],
+        'AtlasLootContinued/GUI/Template_DropDown.lua':[(500,760)],
     }.items():
         lines=z.read(path).decode('utf-8-sig').splitlines()
         print('VISUAL_SOURCE',path)
